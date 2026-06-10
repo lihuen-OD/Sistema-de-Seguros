@@ -1,0 +1,434 @@
+import {
+  Package, ShieldCheck, AlertTriangle, Clock, DollarSign,
+  FileText, Flame, TrendingUp, Building2, CheckCircle2, ArrowRight,
+} from 'lucide-react'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+} from 'recharts'
+import { useNavigate } from 'react-router-dom'
+import { PageContent } from '../../shared/components/page-header/PageContent'
+import { KpiCard } from '../../shared/components/cards/KpiCard'
+import { MetricGrid } from '../../shared/components/cards/MetricGrid'
+import { SectionCard } from '../../shared/components/cards/SectionCard'
+import { ChartCard } from '../../shared/components/cards/ChartCard'
+import { StatusPill } from '../../shared/components/badges/StatusPill'
+import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
+import { mockPolicies } from '../../data/mock-policies'
+import { mockAssets } from '../../data/mock-assets'
+import { mockDocuments } from '../../data/mock-documents'
+import { mockFireExtinguishers } from '../../data/mock-fire-extinguishers'
+import { mockProducerTasks } from '../../data/mock-producers'
+import { mockInstallments } from '../../data/mock-installments'
+import { mockCompanies } from '../../data/mock-companies'
+
+const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
+
+export default function DashboardPage() {
+  const navigate = useNavigate()
+
+  // ── KPI calculations ─────────────────────────────────────────────
+  const activeAssets = mockAssets.filter((a) => a.status !== 'vendido' && a.status !== 'dado_de_baja')
+  const totalPatrimonialUsd = activeAssets.reduce((s, a) => s + a.patrimonialValueUsd, 0)
+
+  const vigentePolicies = mockPolicies.filter((p) => p.status === 'vigente')
+  const expiredPolicies = mockPolicies.filter((p) => p.status === 'vencida')
+  const expiringSoon = mockPolicies.filter((p) => p.status === 'proximo_vencer')
+  const totalInsuredArs = vigentePolicies.reduce((s, p) => s + p.insuredAmountArs, 0)
+
+  const pendingDocs = mockDocuments.filter((d) => d.paymentStatus !== 'pagado')
+  const pendingTotal = pendingDocs.reduce((s, d) => s + d.totalAmount, 0)
+
+  const expiredFe = mockFireExtinguishers.filter((f) => f.status === 'vencido')
+  const expiringFe = mockFireExtinguishers.filter((f) => f.status === 'proximo_vencer')
+
+  const overdueTasks = mockProducerTasks.filter((t) => t.status === 'vencida')
+  const pendingInstallments = mockInstallments.filter((i) => i.paymentStatus === 'pendiente')
+  const pendingInstallmentsTotal = pendingInstallments.reduce((s, i) => s + i.amount, 0)
+
+  // ── Chart data ────────────────────────────────────────────────────
+  const costByInsurer = vigentePolicies.reduce<Record<string, number>>((acc, p) => {
+    acc[p.insuranceCompany] = (acc[p.insuranceCompany] || 0) + p.insuredAmountArs
+    return acc
+  }, {})
+  const insurerChartData = Object.entries(costByInsurer)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, value]) => ({ name: name.split(' ')[0], value }))
+
+  const policyStatusData = [
+    { name: 'Vigentes', value: vigentePolicies.length, color: '#10b981' },
+    { name: 'Próx. Vencer', value: expiringSoon.length, color: '#f59e0b' },
+    { name: 'Vencidas', value: expiredPolicies.length, color: '#ef4444' },
+  ]
+
+  const fireStatusData = [
+    { name: 'Vigentes', value: mockFireExtinguishers.filter((f) => f.status === 'vigente').length, color: '#10b981' },
+    { name: 'Próx.', value: expiringFe.length, color: '#f59e0b' },
+    { name: 'Vencidos', value: expiredFe.length, color: '#ef4444' },
+  ]
+
+  // ── Monthly cost trend ────────────────────────────────────────────
+  const monthlyData = [
+    { mes: 'Ago', costo: 3100000 },
+    { mes: 'Sep', costo: 4200000 },
+    { mes: 'Oct', costo: 6800000 },
+    { mes: 'Nov', costo: 4900000 },
+    { mes: 'Dic', costo: 7100000 },
+    { mes: 'Ene', costo: 5400000 },
+    { mes: 'Feb', costo: 3900000 },
+    { mes: 'Mar', costo: 4100000 },
+  ]
+
+  // ── Upcoming policy expirations ───────────────────────────────────
+  const upcomingPolicies = mockPolicies
+    .filter((p) => {
+      const d = daysUntil(p.endDate)
+      return d >= 0 && d <= 90
+    })
+    .sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime())
+    .slice(0, 6)
+
+  // ── Upcoming installments ─────────────────────────────────────────
+  const upcomingInstallments = pendingInstallments
+    .filter((i) => daysUntil(i.dueDate) <= 60 && daysUntil(i.dueDate) >= 0)
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    .slice(0, 5)
+
+  return (
+    <PageContent>
+      {/* ─── Header ───────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Dashboard Ejecutivo</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Resumen operativo y financiero al día de hoy</p>
+        </div>
+        <div className="hidden sm:flex items-center gap-2">
+          <span className="text-xs text-slate-400">Datos al</span>
+          <span className="text-xs font-semibold text-slate-600">10/06/2026</span>
+        </div>
+      </div>
+
+      {/* ─── KPI Row 1: Patrimonio y Pólizas ─────────────────────── */}
+      <MetricGrid cols={4} className="mb-5">
+        <KpiCard
+          label="Valor Patrimonial"
+          value={`US$ ${(totalPatrimonialUsd / 1_000_000).toFixed(1).replace('.', ',')}M`}
+          description={`${activeAssets.length} activos activos`}
+          icon={Package}
+          variant="info"
+          onClick={() => navigate('/assets')}
+        />
+        <KpiCard
+          label="Suma Asegurada"
+          value={formatCurrencyCompact(totalInsuredArs, 'ARS')}
+          description={`${vigentePolicies.length} pólizas vigentes`}
+          icon={ShieldCheck}
+          variant="success"
+          onClick={() => navigate('/insurance/policies')}
+        />
+        <KpiCard
+          label="Pólizas Vencidas"
+          value={expiredPolicies.length}
+          description={`${expiringSoon.length} próximas a vencer`}
+          icon={AlertTriangle}
+          variant={expiredPolicies.length > 0 ? 'danger' : 'default'}
+          onClick={() => navigate('/insurance/policies')}
+        />
+        <KpiCard
+          label="Facturas Pendientes"
+          value={formatCurrencyCompact(pendingTotal, 'ARS')}
+          description={`${pendingDocs.length} documentos`}
+          icon={FileText}
+          variant={pendingDocs.length > 0 ? 'warning' : 'default'}
+          onClick={() => navigate('/insurance/documents')}
+        />
+      </MetricGrid>
+
+      {/* ─── KPI Row 2: Cuotas, Matafuegos, Tareas ───────────────── */}
+      <MetricGrid cols={4} className="mb-6">
+        <KpiCard
+          label="Cuotas Pendientes"
+          value={formatCurrencyCompact(pendingInstallmentsTotal, 'ARS')}
+          description={`${pendingInstallments.length} cuotas`}
+          icon={Clock}
+          variant={pendingInstallments.length > 10 ? 'warning' : 'default'}
+          onClick={() => navigate('/insurance/financial-analysis')}
+        />
+        <KpiCard
+          label="Matafuegos Vencidos"
+          value={expiredFe.length}
+          description={`${expiringFe.length} próximos a vencer`}
+          icon={Flame}
+          variant={expiredFe.length > 0 ? 'danger' : 'default'}
+          onClick={() => navigate('/fire-extinguishers')}
+        />
+        <KpiCard
+          label="Tareas Vencidas"
+          value={overdueTasks.length}
+          description="Requieren atención inmediata"
+          icon={CheckCircle2}
+          variant={overdueTasks.length > 0 ? 'danger' : 'success'}
+          onClick={() => navigate('/producers/tasks')}
+        />
+        <KpiCard
+          label="Pólizas Total"
+          value={mockPolicies.length}
+          description={`${mockCompanies.filter((c) => c.status === 'activo').length} empresas aseguradas`}
+          icon={TrendingUp}
+          variant="default"
+          onClick={() => navigate('/insurance/policies')}
+        />
+      </MetricGrid>
+
+      {/* ─── Charts Row ───────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
+        {/* Monthly cost */}
+        <ChartCard
+          title="Evolución de Costos"
+          subtitle="Facturación mensual ARS"
+          className="lg:col-span-2"
+          height={260}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={monthlyData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+              <YAxis
+                tick={{ fontSize: 11, fill: '#94a3b8' }}
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={(v) => `${(v / 1_000_000).toFixed(1)}M`}
+              />
+              <Tooltip
+                formatter={(v: number) => [`AR$ ${(v / 1_000_000).toFixed(2).replace('.', ',')}M`, 'Costo']}
+                contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}
+              />
+              <Bar dataKey="costo" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        {/* Policy status pie */}
+        <ChartCard title="Estado de Pólizas" subtitle="Distribución actual" height={260}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={policyStatusData} cx="50%" cy="45%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value">
+                {policyStatusData.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }} />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* ─── Charts Row 2 ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
+        {/* Insurer distribution */}
+        <ChartCard title="Prima por Aseguradora" subtitle="Suma asegurada vigente" className="lg:col-span-2" height={240}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={insurerChartData} layout="vertical" margin={{ top: 4, right: 40, left: 40, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+              <XAxis
+                type="number"
+                tick={{ fontSize: 11, fill: '#94a3b8' }}
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={(v) => `${(v / 1_000_000_000).toFixed(2)}B`}
+              />
+              <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={70} />
+              <Tooltip
+                formatter={(v: number) => [formatCurrencyCompact(v, 'ARS'), 'Suma Asegurada']}
+                contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}
+              />
+              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                {insurerChartData.map((_, i) => (
+                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        {/* Fire extinguisher status */}
+        <ChartCard title="Matafuegos" subtitle="Estado del parque" height={240}>
+          <div className="flex flex-col items-center justify-center h-full gap-3">
+            <ResponsiveContainer width="100%" height={140}>
+              <PieChart>
+                <Pie data={fireStatusData} cx="50%" cy="50%" outerRadius={60} paddingAngle={2} dataKey="value">
+                  {fireStatusData.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex items-center gap-4">
+              {fireStatusData.map((d) => (
+                <div key={d.name} className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                  <span className="text-xs text-slate-600">{d.name}: <strong>{d.value}</strong></span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </ChartCard>
+      </div>
+
+      {/* ─── Tables Row ───────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Upcoming policy expirations */}
+        <SectionCard
+          title="Próximos Vencimientos de Pólizas"
+          subtitle="Próximos 90 días"
+          actions={
+            <button
+              onClick={() => navigate('/insurance/policies')}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+            >
+              Ver todas <ArrowRight size={12} />
+            </button>
+          }
+          noPadding
+        >
+          {upcomingPolicies.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-8">Sin vencimientos próximos</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {upcomingPolicies.map((p) => {
+                const days = daysUntil(p.endDate)
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/insurance/policies/${p.id}`)}
+                  >
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${days <= 30 ? 'bg-red-400' : 'bg-amber-400'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-800 truncate">{p.policyNumber}</p>
+                      <p className="text-xs text-slate-500 truncate">{p.insuranceCompany} · {p.insuranceType}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-xs font-semibold text-slate-700">{formatDate(p.endDate)}</p>
+                      <p className={`text-xs font-medium ${days <= 30 ? 'text-red-600' : 'text-amber-600'}`}>
+                        {days === 0 ? 'Hoy' : `En ${days}d`}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </SectionCard>
+
+        {/* Upcoming installments */}
+        <SectionCard
+          title="Próximas Cuotas a Vencer"
+          subtitle="Pendientes en los próximos 60 días"
+          actions={
+            <button
+              onClick={() => navigate('/insurance/financial-analysis')}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+            >
+              Ver análisis <ArrowRight size={12} />
+            </button>
+          }
+          noPadding
+        >
+          {upcomingInstallments.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-8">Sin cuotas próximas</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {upcomingInstallments.map((inst) => {
+                const days = daysUntil(inst.dueDate)
+                return (
+                  <div key={inst.id} className="flex items-center gap-3 px-5 py-3">
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${days <= 7 ? 'bg-red-400' : 'bg-amber-400'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-800">Cuota {inst.installmentNumber}</p>
+                      <p className="text-xs text-slate-500">Doc: {inst.accountingDocumentId.replace('doc-', '#')}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-semibold text-slate-800">
+                        {formatCurrencyCompact(inst.amount, 'ARS')}
+                      </p>
+                      <p className={`text-xs font-medium ${days <= 7 ? 'text-red-600' : 'text-amber-600'}`}>
+                        {formatDate(inst.dueDate)}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      {/* ─── Alerts row ───────────────────────────────────────────── */}
+      {(expiredFe.length > 0 || overdueTasks.length > 0) && (
+        <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {expiredFe.length > 0 && (
+            <SectionCard
+              title="Matafuegos Vencidos"
+              subtitle="Acción requerida"
+              noPadding
+              actions={
+                <button
+                  onClick={() => navigate('/fire-extinguishers')}
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Ver todos <ArrowRight size={12} />
+                </button>
+              }
+            >
+              <div className="divide-y divide-slate-100">
+                {expiredFe.slice(0, 4).map((fe) => (
+                  <div key={fe.id} className="flex items-center gap-3 px-5 py-3">
+                    <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-800">{fe.code}</p>
+                      <p className="text-xs text-slate-500">{fe.type} · {fe.capacity}</p>
+                    </div>
+                    <StatusPill status="vencido" size="sm" />
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+
+          {overdueTasks.length > 0 && (
+            <SectionCard
+              title="Tareas Vencidas"
+              subtitle="Requieren seguimiento"
+              noPadding
+              actions={
+                <button
+                  onClick={() => navigate('/producers/tasks')}
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Ver todas <ArrowRight size={12} />
+                </button>
+              }
+            >
+              <div className="divide-y divide-slate-100">
+                {overdueTasks.slice(0, 4).map((task) => (
+                  <div key={task.id} className="flex items-center gap-3 px-5 py-3">
+                    <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-800 truncate">{task.title}</p>
+                      <p className="text-xs text-slate-500">Vencía: {formatDate(task.dueDate)}</p>
+                    </div>
+                    <StatusPill status={task.priority} size="sm" />
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+        </div>
+      )}
+    </PageContent>
+  )
+}

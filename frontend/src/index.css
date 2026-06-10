@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+@layer components {
+  /* Hidden scrollbar — scroll works, bar is invisible */
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Scrollbar enterprise */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-slate-100;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 rounded-full;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400;
+  }
+
+  /* Table scroll container */
+  .table-container {
+    @apply overflow-x-auto scrollbar-thin;
+    /* solo la tabla hace scroll, no el layout global */
+  }
+
+  /* Enterprise table */
+  .enterprise-table {
+    @apply min-w-full border-collapse text-sm;
+  }
+  .enterprise-table thead tr {
+    @apply bg-slate-50 border-b border-slate-200;
+  }
+  .enterprise-table thead th {
+    @apply px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap;
+  }
+  .enterprise-table tbody tr {
+    @apply border-b border-slate-100 hover:bg-blue-50/40 transition-colors;
+  }
+  .enterprise-table tbody td {
+    @apply px-4 py-3 text-slate-700 whitespace-nowrap;
+  }
+
+  /* Sidebar */
+  .sidebar-link {
+    @apply flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-all duration-150;
+  }
+  .sidebar-link.active {
+    @apply bg-blue-600 text-white hover:bg-blue-700;
+  }
+
+  /* Card base */
+  .card {
+    @apply bg-white rounded-xl border border-slate-200 shadow-sm;
+  }
+
+  /* Section header */
+  .section-label {
+    @apply text-xs font-semibold uppercase tracking-widest text-slate-500 mb-2;
+  }
+}

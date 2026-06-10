@@ -1,0 +1,98 @@
+import { Menu, Search, Bell, Settings } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+
+interface TopbarProps {
+  onMenuClick: () => void
+}
+
+const breadcrumbMap: Record<string, string> = {
+  '/dashboard': 'Dashboard',
+  '/assets': 'Activos',
+  '/assets/new': 'Nuevo Activo',
+  '/insurance/policies': 'Pólizas',
+  '/insurance/policies/new': 'Nueva Póliza',
+  '/insurance/documents': 'Documentos Contables',
+  '/insurance/documents/new': 'Nuevo Documento',
+  '/insurance/financial-analysis': 'Análisis Financiero',
+  '/insurance/economic-analysis': 'Análisis Económico',
+  '/producers': 'Productores',
+  '/producers/tasks': 'Tareas',
+  '/fire-extinguishers': 'Matafuegos',
+  '/settings/companies': 'Empresas',
+  '/settings/cost-centers': 'Centros de Costo',
+}
+
+function getPageTitle(pathname: string): string {
+  if (breadcrumbMap[pathname]) return breadcrumbMap[pathname]
+  // Detail pages
+  if (pathname.startsWith('/assets/')) return 'Detalle de Activo'
+  if (pathname.startsWith('/insurance/policies/')) return 'Detalle de Póliza'
+  if (pathname.startsWith('/insurance/documents/')) return 'Detalle de Documento'
+  if (pathname.startsWith('/producers/') && !pathname.endsWith('/tasks')) return 'Detalle de Productor'
+  if (pathname.startsWith('/fire-extinguishers/')) return 'Detalle de Matafuego'
+  return 'Asset Insurance'
+}
+
+export function Topbar({ onMenuClick }: TopbarProps) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [searchQuery, setSearchQuery] = useState('')
+  const title = getPageTitle(location.pathname)
+
+  return (
+    <header className="h-14 bg-white border-b border-slate-200 flex items-center gap-4 px-4 lg:px-6 flex-shrink-0 sticky top-0 z-10">
+      {/* Mobile menu */}
+      <button
+        onClick={onMenuClick}
+        className="lg:hidden p-1.5 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+        aria-label="Abrir menú"
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Page title */}
+      <h1 className="text-sm font-semibold text-slate-800 hidden sm:block whitespace-nowrap">
+        {title}
+      </h1>
+
+      {/* Divider */}
+      <div className="hidden sm:block w-px h-5 bg-slate-200" />
+
+      {/* Search */}
+      <div className="flex-1 max-w-md">
+        <div className="relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar activos, pólizas, documentos…"
+            className="w-full pl-9 pr-4 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 ml-auto">
+        {/* Notifications */}
+        <button className="relative p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+          <Bell size={18} />
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+        </button>
+
+        {/* Settings */}
+        <button
+          onClick={() => navigate('/settings/companies')}
+          className="p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+        >
+          <Settings size={18} />
+        </button>
+
+        {/* Avatar */}
+        <div className="ml-1 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors">
+          <span className="text-xs font-semibold text-white">LO</span>
+        </div>
+      </div>
+    </header>
+  )
+}

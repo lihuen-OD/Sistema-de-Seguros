@@ -1,0 +1,79 @@
+import clsx from 'clsx'
+import {
+  ASSET_STATUS_LABELS,
+  POLICY_STATUS_LABELS,
+  PAYMENT_STATUS_LABELS,
+  FIRE_EXT_STATUS_LABELS,
+  TASK_STATUS_LABELS,
+  TASK_PRIORITY_LABELS,
+} from '../../constants'
+
+type StatusType =
+  | 'activo' | 'inactivo' | 'en_reparacion' | 'vendido' | 'dado_de_baja' | 'pendiente_documentacion'
+  | 'vigente' | 'proximo_vencer' | 'vencida'
+  | 'pendiente' | 'parcial' | 'pagado'
+  | 'vencido'
+  | 'en_curso' | 'finalizada'
+  | 'baja' | 'media' | 'alta'
+  | 'sin_factura'
+  | string
+
+const statusConfig: Record<string, { bg: string; text: string; border: string }> = {
+  // Asset
+  activo:                  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  inactivo:                { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
+  en_reparacion:           { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+  vendido:                 { bg: 'bg-purple-50',  text: 'text-purple-700',  border: 'border-purple-200' },
+  dado_de_baja:            { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
+  // Policy
+  vigente:                 { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  proximo_vencer:          { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
+  vencida:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
+  sin_factura:             { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200' },
+  // Payment
+  pendiente:               { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200' },
+  parcial:                 { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
+  pagado:                  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  // Fire ext
+  vencido:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
+  // Task
+  en_curso:                { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+  finalizada:              { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  // Priority
+  baja:                    { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
+  media:                   { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
+  alta:                    { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
+  pendiente_documentacion: { bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200' },
+}
+
+const allLabels = {
+  ...ASSET_STATUS_LABELS,
+  ...POLICY_STATUS_LABELS,
+  ...PAYMENT_STATUS_LABELS,
+  ...FIRE_EXT_STATUS_LABELS,
+  ...TASK_STATUS_LABELS,
+  ...TASK_PRIORITY_LABELS,
+}
+
+interface StatusPillProps {
+  status: StatusType
+  label?: string
+  size?: 'sm' | 'md'
+}
+
+export function StatusPill({ status, label, size = 'md' }: StatusPillProps) {
+  const cfg = statusConfig[status] ?? { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200' }
+  const displayLabel = label ?? allLabels[status] ?? status
+
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center font-medium rounded-full border whitespace-nowrap',
+        cfg.bg, cfg.text, cfg.border,
+        size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-xs px-2.5 py-1',
+      )}
+    >
+      {displayLabel}
+    </span>
+  )
+}
