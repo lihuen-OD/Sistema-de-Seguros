@@ -96,11 +96,11 @@ export function AssetPhotoGallery({
   // ─── Grid with photos ─────────────────────────────────────────────────────────
   return (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {photos.map((src, idx) => (
           <div
             key={idx}
-            className="relative group aspect-video rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shadow-sm"
+            className="relative group aspect-[4/3] rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shadow-sm"
           >
             <img
               src={src}

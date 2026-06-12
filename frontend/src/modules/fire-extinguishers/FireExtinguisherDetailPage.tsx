@@ -125,6 +125,7 @@ export default function FireExtinguisherDetailPage() {
       <PageHeader
         title={`Matafuego ${fe.code}`}
         subtitle={`${fe.type} · ${fe.capacity}`}
+        category="Matafuego"
         backTo="/fire-extinguishers"
         backLabel="Volver a matafuegos"
         badge={<StatusPill status={fe.status} />}

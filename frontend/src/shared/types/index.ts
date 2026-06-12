@@ -25,7 +25,31 @@ export type TaskPriority = 'baja' | 'media' | 'alta'
 
 export type FireExtStatus = 'vigente' | 'proximo_vencer' | 'vencido'
 
+export type ClaimStatus =
+  | 'denunciado'
+  | 'en_tramite'
+  | 'liquidado'
+  | 'rechazado'
+  | 'cerrado'
+
+export type ClaimType =
+  | 'accidente'
+  | 'robo'
+  | 'incendio'
+  | 'granizo'
+  | 'daños'
+  | 'rotura_mecanica'
+  | 'responsabilidad_civil'
+  | 'otro'
+
+export type AssetCategory =
+  | 'vehiculo' | 'camioneta' | 'camion'
+  | 'tractor' | 'cosechadora' | 'pulverizadora' | 'implemento'
+  | 'edificio' | 'establecimiento' | 'planta_industrial'
+  | 'equipo' | 'maquinaria' | 'infraestructura'
+
 export type Currency = 'ARS' | 'USD'
+
 
 export type AssociatedLocationType =
   | 'vehiculo'
@@ -169,6 +193,37 @@ export interface FireExtinguisher {
   associatedLocationType: AssociatedLocationType
   status: FireExtStatus
   observations: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AssetAttachment {
+  id: string
+  assetId: string
+  name: string
+  description: string
+  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileSize: string
+  expirationDate: string | null
+  uploadedAt: string
+  uploadedBy: string
+}
+
+export interface Claim {
+  id: string
+  assetId: string
+  policyId: string | null
+  claimNumber: string
+  claimType: ClaimType
+  occurrenceDate: string
+  reportDate: string
+  description: string
+  insuranceCompany: string
+  status: ClaimStatus
+  claimedAmountArs: number
+  settledAmountArs: number | null
+  deductibleArs: number | null
+  observations: string | null
   createdAt: string
   updatedAt: string
 }

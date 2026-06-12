@@ -12,6 +12,7 @@ import {
   Layers,
   X,
   ChevronRight,
+  ShieldAlert,
 } from 'lucide-react'
 import { useState } from 'react'
 import clsx from 'clsx'
@@ -49,6 +50,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Pólizas', to: '/insurance/policies', icon: ShieldCheck },
       { label: 'Documentos', to: '/insurance/documents', icon: FileText },
+      { label: 'Siniestros', to: '/claims', icon: ShieldAlert },
       { label: 'Análisis Financiero', to: '/insurance/financial-analysis', icon: BarChart2 },
       { label: 'Análisis Económico', to: '/insurance/economic-analysis', icon: TrendingUp },
     ],
@@ -75,7 +77,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Brand */}
-      <div className="flex items-center justify-between h-14 px-4 border-b border-slate-800 flex-shrink-0">
+      <div className="flex items-center justify-between h-16 px-4 border-b border-slate-800 flex-shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 bg-blue-600 rounded-md flex items-center justify-center flex-shrink-0">
             <ShieldCheck size={15} className="text-white" />

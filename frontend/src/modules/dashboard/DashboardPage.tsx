@@ -8,6 +8,7 @@ import {
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageContent } from '../../shared/components/page-header/PageContent'
+import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -97,17 +98,16 @@ export default function DashboardPage() {
 
   return (
     <PageContent>
-      {/* ─── Header ───────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Dashboard Ejecutivo</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Resumen operativo y financiero al día de hoy</p>
-        </div>
-        <div className="hidden sm:flex items-center gap-2">
-          <span className="text-xs text-slate-400">Datos al</span>
-          <span className="text-xs font-semibold text-slate-600">10/06/2026</span>
-        </div>
-      </div>
+      <PageHeader
+        title="Dashboard Ejecutivo"
+        subtitle="Resumen operativo y financiero al día de hoy"
+        actions={
+          <div className="hidden sm:flex items-center gap-2 text-xs">
+            <span className="text-slate-400">Datos al</span>
+            <span className="font-semibold text-slate-600">10/06/2026</span>
+          </div>
+        }
+      />
 
       {/* ─── KPI Row 1: Patrimonio y Pólizas ─────────────────────── */}
       <MetricGrid cols={4} className="mb-5">

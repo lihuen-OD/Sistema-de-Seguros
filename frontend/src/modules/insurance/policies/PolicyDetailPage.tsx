@@ -12,6 +12,7 @@ import {
   Link2,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
+import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
@@ -139,53 +140,26 @@ export default function PolicyDetailPage() {
 
   return (
     <PageContent>
-      {/* Header */}
-      <div className="mb-6">
-        <button
-          onClick={() => navigate('/insurance/policies')}
-          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-3 transition-colors"
-        >
-          ← Volver a pólizas
-        </button>
-
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3 flex-wrap mb-1">
-              <h1 className="text-xl font-bold text-slate-900 font-mono">
-                {policy.policyNumber}
-              </h1>
-              <StatusPill status={policy.status} />
-            </div>
-            <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
-              <span className="flex items-center gap-1">
-                <Building2 size={11} /> {policy.insuranceCompany}
-              </span>
-              <span className="flex items-center gap-1">
-                <Tag size={11} /> {policy.insuranceType}
-              </span>
-              <span className="flex items-center gap-1">
-                <Calendar size={11} />
-                {formatDate(policy.startDate)} — {formatDate(policy.endDate)}
-              </span>
-              {!isExpired && (
-                <span className="text-amber-600 font-medium">
-                  {daysLeft === 0 ? 'Vence hoy' : `${daysLeft} días restantes`}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button className="flex items-center gap-2 px-3 py-1.5 text-sm border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
+      <PageHeader
+        title={policy.policyNumber}
+        subtitle={`${policy.insuranceCompany} · ${policy.insuranceType} · ${formatDate(policy.startDate)} — ${formatDate(policy.endDate)}${!isExpired ? ` · ${daysLeft === 0 ? 'Vence hoy' : `${daysLeft} días restantes`}` : ''}`}
+        category="Póliza"
+        backTo="/insurance/policies"
+        backLabel="Volver a pólizas"
+        badge={<StatusPill status={policy.status} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <button className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors">
               <FileDown size={15} />
               Exportar PDF
             </button>
-            <button className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
               <Edit2 size={15} />
               Editar
             </button>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* Main 2-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">

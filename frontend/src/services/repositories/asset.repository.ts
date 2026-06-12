@@ -34,6 +34,13 @@ export const assetRepository = {
     )
   },
 
+  update(id: string, changes: Partial<Omit<Asset, 'id' | 'createdAt'>>): Asset | undefined {
+    const idx = mockAssets.findIndex((a) => a.id === id)
+    if (idx === -1) return undefined
+    Object.assign(mockAssets[idx], changes, { updatedAt: '2026-06-11' })
+    return { ...mockAssets[idx] }
+  },
+
   getTotalPatrimonialValue(): number {
     return mockAssets
       .filter((a) => a.status !== 'vendido' && a.status !== 'dado_de_baja')

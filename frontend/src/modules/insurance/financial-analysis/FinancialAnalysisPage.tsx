@@ -20,9 +20,9 @@ import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
+import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
 import { mockInstallments } from '../../../data/mock-installments'
-import { mockDocuments } from '../../../data/mock-documents'
 import { mockPolicies } from '../../../data/mock-policies'
 import { mockAssets } from '../../../data/mock-assets'
 import { mockCostCenters } from '../../../data/mock-cost-centers'
@@ -37,47 +37,31 @@ const USD_RATE = 970
 type RowGrouping = 'empresa' | 'centro_costo' | 'activo' | 'poliza'
 type ColPeriod = 'mes' | 'trimestre'
 
-// ─── Month / Quarter generation ───────────────────────────────────────────────
+// ─── Dynamic period generators ────────────────────────────────────────────────
 
-// Reference: June 2026 — show 3 past months + current + 5 future = 9 columns
-function generateMonths(): { key: string; label: string; year: number; month: number }[] {
-  const ref = new Date(2026, 5, 1) // June 2026
+function generateMonthRange(
+  from: string,
+  to: string,
+): { key: string; label: string; year: number; month: number }[] {
+  const [fy, fm] = from.split('-').map(Number)
+  const [ty, tm] = to.split('-').map(Number)
   const months: { key: string; label: string; year: number; month: number }[] = []
-  for (let offset = -3; offset <= 5; offset++) {
-    const d = new Date(ref.getFullYear(), ref.getMonth() + offset, 1)
-    const year = d.getFullYear()
-    const month = d.getMonth() // 0-indexed
-    const key = `${year}-${String(month + 1).padStart(2, '0')}`
+  let y = fy
+  let m = fm // 1-indexed
+
+  while ((y < ty || (y === ty && m <= tm)) && months.length < 60) {
+    const d = new Date(y, m - 1, 1)
+    const key = `${y}-${String(m).padStart(2, '0')}`
     const label = d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
-    months.push({ key, year, month, label })
+    months.push({ key, label, year: y, month: m - 1 }) // month 0-indexed for consistency
+    m++
+    if (m > 12) { m = 1; y++ }
   }
+
   return months
 }
 
-function generateQuarters(): { key: string; label: string; months: string[] }[] {
-  const allMonths = generateMonths()
-  const seen = new Set<string>()
-  const quarters: { key: string; label: string; months: string[] }[] = []
-  allMonths.forEach(({ year, month }) => {
-    const q = Math.floor(month / 3) + 1
-    const qKey = `${year}-Q${q}`
-    if (!seen.has(qKey)) {
-      seen.add(qKey)
-      const qMonths: string[] = []
-      for (let m = (q - 1) * 3; m < q * 3; m++) {
-        qMonths.push(`${year}-${String(m + 1).padStart(2, '0')}`)
-      }
-      quarters.push({ key: qKey, label: `Q${q} ${year}`, months: qMonths })
-    }
-  })
-  return quarters
-}
-
 // ─── Data helpers ──────────────────────────────────────────────────────────────
-
-function getInstallmentMonth(dueDate: string): string {
-  return dueDate.substring(0, 7) // "YYYY-MM"
-}
 
 function convertAmount(amount: number, fromCurrency: Currency, toCurrency: Currency): number {
   if (fromCurrency === toCurrency) return amount
@@ -86,7 +70,6 @@ function convertAmount(amount: number, fromCurrency: Currency, toCurrency: Curre
   return amount
 }
 
-// Build a map: policyId -> { companyId, costCenterId, assetId }
 function buildPolicyContext() {
   const map = new Map<string, { companyId: string; costCenterId: string; assetId: string | null }>()
   mockPolicies.forEach((pol) => {
@@ -106,7 +89,6 @@ function buildPolicyContext() {
   return map
 }
 
-// Build map: documentId -> policyIds[]
 function buildDocumentPolicies() {
   const map = new Map<string, string[]>()
   mockDocumentAllocations.forEach((alloc) => {
@@ -136,11 +118,7 @@ function getRows(grouping: RowGrouping): MatrixRow[] {
         .filter((cc) => cc.status === 'activo')
         .map((cc) => {
           const company = mockCompanies.find((c) => c.id === cc.companyId)
-          return {
-            id: cc.id,
-            label: cc.name,
-            sublabel: company?.name,
-          }
+          return { id: cc.id, label: cc.name, sublabel: company?.name }
         })
     case 'activo':
       return mockAssets.map((a) => ({
@@ -168,30 +146,21 @@ interface CellData {
 
 type MatrixData = Map<string, Map<string, CellData>>
 
-function buildMatrixData(
-  grouping: RowGrouping,
-  displayCurrency: Currency,
-): MatrixData {
+function buildMatrixData(grouping: RowGrouping, displayCurrency: Currency): MatrixData {
   const policyContext = buildPolicyContext()
   const documentPolicies = buildDocumentPolicies()
-
-  // For each installment, determine which rows it belongs to
   const matrix: MatrixData = new Map()
 
   mockInstallments.forEach((inst) => {
-    const monthKey = getInstallmentMonth(inst.dueDate)
+    const monthKey = inst.dueDate.substring(0, 7)
     const amount = convertAmount(inst.amount, inst.currency, displayCurrency)
     const isPaid = inst.paymentStatus === 'pagado'
-
-    // Find which policies this installment's document covers
     const policyIds = documentPolicies.get(inst.accountingDocumentId) ?? []
-
     const matchingRowIds = new Set<string>()
 
     policyIds.forEach((policyId) => {
       const ctx = policyContext.get(policyId)
       if (!ctx) return
-
       switch (grouping) {
         case 'empresa':
           if (ctx.companyId) matchingRowIds.add(ctx.companyId)
@@ -208,7 +177,6 @@ function buildMatrixData(
       }
     })
 
-    // When a document maps to multiple policies, split amount proportionally
     const splitAmount = policyIds.length > 1 ? amount / policyIds.length : amount
 
     matchingRowIds.forEach((rowId) => {
@@ -216,18 +184,15 @@ function buildMatrixData(
       const rowMap = matrix.get(rowId)!
       if (!rowMap.has(monthKey)) rowMap.set(monthKey, { paid: 0, pending: 0 })
       const cell = rowMap.get(monthKey)!
-      if (isPaid) {
-        cell.paid += splitAmount
-      } else {
-        cell.pending += splitAmount
-      }
+      if (isPaid) cell.paid += splitAmount
+      else cell.pending += splitAmount
     })
   })
 
   return matrix
 }
 
-// ─── Custom Tooltip for chart ─────────────────────────────────────────────────
+// ─── Custom Tooltip ───────────────────────────────────────────────────────────
 
 interface ChartTooltipProps {
   active?: boolean
@@ -262,32 +227,55 @@ export default function FinancialAnalysisPage() {
   const [currency, setCurrency] = useState<Currency>('ARS')
   const [grouping, setGrouping] = useState<RowGrouping>('empresa')
   const [colPeriod, setColPeriod] = useState<ColPeriod>('mes')
+  const [dateFrom, setDateFrom] = useState('2026-01')
+  const [dateTo, setDateTo] = useState('2026-12')
 
-  const months = useMemo(() => generateMonths(), [])
-  const quarters = useMemo(() => generateQuarters(), [])
+  // ─── Period columns ──────────────────────────────────────────────────────────
+  const months = useMemo(() => generateMonthRange(dateFrom, dateTo), [dateFrom, dateTo])
+
+  const quarters = useMemo(() => {
+    const seen = new Set<string>()
+    const result: { key: string; label: string; months: string[] }[] = []
+    months.forEach(({ year, month }) => {
+      const q = Math.floor(month / 3) + 1
+      const qKey = `${year}-Q${q}`
+      if (!seen.has(qKey)) {
+        seen.add(qKey)
+        const qMonths: string[] = []
+        for (let mo = (q - 1) * 3; mo < q * 3; mo++) {
+          qMonths.push(`${year}-${String(mo + 1).padStart(2, '0')}`)
+        }
+        result.push({ key: qKey, label: `Q${q} ${year}`, months: qMonths })
+      }
+    })
+    return result
+  }, [months])
+
   const matrixData = useMemo(() => buildMatrixData(grouping, currency), [grouping, currency])
   const rows = useMemo(() => getRows(grouping), [grouping])
 
-  // ─── KPIs ──────────────────────────────────────────────────────────────────
+  // ─── KPIs (filtered by date range) ───────────────────────────────────────────
   const kpis = useMemo(() => {
     let totalPaid = 0
     let totalPending = 0
     let overdueCount = 0
-    const today = new Date(2026, 5, 10) // reference date: June 10, 2026
+    const today = new Date(2026, 5, 10)
 
     mockInstallments.forEach((inst) => {
+      const monthKey = inst.dueDate.substring(0, 7)
+      if (monthKey < dateFrom || monthKey > dateTo) return
+
       const amount = convertAmount(inst.amount, inst.currency, currency)
       if (inst.paymentStatus === 'pagado') {
         totalPaid += amount
       } else {
         totalPending += amount
-        const due = new Date(inst.dueDate)
-        if (due < today) overdueCount++
+        if (new Date(inst.dueDate) < today) overdueCount++
       }
     })
 
     return { totalPaid, totalPending, total: totalPaid + totalPending, overdueCount }
-  }, [currency])
+  }, [currency, dateFrom, dateTo])
 
   // ─── Chart data ────────────────────────────────────────────────────────────
   const chartData = useMemo(() => {
@@ -297,10 +285,7 @@ export default function FinancialAnalysisPage() {
         let pending = 0
         matrixData.forEach((rowMap) => {
           const cell = rowMap.get(key)
-          if (cell) {
-            paid += cell.paid
-            pending += cell.pending
-          }
+          if (cell) { paid += cell.paid; pending += cell.pending }
         })
         return { label, paid, pending }
       })
@@ -311,10 +296,7 @@ export default function FinancialAnalysisPage() {
         matrixData.forEach((rowMap) => {
           qMonths.forEach((mk) => {
             const cell = rowMap.get(mk)
-            if (cell) {
-              paid += cell.paid
-              pending += cell.pending
-            }
+            if (cell) { paid += cell.paid; pending += cell.pending }
           })
         })
         return { label, paid, pending }
@@ -328,30 +310,24 @@ export default function FinancialAnalysisPage() {
     return quarters.map((q) => ({ key: q.key, label: q.label }))
   }, [colPeriod, months, quarters])
 
-  // ─── Cell value aggregation for quarterly ─────────────────────────────────
+  // ─── Cell / row aggregation ────────────────────────────────────────────────
   function getCellValue(rowId: string, colKey: string): CellData {
     const rowMap = matrixData.get(rowId)
     if (!rowMap) return { paid: 0, pending: 0 }
 
-    if (colPeriod === 'mes') {
-      return rowMap.get(colKey) ?? { paid: 0, pending: 0 }
-    } else {
-      const q = quarters.find((q) => q.key === colKey)
-      if (!q) return { paid: 0, pending: 0 }
-      let paid = 0
-      let pending = 0
-      q.months.forEach((mk) => {
-        const cell = rowMap.get(mk)
-        if (cell) {
-          paid += cell.paid
-          pending += cell.pending
-        }
-      })
-      return { paid, pending }
-    }
+    if (colPeriod === 'mes') return rowMap.get(colKey) ?? { paid: 0, pending: 0 }
+
+    const q = quarters.find((q) => q.key === colKey)
+    if (!q) return { paid: 0, pending: 0 }
+    let paid = 0
+    let pending = 0
+    q.months.forEach((mk) => {
+      const cell = rowMap.get(mk)
+      if (cell) { paid += cell.paid; pending += cell.pending }
+    })
+    return { paid, pending }
   }
 
-  // ─── Row totals ────────────────────────────────────────────────────────────
   function getRowTotals(rowId: string): CellData {
     let paid = 0
     let pending = 0
@@ -363,14 +339,12 @@ export default function FinancialAnalysisPage() {
     return { paid, pending }
   }
 
-  // ─── Formatting helpers ────────────────────────────────────────────────────
   function fmtCell(value: number): string {
     if (value === 0) return '—'
     return formatCurrencyCompact(value, currency)
   }
 
-  // ─── UI ────────────────────────────────────────────────────────────────────
-
+  // ─── UI config ─────────────────────────────────────────────────────────────
   const groupingButtons: { value: RowGrouping; label: string }[] = [
     { value: 'empresa', label: 'Empresa' },
     { value: 'centro_costo', label: 'Centro de Costo' },
@@ -383,80 +357,94 @@ export default function FinancialAnalysisPage() {
     { value: 'trimestre', label: 'Trimestre' },
   ]
 
+  const handleDateRange = (from: string, to: string) => {
+    setDateFrom(from)
+    setDateTo(to)
+  }
+
   return (
     <PageContent>
-      {/* Header */}
       <PageHeader
         title="Análisis Financiero"
         subtitle="Flujo de cuotas y vencimientos por período"
       />
 
-      {/* Controls row */}
-      <div className="flex flex-wrap items-center gap-4 mb-6">
-        {/* Currency toggle */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-500">Moneda</span>
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-            {(['ARS', 'USD'] as Currency[]).map((c) => (
-              <button
-                key={c}
-                onClick={() => setCurrency(c)}
-                className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  currency === c
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {c}
-              </button>
-            ))}
+      {/* Controls */}
+      <div className="space-y-3 mb-6">
+        {/* Row 1: view options */}
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Currency */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Moneda</span>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              {(['ARS', 'USD'] as Currency[]).map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCurrency(c)}
+                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    currency === c
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="w-px h-5 bg-slate-200 hidden sm:block" />
+
+          {/* Row grouping */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Filas</span>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              {groupingButtons.map((btn) => (
+                <button
+                  key={btn.value}
+                  onClick={() => setGrouping(btn.value)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
+                    grouping === btn.value
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="w-px h-5 bg-slate-200 hidden sm:block" />
+
+          {/* Column period */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Columnas</span>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              {periodButtons.map((btn) => (
+                <button
+                  key={btn.value}
+                  onClick={() => setColPeriod(btn.value)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
+                    colPeriod === btn.value
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Divider */}
-        <div className="w-px h-5 bg-slate-200 hidden sm:block" />
-
-        {/* Row grouping */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-500">Filas</span>
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-            {groupingButtons.map((btn) => (
-              <button
-                key={btn.value}
-                onClick={() => setGrouping(btn.value)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                  grouping === btn.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {btn.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div className="w-px h-5 bg-slate-200 hidden sm:block" />
-
-        {/* Column period */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-500">Columnas</span>
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-            {periodButtons.map((btn) => (
-              <button
-                key={btn.value}
-                onClick={() => setColPeriod(btn.value)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                  colPeriod === btn.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {btn.label}
-              </button>
-            ))}
-          </div>
+        {/* Row 2: date range filter */}
+        <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+          <DateRangeMonthPicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={handleDateRange}
+          />
         </div>
       </div>
 
@@ -548,7 +536,6 @@ export default function FinancialAnalysisPage() {
         subtitle={`Agrupado por ${groupingButtons.find((b) => b.value === grouping)?.label} · ${currency}`}
         noPadding
       >
-        {/* overflow-x-auto ONLY on the table wrapper, never globally */}
         <div className="table-container">
           <table className="enterprise-table">
             <thead>
@@ -576,7 +563,6 @@ export default function FinancialAnalysisPage() {
 
                 return (
                   <tr key={row.id} className={!hasData ? 'opacity-40' : ''}>
-                    {/* Row label — sticky left */}
                     <td
                       className="sticky left-0 bg-white z-10"
                       style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}
@@ -593,7 +579,6 @@ export default function FinancialAnalysisPage() {
                       </div>
                     </td>
 
-                    {/* Data cells */}
                     {columns.map((col) => {
                       const cell = getCellValue(row.id, col.key)
                       const hasPaid = cell.paid > 0
@@ -628,7 +613,6 @@ export default function FinancialAnalysisPage() {
                       )
                     })}
 
-                    {/* Row total */}
                     <td className="text-right bg-slate-50/80 align-top p-0">
                       <div className="flex flex-col gap-px py-2 px-3">
                         {rowTotals.paid > 0 && (

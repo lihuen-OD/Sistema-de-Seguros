@@ -9,28 +9,34 @@ interface TopbarProps {
 const breadcrumbMap: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/assets': 'Activos',
-  '/assets/new': 'Nuevo Activo',
+  '/assets/new': 'Activos / Nuevo',
   '/insurance/policies': 'Pólizas',
-  '/insurance/policies/new': 'Nueva Póliza',
-  '/insurance/documents': 'Documentos Contables',
-  '/insurance/documents/new': 'Nuevo Documento',
+  '/insurance/policies/new': 'Pólizas / Nueva',
+  '/insurance/documents': 'Documentos',
+  '/insurance/documents/new': 'Documentos / Nuevo',
   '/insurance/financial-analysis': 'Análisis Financiero',
   '/insurance/economic-analysis': 'Análisis Económico',
   '/producers': 'Productores',
-  '/producers/tasks': 'Tareas',
+  '/producers/tasks': 'Productores / Tareas',
   '/fire-extinguishers': 'Matafuegos',
-  '/settings/companies': 'Empresas',
-  '/settings/cost-centers': 'Centros de Costo',
+  '/claims': 'Siniestros',
+  '/claims/new': 'Siniestros / Nuevo',
+  '/settings/companies': 'Configuración / Empresas',
+  '/settings/cost-centers': 'Configuración / Centros de Costo',
 }
 
 function getPageTitle(pathname: string): string {
   if (breadcrumbMap[pathname]) return breadcrumbMap[pathname]
+  // Edit / ficha / sub-routes
+  if (pathname.match(/^\/assets\/[^/]+\/edit$/)) return 'Activos / Editar'
+  if (pathname.match(/^\/assets\/[^/]+\/ficha$/)) return 'Activos / Ficha PDF'
   // Detail pages
-  if (pathname.startsWith('/assets/')) return 'Detalle de Activo'
-  if (pathname.startsWith('/insurance/policies/')) return 'Detalle de Póliza'
-  if (pathname.startsWith('/insurance/documents/')) return 'Detalle de Documento'
-  if (pathname.startsWith('/producers/') && !pathname.endsWith('/tasks')) return 'Detalle de Productor'
-  if (pathname.startsWith('/fire-extinguishers/')) return 'Detalle de Matafuego'
+  if (pathname.startsWith('/assets/')) return 'Activos / Detalle'
+  if (pathname.startsWith('/insurance/policies/')) return 'Pólizas / Detalle'
+  if (pathname.startsWith('/insurance/documents/')) return 'Documentos / Detalle'
+  if (pathname.startsWith('/producers/')) return 'Productores / Detalle'
+  if (pathname.startsWith('/fire-extinguishers/')) return 'Matafuegos / Detalle'
+  if (pathname.startsWith('/claims/')) return 'Siniestros / Detalle'
   return 'Asset Insurance'
 }
 
@@ -41,7 +47,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
   const title = getPageTitle(location.pathname)
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200 flex items-center gap-4 px-4 lg:px-6 flex-shrink-0 sticky top-0 z-10">
+    <header className="h-16 bg-white border-b border-slate-200 flex items-center gap-4 px-4 lg:px-6 flex-shrink-0 sticky top-0 z-10">
       {/* Mobile menu */}
       <button
         onClick={onMenuClick}

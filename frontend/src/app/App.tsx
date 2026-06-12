@@ -10,6 +10,8 @@ const DashboardPage = lazy(() => import('../modules/dashboard/DashboardPage'))
 const AssetsPage = lazy(() => import('../modules/assets/AssetsPage'))
 const AssetDetailPage = lazy(() => import('../modules/assets/AssetDetailPage'))
 const AssetNewPage = lazy(() => import('../modules/assets/AssetNewPage'))
+const AssetEditPage = lazy(() => import('../modules/assets/AssetEditPage'))
+const AssetFichaPage = lazy(() => import('../modules/assets/AssetFichaPage'))
 
 // Insurance — Policies
 const PoliciesPage = lazy(() => import('../modules/insurance/policies/PoliciesPage'))
@@ -29,6 +31,11 @@ const EconomicAnalysisPage = lazy(() => import('../modules/insurance/economic-an
 const ProducersPage = lazy(() => import('../modules/producers/ProducersPage'))
 const ProducerDetailPage = lazy(() => import('../modules/producers/ProducerDetailPage'))
 const ProducerTasksPage = lazy(() => import('../modules/producers/ProducerTasksPage'))
+
+// Claims (Siniestros)
+const ClaimsPage = lazy(() => import('../modules/claims/ClaimsPage'))
+const ClaimNewPage = lazy(() => import('../modules/claims/ClaimNewPage'))
+const ClaimDetailPage = lazy(() => import('../modules/claims/ClaimDetailPage'))
 
 // Fire Extinguishers
 const FireExtinguishersPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguishersPage'))
@@ -61,6 +68,8 @@ export default function App() {
           <Route path="/assets" element={<AssetsPage />} />
           <Route path="/assets/new" element={<AssetNewPage />} />
           <Route path="/assets/:id" element={<AssetDetailPage />} />
+          <Route path="/assets/:id/edit" element={<AssetEditPage />} />
+          <Route path="/assets/:id/ficha" element={<AssetFichaPage />} />
 
           {/* Insurance — Policies */}
           <Route path="/insurance/policies" element={<PoliciesPage />} />
@@ -80,6 +89,11 @@ export default function App() {
           <Route path="/producers" element={<ProducersPage />} />
           <Route path="/producers/tasks" element={<ProducerTasksPage />} />
           <Route path="/producers/:id" element={<ProducerDetailPage />} />
+
+          {/* Claims (Siniestros) */}
+          <Route path="/claims" element={<ClaimsPage />} />
+          <Route path="/claims/new" element={<ClaimNewPage />} />
+          <Route path="/claims/:id" element={<ClaimDetailPage />} />
 
           {/* Fire Extinguishers */}
           <Route path="/fire-extinguishers" element={<FireExtinguishersPage />} />

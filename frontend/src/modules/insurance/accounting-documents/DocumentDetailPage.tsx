@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   FileDown,
@@ -8,8 +9,10 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  Check,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
+import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
@@ -31,6 +34,11 @@ export default function DocumentDetailPage() {
 
   const doc = accountingDocumentRepository.findById(id!)
 
+  // Must be before early return to satisfy rules of hooks
+  const [installments, setInstallments] = useState<Installment[]>(() =>
+    doc ? accountingDocumentRepository.findInstallmentsByDocument(doc.id) : []
+  )
+
   if (!doc) {
     return (
       <PageContent>
@@ -43,13 +51,30 @@ export default function DocumentDetailPage() {
   }
 
   const allocations = accountingDocumentRepository.findAllocationsByDocument(doc.id)
-  const installments = accountingDocumentRepository.findInstallmentsByDocument(doc.id)
 
   const computedTotal = doc.netAmount + doc.vatAmount + doc.otherTaxesAmount
 
   const paidCount = installments.filter((i) => i.paymentStatus === 'pagado').length
   const pendingCount = installments.filter((i) => i.paymentStatus === 'pendiente').length
   const partialCount = installments.filter((i) => i.paymentStatus === 'parcial').length
+
+  // Derived document-level status from live installments state
+  const derivedDocStatus: string =
+    installments.length > 0 && installments.every((i) => i.paymentStatus === 'pagado')
+      ? 'pagado'
+      : installments.some((i) => i.paymentStatus === 'pagado')
+      ? 'parcial'
+      : doc.paymentStatus
+
+  function handleMarkPaid(installmentId: string) {
+    setInstallments((prev) =>
+      prev.map((inst) =>
+        inst.id === installmentId
+          ? { ...inst, paymentStatus: 'pagado' as const, paidAt: '2026-06-11' }
+          : inst
+      )
+    )
+  }
 
   // Allocation columns
   const allocationColumns: TableColumn<DocumentPolicyAllocation>[] = [
@@ -140,7 +165,21 @@ export default function DocumentDetailPage() {
     {
       key: 'paymentStatus',
       label: 'Estado',
-      render: (v) => <StatusPill status={v as string} size="sm" />,
+      render: (v, row) => {
+        const status = v as string
+        if (status === 'pendiente' || status === 'parcial') {
+          return (
+            <button
+              onClick={() => handleMarkPaid(row.id)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg transition-colors"
+            >
+              <Check size={11} strokeWidth={2.5} />
+              Registrar pago
+            </button>
+          )
+        }
+        return <StatusPill status={status} size="sm" />
+      },
     },
     {
       key: 'paidAt',
@@ -153,48 +192,27 @@ export default function DocumentDetailPage() {
 
   return (
     <PageContent>
-      {/* Header */}
-      <div className="mb-6">
-        <button
-          onClick={() => navigate('/insurance/documents')}
-          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-3 transition-colors"
-        >
-          ← Volver a documentos
-        </button>
-
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3 flex-wrap mb-1">
-              <h1 className="text-xl font-bold text-slate-900 font-mono">
-                {doc.documentNumber}
-              </h1>
-              <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
-                {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType}
-              </span>
-              <StatusPill status={doc.paymentStatus} />
-            </div>
-            <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
-              <span className="flex items-center gap-1">
-                <Calendar size={11} /> Emisión: {formatDate(doc.issueDate)}
-              </span>
-              <span className="flex items-center gap-1">
-                <Hash size={11} /> Moneda: {doc.currency}
-              </span>
-              {doc.currency === 'USD' && (
-                <span className="flex items-center gap-1 text-amber-600 font-medium">
-                  <DollarSign size={11} /> TC: ${doc.exchangeRate.toLocaleString('es-AR')}
-                </span>
-              )}
-            </div>
+      <PageHeader
+        title={doc.documentNumber}
+        subtitle={`Emisión: ${formatDate(doc.issueDate)} · Moneda: ${doc.currency}${doc.currency === 'USD' ? ` · TC: $${doc.exchangeRate.toLocaleString('es-AR')}` : ''}`}
+        category="Documento"
+        backTo="/insurance/documents"
+        backLabel="Volver a documentos"
+        badge={
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
+              {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType}
+            </span>
+            <StatusPill status={derivedDocStatus} />
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button className="flex items-center gap-2 px-3 py-1.5 text-sm border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
-              <FileDown size={15} />
-              Exportar PDF
-            </button>
-          </div>
-        </div>
-      </div>
+        }
+        actions={
+          <button className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors">
+            <FileDown size={15} />
+            Exportar PDF
+          </button>
+        }
+      />
 
       {/* KPI row: amounts */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">

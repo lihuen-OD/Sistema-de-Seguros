@@ -18,6 +18,7 @@ import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
+import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
 import { mockDocuments, mockDocumentAllocations } from '../../../data/mock-documents'
 import { mockPolicies } from '../../../data/mock-policies'
@@ -38,73 +39,28 @@ const PIE_COLORS = [
 type RowGrouping = 'empresa' | 'centro_costo' | 'aseguradora' | 'poliza' | 'activo'
 type ColPeriod = 'mes' | 'trimestre' | 'año'
 
-// ─── Period generators ────────────────────────────────────────────────────────
+// ─── Dynamic period generators ────────────────────────────────────────────────
 
-// Reference date: June 2026 — show last 12 months
-function generateLast12Months(): { key: string; label: string; year: number; month: number }[] {
-  const ref = new Date(2026, 5, 1) // June 2026
+function generateMonthRange(
+  from: string,
+  to: string,
+): { key: string; label: string; year: number; month: number }[] {
+  const [fy, fm] = from.split('-').map(Number)
+  const [ty, tm] = to.split('-').map(Number)
   const months: { key: string; label: string; year: number; month: number }[] = []
-  for (let offset = -11; offset <= 0; offset++) {
-    const d = new Date(ref.getFullYear(), ref.getMonth() + offset, 1)
-    const year = d.getFullYear()
-    const month = d.getMonth()
-    const key = `${year}-${String(month + 1).padStart(2, '0')}`
+  let y = fy
+  let m = fm // 1-indexed
+
+  while ((y < ty || (y === ty && m <= tm)) && months.length < 60) {
+    const d = new Date(y, m - 1, 1)
+    const key = `${y}-${String(m).padStart(2, '0')}`
     const label = d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
-    months.push({ key, year, month, label })
+    months.push({ key, label, year: y, month: m - 1 }) // month 0-indexed
+    m++
+    if (m > 12) { m = 1; y++ }
   }
+
   return months
-}
-
-function generateViewMonths(): { key: string; label: string }[] {
-  const ref = new Date(2026, 5, 1)
-  const months: { key: string; label: string }[] = []
-  for (let offset = -5; offset <= 5; offset++) {
-    const d = new Date(ref.getFullYear(), ref.getMonth() + offset, 1)
-    const year = d.getFullYear()
-    const month = d.getMonth()
-    const key = `${year}-${String(month + 1).padStart(2, '0')}`
-    const label = d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
-    months.push({ key, label })
-  }
-  return months
-}
-
-function generateViewQuarters(): { key: string; label: string; months: string[] }[] {
-  const allMonths = generateViewMonths()
-  const seen = new Set<string>()
-  const quarters: { key: string; label: string; months: string[] }[] = []
-  allMonths.forEach(({ key }) => {
-    const [y, m] = key.split('-').map(Number)
-    const q = Math.floor((m - 1) / 3) + 1
-    const qKey = `${y}-Q${q}`
-    if (!seen.has(qKey)) {
-      seen.add(qKey)
-      const qMonths: string[] = []
-      for (let mo = (q - 1) * 3 + 1; mo <= q * 3; mo++) {
-        qMonths.push(`${y}-${String(mo).padStart(2, '0')}`)
-      }
-      quarters.push({ key: qKey, label: `Q${q} ${y}`, months: qMonths })
-    }
-  })
-  return quarters
-}
-
-function generateViewYears(): { key: string; label: string; months: string[] }[] {
-  const allMonths = generateViewMonths()
-  const seen = new Set<string>()
-  const years: { key: string; label: string; months: string[] }[] = []
-  allMonths.forEach(({ key }) => {
-    const y = key.split('-')[0]
-    if (!seen.has(y)) {
-      seen.add(y)
-      const yMonths: string[] = []
-      for (let mo = 1; mo <= 12; mo++) {
-        yMonths.push(`${y}-${String(mo).padStart(2, '0')}`)
-      }
-      years.push({ key: y, label: y, months: yMonths })
-    }
-  })
-  return years
 }
 
 // ─── Currency conversion ───────────────────────────────────────────────────────
@@ -138,19 +94,12 @@ function buildPolicyContext() {
         costCenterId = costCenterId || asset.costCenterId
       }
     }
-    map.set(pol.id, {
-      companyId,
-      costCenterId,
-      assetId,
-      insuranceCompany: pol.insuranceCompany,
-    })
+    map.set(pol.id, { companyId, costCenterId, assetId, insuranceCompany: pol.insuranceCompany })
   })
   return map
 }
 
-// policyId -> allocation percentage in each document
 function buildDocumentAllocMap(): Map<string, Map<string, number>> {
-  // docId -> policyId -> percentage
   const map = new Map<string, Map<string, number>>()
   mockDocumentAllocations.forEach((alloc) => {
     if (!map.has(alloc.accountingDocumentId)) map.set(alloc.accountingDocumentId, new Map())
@@ -203,7 +152,6 @@ function getRows(grouping: RowGrouping): MatrixRow[] {
 }
 
 // ─── Matrix data builder ──────────────────────────────────────────────────────
-// Key distinction: uses issueDate of documents, NOT dueDate of installments
 
 type EconomicMatrixData = Map<string, Map<string, number>>
 
@@ -213,14 +161,10 @@ function buildEconomicMatrix(grouping: RowGrouping, displayCurrency: Currency): 
   const matrix: EconomicMatrixData = new Map()
 
   mockDocuments.forEach((doc) => {
-    const monthKey = doc.issueDate.substring(0, 7) // "YYYY-MM"
+    const monthKey = doc.issueDate.substring(0, 7)
     const docAmountInDisplay = convertAmount(doc.totalAmount, doc.currency, displayCurrency)
     const docAllocs = allocMap.get(doc.id)
-
-    if (!docAllocs || docAllocs.size === 0) {
-      // Document with no allocations: skip (per business rules docs must have policies)
-      return
-    }
+    if (!docAllocs || docAllocs.size === 0) return
 
     docAllocs.forEach((pctOfDoc, policyId) => {
       const policyAmount = docAmountInDisplay * pctOfDoc
@@ -228,7 +172,6 @@ function buildEconomicMatrix(grouping: RowGrouping, displayCurrency: Currency): 
       if (!ctx) return
 
       const rowIds: string[] = []
-
       switch (grouping) {
         case 'empresa':
           if (ctx.companyId) rowIds.push(ctx.companyId)
@@ -311,11 +254,46 @@ export default function EconomicAnalysisPage() {
   const [currency, setCurrency] = useState<Currency>('ARS')
   const [grouping, setGrouping] = useState<RowGrouping>('empresa')
   const [colPeriod, setColPeriod] = useState<ColPeriod>('mes')
+  const [dateFrom, setDateFrom] = useState('2025-07')
+  const [dateTo, setDateTo] = useState('2026-06')
 
-  const last12Months = useMemo(() => generateLast12Months(), [])
-  const viewMonths = useMemo(() => generateViewMonths(), [])
-  const viewQuarters = useMemo(() => generateViewQuarters(), [])
-  const viewYears = useMemo(() => generateViewYears(), [])
+  // ─── Period columns (derived from date range) ─────────────────────────────
+  const viewMonths = useMemo(() => generateMonthRange(dateFrom, dateTo), [dateFrom, dateTo])
+
+  const viewQuarters = useMemo(() => {
+    const seen = new Set<string>()
+    const result: { key: string; label: string; months: string[] }[] = []
+    viewMonths.forEach(({ year, month }) => {
+      const q = Math.floor(month / 3) + 1
+      const qKey = `${year}-Q${q}`
+      if (!seen.has(qKey)) {
+        seen.add(qKey)
+        const qMonths: string[] = []
+        for (let mo = (q - 1) * 3 + 1; mo <= q * 3; mo++) {
+          qMonths.push(`${year}-${String(mo).padStart(2, '00')}`)
+        }
+        result.push({ key: qKey, label: `Q${q} ${year}`, months: qMonths })
+      }
+    })
+    return result
+  }, [viewMonths])
+
+  const viewYears = useMemo(() => {
+    const seen = new Set<string>()
+    const result: { key: string; label: string; months: string[] }[] = []
+    viewMonths.forEach(({ key }) => {
+      const y = key.split('-')[0]
+      if (!seen.has(y)) {
+        seen.add(y)
+        const yMonths: string[] = []
+        for (let mo = 1; mo <= 12; mo++) {
+          yMonths.push(`${y}-${String(mo).padStart(2, '0')}`)
+        }
+        result.push({ key: y, label: y, months: yMonths })
+      }
+    })
+    return result
+  }, [viewMonths])
 
   const matrixData = useMemo(() => buildEconomicMatrix(grouping, currency), [grouping, currency])
   const rows = useMemo(() => getRows(grouping), [grouping])
@@ -332,9 +310,7 @@ export default function EconomicAnalysisPage() {
     const rowMap = matrixData.get(rowId)
     if (!rowMap) return 0
 
-    if (colPeriod === 'mes') {
-      return rowMap.get(colKey) ?? 0
-    }
+    if (colPeriod === 'mes') return rowMap.get(colKey) ?? 0
 
     if (colPeriod === 'trimestre') {
       const q = viewQuarters.find((q) => q.key === colKey)
@@ -342,7 +318,6 @@ export default function EconomicAnalysisPage() {
       return q.months.reduce((sum, mk) => sum + (rowMap.get(mk) ?? 0), 0)
     }
 
-    // año
     const y = viewYears.find((y) => y.key === colKey)
     if (!y) return 0
     return y.months.reduce((sum, mk) => sum + (rowMap.get(mk) ?? 0), 0)
@@ -352,28 +327,29 @@ export default function EconomicAnalysisPage() {
     return columns.reduce((sum, col) => sum + getCellAmount(rowId, col.key), 0)
   }
 
-  // ─── KPIs ──────────────────────────────────────────────────────────────────────
-  const kpis = useMemo(() => {
-    // Total cost: sum all documents by their issueDate (per-currency)
+  // ─── KPIs + pie data (single pass, filtered by date range) ───────────────────
+  const { kpis, pieChartData } = useMemo(() => {
     let totalCost = 0
-    mockDocuments.forEach((doc) => {
-      totalCost += convertAmount(doc.totalAmount, doc.currency, currency)
-    })
-
-    // Cost by insurer
     const byInsurer = new Map<string, number>()
+    const allocedPolicies = new Set<string>()
     const policyCtx = buildPolicyContext()
     const allocMap = buildDocumentAllocMap()
 
     mockDocuments.forEach((doc) => {
+      const monthKey = doc.issueDate.substring(0, 7)
+      if (monthKey < dateFrom || monthKey > dateTo) return
+
       const docAmount = convertAmount(doc.totalAmount, doc.currency, currency)
+      totalCost += docAmount
+
       const docAllocs = allocMap.get(doc.id)
       if (!docAllocs) return
+
       docAllocs.forEach((pct, policyId) => {
+        allocedPolicies.add(policyId)
         const ctx = policyCtx.get(policyId)
         if (!ctx) return
-        const name = ctx.insuranceCompany
-        byInsurer.set(name, (byInsurer.get(name) ?? 0) + docAmount * pct)
+        byInsurer.set(ctx.insuranceCompany, (byInsurer.get(ctx.insuranceCompany) ?? 0) + docAmount * pct)
       })
     })
 
@@ -382,56 +358,34 @@ export default function EconomicAnalysisPage() {
       if (amount > topInsurer.amount) topInsurer = { name, amount }
     })
 
-    // Policies with cost > 0
-    const allocedPolicies = new Set<string>()
-    mockDocumentAllocations.forEach((a) => allocedPolicies.add(a.policyId))
+    const pie = Array.from(byInsurer.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
 
-    return { totalCost, topInsurer, policiesWithCost: allocedPolicies.size }
-  }, [currency])
+    return {
+      kpis: { totalCost, topInsurer, policiesWithCost: allocedPolicies.size },
+      pieChartData: pie,
+    }
+  }, [currency, dateFrom, dateTo])
 
-  // ─── Bar chart: monthly costs last 12 months ──────────────────────────────────
+  // ─── Bar chart: monthly costs for selected range ──────────────────────────────
   const barChartData = useMemo(() => {
-    return last12Months.map(({ key, label }) => {
+    return viewMonths.map(({ key, label }) => {
       let total = 0
       mockDocuments.forEach((doc) => {
-        const monthKey = doc.issueDate.substring(0, 7)
-        if (monthKey === key) {
+        if (doc.issueDate.substring(0, 7) === key) {
           total += convertAmount(doc.totalAmount, doc.currency, currency)
         }
       })
       return { label, total }
     })
-  }, [last12Months, currency])
-
-  // ─── Pie chart: costs by insurance company ────────────────────────────────────
-  const pieChartData = useMemo(() => {
-    const byInsurer = new Map<string, number>()
-    const policyCtx = buildPolicyContext()
-    const allocMap = buildDocumentAllocMap()
-
-    mockDocuments.forEach((doc) => {
-      const docAmount = convertAmount(doc.totalAmount, doc.currency, currency)
-      const docAllocs = allocMap.get(doc.id)
-      if (!docAllocs) return
-      docAllocs.forEach((pct, policyId) => {
-        const ctx = policyCtx.get(policyId)
-        if (!ctx) return
-        const name = ctx.insuranceCompany
-        byInsurer.set(name, (byInsurer.get(name) ?? 0) + docAmount * pct)
-      })
-    })
-
-    return Array.from(byInsurer.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-  }, [currency])
+  }, [viewMonths, currency])
 
   // ─── Column totals ────────────────────────────────────────────────────────────
   function getColumnTotal(colKey: string): number {
     return rows.reduce((sum, row) => sum + getCellAmount(row.id, colKey), 0)
   }
 
-  // ─── Format helpers ───────────────────────────────────────────────────────────
   function fmtCell(value: number): string {
     if (value === 0) return '—'
     return formatCurrencyCompact(value, currency)
@@ -452,80 +406,96 @@ export default function EconomicAnalysisPage() {
     { value: 'año', label: 'Año' },
   ]
 
+  const handleDateRange = (from: string, to: string) => {
+    setDateFrom(from)
+    setDateTo(to)
+  }
+
   // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <PageContent>
-      {/* Header */}
       <PageHeader
         title="Análisis Económico"
         subtitle="Costos por fecha de factura/documento"
       />
 
-      {/* Controls row */}
-      <div className="flex flex-wrap items-center gap-4 mb-6">
-        {/* Currency toggle */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-500">Moneda</span>
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-            {(['ARS', 'USD'] as Currency[]).map((c) => (
-              <button
-                key={c}
-                onClick={() => setCurrency(c)}
-                className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  currency === c
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {c}
-              </button>
-            ))}
+      {/* Controls */}
+      <div className="space-y-3 mb-6">
+        {/* Row 1: view options */}
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Currency */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Moneda</span>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              {(['ARS', 'USD'] as Currency[]).map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCurrency(c)}
+                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    currency === c
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="w-px h-5 bg-slate-200 hidden sm:block" />
+
+          {/* Column period */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Período</span>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              {periodButtons.map((btn) => (
+                <button
+                  key={btn.value}
+                  onClick={() => setColPeriod(btn.value)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
+                    colPeriod === btn.value
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="w-px h-5 bg-slate-200 hidden sm:block" />
+
+          {/* Row grouping */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Filas</span>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              {groupingButtons.map((btn) => (
+                <button
+                  key={btn.value}
+                  onClick={() => setGrouping(btn.value)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
+                    grouping === btn.value
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="w-px h-5 bg-slate-200 hidden sm:block" />
-
-        {/* Period grouping for columns */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-500">Período</span>
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-            {periodButtons.map((btn) => (
-              <button
-                key={btn.value}
-                onClick={() => setColPeriod(btn.value)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                  colPeriod === btn.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {btn.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="w-px h-5 bg-slate-200 hidden sm:block" />
-
-        {/* Row grouping */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-500">Filas</span>
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-            {groupingButtons.map((btn) => (
-              <button
-                key={btn.value}
-                onClick={() => setGrouping(btn.value)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                  grouping === btn.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {btn.label}
-              </button>
-            ))}
-          </div>
+        {/* Row 2: date range filter */}
+        <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+          <DateRangeMonthPicker
+            from={dateFrom}
+            to={dateTo}
+            onChange={handleDateRange}
+          />
         </div>
       </div>
 
@@ -548,7 +518,7 @@ export default function EconomicAnalysisPage() {
         <KpiCard
           label="Pólizas con Costo Registrado"
           value={kpis.policiesWithCost}
-          description="Con al menos un documento asociado"
+          description="Con al menos un documento en el período"
           icon={FileText}
           variant="success"
         />
@@ -556,10 +526,9 @@ export default function EconomicAnalysisPage() {
 
       {/* Charts row: bar + pie */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        {/* Bar chart: monthly cost last 12 months */}
         <SectionCard
           title="Evolución mensual de costos"
-          subtitle={`Últimos 12 meses · por fecha de emisión · ${currency}`}
+          subtitle={`Por fecha de emisión · ${currency}`}
         >
           <div style={{ height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -598,7 +567,6 @@ export default function EconomicAnalysisPage() {
           </div>
         </SectionCard>
 
-        {/* Pie chart: costs by insurance company */}
         <SectionCard
           title="Distribución por aseguradora"
           subtitle={`Participación porcentual · ${currency}`}
@@ -648,10 +616,9 @@ export default function EconomicAnalysisPage() {
       {/* Data matrix table */}
       <SectionCard
         title="Matriz de costos económicos"
-        subtitle={`Agrupado por ${groupingButtons.find((b) => b.value === grouping)?.label} · ${currency} · basado en fecha de emisión`}
+        subtitle={`Agrupado por ${groupingButtons.find((b) => b.value === grouping)?.label} · ${currency} · por fecha de emisión`}
         noPadding
       >
-        {/* overflow-x-auto ONLY inside this wrapper, never globally */}
         <div className="table-container">
           <table className="enterprise-table">
             <thead>
@@ -679,7 +646,6 @@ export default function EconomicAnalysisPage() {
 
                 return (
                   <tr key={row.id} className={!hasData ? 'opacity-40' : ''}>
-                    {/* Row label — sticky left */}
                     <td
                       className="sticky left-0 bg-white z-10"
                       style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}
@@ -696,7 +662,6 @@ export default function EconomicAnalysisPage() {
                       </div>
                     </td>
 
-                    {/* Data cells */}
                     {columns.map((col) => {
                       const amount = getCellAmount(row.id, col.key)
                       const isNegative = amount < 0
@@ -719,7 +684,6 @@ export default function EconomicAnalysisPage() {
                       )
                     })}
 
-                    {/* Row total */}
                     <td className="text-right bg-slate-50/80 tabular-nums">
                       {rowTotal !== 0 ? (
                         <span

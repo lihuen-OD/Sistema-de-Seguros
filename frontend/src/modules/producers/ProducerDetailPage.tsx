@@ -157,6 +157,7 @@ export default function ProducerDetailPage() {
       <PageHeader
         title={producer.name}
         subtitle={`Matrícula ${producer.registrationNumber}`}
+        category="Productor"
         backTo="/producers"
         backLabel="Volver a Productores"
         badge={<StatusPill status={producer.status} />}

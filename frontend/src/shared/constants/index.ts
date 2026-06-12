@@ -146,3 +146,22 @@ export const AREAS = [
 ]
 
 export const EXPIRING_SOON_DAYS = 30
+
+export const CLAIM_TYPE_LABELS: Record<string, string> = {
+  accidente: 'Accidente',
+  robo: 'Robo',
+  incendio: 'Incendio',
+  granizo: 'Granizo',
+  daños: 'Daños',
+  rotura_mecanica: 'Rotura mecánica',
+  responsabilidad_civil: 'Responsabilidad civil',
+  otro: 'Otro',
+}
+
+export const CLAIM_STATUS_LABELS: Record<string, string> = {
+  denunciado: 'Denunciado',
+  en_tramite: 'En trámite',
+  liquidado: 'Liquidado',
+  rechazado: 'Rechazado',
+  cerrado: 'Cerrado',
+}

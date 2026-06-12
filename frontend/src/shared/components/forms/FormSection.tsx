@@ -10,10 +10,12 @@ interface FormSectionProps {
 export function FormSection({ title, description, children, className }: FormSectionProps) {
   return (
     <div className={clsx('', className)}>
-      <div className="mb-4">
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-        {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
-      </div>
+      {(title || description) && (
+        <div className="mb-4">
+          {title && <h3 className="text-sm font-semibold text-slate-800">{title}</h3>}
+          {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{children}</div>
     </div>
   )
@@ -49,7 +51,7 @@ export function FormInput({
     <input
       {...props}
       className={clsx(
-        'w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all',
+        'w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all',
         props.disabled && 'bg-slate-50 text-slate-500 cursor-not-allowed',
         className,
       )}
@@ -66,7 +68,7 @@ export function FormSelect({
     <select
       {...props}
       className={clsx(
-        'w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all',
+        'w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all',
         props.disabled && 'bg-slate-50 text-slate-500 cursor-not-allowed',
         className,
       )}

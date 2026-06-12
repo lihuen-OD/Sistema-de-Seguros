@@ -8,7 +8,7 @@ interface PageContentProps {
 
 export function PageContent({ children, className, noPadding }: PageContentProps) {
   return (
-    <div className={clsx(!noPadding && 'px-6 py-6', className)}>
+    <div className={clsx(!noPadding && 'px-6 py-6 lg:px-8', className)}>
       {children}
     </div>
   )

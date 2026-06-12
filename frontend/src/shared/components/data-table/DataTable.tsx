@@ -29,7 +29,7 @@ export function DataTable<T extends object>({
   }
 
   return (
-    <div className="table-container rounded-lg border border-slate-200 bg-white">
+    <div className="table-container">
       <table className="enterprise-table">
         <thead className={clsx(stickyHeader && 'sticky top-0 z-10')}>
           <tr>
