@@ -11,6 +11,7 @@ import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { formatDate, daysUntil } from '../../shared/utils/format'
+import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
 import { mockAssets } from '../../data/mock-assets'
 import { FIRE_EXT_STATUS_LABELS, LOCATION_TYPES } from '../../shared/constants'
@@ -65,32 +66,24 @@ export default function FireExtinguishersPage() {
       key: 'associatedAssetId',
       label: 'Activo / Ubicación',
       render: (v, row) => {
+        const locationLabel = LOCATION_TYPES[row.associatedLocationType] ?? row.associatedLocationType
         if (!v) {
           return (
-            <div>
-              <span className="text-xs text-slate-400">Sin activo</span>
-              <span className="block text-xs text-slate-400">
-                {LOCATION_TYPES[row.associatedLocationType] ?? row.associatedLocationType}
-              </span>
+            <div className="min-w-0 max-w-[200px]">
+              <span className="block text-xs text-slate-400">Sin activo</span>
+              <span className="block text-xs text-slate-400">{locationLabel}</span>
             </div>
           )
         }
         const asset = mockAssets.find((a) => a.id === v)
         return (
-          <div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                navigate(`/assets/${v}`)
-              }}
-              className="text-xs text-blue-600 hover:underline truncate max-w-[180px] block text-left"
-            >
-              {asset?.name ?? String(v)}
-            </button>
-            <span className="block text-xs text-slate-400">
-              {LOCATION_TYPES[row.associatedLocationType] ?? row.associatedLocationType}
-            </span>
-          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); navigate(`/assets/${v}`) }}
+            className="text-left block min-w-0 max-w-[200px] group"
+          >
+            <OverflowCell value={asset?.name ?? String(v)} lines={1} className="text-xs text-blue-600 group-hover:underline" />
+            <span className="block text-xs text-slate-400 mt-0.5">{locationLabel}</span>
+          </button>
         )
       },
     },
@@ -259,6 +252,7 @@ export default function FireExtinguishersPage() {
           onRowClick={(row) => navigate(`/fire-extinguishers/${row.id}`)}
           emptyTitle="Sin matafuegos"
           emptyDescription="No se encontraron matafuegos con los filtros aplicados."
+          minWidth={1000}
         />
       </SectionCard>
     </PageContent>

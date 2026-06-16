@@ -7,6 +7,7 @@ import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
+import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
@@ -60,9 +61,9 @@ export default function AssetsPage() {
       key: 'name',
       label: 'Nombre',
       render: (_, row) => (
-        <div className="w-48 overflow-hidden">
-          <p className="font-medium text-slate-800 truncate" title={row.name}>{row.name}</p>
-          <p className="text-xs text-slate-400 truncate">{row.brand} {row.model} {row.year > 0 ? `— ${row.year}` : ''}</p>
+        <div className="min-w-0 max-w-[220px]">
+          <OverflowCell value={row.name} lines={1} className="font-medium text-slate-800 text-sm" />
+          <p className="text-xs text-slate-400 mt-0.5">{row.brand} {row.model}{row.year > 0 ? ` — ${row.year}` : ''}</p>
         </div>
       ),
     },
@@ -198,6 +199,7 @@ export default function AssetsPage() {
           onRowClick={(row) => navigate(`/assets/${row.id}`)}
           emptyTitle="Sin activos"
           emptyDescription="No se encontraron activos con los filtros aplicados."
+          minWidth={1020}
         />
       </SectionCard>
     </PageContent>

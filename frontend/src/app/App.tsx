@@ -17,6 +17,7 @@ const AssetFichaPage = lazy(() => import('../modules/assets/AssetFichaPage'))
 const PoliciesPage = lazy(() => import('../modules/insurance/policies/PoliciesPage'))
 const PolicyDetailPage = lazy(() => import('../modules/insurance/policies/PolicyDetailPage'))
 const PolicyNewPage = lazy(() => import('../modules/insurance/policies/PolicyNewPage'))
+const PolicyEditPage = lazy(() => import('../modules/insurance/policies/PolicyEditPage'))
 
 // Insurance — Documents
 const DocumentsPage = lazy(() => import('../modules/insurance/accounting-documents/DocumentsPage'))
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="/insurance/policies" element={<PoliciesPage />} />
           <Route path="/insurance/policies/new" element={<PolicyNewPage />} />
           <Route path="/insurance/policies/:id" element={<PolicyDetailPage />} />
+          <Route path="/insurance/policies/:id/edit" element={<PolicyEditPage />} />
 
           {/* Insurance — Documents */}
           <Route path="/insurance/documents" element={<DocumentsPage />} />

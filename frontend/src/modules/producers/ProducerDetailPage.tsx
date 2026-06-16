@@ -14,6 +14,7 @@ import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
 import { producerRepository } from '../../services/repositories/producer.repository'
 import { policyRepository } from '../../services/repositories/policy.repository'
+import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
 import type { Policy, ProducerTask, TableColumn } from '../../shared/types'
 
@@ -106,16 +107,20 @@ export default function ProducerDetailPage() {
     {
       key: 'title',
       label: 'Título',
-      render: (v) => <span className="font-medium text-slate-800">{String(v)}</span>,
-      className: 'max-w-[200px]',
+      render: (v) => (
+        <div className="min-w-0 max-w-[200px]">
+          <OverflowCell value={String(v)} lines={1} className="font-medium text-slate-800 text-sm" />
+        </div>
+      ),
     },
     {
       key: 'description',
       label: 'Descripción',
       render: (v) => (
-        <span className="text-xs text-slate-500 line-clamp-1">{String(v)}</span>
+        <div className="min-w-0 max-w-[280px]">
+          <OverflowCell value={String(v)} lines={2} className="text-xs text-slate-500" />
+        </div>
       ),
-      className: 'max-w-[260px]',
     },
     {
       key: 'dueDate',
@@ -263,6 +268,7 @@ export default function ProducerDetailPage() {
           rowKey="id"
           emptyTitle="Sin tareas"
           emptyDescription="Este productor no tiene tareas registradas."
+          minWidth={900}
         />
       </SectionCard>
     </PageContent>

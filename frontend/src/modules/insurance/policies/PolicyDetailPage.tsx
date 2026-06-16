@@ -31,6 +31,8 @@ import { mockCompanies } from '../../../data/mock-companies'
 import { mockCostCenters } from '../../../data/mock-cost-centers'
 import { mockAssets } from '../../../data/mock-assets'
 import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
+import { exportPolicyToPdf } from '../../../shared/utils/policyPdf'
+import { ROUTES } from '../../../app/routes'
 import type { AccountingDocument, ProducerTask, TableColumn } from '../../../shared/types'
 
 export default function PolicyDetailPage() {
@@ -149,11 +151,19 @@ export default function PolicyDetailPage() {
         badge={<StatusPill status={policy.status} />}
         actions={
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors">
+            <button
+              onClick={() =>
+                exportPolicyToPdf({ policy, producer, asset, company, costCenter, documents })
+              }
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+            >
               <FileDown size={15} />
               Exportar PDF
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+            <button
+              onClick={() => navigate(ROUTES.POLICIES_EDIT(policy.id))}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
               <Edit2 size={15} />
               Editar
             </button>

@@ -6,6 +6,7 @@ import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
+import { OverflowCell } from '../../../shared/components/data-table/OverflowCell'
 import { FilterBar } from '../../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
@@ -62,9 +63,9 @@ export default function CostCentersPage() {
       render: (v) => {
         const company = mockCompanies.find((c) => c.id === v)
         return (
-          <span className="text-xs text-slate-500 truncate max-w-[200px] block">
-            {company?.name ?? '—'}
-          </span>
+          <div className="max-w-[200px]">
+            <OverflowCell value={company?.name ?? null} lines={1} className="text-xs text-slate-500" />
+          </div>
         )
       },
     },
@@ -189,6 +190,7 @@ export default function CostCentersPage() {
           rowKey="id"
           emptyTitle="Sin centros de costo"
           emptyDescription="No se encontraron centros con los filtros aplicados."
+          minWidth={780}
         />
       </SectionCard>
 

@@ -11,6 +11,8 @@ import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
+import { TableShell } from '../../shared/components/data-table/TableShell'
+import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { producerRepository } from '../../services/repositories/producer.repository'
 import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '../../shared/constants'
@@ -58,15 +60,18 @@ export default function ProducerTasksPage() {
       key: 'title',
       label: 'Título',
       render: (v) => (
-        <span className="font-medium text-slate-800">{String(v)}</span>
+        <div className="min-w-0 max-w-[200px]">
+          <OverflowCell value={String(v)} lines={1} className="font-medium text-slate-800 text-sm" />
+        </div>
       ),
-      className: 'max-w-[200px]',
     },
     {
       key: 'description',
       label: 'Descripción',
       render: (v) => (
-        <span className="text-xs text-slate-500 line-clamp-1 max-w-[240px] block">{String(v)}</span>
+        <div className="min-w-0 max-w-[280px]">
+          <OverflowCell value={String(v)} lines={2} className="text-xs text-slate-500" />
+        </div>
       ),
     },
     {
@@ -77,13 +82,12 @@ export default function ProducerTasksPage() {
         return (
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/producers/${v}`) }}
-            className="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left"
+            className="text-left min-w-0 max-w-[160px] block group"
           >
-            {producer?.name ?? String(v)}
+            <OverflowCell value={producer?.name ?? String(v)} lines={1} className="text-xs text-blue-600 group-hover:underline" />
           </button>
         )
       },
-      className: 'max-w-[160px]',
     },
     {
       key: 'policyId',
@@ -245,7 +249,7 @@ function TasksTable({
   }
 
   return (
-    <div className="table-container">
+    <TableShell minWidth={1050}>
       <table className="enterprise-table">
         <thead>
           <tr>
@@ -298,6 +302,6 @@ function TasksTable({
           })}
         </tbody>
       </table>
-    </div>
+    </TableShell>
   )
 }

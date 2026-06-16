@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import type { TableColumn } from '../../types'
 import { EmptyState } from '../empty-states/EmptyState'
 import { LoadingState } from '../empty-states/LoadingState'
+import { TableShell } from './TableShell'
 
 interface DataTableProps<T extends object> {
   columns: TableColumn<T>[]
@@ -12,6 +13,7 @@ interface DataTableProps<T extends object> {
   rowKey?: keyof T
   onRowClick?: (row: T) => void
   stickyHeader?: boolean
+  minWidth?: number | string
 }
 
 export function DataTable<T extends object>({
@@ -23,13 +25,14 @@ export function DataTable<T extends object>({
   rowKey,
   onRowClick,
   stickyHeader,
+  minWidth,
 }: DataTableProps<T>) {
   if (loading) {
     return <LoadingState />
   }
 
   return (
-    <div className="table-container">
+    <TableShell minWidth={minWidth}>
       <table className="enterprise-table">
         <thead className={clsx(stickyHeader && 'sticky top-0 z-10')}>
           <tr>
@@ -80,6 +83,6 @@ export function DataTable<T extends object>({
           )}
         </tbody>
       </table>
-    </div>
+    </TableShell>
   )
 }

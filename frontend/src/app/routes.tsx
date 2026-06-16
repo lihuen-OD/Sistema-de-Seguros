@@ -8,6 +8,7 @@ export const ROUTES = {
   POLICIES: '/insurance/policies',
   POLICIES_NEW: '/insurance/policies/new',
   POLICIES_DETAIL: (id: string) => `/insurance/policies/${id}`,
+  POLICIES_EDIT: (id: string) => `/insurance/policies/${id}/edit`,
 
   DOCUMENTS: '/insurance/documents',
   DOCUMENTS_NEW: '/insurance/documents/new',

@@ -12,6 +12,7 @@ import { DataTable } from '../../shared/components/data-table/DataTable'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { formatCurrencyCompact, formatDate } from '../../shared/utils/format'
+import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { claimRepository } from '../../services/repositories/claim.repository'
 import { mockAssets } from '../../data/mock-assets'
 import { mockPolicies } from '../../data/mock-policies'
@@ -109,10 +110,10 @@ export default function ClaimsPage() {
         return (
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/assets/${v}`) }}
-            className="text-xs text-blue-600 hover:underline text-left block max-w-[180px] truncate"
+            className="text-left block min-w-0 max-w-[200px] group"
           >
-            {asset.name}
-            <span className="block text-slate-400 font-normal">{asset.internalCode}</span>
+            <OverflowCell value={asset.name} lines={1} className="text-xs text-blue-600 group-hover:underline" />
+            <span className="block text-slate-400 font-mono text-[10px] mt-0.5">{asset.internalCode}</span>
           </button>
         )
       },
@@ -287,6 +288,7 @@ export default function ClaimsPage() {
           onRowClick={(row) => navigate(`/claims/${row.id}`)}
           emptyTitle="Sin siniestros"
           emptyDescription="No se encontraron siniestros con los filtros aplicados."
+          minWidth={1060}
         />
       </SectionCard>
     </PageContent>

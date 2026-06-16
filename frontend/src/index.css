@@ -43,15 +43,64 @@
     @apply bg-slate-400;
   }
 
-  /* Table scroll container */
+  /* Table scroll container (legacy) */
   .table-container {
     @apply overflow-x-auto scrollbar-thin;
-    /* solo la tabla hace scroll, no el layout global */
+  }
+
+  /* TableShell — encapsula el scroll horizontal dentro de la tabla */
+  .table-shell {
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: visible;
+    overscroll-behavior-inline: contain;
+  }
+  .table-shell > table {
+    width: 100%;
+    min-width: var(--table-min-width, 900px);
+    table-layout: auto;
+  }
+
+  /* OverflowCell — texto largo clampeado con popover */
+  .overflow-cell-trigger {
+    width: 100%;
+    min-width: 0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: normal;
+    word-break: break-word;
+    cursor: default;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    text-align: left;
+  }
+  .overflow-cell-trigger.lines-1 { -webkit-line-clamp: 1; }
+  .overflow-cell-trigger.lines-2 { -webkit-line-clamp: 2; }
+  .overflow-cell-trigger.lines-3 { -webkit-line-clamp: 3; }
+
+  .overflow-cell-popover {
+    position: fixed;
+    z-index: 9999;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.12);
+    font-size: 13px;
+    color: #334155;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-width: 300px;
+    pointer-events: auto;
   }
 
   /* Enterprise table */
   .enterprise-table {
-    @apply min-w-full border-collapse text-sm;
+    @apply border-collapse text-sm;
   }
   .enterprise-table thead tr {
     @apply bg-slate-50 border-b border-slate-200;
