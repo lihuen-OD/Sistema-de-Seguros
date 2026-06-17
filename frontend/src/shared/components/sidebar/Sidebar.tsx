@@ -13,6 +13,7 @@ import {
   X,
   ChevronRight,
   ShieldAlert,
+  Shield,
 } from 'lucide-react'
 import { useState } from 'react'
 import clsx from 'clsx'
@@ -67,6 +68,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Empresas', to: '/settings/companies', icon: Building2 },
       { label: 'Centros de Costo', to: '/settings/cost-centers', icon: Layers },
+      { label: 'Tipos de Seguro', to: '/settings/insurance-types', icon: Shield },
     ],
   },
 ]

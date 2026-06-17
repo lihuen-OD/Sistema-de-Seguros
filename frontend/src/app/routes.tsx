@@ -28,4 +28,5 @@ export const ROUTES = {
 
   SETTINGS_COMPANIES: '/settings/companies',
   SETTINGS_COST_CENTERS: '/settings/cost-centers',
+  SETTINGS_INSURANCE_TYPES: '/settings/insurance-types',
 }

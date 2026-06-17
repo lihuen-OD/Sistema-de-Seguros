@@ -45,6 +45,7 @@ const FireExtinguisherDetailPage = lazy(() => import('../modules/fire-extinguish
 // Settings
 const CompaniesPage = lazy(() => import('../modules/settings/companies/CompaniesPage'))
 const CostCentersPage = lazy(() => import('../modules/settings/cost-centers/CostCentersPage'))
+const InsuranceTypesPage = lazy(() => import('../modules/settings/insurance-types/InsuranceTypesPage'))
 
 function PageFallback() {
   return (
@@ -104,6 +105,7 @@ export default function App() {
           {/* Settings */}
           <Route path="/settings/companies" element={<CompaniesPage />} />
           <Route path="/settings/cost-centers" element={<CostCentersPage />} />
+          <Route path="/settings/insurance-types" element={<InsuranceTypesPage />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

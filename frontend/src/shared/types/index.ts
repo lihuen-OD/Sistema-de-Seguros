@@ -1,12 +1,6 @@
 // ─── Status types ────────────────────────────────────────────────────────────
 
-export type AssetStatus =
-  | 'activo'
-  | 'inactivo'
-  | 'en_reparacion'
-  | 'vendido'
-  | 'dado_de_baja'
-  | 'pendiente_documentacion'
+export type AssetStatus = 'activo' | 'baja' | 'vendido'
 
 export type PolicyStatus =
   | 'vigente'
@@ -43,13 +37,14 @@ export type ClaimType =
   | 'otro'
 
 export type AssetCategory =
-  | 'vehiculo' | 'camioneta' | 'camion'
+  | 'vehiculo' | 'camioneta' | 'camion' | 'moto'
   | 'tractor' | 'cosechadora' | 'pulverizadora' | 'implemento'
-  | 'edificio' | 'establecimiento' | 'planta_industrial'
+  | 'edificio' | 'establecimiento'
   | 'equipo' | 'maquinaria' | 'infraestructura'
 
 export type Currency = 'ARS' | 'USD'
 
+export type PaymentMethod = 'echeq' | 'transferencia' | 'efectivo' | 'debito_automatico' | 'otros'
 
 export type AssociatedLocationType =
   | 'vehiculo'
@@ -57,6 +52,28 @@ export type AssociatedLocationType =
   | 'establecimiento'
   | 'edificio'
   | 'infraestructura'
+
+// ─── Asset sub-entities ───────────────────────────────────────────────────────
+
+export interface AssetAllocation {
+  id: string
+  companyId: string
+  costCenterId: string
+  percentage: number
+}
+
+export interface Silo {
+  id: string
+  capacityTons: number
+  content: string
+}
+
+export interface AssetValueEntry {
+  id: string
+  date: string
+  valueUsd: number
+  notes?: string
+}
 
 // ─── Core entities ────────────────────────────────────────────────────────────
 
@@ -79,6 +96,7 @@ export interface CostCenter {
 
 export interface Asset {
   id: string
+  /** Código de Bien de Uso (Finnegans) — es el mismo que internalCode */
   internalCode: string
   name: string
   assetType: string
@@ -86,15 +104,27 @@ export interface Asset {
   model: string
   year: number
   serialNumber: string
+  chassisNumber?: string
   status: AssetStatus
   patrimonialValueUsd: number
   valuationDate: string
+  /** Historial de valuaciones USD con fecha */
+  valueHistory?: AssetValueEntry[]
   observations: string
+  /** Imputación contable principal (para compatibilidad con filtros existentes) */
   companyId: string
   costCenterId: string
+  /** Asignaciones multi-empresa con porcentaje */
+  allocations?: AssetAllocation[]
+  /** Código de Bien de Uso (Finnegans) — idéntico a internalCode */
   fixedAssetCode: string
   productiveUnit: string
   area: string
+  /** Coordenadas para mapa (extraídas de URL de Google Maps) */
+  coordinates?: { lat: number; lng: number }
+  mapsUrl?: string
+  /** Silos asociados (Establecimientos e Infraestructura tipo Silo) */
+  silos?: Silo[]
   photos?: string[]
   createdAt: string
   updatedAt: string
@@ -107,6 +137,8 @@ export interface Policy {
   producerId: string
   insuranceType: string
   coverageType: string
+  coverageTypes?: string[]
+  beneficiaryDescription?: string
   startDate: string
   endDate: string
   assetId: string | null
@@ -133,6 +165,9 @@ export interface AccountingDocument {
   otherTaxesAmount: number
   totalAmount: number
   paymentStatus: PaymentStatus
+  insuranceCompany?: string
+  paymentMethod?: PaymentMethod
+  linkedDocumentId?: string
   createdAt: string
   updatedAt: string
 }
@@ -205,6 +240,7 @@ export interface AssetAttachment {
   fileType: 'pdf' | 'image' | 'excel' | 'other'
   fileSize: string
   expirationDate: string | null
+  notifyEmail?: string
   uploadedAt: string
   uploadedBy: string
 }
@@ -237,6 +273,15 @@ export interface FireExtinguisherHistory {
   newValue: string
   observations: string
   createdBy: string
+}
+
+// ─── Bien de Uso (Finnegans catalog) ─────────────────────────────────────────
+
+export interface BienDeUso {
+  id: string
+  code: string
+  description: string
+  category: string
 }
 
 // ─── Filter / UI types ────────────────────────────────────────────────────────

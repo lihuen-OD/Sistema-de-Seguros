@@ -1,6 +1,15 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Save, X, Plus, Trash2, Calculator } from 'lucide-react'
+import {
+  Save,
+  X,
+  Plus,
+  Trash2,
+  Calculator,
+  Mail,
+  CheckCircle2,
+  ArrowLeftRight,
+} from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -12,12 +21,19 @@ import {
 } from '../../../shared/components/forms/FormSection'
 import { FileDropzone } from '../../../shared/components/file-upload/FileDropzone'
 import { policyRepository } from '../../../services/repositories/policy.repository'
-import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
-import type { Currency, DocumentType } from '../../../shared/types'
+import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
+import { mockAssets } from '../../../data/mock-assets'
+import { mockCostCenters } from '../../../data/mock-cost-centers'
+import {
+  INSURANCE_COMPANIES,
+  DOCUMENT_TYPE_LABELS,
+  PAYMENT_METHOD_LABELS,
+} from '../../../shared/constants'
+import type { Currency, DocumentType, PaymentMethod } from '../../../shared/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface PolicyRow {
+interface PolicyRowData {
   id: string
   policyId: string
   allocatedAmount: string
@@ -30,65 +46,134 @@ interface InstallmentRow {
 }
 
 interface DocumentForm {
-  documentType: DocumentType | ''
+  insuranceCompany: string
+  documentType: string
   documentNumber: string
   issueDate: string
   currency: Currency | ''
   exchangeRate: string
+  paymentMethod: PaymentMethod | ''
   netAmount: string
   vatAmount: string
   otherTaxesAmount: string
+  linkedDocumentId: string
 }
 
-type FormErrors = Partial<Record<keyof DocumentForm | 'policies' | 'installments', string>>
+type FormErrors = Partial<Record<keyof DocumentForm | 'policies', string>>
 
 const INITIAL_FORM: DocumentForm = {
+  insuranceCompany: '',
   documentType: '',
   documentNumber: '',
   issueDate: '',
   currency: '',
   exchangeRate: '',
+  paymentMethod: '',
   netAmount: '',
   vatAmount: '',
   otherTaxesAmount: '',
+  linkedDocumentId: '',
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DocumentNewPage() {
   const navigate = useNavigate()
+
   const [form, setForm] = useState<DocumentForm>(INITIAL_FORM)
   const [errors, setErrors] = useState<FormErrors>({})
-  const [policyRows, setPolicyRows] = useState<PolicyRow[]>([
+  const [policyRows, setPolicyRows] = useState<PolicyRowData[]>([
     { id: crypto.randomUUID(), policyId: '', allocatedAmount: '' },
   ])
-  const [installmentCount, setInstallmentCount] = useState<number>(1)
+  const [installmentCount, setInstallmentCount] = useState(1)
   const [installmentRows, setInstallmentRows] = useState<InstallmentRow[]>([
     { installmentNumber: 1, dueDate: '', amount: '' },
   ])
+  const [isSaved, setIsSaved] = useState(false)
+  const [savedPolicyNumbers, setSavedPolicyNumbers] = useState<string[]>([])
+  const [emailModalOpen, setEmailModalOpen] = useState(false)
+  const [emailTo, setEmailTo] = useState('')
+  const [emailSent, setEmailSent] = useState(false)
 
   const allPolicies = policyRepository.findAll()
+  const existingFacturas = useMemo(
+    () => accountingDocumentRepository.findByDocumentType('factura'),
+    [],
+  )
 
-  // ─── Derived: totals ────────────────────────────────────────────────────────
+  // ─── Derived ─────────────────────────────────────────────────────────────────
 
   const parsedNet = parseFloat(form.netAmount) || 0
   const parsedVat = parseFloat(form.vatAmount) || 0
   const parsedOther = parseFloat(form.otherTaxesAmount) || 0
   const computedTotal = parsedNet + parsedVat + parsedOther
+  const tc = parseFloat(form.exchangeRate) || 0
+
+  const equivalentAmount =
+    form.currency === 'ARS' && tc > 0
+      ? computedTotal / tc
+      : form.currency === 'USD' && tc > 0
+        ? computedTotal * tc
+        : 0
+  const mainPrefix = form.currency === 'USD' ? 'US$' : 'AR$'
+  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
 
   const totalAllocated = useMemo(
     () => policyRows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0),
     [policyRows],
   )
 
-  // ─── Form field setter ───────────────────────────────────────────────────────
+  // Only active policies from the selected insurance company
+  const availablePolicies = useMemo(() => {
+    if (!form.insuranceCompany) return []
+    return allPolicies.filter(
+      (p) =>
+        p.insuranceCompany === form.insuranceCompany &&
+        (p.status === 'vigente' || p.status === 'proximo_vencer'),
+    )
+  }, [allPolicies, form.insuranceCompany])
+
+  const isRefDoc =
+    form.documentType === 'nota_credito' || form.documentType === 'endoso'
+
+  // Distribution for email modal
+  const distribution = useMemo(
+    () =>
+      policyRows
+        .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
+        .map((r) => {
+          const policy = allPolicies.find((p) => p.id === r.policyId)
+          const asset = policy?.assetId
+            ? mockAssets.find((a) => a.id === policy.assetId)
+            : null
+          const costCenter = policy?.costCenterId
+            ? mockCostCenters.find((cc) => cc.id === policy.costCenterId)
+            : null
+          const amount = parseFloat(r.allocatedAmount) || 0
+          const pct = totalAllocated > 0 ? (amount / totalAllocated) * 100 : 0
+          return { policy, asset, costCenter, amount, pct }
+        }),
+    [policyRows, allPolicies, totalAllocated],
+  )
+
+  // ─── Setters ─────────────────────────────────────────────────────────────────
+
+  const markUnsaved = () => { if (isSaved) setIsSaved(false) }
 
   const set =
     (key: keyof DocumentForm) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setForm((prev) => ({ ...prev, [key]: e.target.value }))
       if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }))
+      markUnsaved()
     }
+
+  const handleInsuranceCompanyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setForm((prev) => ({ ...prev, insuranceCompany: e.target.value }))
+    setPolicyRows([{ id: crypto.randomUUID(), policyId: '', allocatedAmount: '' }])
+    if (errors.insuranceCompany) setErrors((prev) => ({ ...prev, insuranceCompany: undefined }))
+    markUnsaved()
+  }
 
   // ─── Policy rows ─────────────────────────────────────────────────────────────
 
@@ -97,27 +182,32 @@ export default function DocumentNewPage() {
       ...prev,
       { id: crypto.randomUUID(), policyId: '', allocatedAmount: '' },
     ])
+    markUnsaved()
   }
 
   const removePolicyRow = (rowId: string) => {
     setPolicyRows((prev) => prev.filter((r) => r.id !== rowId))
+    markUnsaved()
   }
 
-  const updatePolicyRow = (rowId: string, field: 'policyId' | 'allocatedAmount', value: string) => {
-    setPolicyRows((prev) =>
-      prev.map((r) => (r.id === rowId ? { ...r, [field]: value } : r)),
-    )
+  const updatePolicyRow = (
+    rowId: string,
+    field: 'policyId' | 'allocatedAmount',
+    value: string,
+  ) => {
+    setPolicyRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, [field]: value } : r)))
+    markUnsaved()
   }
 
-  // ─── Installment rows ────────────────────────────────────────────────────────
+  // ─── Installments ────────────────────────────────────────────────────────────
 
   const rebuildInstallments = useCallback(
     (count: number, total: number) => {
-      const perInstallment = count > 0 && total > 0 ? total / count : 0
+      const per = count > 0 && total > 0 ? total / count : 0
       const rows: InstallmentRow[] = Array.from({ length: count }, (_, i) => ({
         installmentNumber: i + 1,
         dueDate: installmentRows[i]?.dueDate ?? '',
-        amount: perInstallment > 0 ? perInstallment.toFixed(2) : '',
+        amount: per > 0 ? per.toFixed(2) : '',
       }))
       setInstallmentRows(rows)
     },
@@ -131,29 +221,23 @@ export default function DocumentNewPage() {
     rebuildInstallments(count, computedTotal)
   }
 
-  const handleAutoDistribute = () => {
-    rebuildInstallments(installmentCount, computedTotal)
-  }
+  const handleAutoDistribute = () => rebuildInstallments(installmentCount, computedTotal)
 
-  const updateInstallmentRow = (
-    idx: number,
-    field: 'dueDate' | 'amount',
-    value: string,
-  ) => {
-    setInstallmentRows((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)),
-    )
+  const updateInstallmentRow = (idx: number, field: 'dueDate' | 'amount', value: string) => {
+    setInstallmentRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)))
   }
 
   // ─── Validation ──────────────────────────────────────────────────────────────
 
   const validate = (): boolean => {
     const next: FormErrors = {}
+    if (!form.insuranceCompany) next.insuranceCompany = 'Requerido'
     if (!form.documentType) next.documentType = 'Requerido'
     if (!form.documentNumber.trim()) next.documentNumber = 'Requerido'
     if (!form.issueDate) next.issueDate = 'Requerido'
     if (!form.currency) next.currency = 'Requerido'
-    if (form.currency === 'USD' && !form.exchangeRate) next.exchangeRate = 'Requerido para USD'
+    if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0) next.exchangeRate = 'Requerido'
+    if (!form.paymentMethod) next.paymentMethod = 'Requerido'
     if (!form.netAmount || isNaN(parseFloat(form.netAmount))) next.netAmount = 'Requerido'
     if (!form.vatAmount || isNaN(parseFloat(form.vatAmount))) next.vatAmount = 'Requerido'
     if (!form.otherTaxesAmount || isNaN(parseFloat(form.otherTaxesAmount)))
@@ -164,48 +248,92 @@ export default function DocumentNewPage() {
     return Object.keys(next).length === 0
   }
 
+  // ─── Submit ──────────────────────────────────────────────────────────────────
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
-    alert(
-      'Documento guardado exitosamente (simulación). En producción se conectará al backend.',
-    )
-    navigate('/insurance/documents')
+
+    const validRows = policyRows.filter((r) => r.policyId)
+    const policyNumbers = validRows
+      .map((r) => allPolicies.find((p) => p.id === r.policyId)?.policyNumber)
+      .filter(Boolean) as string[]
+
+    accountingDocumentRepository.create({
+      documentType: form.documentType as DocumentType,
+      documentNumber: form.documentNumber.trim(),
+      issueDate: form.issueDate,
+      currency: form.currency as Currency,
+      exchangeRate: tc,
+      netAmount: parsedNet,
+      vatAmount: parsedVat,
+      otherTaxesAmount: parsedOther,
+      totalAmount: computedTotal,
+      paymentStatus: 'pendiente',
+      insuranceCompany: form.insuranceCompany,
+      paymentMethod: form.paymentMethod as PaymentMethod,
+      linkedDocumentId: isRefDoc && form.linkedDocumentId ? form.linkedDocumentId : undefined,
+    })
+
+    setSavedPolicyNumbers(policyNumbers)
+    setIsSaved(true)
+  }
+
+  // ─── Email ──────────────────────────────────────────────────────────────────
+
+  const handleSendEmail = () => {
+    if (!emailTo.trim()) return
+    setEmailSent(true)
+    setTimeout(() => {
+      setEmailModalOpen(false)
+      setEmailSent(false)
+      setEmailTo('')
+    }, 1800)
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+
+  const emailSubject =
+    savedPolicyNumbers.length > 0
+      ? `Documento póliza ${savedPolicyNumbers.join(', ')} — ${form.insuranceCompany}`
+      : ''
 
   return (
     <PageContent>
       <PageHeader
         title="Nuevo Documento Contable"
-        subtitle="Registrá una factura, endoso, nota de crédito o refacturación"
+        subtitle="Factura, nota de crédito o endoso"
         backTo="/insurance/documents"
         backLabel="Volver a documentos"
       />
 
       <form onSubmit={handleSubmit} className="max-w-5xl space-y-5">
 
-        {/* Section 1: Tipo y Número */}
-        <SectionCard
-          title="Tipo y Número"
-          subtitle="Identificación del documento contable"
-        >
+        {/* ── Sección 1: Identificación ────────────────────────────────────── */}
+        <SectionCard title="Identificación" subtitle="Compañía, tipo y datos del documento">
           <FormSection title="">
-            <FormField label="Tipo de Documento" required error={errors.documentType}>
+            <FormField label="Compañía Aseguradora" required error={errors.insuranceCompany}>
               <FormSelect
-                value={form.documentType}
-                onChange={set('documentType')}
+                value={form.insuranceCompany}
+                onChange={handleInsuranceCompanyChange}
                 required
               >
-                <option value="">Seleccionar tipo…</option>
-                {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
+                <option value="">Seleccionar compañía…</option>
+                {INSURANCE_COMPANIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </FormSelect>
             </FormField>
+
+            <FormField label="Tipo de Documento" required error={errors.documentType}>
+              <FormSelect value={form.documentType} onChange={set('documentType')} required>
+                <option value="">Seleccionar tipo…</option>
+                {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </FormSelect>
+            </FormField>
+
             <FormField label="N° de Documento" required error={errors.documentNumber}>
               <FormInput
                 placeholder="Ej: A-0001-00012345"
@@ -214,6 +342,7 @@ export default function DocumentNewPage() {
                 required
               />
             </FormField>
+
             <FormField label="Fecha de Emisión" required error={errors.issueDate}>
               <FormInput
                 type="date"
@@ -222,14 +351,32 @@ export default function DocumentNewPage() {
                 required
               />
             </FormField>
+
+            {/* Factura de referencia — solo para NC y Endoso */}
+            {isRefDoc && (
+              <FormField
+                label="Factura de referencia"
+                fullWidth
+              >
+                <FormSelect value={form.linkedDocumentId} onChange={set('linkedDocumentId')}>
+                  <option value="">Seleccionar factura base…</option>
+                  {existingFacturas.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.documentNumber} — {f.issueDate} — {f.currency === 'USD' ? 'US$' : 'AR$'}{' '}
+                      {f.totalAmount.toLocaleString('es-AR')}
+                    </option>
+                  ))}
+                </FormSelect>
+                <p className="text-xs text-slate-400 mt-1">
+                  Una {DOCUMENT_TYPE_LABELS[form.documentType]} siempre está asociada a una factura preexistente. La imputación sobre cuotas se gestiona desde la póliza.
+                </p>
+              </FormField>
+            )}
           </FormSection>
         </SectionCard>
 
-        {/* Section 2: Importes */}
-        <SectionCard
-          title="Importes"
-          subtitle="Moneda, tipo de cambio y desglose de importes"
-        >
+        {/* ── Sección 2: Importes y Forma de Pago ─────────────────────────── */}
+        <SectionCard title="Importes y Pago" subtitle="Moneda, tipo de cambio y forma de pago">
           <FormSection title="">
             <FormField label="Moneda" required error={errors.currency}>
               <FormSelect value={form.currency} onChange={set('currency')} required>
@@ -238,23 +385,32 @@ export default function DocumentNewPage() {
                 <option value="USD">USD — Dólares</option>
               </FormSelect>
             </FormField>
-            {form.currency === 'USD' && (
-              <FormField label="Tipo de Cambio (ARS/USD)" required error={errors.exchangeRate}>
-                <FormInput
-                  type="number"
-                  placeholder="Ej: 970"
-                  value={form.exchangeRate}
-                  onChange={set('exchangeRate')}
-                  min="0"
-                  step="0.01"
-                  required
-                />
-              </FormField>
-            )}
+
+            <FormField label="Tipo de Cambio (ARS/USD)" required error={errors.exchangeRate}>
+              <FormInput
+                type="number"
+                placeholder="Ej: 1150"
+                value={form.exchangeRate}
+                onChange={set('exchangeRate')}
+                min="0.01"
+                step="0.01"
+                required
+              />
+            </FormField>
+
+            <FormField label="Forma de Pago" required error={errors.paymentMethod}>
+              <FormSelect value={form.paymentMethod} onChange={set('paymentMethod')} required>
+                <option value="">Seleccionar forma…</option>
+                {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </FormSelect>
+            </FormField>
+
             <FormField label="Neto" required error={errors.netAmount}>
               <FormInput
                 type="number"
-                placeholder="Ej: 850000"
+                placeholder="0.00"
                 value={form.netAmount}
                 onChange={set('netAmount')}
                 min="0"
@@ -262,10 +418,11 @@ export default function DocumentNewPage() {
                 required
               />
             </FormField>
+
             <FormField label="IVA" required error={errors.vatAmount}>
               <FormInput
                 type="number"
-                placeholder="Ej: 178500"
+                placeholder="0.00"
                 value={form.vatAmount}
                 onChange={set('vatAmount')}
                 min="0"
@@ -273,10 +430,11 @@ export default function DocumentNewPage() {
                 required
               />
             </FormField>
+
             <FormField label="Otros Impuestos" required error={errors.otherTaxesAmount}>
               <FormInput
                 type="number"
-                placeholder="Ej: 42500"
+                placeholder="0.00"
                 value={form.otherTaxesAmount}
                 onChange={set('otherTaxesAmount')}
                 min="0"
@@ -284,150 +442,189 @@ export default function DocumentNewPage() {
                 required
               />
             </FormField>
-            <FormField label="Total (calculado automáticamente)">
-              <FormInput
-                value={
-                  computedTotal > 0
-                    ? `${form.currency === 'USD' ? 'US$' : 'AR$'} ${computedTotal.toLocaleString('es-AR', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}`
-                    : ''
-                }
-                readOnly
-                disabled
-                placeholder="Total = Neto + IVA + Otros"
-              />
-            </FormField>
           </FormSection>
+
+          {/* Total + Equivalente */}
           {computedTotal > 0 && (
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                <Calculator size={12} className="text-slate-400" />
-                <span>
-                  <strong className="text-slate-700">Total</strong> = Neto + IVA + Otros Impuestos
+            <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</span>
+                <span className="text-base font-bold text-slate-800 tabular-nums">
+                  {mainPrefix}{' '}
+                  {computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
-              </p>
+              </div>
+              {tc > 0 && (
+                <div className="flex items-center justify-between px-4 py-3 bg-blue-50 rounded-xl border border-blue-100">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-500 uppercase tracking-wider">
+                    <ArrowLeftRight size={12} />
+                    Equivalente
+                  </span>
+                  <span className="text-base font-bold text-blue-700 tabular-nums">
+                    {equivalentPrefix}{' '}
+                    {equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </SectionCard>
 
-        {/* Section 3: Pólizas Asociadas */}
+        {/* ── Sección 3: Pólizas Asociadas ─────────────────────────────────── */}
         <SectionCard
           title="Pólizas Asociadas"
-          subtitle="Asociá el documento a una o varias pólizas e indicá el importe por póliza"
+          subtitle={
+            form.insuranceCompany
+              ? `Pólizas activas de ${form.insuranceCompany}`
+              : 'Seleccioná primero la compañía aseguradora para filtrar las pólizas'
+          }
           actions={
-            <button
-              type="button"
-              onClick={addPolicyRow}
-              className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
-            >
-              <Plus size={13} />
-              Agregar póliza
-            </button>
+            form.insuranceCompany ? (
+              <button
+                type="button"
+                onClick={addPolicyRow}
+                className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+              >
+                <Plus size={13} />
+                Agregar póliza
+              </button>
+            ) : undefined
           }
         >
           {errors.policies && (
             <p className="text-xs text-red-500 mb-3">{errors.policies}</p>
           )}
 
-          <div className="space-y-3">
-            {/* Column headers */}
-            <div className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center px-1">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Póliza
-              </span>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">
-                Importe asignado
-              </span>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">
-                Participación
-              </span>
-              <span />
+          {!form.insuranceCompany ? (
+            <div className="rounded-xl border-2 border-dashed border-slate-200 py-6 text-center">
+              <p className="text-sm text-slate-400">
+                Seleccioná una compañía aseguradora para ver sus pólizas activas.
+              </p>
             </div>
-
-            {policyRows.map((row) => {
-              const allocated = parseFloat(row.allocatedAmount) || 0
-              const pct = totalAllocated > 0 ? (allocated / totalAllocated) * 100 : 0
-
-              return (
-                <div
-                  key={row.id}
-                  className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center"
-                >
-                  <FormSelect
-                    value={row.policyId}
-                    onChange={(e) => updatePolicyRow(row.id, 'policyId', e.target.value)}
-                  >
-                    <option value="">Seleccionar póliza…</option>
-                    {allPolicies.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.policyNumber} — {p.insuranceCompany}
-                      </option>
-                    ))}
-                  </FormSelect>
-                  <FormInput
-                    type="number"
-                    placeholder="0.00"
-                    value={row.allocatedAmount}
-                    onChange={(e) => updatePolicyRow(row.id, 'allocatedAmount', e.target.value)}
-                    min="0"
-                    step="0.01"
-                    className="text-right"
-                  />
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <div className="w-10 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 rounded-full transition-all"
-                        style={{ width: `${Math.min(pct, 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-xs font-semibold text-slate-600 tabular-nums w-10 text-right">
-                      {pct.toFixed(1).replace('.', ',')}%
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removePolicyRow(row.id)}
-                    disabled={policyRows.length === 1}
-                    className="p-1.5 text-slate-400 hover:text-red-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed rounded"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              )
-            })}
-
-            {/* Total allocated row */}
-            {policyRows.length > 1 && (
-              <div className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center pt-2 border-t border-slate-100">
-                <span className="text-xs font-semibold text-slate-500 pl-1">
-                  Total asignado a pólizas
+          ) : availablePolicies.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed border-slate-200 py-6 text-center">
+              <p className="text-sm text-slate-400">
+                No hay pólizas activas para <strong>{form.insuranceCompany}</strong>.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Column headers */}
+              <div className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center px-1">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Póliza
                 </span>
-                <span className="text-xs font-bold text-slate-800 tabular-nums text-right pr-1">
-                  {form.currency === 'USD' ? 'US$' : 'AR$'}{' '}
-                  {totalAllocated.toLocaleString('es-AR', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">
+                  Importe asignado
                 </span>
-                <span className="text-xs font-bold text-blue-600 text-right pr-1">100%</span>
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">
+                  Participación
+                </span>
                 <span />
               </div>
-            )}
-          </div>
+
+              {policyRows.map((row) => {
+                const allocated = parseFloat(row.allocatedAmount) || 0
+                const pct = totalAllocated > 0 ? (allocated / totalAllocated) * 100 : 0
+                const selectedPolicy = availablePolicies.find((p) => p.id === row.policyId)
+                const asset = selectedPolicy?.assetId
+                  ? mockAssets.find((a) => a.id === selectedPolicy.assetId)
+                  : null
+                const costCenter = selectedPolicy?.costCenterId
+                  ? mockCostCenters.find((cc) => cc.id === selectedPolicy.costCenterId)
+                  : null
+
+                return (
+                  <div key={row.id} className="space-y-1.5">
+                    <div className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center">
+                      <FormSelect
+                        value={row.policyId}
+                        onChange={(e) => updatePolicyRow(row.id, 'policyId', e.target.value)}
+                      >
+                        <option value="">Seleccionar póliza…</option>
+                        {availablePolicies.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.policyNumber} — {p.insuranceType}
+                          </option>
+                        ))}
+                      </FormSelect>
+
+                      <FormInput
+                        type="number"
+                        placeholder="0.00"
+                        value={row.allocatedAmount}
+                        onChange={(e) => updatePolicyRow(row.id, 'allocatedAmount', e.target.value)}
+                        min="0"
+                        step="0.01"
+                        className="text-right"
+                      />
+
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <div className="w-10 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 rounded-full transition-all"
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-slate-600 tabular-nums w-10 text-right">
+                          {pct.toFixed(1).replace('.', ',')}%
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removePolicyRow(row.id)}
+                        disabled={policyRows.length === 1}
+                        className="p-1.5 text-slate-400 hover:text-red-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed rounded"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+
+                    {/* Auto-filled: Bien de Uso + Centro de Costo */}
+                    {selectedPolicy && (asset || costCenter) && (
+                      <div className="flex items-center gap-2 pl-1 flex-wrap">
+                        {asset && (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-slate-50 border border-slate-200 text-slate-600">
+                            <span className="text-slate-400 font-medium">Bien de Uso:</span>
+                            {asset.internalCode} — {asset.name}
+                          </span>
+                        )}
+                        {costCenter && (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-slate-50 border border-slate-200 text-slate-600">
+                            <span className="text-slate-400 font-medium">C. Costo:</span>
+                            {costCenter.code} — {costCenter.name}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {/* Total asignado */}
+              {policyRows.length > 1 && (
+                <div className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center pt-2 border-t border-slate-100">
+                  <span className="text-xs font-semibold text-slate-500 pl-1">
+                    Total asignado
+                  </span>
+                  <span className="text-xs font-bold text-slate-800 tabular-nums text-right pr-1">
+                    {mainPrefix}{' '}
+                    {totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-xs font-bold text-blue-600 text-right pr-1">100%</span>
+                  <span />
+                </div>
+              )}
+            </div>
+          )}
         </SectionCard>
 
-        {/* Section 4: Cuotas */}
-        <SectionCard
-          title="Cuotas"
-          subtitle="Definí la cantidad de cuotas y asigná fecha y monto a cada una"
-        >
+        {/* ── Sección 4: Cuotas ────────────────────────────────────────────── */}
+        <SectionCard title="Cuotas" subtitle="Cantidad de cuotas, fechas e importes">
           <div className="flex items-end gap-4 mb-5 flex-wrap">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-slate-600">
-                Cantidad de cuotas
-              </label>
+              <label className="text-xs font-medium text-slate-600">Cantidad de cuotas</label>
               <FormInput
                 type="number"
                 value={String(installmentCount)}
@@ -448,7 +645,7 @@ export default function DocumentNewPage() {
             </button>
             {computedTotal > 0 && installmentCount > 0 && (
               <p className="text-xs text-slate-400">
-                {form.currency === 'USD' ? 'US$' : 'AR$'}{' '}
+                {mainPrefix}{' '}
                 {(computedTotal / installmentCount).toLocaleString('es-AR', {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
@@ -458,25 +655,15 @@ export default function DocumentNewPage() {
             )}
           </div>
 
-          {/* Installment grid */}
           <div className="space-y-2">
             <div className="grid grid-cols-[40px_1fr_1fr] gap-3 px-1">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                N°
-              </span>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Fecha de vencimiento
-              </span>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">
-                Importe
-              </span>
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">N°</span>
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Vencimiento</span>
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">Importe</span>
             </div>
 
             {installmentRows.map((row, idx) => (
-              <div
-                key={row.installmentNumber}
-                className="grid grid-cols-[40px_1fr_1fr] gap-3 items-center"
-              >
+              <div key={row.installmentNumber} className="grid grid-cols-[40px_1fr_1fr] gap-3 items-center">
                 <span className="text-xs font-bold text-slate-400 tabular-nums text-center">
                   {String(row.installmentNumber).padStart(2, '0')}
                 </span>
@@ -499,37 +686,208 @@ export default function DocumentNewPage() {
           </div>
         </SectionCard>
 
-        {/* Section 5: Documentación */}
-        <SectionCard
-          title="Documentación Adjunta"
-          subtitle="Adjuntá el PDF del documento y cualquier archivo relacionado"
-        >
+        {/* ── Sección 5: Adjuntos ──────────────────────────────────────────── */}
+        <SectionCard title="Documentación Adjunta" subtitle="Factura PDF, endosos o documentación relacionada">
           <FileDropzone
-            label="Factura, endoso o documentos relacionados (PDF, imágenes)"
+            label="Adjuntá la factura, endoso u otros documentos (PDF, imágenes)"
             accept=".pdf,.jpg,.jpeg,.png"
             maxFiles={5}
           />
         </SectionCard>
 
-        {/* Actions */}
-        <div className="flex items-center gap-3 pt-2 pb-6">
+        {/* ── Acciones ─────────────────────────────────────────────────────── */}
+        <div className="flex items-center gap-3 pt-2 pb-6 flex-wrap">
           <button
             type="submit"
             className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            <Save size={16} />
+            <Save size={15} />
             Guardar Documento
           </button>
+
+          <button
+            type="button"
+            disabled={!isSaved}
+            onClick={() => setEmailModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title={!isSaved ? 'Guardá primero el documento para poder enviarlo' : 'Enviar por mail'}
+          >
+            <Mail size={15} />
+            Enviar por mail
+          </button>
+
           <button
             type="button"
             onClick={() => navigate('/insurance/documents')}
             className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
           >
-            <X size={16} />
+            <X size={15} />
             Cancelar
           </button>
+
+          {isSaved && (
+            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+              <CheckCircle2 size={14} />
+              Guardado
+            </span>
+          )}
         </div>
       </form>
+
+      {/* ── Modal: Enviar por mail ──────────────────────────────────────────── */}
+      {emailModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => !emailSent && setEmailModalOpen(false)}
+          />
+
+          {/* Modal card */}
+          <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                  <Mail size={16} className="text-blue-600" />
+                </div>
+                <h2 className="text-sm font-semibold text-slate-800">Enviar por mail</h2>
+              </div>
+              {!emailSent && (
+                <button
+                  type="button"
+                  onClick={() => setEmailModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+
+            {emailSent ? (
+              <div className="px-6 py-10 text-center">
+                <CheckCircle2 size={40} className="mx-auto text-emerald-500 mb-3" />
+                <p className="text-sm font-semibold text-slate-800">Mail enviado</p>
+                <p className="text-xs text-slate-400 mt-1">Cerrando…</p>
+              </div>
+            ) : (
+              <div className="px-6 py-5 space-y-4">
+                {/* Para */}
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">
+                    Para <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="destinatario@ejemplo.com"
+                    value={emailTo}
+                    onChange={(e) => setEmailTo(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+                  />
+                </div>
+
+                {/* Asunto */}
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">Asunto</label>
+                  <input
+                    type="text"
+                    value={emailSubject}
+                    readOnly
+                    className="w-full px-3 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-500 cursor-default"
+                  />
+                </div>
+
+                {/* Contenido del mail */}
+                <div className="rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Contenido del mail
+                    </p>
+                  </div>
+                  <div className="px-4 py-3 space-y-3">
+
+                    {/* Forma de pago */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">Forma de pago</span>
+                      <span className="text-xs font-semibold text-slate-700">
+                        {PAYMENT_METHOD_LABELS[form.paymentMethod] ?? '—'}
+                      </span>
+                    </div>
+
+                    {/* Distribución */}
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 mb-2">Distribución por póliza</p>
+                      {distribution.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic">Sin pólizas asignadas.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {distribution.map(({ policy, asset, costCenter, amount, pct }, i) => (
+                            <div
+                              key={i}
+                              className="flex items-start justify-between gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-100"
+                            >
+                              <div className="min-w-0 flex-1 space-y-0.5">
+                                <p className="text-xs font-semibold text-slate-700">
+                                  {policy?.policyNumber ?? '—'}
+                                </p>
+                                {asset && (
+                                  <p className="text-xs text-slate-500">
+                                    Bien de Uso: {asset.internalCode} — {asset.name}
+                                  </p>
+                                )}
+                                {costCenter && (
+                                  <p className="text-xs text-slate-500">
+                                    C. Costo: {costCenter.code} — {costCenter.name}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right flex-shrink-0">
+                                <p className="text-xs font-bold text-blue-600">
+                                  {pct.toFixed(1).replace('.', ',')}%
+                                </p>
+                                <p className="text-xs text-slate-500 tabular-nums">
+                                  {mainPrefix}{' '}
+                                  {amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Adjuntos */}
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-2.5">
+                      <span className="text-xs text-slate-500">Adjuntos</span>
+                      <span className="text-xs text-slate-400 italic">Ver en la plataforma</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Acciones del modal */}
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleSendEmail}
+                    disabled={!emailTo.trim()}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Mail size={14} />
+                    Enviar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEmailModalOpen(false)}
+                    className="px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </PageContent>
   )
 }

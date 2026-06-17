@@ -188,9 +188,28 @@ export default function PolicyDetailPage() {
                 icon={User}
               />
               <InfoRow label="Tipo de Seguro" value={policy.insuranceType} icon={Tag} />
-              <InfoRow label="Tipo de Cobertura" value={policy.coverageType} />
               <InfoRow label="Estado" value={policy.status} isStatus />
             </div>
+            {/* Coberturas — can span full width */}
+            {(policy.coverageTypes?.length || policy.coverageType) && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Coberturas</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(policy.coverageTypes?.length
+                    ? policy.coverageTypes
+                    : policy.coverageType ? [policy.coverageType] : []
+                  ).map((cov) => (
+                    <span
+                      key={cov}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 border border-blue-100 text-blue-700"
+                    >
+                      <Tag size={10} className="text-blue-400" />
+                      {cov}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </SectionCard>
 
           {/* Vigencia */}

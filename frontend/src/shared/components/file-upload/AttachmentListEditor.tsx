@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import {
   Plus, FileText, FileSpreadsheet, Image as ImageIcon, File as FileIcon,
   X, AlertTriangle, CheckCircle2, Clock, Upload, Calendar, Paperclip, Download,
+  Mail, Bell,
 } from 'lucide-react'
 import type { AssetAttachment } from '../../types'
 import { formatDate } from '../../utils/format'
@@ -75,6 +76,26 @@ interface AddModalProps {
   onAdd: (attachment: Omit<AssetAttachment, 'assetId'>) => void
 }
 
+function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={onToggle}
+      className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+        checked ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white hover:border-blue-400'
+      }`}
+    >
+      {checked && (
+        <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+          <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
 export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -83,6 +104,8 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
   const [description, setDescription] = useState('')
   const [hasExpiration, setHasExpiration] = useState(false)
   const [expirationDate, setExpirationDate] = useState('')
+  const [hasNotification, setHasNotification] = useState(false)
+  const [notifyEmail, setNotifyEmail] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const applyFile = (file: File) => {
@@ -107,6 +130,10 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
     if (!selectedFile) e.file = 'Seleccioná un archivo.'
     if (!name.trim()) e.name = 'Ingresá un nombre para el documento.'
     if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
+    if (hasNotification && !notifyEmail.trim()) e.email = 'Ingresá el email para la notificación.'
+    if (hasNotification && notifyEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notifyEmail.trim())) {
+      e.email = 'El formato del email no es válido.'
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -121,6 +148,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
       fileType: detectFileType(selectedFile.name),
       fileSize: formatFileSize(selectedFile.size),
       expirationDate: hasExpiration ? expirationDate : null,
+      notifyEmail: hasNotification && hasExpiration ? notifyEmail.trim() : undefined,
       uploadedAt: new Date().toISOString().split('T')[0],
       uploadedBy: 'Usuario actual',
     })
@@ -143,18 +171,15 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
               <p className="text-xs text-slate-500">Subí un archivo y configurá sus datos</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-          >
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
             <X size={16} />
           </button>
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+        <div className="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto">
 
-          {/* File drop zone */}
+          {/* Archivo */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               Archivo <span className="text-red-500">*</span>
@@ -166,9 +191,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
                 onDrop={handleDrop}
                 onClick={() => inputRef.current?.click()}
                 className={`border-2 border-dashed rounded-xl px-4 py-6 text-center cursor-pointer transition-colors ${
-                  isDragging
-                    ? 'border-blue-400 bg-blue-50'
-                    : 'border-slate-200 hover:border-blue-300 bg-slate-50 hover:bg-blue-50/30'
+                  isDragging ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-300 bg-slate-50 hover:bg-blue-50/30'
                 }`}
               >
                 <Upload size={20} className="mx-auto text-slate-400 mb-2" />
@@ -177,13 +200,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
                   <span className="text-blue-600 font-medium">hacé clic para seleccionar</span>
                 </p>
                 <p className="text-xs text-slate-400 mt-1">PDF, Excel, imágenes — máx. 20 MB</p>
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
+                <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls" className="hidden" onChange={handleFileChange} />
               </div>
             ) : (
               <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -192,11 +209,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
                   <p className="text-sm font-medium text-slate-800 truncate">{selectedFile.name}</p>
                   <p className="text-xs text-slate-500">{formatFileSize(selectedFile.size)}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => { setSelectedFile(null); setName('') }}
-                  className="p-1 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"
-                >
+                <button type="button" onClick={() => { setSelectedFile(null); setName('') }} className="p-1 text-slate-400 hover:text-red-500 transition-colors">
                   <X size={14} />
                 </button>
               </div>
@@ -204,7 +217,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
             {errors.file && <p className="text-xs text-red-600 mt-1.5">{errors.file}</p>}
           </div>
 
-          {/* Name */}
+          {/* Nombre */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               Nombre del documento <span className="text-red-500">*</span>
@@ -219,86 +232,112 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
             {errors.name && <p className="text-xs text-red-600 mt-1.5">{errors.name}</p>}
           </div>
 
-          {/* Description */}
+          {/* Descripción */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Descripción{' '}
-              <span className="text-slate-400 font-normal">(opcional)</span>
+              Descripción <span className="text-slate-400 font-normal">(opcional)</span>
             </label>
             <input
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Ej: Cédula de identificación vigente"
+              placeholder="Ej: Habilitación municipal vigente"
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
             />
           </div>
 
-          {/* Expiration date */}
-          <div className="rounded-xl border border-slate-200 p-4 space-y-3 bg-slate-50/50">
-            <label className="flex items-start gap-3 cursor-pointer select-none">
-              <div className="flex-shrink-0 mt-0.5">
-                <button
-                  type="button"
-                  role="checkbox"
-                  aria-checked={hasExpiration}
-                  onClick={() => {
-                    setHasExpiration((v) => !v)
-                    if (hasExpiration) setExpirationDate('')
-                  }}
-                  className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
-                    hasExpiration
-                      ? 'border-blue-600 bg-blue-600'
-                      : 'border-slate-300 bg-white hover:border-blue-400'
-                  }`}
-                >
-                  {hasExpiration && (
-                    <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                      <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </button>
-              </div>
+          {/* Vencimiento + Notificación — bloque unificado */}
+          <div className="rounded-xl border border-slate-200 overflow-hidden">
+
+            {/* Fila vencimiento */}
+            <div className="flex items-start gap-3 p-4 bg-slate-50/50">
+              <Checkbox
+                checked={hasExpiration}
+                onToggle={() => {
+                  const next = !hasExpiration
+                  setHasExpiration(next)
+                  if (!next) { setExpirationDate(''); setHasNotification(false); setNotifyEmail('') }
+                }}
+              />
               <div>
                 <p className="text-sm font-medium text-slate-800">Este documento tiene fecha de vencimiento</p>
-                <p className="text-xs text-slate-500 mt-0.5">Permite recibir alertas cuando el documento esté por vencer</p>
+                <p className="text-xs text-slate-500 mt-0.5">Registrá cuándo vence para hacer seguimiento</p>
               </div>
-            </label>
+            </div>
 
             {hasExpiration && (
-              <div className="pt-1">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  <Calendar size={11} className="inline mr-1 align-[-1px]" />
-                  Fecha de vencimiento <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={expirationDate}
-                  onChange={(e) => setExpirationDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
-                />
-                {errors.expiration && (
-                  <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>
+              <>
+                <div className="px-4 pb-4 bg-slate-50/50">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    <Calendar size={11} className="inline mr-1 align-[-1px]" />
+                    Fecha de vencimiento <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={expirationDate}
+                    onChange={(e) => setExpirationDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+                  />
+                  {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
+                </div>
+
+                <div className="border-t border-slate-200" />
+
+                {/* Notificación email */}
+                <div className="flex items-start gap-3 p-4">
+                  <Checkbox
+                    checked={hasNotification}
+                    onToggle={() => {
+                      setHasNotification((v) => !v)
+                      if (hasNotification) setNotifyEmail('')
+                    }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-slate-800">Notificar por email al vencer</p>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
+                        Simulado
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Aviso 30 días antes del vencimiento y el día que venza
+                    </p>
+                  </div>
+                </div>
+
+                {hasNotification && (
+                  <div className="px-4 pb-4">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      <Mail size={11} className="inline mr-1 align-[-1px]" />
+                      Email destinatario <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={notifyEmail}
+                      onChange={(e) => setNotifyEmail(e.target.value)}
+                      placeholder="Ej: proveedor@empresa.com"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
+                    />
+                    {errors.email && <p className="text-xs text-red-600 mt-1.5">{errors.email}</p>}
+                    {notifyEmail && !errors.email && (
+                      <p className="text-xs text-slate-400 mt-1.5 flex items-center gap-1">
+                        <Bell size={10} />
+                        Se notificará a <span className="font-medium text-slate-600 ml-0.5">{notifyEmail}</span>
+                      </p>
+                    )}
+                  </div>
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-          >
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors">
             Cancelar
           </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-          >
+          <button type="button" onClick={handleSubmit} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
             <Upload size={14} />
             Guardar adjunto
           </button>
@@ -385,11 +424,15 @@ export function AttachmentListEditor({
                 </p>
               </div>
 
-              {att.expirationDate && (
-                <div className="flex-shrink-0">
-                  <ExpirationBadge date={att.expirationDate} />
-                </div>
-              )}
+              <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                {att.expirationDate && <ExpirationBadge date={att.expirationDate} />}
+                {att.notifyEmail && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border bg-slate-50 text-slate-500 border-slate-200 max-w-[140px]">
+                    <Mail size={9} className="flex-shrink-0" />
+                    <span className="truncate">{att.notifyEmail}</span>
+                  </span>
+                )}
+              </div>
 
               <button
                 type="button"

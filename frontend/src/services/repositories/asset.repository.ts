@@ -34,6 +34,18 @@ export const assetRepository = {
     )
   },
 
+  create(data: Omit<Asset, 'id' | 'createdAt' | 'updatedAt'>): Asset {
+    const now = new Date().toISOString().slice(0, 10)
+    const newAsset: Asset = {
+      ...data,
+      id: `asset-${Date.now()}`,
+      createdAt: now,
+      updatedAt: now,
+    }
+    mockAssets.push(newAsset)
+    return newAsset
+  },
+
   update(id: string, changes: Partial<Omit<Asset, 'id' | 'createdAt'>>): Asset | undefined {
     const idx = mockAssets.findIndex((a) => a.id === id)
     if (idx === -1) return undefined
@@ -43,7 +55,7 @@ export const assetRepository = {
 
   getTotalPatrimonialValue(): number {
     return mockAssets
-      .filter((a) => a.status !== 'vendido' && a.status !== 'dado_de_baja')
+      .filter((a) => a.status === 'activo')
       .reduce((sum, a) => sum + a.patrimonialValueUsd, 0)
   },
 }

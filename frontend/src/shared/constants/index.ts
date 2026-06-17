@@ -2,11 +2,11 @@ export const ASSET_TYPES = [
   'Vehículo',
   'Camioneta',
   'Camión',
+  'Moto',
   'Tractor',
   'Cosechadora',
   'Pulverizadora',
   'Implemento agrícola',
-  'Planta industrial',
   'Establecimiento',
   'Edificio',
   'Infraestructura',
@@ -54,7 +54,14 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   factura: 'Factura',
   endoso: 'Endoso',
   nota_credito: 'Nota de Crédito',
-  refacturacion: 'Refacturación',
+}
+
+export const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  echeq: 'E-Cheq',
+  transferencia: 'Transferencia bancaria',
+  efectivo: 'Efectivo',
+  debito_automatico: 'Débito automático',
+  otros: 'Otros',
 }
 
 export const PAYMENT_STATUS_LABELS: Record<string, string> = {
@@ -73,11 +80,8 @@ export const POLICY_STATUS_LABELS: Record<string, string> = {
 
 export const ASSET_STATUS_LABELS: Record<string, string> = {
   activo: 'Activo',
-  inactivo: 'Inactivo',
-  en_reparacion: 'En Reparación',
+  baja: 'Baja',
   vendido: 'Vendido',
-  dado_de_baja: 'Dado de Baja',
-  pendiente_documentacion: 'Pend. Documentación',
 }
 
 export const FIRE_EXT_STATUS_LABELS: Record<string, string> = {
@@ -143,6 +147,52 @@ export const AREAS = [
   'Comercial',
   'Mantenimiento',
   'RRHH',
+]
+
+/** Uso / Destino de edificios y construcciones */
+export const BUILDING_PURPOSES = [
+  'Galpón',
+  'Depósito',
+  'Vivienda',
+  'Oficinas',
+  'Taller',
+  'Industrial',
+  'Producción porcina',
+  'Producción avícola',
+  'Otro',
+]
+
+/** Tipos de infraestructura */
+export const INFRASTRUCTURE_TYPES = [
+  'Silo',
+  'Tanque de agua',
+  'Tanque de combustible',
+  'Obra civil',
+  'Alambrado',
+  'Manga y corral',
+  'Otro',
+]
+
+/** Contenido de silos */
+export const SILO_CONTENTS = [
+  'Soja',
+  'Maíz',
+  'Trigo',
+  'Cebada',
+  'Girasol',
+  'Sorgo',
+  'Maní',
+  'Vacío / disponible',
+  'Otro',
+]
+
+export const FUEL_TYPES = ['Diésel', 'Nafta', 'GNC', 'Eléctrico', 'Híbrido']
+
+export const PROVINCES = [
+  'Buenos Aires', 'Córdoba', 'Santa Fe', 'Entre Ríos', 'La Pampa', 'Mendoza', 'San Luis',
+  'San Juan', 'Río Negro', 'Neuquén', 'Chubut', 'Santa Cruz', 'Tierra del Fuego',
+  'Salta', 'Jujuy', 'Tucumán', 'Santiago del Estero', 'Catamarca', 'La Rioja',
+  'Chaco', 'Formosa', 'Misiones', 'Corrientes', 'Ciudad de Buenos Aires',
 ]
 
 export const EXPIRING_SOON_DAYS = 30

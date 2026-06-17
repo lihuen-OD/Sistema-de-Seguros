@@ -29,7 +29,7 @@ export default function DashboardPage() {
   const navigate = useNavigate()
 
   // ── KPI calculations ─────────────────────────────────────────────
-  const activeAssets = mockAssets.filter((a) => a.status !== 'vendido' && a.status !== 'dado_de_baja')
+  const activeAssets = mockAssets.filter((a) => a.status === 'activo')
   const totalPatrimonialUsd = activeAssets.reduce((s, a) => s + a.patrimonialValueUsd, 0)
 
   const vigentePolicies = mockPolicies.filter((p) => p.status === 'vigente')

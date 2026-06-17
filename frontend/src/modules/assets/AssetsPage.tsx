@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Package, DollarSign, AlertTriangle, Wrench, Eye } from 'lucide-react'
+import { Plus, Package, DollarSign, AlertTriangle, Archive, Eye } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -46,7 +46,8 @@ export default function AssetsPage() {
 
   // KPIs
   const active = allAssets.filter((a) => a.status === 'activo')
-  const inRepair = allAssets.filter((a) => a.status === 'en_reparacion')
+  const baja = allAssets.filter((a) => a.status === 'baja')
+  const vendido = allAssets.filter((a) => a.status === 'vendido')
   const totalValueUsd = active.reduce((s, a) => s + a.patrimonialValueUsd, 0)
 
   const companyOptions = mockCompanies.map((c) => ({ value: c.id, label: c.name }))
@@ -157,17 +158,17 @@ export default function AssetsPage() {
           variant="success"
         />
         <KpiCard
-          label="En Reparación"
-          value={inRepair.length}
-          description="Requieren seguimiento"
-          icon={Wrench}
-          variant={inRepair.length > 0 ? 'warning' : 'default'}
+          label="Dados de Baja"
+          value={baja.length}
+          description="Activos inactivos o retirados"
+          icon={AlertTriangle}
+          variant={baja.length > 0 ? 'warning' : 'default'}
         />
         <KpiCard
-          label="Pendientes Doc."
-          value={allAssets.filter((a) => a.status === 'pendiente_documentacion').length}
-          description="Documentación incompleta"
-          icon={AlertTriangle}
+          label="Vendidos"
+          value={vendido.length}
+          description="Activos transferidos o vendidos"
+          icon={Archive}
           variant="default"
         />
       </MetricGrid>

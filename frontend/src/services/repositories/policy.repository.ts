@@ -37,6 +37,19 @@ export const policyRepository = {
     )
   },
 
+  create(data: Omit<Policy, 'id'>): Policy {
+    const newPolicy: Policy = { ...data, id: `policy-${Date.now()}` }
+    mockPolicies.push(newPolicy)
+    return newPolicy
+  },
+
+  update(id: string, changes: Partial<Omit<Policy, 'id' | 'createdAt'>>): Policy | undefined {
+    const idx = mockPolicies.findIndex((p) => p.id === id)
+    if (idx === -1) return undefined
+    Object.assign(mockPolicies[idx], changes, { updatedAt: new Date().toISOString().slice(0, 10) })
+    return { ...mockPolicies[idx] }
+  },
+
   getTotalInsuredAmountArs(): number {
     return mockPolicies
       .filter((p) => p.status === 'vigente')

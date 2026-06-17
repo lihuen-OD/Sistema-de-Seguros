@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Flame, Paperclip,
-  MapPin, Building2, Download, ShieldAlert,
+  MapPin, Building2, Download, ShieldAlert, TrendingUp,
+  Calendar, ExternalLink, Box,
 } from 'lucide-react'
 import { AssetPhotoGallery } from '../../shared/components/photos/AssetPhotoGallery'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -22,12 +23,12 @@ import { assetAttachmentRepository } from '../../services/repositories/asset-att
 import { mockCompanies } from '../../data/mock-companies'
 import { mockCostCenters } from '../../data/mock-cost-centers'
 import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../shared/constants'
-import type { Policy, AccountingDocument, FireExtinguisher, TableColumn } from '../../shared/types'
+import type { Policy, AccountingDocument, FireExtinguisher, TableColumn, AssetValueEntry } from '../../shared/types'
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
 import { claimRepository } from '../../services/repositories/claim.repository'
 
-const TABS = ['Pólizas', 'Documentos', 'Matafuegos', 'Siniestros', 'Adjuntos'] as const
+const TABS = ['Pólizas', 'Doc. Contables', 'Matafuegos', 'Siniestros', 'Adjuntos'] as const
 type Tab = (typeof TABS)[number]
 
 export default function AssetDetailPage() {
@@ -197,85 +198,146 @@ export default function AssetDetailPage() {
       {/* Main content: 2 columns */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
 
-        {/* Left col: Ficha + Imputación */}
+        {/* Left col: Ficha + secciones dinámicas */}
         <div className="lg:col-span-2 space-y-5">
+
           {/* Ficha patrimonial */}
           <SectionCard title="Ficha Patrimonial">
             <div className="space-y-5">
-              <div className="space-y-4">
-                <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-950">
-                  {photos[selectedPhotoIndex] ? (
-                    <img
-                      src={photos[selectedPhotoIndex]}
-                      alt={`Foto principal del activo ${asset.internalCode}`}
-                      className="w-full h-[300px] object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="h-[300px] flex items-center justify-center bg-slate-900 text-slate-400 text-sm">
-                      Sin imagen disponible
+              {/* Fotos — solo cuando no hay mapa (los establecimientos con coordenadas usan el mapa) */}
+              {!asset.coordinates && (
+                <div className="space-y-4">
+                  <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-950">
+                    {photos[selectedPhotoIndex] ? (
+                      <img
+                        src={photos[selectedPhotoIndex]}
+                        alt={`Foto principal del activo ${asset.internalCode}`}
+                        className="w-full h-[300px] object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="h-[300px] flex items-center justify-center bg-slate-900 text-slate-400 text-sm">
+                        Sin imagen disponible
+                      </div>
+                    )}
+                    {photos[selectedPhotoIndex] && (
+                      <button
+                        type="button"
+                        onClick={downloadPhoto}
+                        className="absolute top-4 right-4 inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100"
+                      >
+                        <Download size={14} />
+                        Descargar
+                      </button>
+                    )}
+                  </div>
+                  {photos.length > 0 && (
+                    <div className="grid grid-cols-4 gap-3">
+                      {photos.slice(0, 5).map((src, idx) => (
+                        <button
+                          key={src}
+                          type="button"
+                          onClick={() => setSelectedPhotoIndex(idx)}
+                          className={`h-20 rounded-lg overflow-hidden border transition-shadow ${
+                            idx === selectedPhotoIndex
+                              ? 'border-blue-600 shadow-md'
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <img src={src} alt={`Miniatura ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                        </button>
+                      ))}
                     </div>
                   )}
-
-                  {photos[selectedPhotoIndex] && (
-                    <button
-                      type="button"
-                      onClick={downloadPhoto}
-                      className="absolute top-4 right-4 inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100"
-                    >
-                      <Download size={14} />
-                      Descargar
-                    </button>
-                  )}
                 </div>
+              )}
 
-                {photos.length > 0 && (
-                  <div className="grid grid-cols-4 gap-3">
-                    {photos.slice(0, 5).map((src, idx) => (
-                      <button
-                        key={src}
-                        type="button"
-                        onClick={() => setSelectedPhotoIndex(idx)}
-                        className={`h-20 rounded-lg overflow-hidden border transition-shadow ${
-                          idx === selectedPhotoIndex
-                            ? 'border-blue-600 shadow-md'
-                            : 'border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <img
-                          src={src}
-                          alt={`Miniatura ${idx + 1}`}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                <InfoRow label="Código interno" value={asset.internalCode} />
+              {/* Datos identificatorios */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <InfoRow label="Código interno" value={asset.internalCode} mono />
                 <InfoRow label="Tipo" value={asset.assetType} />
-                <InfoRow label="Año" value={asset.year > 0 ? String(asset.year) : '—'} />
-                <InfoRow label="Marca" value={asset.brand || '—'} />
-                <InfoRow label="Modelo" value={asset.model || '—'} />
-                <InfoRow label="N° de Serie" value={asset.serialNumber || '—'} />
-                <InfoRow label="Cod. Bien de Uso" value={asset.fixedAssetCode || '—'} />
+                <InfoRow label="Estado" value={ASSET_STATUS_LABELS[asset.status] ?? asset.status} />
+                {asset.brand && <InfoRow label="Marca" value={asset.brand} />}
+                {asset.model && <InfoRow label="Modelo" value={asset.model} />}
+                {asset.year > 0 && <InfoRow label="Año" value={String(asset.year)} />}
+                {asset.serialNumber && <InfoRow label="N° de Serie" value={asset.serialNumber} mono />}
+                {asset.chassisNumber && <InfoRow label="N° de Chasis" value={asset.chassisNumber} mono />}
+                {asset.fixedAssetCode && <InfoRow label="Cód. Bien de Uso" value={asset.fixedAssetCode} mono />}
                 <InfoRow label="Fecha Valuación" value={formatDate(asset.valuationDate)} />
-                <InfoRow label="Estado" value={ASSET_STATUS_LABELS[asset.status]} />
               </div>
             </div>
           </SectionCard>
 
+          {/* Silos — solo si el activo tiene silos registrados */}
+          {asset.silos && asset.silos.length > 0 && (
+            <SectionCard
+              title="Silos"
+              subtitle={`${asset.silos.length} silo${asset.silos.length !== 1 ? 's' : ''} · ${asset.silos.reduce((s, x) => s + x.capacityTons, 0).toLocaleString('es-AR')} tn totales`}
+            >
+              <div className="space-y-2">
+                {asset.silos.map((silo, idx) => (
+                  <div key={silo.id} className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <Box size={13} className="text-blue-600" />
+                      </div>
+                      <span className="text-sm font-medium text-slate-700">Silo {idx + 1}</span>
+                    </div>
+                    <div className="flex items-center gap-6 text-right">
+                      <div>
+                        <p className="text-xs text-slate-400">Capacidad</p>
+                        <p className="text-sm font-semibold text-slate-800 tabular-nums">
+                          {silo.capacityTons.toLocaleString('es-AR')} tn
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-400">Contenido</p>
+                        <p className="text-sm font-semibold text-slate-800">
+                          {silo.content || <span className="text-slate-400 font-normal">—</span>}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+
           {/* Imputación contable */}
           <SectionCard title="Imputación Contable">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-4">
-              <InfoRow label="Empresa" value={company?.name ?? '—'} icon={Building2} />
-              <InfoRow label="Centro de Costo" value={costCenter ? `${costCenter.code} — ${costCenter.name}` : '—'} />
-              <InfoRow label="Área" value={asset.area || '—'} icon={MapPin} />
-              <InfoRow label="Unidad Productiva" value={asset.productiveUnit || '—'} />
-            </div>
+            {asset.allocations && asset.allocations.length > 1 ? (
+              <div className="space-y-2">
+                {asset.allocations.map((alloc) => {
+                  const allocCompany = mockCompanies.find((c) => c.id === alloc.companyId)
+                  const allocCC = mockCostCenters.find((c) => c.id === alloc.costCenterId)
+                  return (
+                    <div key={alloc.id} className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{allocCompany?.name ?? '—'}</p>
+                        <p className="text-xs text-slate-500 truncate mt-0.5">
+                          {allocCC ? `${allocCC.code} — ${allocCC.name}` : '—'}
+                        </p>
+                      </div>
+                      <span className="flex-shrink-0 text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full tabular-nums">
+                        {alloc.percentage}%
+                      </span>
+                    </div>
+                  )
+                })}
+                <div className="flex items-center justify-end gap-2 px-2 pt-1">
+                  <span className="text-xs text-slate-400">Área: {asset.area || '—'}</span>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-xs text-slate-400">UP: {asset.productiveUnit || '—'}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <InfoRow label="Empresa" value={company?.name ?? '—'} icon={Building2} />
+                <InfoRow label="Centro de Costo" value={costCenter ? `${costCenter.code} — ${costCenter.name}` : '—'} />
+                <InfoRow label="Área" value={asset.area || '—'} icon={MapPin} />
+                <InfoRow label="Unidad Productiva" value={asset.productiveUnit || '—'} />
+              </div>
+            )}
           </SectionCard>
 
           {/* Observaciones */}
@@ -312,30 +374,96 @@ export default function AssetDetailPage() {
             <div className="space-y-3">
               <SummaryRow label="Pólizas asociadas" value={String(policies.length)} />
               <SummaryRow label="Pólizas vigentes" value={String(policies.filter((p) => p.status === 'vigente').length)} />
-              <SummaryRow label="Documentos contables" value={String(documents.length)} />
+              <SummaryRow label="Doc. Contables contables" value={String(documents.length)} />
               <SummaryRow label="Matafuegos" value={String(fireExtinguishers.length)} />
               <SummaryRow label="Mat. vencidos" value={String(fireExtinguishers.filter((f) => f.status === 'vencido').length)} color="text-red-600" />
               <SummaryRow label="Siniestros" value={String(claimsCount)} color={claimsCount > 0 ? 'text-orange-600' : 'text-slate-800'} />
             </div>
           </SectionCard>
 
-          <SectionCard
-            title="Fotografías"
-            subtitle={
-              photos.length > 0
-                ? `${photos.length} foto${photos.length !== 1 ? 's' : ''} — hacé clic para ampliar`
-                : 'Documentá el estado físico del activo'
-            }
-            className="min-h-[420px]"
-          >
-            <div className="h-full">
-              <AssetPhotoGallery
-                photos={photos}
-                onAdd={newPhotos => setPhotos(prev => [...prev, ...newPhotos].slice(0, 20))}
-                onRemove={idx => setPhotos(prev => prev.filter((_, i) => i !== idx))}
-              />
-            </div>
-          </SectionCard>
+          {/* Historial de valuaciones — solo si existe */}
+          {asset.valueHistory && asset.valueHistory.length > 0 && (
+            <SectionCard title="Historial de valuaciones">
+              <div className="divide-y divide-slate-100">
+                {[...asset.valueHistory].reverse().map((entry: AssetValueEntry, idx) => {
+                  const isLatest = idx === 0
+                  return (
+                    <div key={entry.id} className={`flex items-center justify-between gap-3 py-2.5 ${isLatest ? 'first:pt-0' : ''}`}>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isLatest ? 'bg-emerald-100' : 'bg-slate-100'}`}>
+                          <Calendar size={11} className={isLatest ? 'text-emerald-600' : 'text-slate-400'} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-slate-600">{formatDate(entry.date)}</p>
+                          {entry.notes && <p className="text-[10px] text-slate-400 truncate">{entry.notes}</p>}
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className={`text-sm font-semibold font-mono tabular-nums ${isLatest ? 'text-emerald-700' : 'text-slate-600'}`}>
+                          {formatCurrencyCompact(entry.valueUsd, 'USD')}
+                        </p>
+                        {isLatest && (
+                          <p className="text-[9px] font-semibold uppercase tracking-wide text-emerald-600">Actual</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 text-xs text-slate-400">
+                <TrendingUp size={12} />
+                {asset.valueHistory.length} entrada{asset.valueHistory.length !== 1 ? 's' : ''} registrada{asset.valueHistory.length !== 1 ? 's' : ''}
+              </div>
+            </SectionCard>
+          )}
+
+          {asset.coordinates ? (
+            <SectionCard
+              title="Ubicación"
+              subtitle={`${asset.coordinates.lat.toFixed(5)}, ${asset.coordinates.lng.toFixed(5)}`}
+            >
+              <div className="space-y-3">
+                <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+                  <iframe
+                    title="Mapa de ubicación del activo"
+                    loading="lazy"
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${asset.coordinates.lng - 0.012},${asset.coordinates.lat - 0.012},${asset.coordinates.lng + 0.012},${asset.coordinates.lat + 0.012}&layer=mapnik&marker=${asset.coordinates.lat},${asset.coordinates.lng}`}
+                    className="border-0 w-full"
+                    style={{ height: 320 }}
+                  />
+                </div>
+                {asset.mapsUrl && (
+                  <a
+                    href={asset.mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
+                  >
+                    <ExternalLink size={12} />
+                    Ver en Google Maps
+                  </a>
+                )}
+              </div>
+            </SectionCard>
+          ) : (
+            <SectionCard
+              title="Fotografías"
+              subtitle={
+                photos.length > 0
+                  ? `${photos.length} foto${photos.length !== 1 ? 's' : ''} — hacé clic para ampliar`
+                  : 'Documentá el estado físico del activo'
+              }
+              className="min-h-[420px]"
+            >
+              <div className="h-full">
+                <AssetPhotoGallery
+                  photos={photos}
+                  onAdd={newPhotos => setPhotos(prev => [...prev, ...newPhotos].slice(0, 20))}
+                  onRemove={idx => setPhotos(prev => prev.filter((_, i) => i !== idx))}
+                />
+              </div>
+            </SectionCard>
+          )}
         </div>
       </div>
 
@@ -346,7 +474,7 @@ export default function AssetDetailPage() {
           {TABS.map((tab) => {
             const count =
               tab === 'Pólizas' ? policies.length
-              : tab === 'Documentos' ? documents.length
+              : tab === 'Doc. Contables' ? documents.length
               : tab === 'Matafuegos' ? fireExtinguishers.length
               : tab === 'Siniestros' ? claimsCount
               : tab === 'Adjuntos' ? attachmentsCount
@@ -363,7 +491,7 @@ export default function AssetDetailPage() {
                 }`}
               >
                 {tab === 'Pólizas' && <ShieldCheck size={13} />}
-                {tab === 'Documentos' && <FileText size={13} />}
+                {tab === 'Doc. Contables' && <FileText size={13} />}
                 {tab === 'Matafuegos' && <Flame size={13} />}
                 {tab === 'Siniestros' && <ShieldAlert size={13} />}
                 {tab === 'Adjuntos' && <Paperclip size={13} />}
@@ -392,7 +520,7 @@ export default function AssetDetailPage() {
               emptyDescription="Este activo no tiene pólizas asociadas."
             />
           )}
-          {activeTab === 'Documentos' && (
+          {activeTab === 'Doc. Contables' && (
             <DataTable
               columns={docColumns}
               data={documents}
@@ -424,11 +552,16 @@ export default function AssetDetailPage() {
   )
 }
 
-function InfoRow({ label, value, icon: Icon }: { label: string; value: string; icon?: React.ElementType }) {
+function InfoRow({ label, value, icon: Icon, mono }: {
+  label: string
+  value: string
+  icon?: React.ElementType
+  mono?: boolean
+}) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3.5">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5">{label}</p>
-      <p className="text-sm font-medium text-slate-800 leading-snug break-words max-w-full">
+      <p className={`text-sm font-medium text-slate-800 leading-snug break-words max-w-full ${mono ? 'font-mono' : ''}`}>
         {Icon && <Icon size={13} className="text-slate-400 inline-block mr-1.5 align-text-bottom" />}
         {value}
       </p>

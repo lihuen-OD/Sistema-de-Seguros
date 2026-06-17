@@ -7,6 +7,13 @@ export const accountingDocumentRepository = {
     return [...mockDocuments]
   },
 
+  create(data: Omit<AccountingDocument, 'id' | 'createdAt' | 'updatedAt'>): AccountingDocument {
+    const today = new Date().toISOString().slice(0, 10)
+    const doc: AccountingDocument = { ...data, id: `doc-${Date.now()}`, createdAt: today, updatedAt: today }
+    mockDocuments.push(doc)
+    return doc
+  },
+
   findById(id: string): AccountingDocument | undefined {
     return mockDocuments.find((d) => d.id === id)
   },
