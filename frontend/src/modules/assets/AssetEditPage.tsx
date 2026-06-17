@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Save, X, Plus, Trash2, Check, Search, Building2,
-  TrendingUp, Calendar, MapPin, Wheat,
+  TrendingUp, Calendar, MapPin, Wheat, Hash,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -24,7 +24,7 @@ import type { AssetStatus, AssetAllocation, AssetValueEntry, AssetAttachment, Si
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type EditForm = {
-  bieneDeUsoCode: string
+  fixedAssetCode: string  // BienDeUso id (Finnegans) — NOT the system internalCode
   name: string
   status: string
   assetType: string
@@ -47,36 +47,94 @@ type NewValueEntry = {
 
 const ASSET_STATUS_OPTIONS = Object.entries(ASSET_STATUS_LABELS) as [AssetStatus, string][]
 
-// ── BienDeUsoField ─────────────────────────────────────────────────────────────
+// Maps the stored assetType string to the matching Finnegans categories for filtering
+const ASSET_TYPE_TO_FINNEGANS: Record<string, string[]> = {
+  'Vehículo':       ['Rodados'],
+  'Camioneta':      ['Rodados'],
+  'Camión':         ['Rodados'],
+  'Moto':           ['Rodados'],
+  'Tractor':        ['Maquinaria y Equipo'],
+  'Cosechadora':    ['Maquinaria y Equipo'],
+  'Pulverizadora':  ['Maquinaria y Equipo'],
+  'Implemento':     ['Maquinaria y Equipo', 'Implementos Agrícolas'],
+  'Equipo':         ['Maquinaria y Equipo'],
+  'Maquinaria':     ['Maquinaria y Equipo'],
+  'Edificio':       ['Inmuebles'],
+  'Establecimiento': ['Inmuebles'],
+  'Infraestructura': ['Infraestructura y Mejoras'],
+}
+
+// ── Auto-generated internal code display (read-only) ──────────────────────────
+
+function AutoCodeDisplay({ code }: { code: string }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50">
+      <div className="w-7 h-7 rounded-lg bg-slate-200 flex items-center justify-center flex-shrink-0">
+        <Hash size={14} className="text-slate-500" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold font-mono text-slate-800 tracking-wider">{code}</p>
+        <p className="text-xs text-slate-400 mt-0.5">Asignado automáticamente por el sistema</p>
+      </div>
+      <span className="ml-auto flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+        Auto
+      </span>
+    </div>
+  )
+}
+
+// ── Bien de Uso selector (Finnegans catalog) ───────────────────────────────────
 
 function BienDeUsoField({
-  value, onChange,
-}: { value: string; onChange: (code: string) => void }) {
+  value, onChange, categoryFilter,
+}: { value: string; onChange: (id: string) => void; categoryFilter?: string[] }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
 
+  const filteredCatalog = useMemo(() => {
+    if (!categoryFilter?.length) return mockBienesDeUso
+    return mockBienesDeUso.filter((b) => categoryFilter.includes(b.category))
+  }, [categoryFilter])
+
   const results = useMemo(() => {
-    if (!query.trim()) return mockBienesDeUso.slice(0, 8)
+    if (!query.trim()) return filteredCatalog.slice(0, 8)
     const q = query.toLowerCase()
-    return mockBienesDeUso.filter(
+    return filteredCatalog.filter(
       (b) => b.code.toLowerCase().includes(q) || b.description.toLowerCase().includes(q),
     ).slice(0, 8)
-  }, [query])
+  }, [query, filteredCatalog])
 
-  const selected = mockBienesDeUso.find((b) => b.code === value)
+  const selected = mockBienesDeUso.find((b) => b.id === value)
 
   return (
     <div className="relative">
       {selected ? (
-        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-blue-300 bg-blue-50">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-blue-700 font-mono">{selected.code}</p>
-            <p className="text-xs text-slate-600 truncate">{selected.description}</p>
+        <div className="flex items-start justify-between gap-2 px-3 py-3 rounded-lg border border-blue-300 bg-blue-50">
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-bold text-blue-700 font-mono tracking-wide">{selected.code}</p>
+              <span className="text-xs text-blue-400 bg-blue-100 px-1.5 py-0.5 rounded font-medium">{selected.category}</span>
+            </div>
+            <p className="text-sm font-medium text-slate-700">{selected.description}</p>
+            <div className="flex items-center gap-3 pt-0.5">
+              <span className="text-xs text-slate-500">
+                Incorporación: <span className="font-medium">{selected.incorporationDate}</span>
+              </span>
+              <span className="text-xs text-slate-400">·</span>
+              <span className="text-xs text-slate-500">
+                VU: <span className="font-medium">{selected.usefulLifeYears} años</span>
+              </span>
+              <span className="text-xs text-slate-400">·</span>
+              <span className="text-xs text-slate-500">
+                Amort: <span className="font-medium">{selected.depreciationRate}% anual</span>
+              </span>
+            </div>
           </div>
           <button
             type="button"
             onClick={() => { onChange(''); setQuery('') }}
-            className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-colors"
+            className="flex-shrink-0 p-1 text-slate-400 hover:text-red-500 transition-colors mt-0.5"
+            title="Limpiar selección"
           >
             <X size={14} />
           </button>
@@ -86,11 +144,11 @@ function BienDeUsoField({
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <input
             type="text"
-            value={value || query}
+            value={query}
             onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
             onFocus={() => setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 150)}
-            placeholder="Buscar por código o descripción Finnegans…"
+            placeholder="Buscar por código o descripción en Finnegans…"
             className="w-full pl-8 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           {open && results.length > 0 && (
@@ -99,18 +157,18 @@ function BienDeUsoField({
                 <button
                   key={b.id}
                   type="button"
-                  onMouseDown={() => { onChange(b.code); setQuery(''); setOpen(false) }}
+                  onMouseDown={() => { onChange(b.id); setQuery(''); setOpen(false) }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-blue-50 text-left transition-colors"
                 >
-                  <span className="text-xs font-mono font-semibold text-blue-600 flex-shrink-0 w-20">{b.code}</span>
+                  <span className="text-xs font-mono font-semibold text-blue-600 flex-shrink-0 w-[72px]">{b.code}</span>
                   <div className="min-w-0">
                     <p className="text-sm text-slate-800 truncate">{b.description}</p>
                     <p className="text-xs text-slate-400">{b.category}</p>
                   </div>
                 </button>
               ))}
-              <div className="px-3 py-2 border-t border-slate-100 text-xs text-slate-400">
-                Datos de muestra — en producción conecta con Finnegans
+              <div className="px-3 py-2 border-t border-slate-100 text-xs text-slate-400 italic">
+                Catálogo de muestra — en producción conecta con Finnegans
               </div>
             </div>
           )}
@@ -547,12 +605,14 @@ export default function AssetEditPage() {
 
   const [form, setForm] = useState<EditForm>(() => {
     if (!asset) return {
-      bieneDeUsoCode: '', name: '', status: 'activo', assetType: '',
+      fixedAssetCode: '', name: '', status: 'activo', assetType: '',
       brand: '', model: '', year: '', serialNumber: '', chassisNumber: '',
       productiveUnit: '', area: '', observations: '', mapsUrl: '',
     }
+    // Find the BienDeUso by its Finnegans code to get the id used by the selector
+    const linkedBienDeUso = mockBienesDeUso.find((b) => b.code === asset.fixedAssetCode)
     return {
-      bieneDeUsoCode: asset.internalCode,
+      fixedAssetCode: linkedBienDeUso?.id ?? '',
       name: asset.name,
       status: asset.status,
       assetType: asset.assetType,
@@ -625,10 +685,11 @@ export default function AssetEditPage() {
     if (!asset) return
 
     const primaryAlloc = allocations[0]
+    const selectedBienDeUso = mockBienesDeUso.find((b) => b.id === form.fixedAssetCode)
     assetRepository.update(asset.id, {
       name: form.name.trim(),
-      internalCode: form.bieneDeUsoCode || form.bieneDeUsoCode,
-      fixedAssetCode: form.bieneDeUsoCode,
+      internalCode: asset.internalCode,
+      fixedAssetCode: selectedBienDeUso?.code ?? asset.fixedAssetCode,
       status: form.status as AssetStatus,
       assetType: form.assetType.trim(),
       brand: form.brand.trim(),
@@ -687,13 +748,17 @@ export default function AssetEditPage() {
           {/* 1. Identificación */}
           <SectionCard
             title="Identificación del activo"
-            subtitle="Código de Bien de Uso (Finnegans), nombre y estado."
+            subtitle="Código del sistema (automático) y Bien de Uso vinculado desde Finnegans."
           >
             <FormSection title="">
-              <FormField label="Código de Bien de Uso / Código Interno" fullWidth>
+              <FormField label="Código de activo (sistema)">
+                <AutoCodeDisplay code={asset.internalCode} />
+              </FormField>
+              <FormField label="Bien de Uso (Finnegans)" fullWidth>
                 <BienDeUsoField
-                  value={form.bieneDeUsoCode}
-                  onChange={(code) => setForm((p) => ({ ...p, bieneDeUsoCode: code }))}
+                  value={form.fixedAssetCode}
+                  onChange={(id) => setForm((p) => ({ ...p, fixedAssetCode: id }))}
+                  categoryFilter={ASSET_TYPE_TO_FINNEGANS[asset.assetType]}
                 />
               </FormField>
               <FormField label="Nombre del activo" required>

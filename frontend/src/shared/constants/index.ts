@@ -199,12 +199,18 @@ export const EXPIRING_SOON_DAYS = 30
 
 export const CLAIM_TYPE_LABELS: Record<string, string> = {
   accidente: 'Accidente',
-  robo: 'Robo',
+  robo: 'Robo con violencia',
+  hurto: 'Hurto',
   incendio: 'Incendio',
   granizo: 'Granizo',
-  daños: 'Daños',
+  granizo_cosecha: 'Granizo (cosecha)',
+  inundacion: 'Inundación',
+  daños: 'Daños materiales',
+  daños_electricos: 'Daños eléctricos',
   rotura_mecanica: 'Rotura mecánica',
   responsabilidad_civil: 'Responsabilidad civil',
+  muerte_accidental: 'Muerte accidental',
+  incapacidad: 'Incapacidad',
   otro: 'Otro',
 }
 
@@ -214,4 +220,17 @@ export const CLAIM_STATUS_LABELS: Record<string, string> = {
   liquidado: 'Liquidado',
   rechazado: 'Rechazado',
   cerrado: 'Cerrado',
+}
+
+export const INSURANCE_TYPE_CLAIM_COVERAGE: Record<string, string[]> = {
+  'Automotor':                  ['accidente', 'robo', 'hurto', 'daños', 'responsabilidad_civil', 'granizo', 'otro'],
+  'Maquinaria agrícola':        ['accidente', 'robo', 'hurto', 'daños', 'rotura_mecanica', 'granizo', 'incendio', 'otro'],
+  'Incendio y robo':            ['incendio', 'robo', 'hurto', 'daños', 'otro'],
+  'Responsabilidad civil':      ['responsabilidad_civil', 'daños', 'accidente', 'otro'],
+  'Accidentes personales':      ['accidente', 'muerte_accidental', 'incapacidad', 'otro'],
+  'Combinado agropecuario':     ['granizo', 'granizo_cosecha', 'inundacion', 'incendio', 'robo', 'hurto', 'daños', 'responsabilidad_civil', 'otro'],
+  'Transporte de mercaderías':  ['robo', 'hurto', 'accidente', 'daños', 'incendio', 'otro'],
+  'Seguro técnico':             ['daños', 'daños_electricos', 'rotura_mecanica', 'incendio', 'robo', 'otro'],
+  'Vida colectivo':             ['muerte_accidental', 'incapacidad', 'otro'],
+  'Riesgos del trabajo':        ['accidente', 'muerte_accidental', 'incapacidad', 'otro'],
 }

@@ -1,40 +1,56 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ShieldAlert, TriangleAlert } from 'lucide-react'
+import {
+  ShieldAlert, TriangleAlert, ArrowLeftRight,
+  Car, Lock, Package, Flame, CloudRain, Wheat, Waves, Wrench,
+  Zap, Settings, Scale, Heart, Activity, HelpCircle,
+  CheckCircle2, AlertTriangle, type LucideIcon,
+} from 'lucide-react'
+import clsx from 'clsx'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
+import {
+  FormSection,
+  FormField,
+  FormInput,
+  FormSelect,
+  FormTextarea,
+} from '../../shared/components/forms/FormSection'
+import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
 import { claimRepository } from '../../services/repositories/claim.repository'
 import { policyRepository } from '../../services/repositories/policy.repository'
 import { mockAssets } from '../../data/mock-assets'
-import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS, INSURANCE_COMPANIES } from '../../shared/constants'
-import type { Claim, ClaimStatus, ClaimType } from '../../shared/types'
+import {
+  CLAIM_TYPE_LABELS,
+  CLAIM_STATUS_LABELS,
+  INSURANCE_COMPANIES,
+  INSURANCE_TYPE_CLAIM_COVERAGE,
+} from '../../shared/constants'
+import type { Claim, ClaimStatus, ClaimType, Currency } from '../../shared/types'
 
-// ── Field helpers ─────────────────────────────────────────────────────────────
+// ─── Claim type card config ───────────────────────────────────────────────────
 
-function FormLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
-  return (
-    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-      {children}
-      {required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
-  )
-}
+type ClaimTypeConfig = { key: ClaimType; Icon: LucideIcon }
 
-function FieldError({ message }: { message?: string }) {
-  if (!message) return null
-  return <p className="text-xs text-red-600 mt-1.5">{message}</p>
-}
+const CLAIM_TYPE_CONFIG: ClaimTypeConfig[] = [
+  { key: 'accidente',           Icon: Car },
+  { key: 'robo',                Icon: Lock },
+  { key: 'hurto',               Icon: Package },
+  { key: 'incendio',            Icon: Flame },
+  { key: 'granizo',             Icon: CloudRain },
+  { key: 'granizo_cosecha',     Icon: Wheat },
+  { key: 'inundacion',          Icon: Waves },
+  { key: 'daños',               Icon: Wrench },
+  { key: 'daños_electricos',    Icon: Zap },
+  { key: 'rotura_mecanica',     Icon: Settings },
+  { key: 'responsabilidad_civil', Icon: Scale },
+  { key: 'muerte_accidental',   Icon: Heart },
+  { key: 'incapacidad',         Icon: Activity },
+  { key: 'otro',                Icon: HelpCircle },
+]
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-4">
-      {children}
-    </p>
-  )
-}
-
-// ── Validation ────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FormErrors {
   claimType?: string
@@ -42,10 +58,11 @@ interface FormErrors {
   reportDate?: string
   description?: string
   insuranceCompany?: string
-  claimedAmountArs?: string
+  claimedAmount?: string
+  exchangeRate?: string
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ClaimNewPage() {
   const navigate = useNavigate()
@@ -53,12 +70,11 @@ export default function ClaimNewPage() {
 
   const preselectedAssetId = searchParams.get('assetId') ?? ''
   const preselectedPolicyId = searchParams.get('policyId') ?? ''
-
   const preselectedAsset = preselectedAssetId
     ? mockAssets.find((a) => a.id === preselectedAssetId) ?? null
     : null
 
-  // Form state
+  // Identity
   const [assetId, setAssetId] = useState(preselectedAssetId)
   const [policyId, setPolicyId] = useState(preselectedPolicyId)
   const [claimType, setClaimType] = useState<ClaimType | ''>('')
@@ -67,9 +83,15 @@ export default function ClaimNewPage() {
   const [reportDate, setReportDate] = useState('')
   const [description, setDescription] = useState('')
   const [insuranceCompany, setInsuranceCompany] = useState('')
-  const [claimedAmountArs, setClaimedAmountArs] = useState('')
-  const [settledAmountArs, setSettledAmountArs] = useState('')
-  const [deductibleArs, setDeductibleArs] = useState('')
+
+  // Amounts + currency
+  const [currency, setCurrency] = useState<Currency>('ARS')
+  const [exchangeRate, setExchangeRate] = useState('')
+  const [claimedAmount, setClaimedAmount] = useState('')
+  const [realAmount, setRealAmount] = useState('')
+  const [settledAmount, setSettledAmount] = useState('')
+  const [deductible, setDeductible] = useState('')
+
   const [observations, setObservations] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
@@ -78,6 +100,31 @@ export default function ClaimNewPage() {
   const selectedAsset = assetId ? mockAssets.find((a) => a.id === assetId) ?? null : null
   const availablePolicies = assetId ? policyRepository.findByAsset(assetId) : []
   const selectedPolicy = policyId ? availablePolicies.find((p) => p.id === policyId) ?? null : null
+
+  const tc = parseFloat(exchangeRate) || 0
+  const toArs = (val: string) => {
+    const n = parseFloat(val) || 0
+    return currency === 'USD' && tc > 0 ? n * tc : n
+  }
+
+  const claimedAmountArs = toArs(claimedAmount)
+  const equivalentClaimedAmount =
+    currency === 'ARS' && tc > 0
+      ? claimedAmountArs / tc
+      : currency === 'USD' && tc > 0
+        ? claimedAmountArs / tc
+        : 0
+
+  const mainPrefix = currency === 'USD' ? 'US$' : 'AR$'
+  const altPrefix = currency === 'USD' ? 'AR$' : 'US$'
+  const altAmount = currency === 'USD' ? claimedAmountArs : equivalentClaimedAmount
+
+  // Coverage logic
+  const coveredTypes: string[] = selectedPolicy
+    ? (INSURANCE_TYPE_CLAIM_COVERAGE[selectedPolicy.insuranceType] ?? [])
+    : []
+  const selectedTypeCovered = claimType ? coveredTypes.includes(claimType) : null
+  const noCoverageWarning = claimType && selectedPolicy && selectedTypeCovered === false
 
   const handleAssetChange = (id: string) => {
     setAssetId(id)
@@ -99,8 +146,10 @@ export default function ClaimNewPage() {
     if (!reportDate) e.reportDate = 'Ingresá la fecha de denuncia.'
     if (!description.trim()) e.description = 'Ingresá una descripción del hecho.'
     if (!insuranceCompany.trim()) e.insuranceCompany = 'Ingresá la compañía aseguradora.'
-    if (!claimedAmountArs || isNaN(Number(claimedAmountArs)) || Number(claimedAmountArs) < 0)
-      e.claimedAmountArs = 'Ingresá un monto reclamado válido.'
+    if (!claimedAmount || isNaN(Number(claimedAmount)) || Number(claimedAmount) < 0)
+      e.claimedAmount = 'Ingresá un monto reclamado válido.'
+    if (currency === 'USD' && (!exchangeRate || parseFloat(exchangeRate) <= 0))
+      e.exchangeRate = 'Ingresá el tipo de cambio.'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -120,9 +169,12 @@ export default function ClaimNewPage() {
       description: description.trim(),
       insuranceCompany: insuranceCompany.trim(),
       status,
-      claimedAmountArs: Number(claimedAmountArs),
-      settledAmountArs: settledAmountArs ? Number(settledAmountArs) : null,
-      deductibleArs: deductibleArs ? Number(deductibleArs) : null,
+      currency,
+      exchangeRate: tc || undefined,
+      claimedAmountArs: toArs(claimedAmount),
+      realAmountArs: realAmount ? toArs(realAmount) : null,
+      settledAmountArs: settledAmount ? toArs(settledAmount) : null,
+      deductibleArs: deductible ? toArs(deductible) : null,
       observations: observations.trim() || null,
       createdAt: new Date().toISOString().split('T')[0],
       updatedAt: new Date().toISOString().split('T')[0],
@@ -143,17 +195,14 @@ export default function ClaimNewPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-        {/* Main form — 2/3 */}
+        {/* ── Main: 2/3 ─────────────────────────────────────────────────── */}
         <div className="lg:col-span-2 space-y-5">
 
-          {/* Sección: Activo y póliza */}
-          <SectionCard title="Activo y Póliza">
-            <SectionTitle>Asociación</SectionTitle>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
+          {/* Sección 1: Activo y Póliza */}
+          <SectionCard title="Activo y Póliza" subtitle="Asociá el siniestro a un bien asegurado">
+            <FormSection title="">
               {/* Activo */}
-              <div>
-                <FormLabel>Activo asociado</FormLabel>
+              <FormField label="Activo asociado">
                 {preselectedAsset ? (
                   <div className="flex items-center justify-between px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg">
                     <div>
@@ -169,37 +218,33 @@ export default function ClaimNewPage() {
                     </button>
                   </div>
                 ) : (
-                  <select
-                    value={assetId}
-                    onChange={(e) => handleAssetChange(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white text-slate-800"
-                  >
+                  <FormSelect value={assetId} onChange={(e) => handleAssetChange(e.target.value)}>
                     <option value="">Sin activo asociado</option>
                     {mockAssets.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.internalCode} — {a.name}
-                      </option>
+                      <option key={a.id} value={a.id}>{a.internalCode} — {a.name}</option>
                     ))}
-                  </select>
+                  </FormSelect>
                 )}
-              </div>
+              </FormField>
 
               {/* Póliza */}
-              <div>
-                <FormLabel>Póliza asociada</FormLabel>
+              <FormField label="Póliza asociada">
                 {availablePolicies.length > 0 ? (
-                  <select
-                    value={policyId}
-                    onChange={(e) => handlePolicyChange(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white text-slate-800"
-                  >
-                    <option value="">Sin póliza asociada</option>
-                    {availablePolicies.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.policyNumber} — {p.insuranceCompany}
-                      </option>
-                    ))}
-                  </select>
+                  <>
+                    <FormSelect value={policyId} onChange={(e) => handlePolicyChange(e.target.value)}>
+                      <option value="">Sin póliza asociada</option>
+                      {availablePolicies.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.policyNumber} — {p.insuranceType}
+                        </option>
+                      ))}
+                    </FormSelect>
+                    {selectedPolicy && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        {selectedPolicy.coverageType} · Vigencia: {selectedPolicy.endDate}
+                      </p>
+                    )}
+                  </>
                 ) : (
                   <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg">
                     <TriangleAlert size={13} className="text-slate-400 flex-shrink-0" />
@@ -208,194 +253,363 @@ export default function ClaimNewPage() {
                     </p>
                   </div>
                 )}
-                {selectedPolicy && (
-                  <p className="text-xs text-slate-500 mt-1.5">
-                    {selectedPolicy.insuranceType} · {selectedPolicy.coverageType}
-                  </p>
-                )}
+              </FormField>
+            </FormSection>
+
+            {/* Coverage chips when policy selected */}
+            {selectedPolicy && coveredTypes.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">
+                  Coberturas de {selectedPolicy.insuranceType}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {coveredTypes.map((t) => (
+                    <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-700">
+                      <CheckCircle2 size={9} />
+                      {CLAIM_TYPE_LABELS[t] ?? t}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </SectionCard>
 
-          {/* Sección: Datos del siniestro */}
-          <SectionCard title="Datos del Siniestro">
-            <SectionTitle>Identificación</SectionTitle>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Sección 2: Tipo de siniestro */}
+          <SectionCard
+            title="Tipo de Siniestro"
+            subtitle={
+              selectedPolicy
+                ? `Tipos cubiertos por ${selectedPolicy.insuranceType} marcados en verde`
+                : 'Seleccioná la naturaleza del siniestro'
+            }
+          >
+            {errors.claimType && (
+              <p className="text-xs text-red-500 mb-3">{errors.claimType}</p>
+            )}
 
-              <div>
-                <FormLabel required>Tipo de siniestro</FormLabel>
-                <select
-                  value={claimType}
-                  onChange={(e) => setClaimType(e.target.value as ClaimType)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white text-slate-800"
-                >
-                  <option value="">Seleccioná un tipo</option>
-                  {(Object.entries(CLAIM_TYPE_LABELS) as [ClaimType, string][]).map(([val, label]) => (
-                    <option key={val} value={val}>{label}</option>
-                  ))}
-                </select>
-                <FieldError message={errors.claimType} />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {CLAIM_TYPE_CONFIG.map(({ key, Icon }) => {
+                const isCovered = selectedPolicy ? coveredTypes.includes(key) : null
+                const isSelected = claimType === key
+                const label = CLAIM_TYPE_LABELS[key]
+
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      setClaimType(key)
+                      if (errors.claimType) setErrors((p) => ({ ...p, claimType: undefined }))
+                    }}
+                    className={clsx(
+                      'relative flex flex-col items-start gap-2 p-3 rounded-xl border text-left transition-all',
+                      isSelected
+                        ? 'bg-blue-50 border-blue-400 ring-1 ring-blue-300 shadow-sm'
+                        : isCovered === false
+                          ? 'bg-white border-slate-200 hover:border-slate-300 opacity-60 hover:opacity-80'
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                    )}
+                  >
+                    <div className={clsx(
+                      'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
+                      isSelected ? 'bg-blue-100' : isCovered ? 'bg-emerald-50' : 'bg-slate-100',
+                    )}>
+                      <Icon
+                        size={14}
+                        className={isSelected ? 'text-blue-600' : isCovered ? 'text-emerald-600' : 'text-slate-500'}
+                      />
+                    </div>
+                    <span className={clsx(
+                      'text-xs font-medium leading-tight',
+                      isSelected ? 'text-blue-700' : 'text-slate-700',
+                    )}>
+                      {label}
+                    </span>
+                    {isCovered !== null && (
+                      <span className={clsx(
+                        'text-[10px] font-semibold leading-none',
+                        isCovered ? 'text-emerald-600' : 'text-slate-400',
+                      )}>
+                        {isCovered ? '✓ Cubierto' : '✗ Sin cobertura'}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* No-coverage warning */}
+            {noCoverageWarning && (
+              <div className="mt-3 flex items-start gap-2.5 px-3.5 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  <strong>{CLAIM_TYPE_LABELS[claimType as ClaimType]}</strong> podría no estar cubierto por{' '}
+                  <strong>{selectedPolicy?.insuranceType}</strong>. Verificá la cobertura con{' '}
+                  {selectedPolicy?.insuranceCompany} antes de continuar.
+                </p>
               </div>
+            )}
+          </SectionCard>
 
-              <div>
-                <FormLabel required>Estado inicial</FormLabel>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as ClaimStatus)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white text-slate-800"
-                >
+          {/* Sección 3: Datos del hecho */}
+          <SectionCard title="Datos del Hecho" subtitle="Fechas y descripción del siniestro">
+            <FormSection title="">
+              <FormField label="Fecha del hecho" required error={errors.occurrenceDate}>
+                <FormInput
+                  type="date"
+                  value={occurrenceDate}
+                  onChange={(e) => { setOccurrenceDate(e.target.value); setErrors((p) => ({ ...p, occurrenceDate: undefined })) }}
+                />
+              </FormField>
+
+              <FormField label="Fecha de denuncia" required error={errors.reportDate}>
+                <FormInput
+                  type="date"
+                  value={reportDate}
+                  onChange={(e) => { setReportDate(e.target.value); setErrors((p) => ({ ...p, reportDate: undefined })) }}
+                />
+              </FormField>
+
+              <FormField label="Estado inicial">
+                <FormSelect value={status} onChange={(e) => setStatus(e.target.value as ClaimStatus)}>
                   {(Object.entries(CLAIM_STATUS_LABELS) as [ClaimStatus, string][]).map(([val, label]) => (
                     <option key={val} value={val}>{label}</option>
                   ))}
-                </select>
-              </div>
-
-              <div>
-                <FormLabel required>Fecha del hecho</FormLabel>
-                <input
-                  type="date"
-                  value={occurrenceDate}
-                  onChange={(e) => setOccurrenceDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
-                />
-                <FieldError message={errors.occurrenceDate} />
-              </div>
-
-              <div>
-                <FormLabel required>Fecha de denuncia</FormLabel>
-                <input
-                  type="date"
-                  value={reportDate}
-                  onChange={(e) => setReportDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
-                />
-                <FieldError message={errors.reportDate} />
-              </div>
-            </div>
+                </FormSelect>
+              </FormField>
+            </FormSection>
 
             <div className="mt-4">
-              <FormLabel required>Descripción del hecho</FormLabel>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                placeholder="Describí qué ocurrió, cómo y dónde. Incluí detalles relevantes para el trámite."
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white placeholder:text-slate-400 resize-none"
-              />
-              <FieldError message={errors.description} />
+              <FormField label="Descripción del hecho" required error={errors.description}>
+                <FormTextarea
+                  value={description}
+                  onChange={(e) => { setDescription(e.target.value); setErrors((p) => ({ ...p, description: undefined })) }}
+                  rows={4}
+                  placeholder="Describí qué ocurrió, cómo y dónde. Incluí detalles relevantes para el trámite."
+                />
+              </FormField>
             </div>
           </SectionCard>
 
-          {/* Sección: Aseguradora */}
-          <SectionCard title="Aseguradora">
-            <SectionTitle>Compañía</SectionTitle>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <FormLabel required>Compañía aseguradora</FormLabel>
-                <select
+          {/* Sección 4: Aseguradora */}
+          <SectionCard title="Aseguradora" subtitle="Compañía a la que se reporta el siniestro">
+            <FormSection title="">
+              <FormField label="Compañía aseguradora" required error={errors.insuranceCompany}>
+                <FormSelect
                   value={insuranceCompany}
-                  onChange={(e) => setInsuranceCompany(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white text-slate-800"
+                  onChange={(e) => { setInsuranceCompany(e.target.value); setErrors((p) => ({ ...p, insuranceCompany: undefined })) }}
                 >
                   <option value="">Seleccioná una aseguradora</option>
                   {INSURANCE_COMPANIES.map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
-                </select>
-                <FieldError message={errors.insuranceCompany} />
-              </div>
-            </div>
+                </FormSelect>
+              </FormField>
+            </FormSection>
           </SectionCard>
 
-          {/* Sección: Montos */}
-          <SectionCard title="Montos">
-            <SectionTitle>Importes en ARS</SectionTitle>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <FormLabel required>Monto reclamado</FormLabel>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-medium">$</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={claimedAmountArs}
-                    onChange={(e) => setClaimedAmountArs(e.target.value)}
-                    placeholder="0"
-                    className="w-full pl-6 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white placeholder:text-slate-400"
-                  />
-                </div>
-                <FieldError message={errors.claimedAmountArs} />
-              </div>
+          {/* Sección 5: Importes */}
+          <SectionCard title="Importes" subtitle="Moneda, tipo de cambio y montos del siniestro">
+            <FormSection title="">
+              <FormField label="Moneda">
+                <FormSelect value={currency} onChange={(e) => setCurrency(e.target.value as Currency)}>
+                  <option value="ARS">ARS — Pesos Argentinos</option>
+                  <option value="USD">USD — Dólares</option>
+                </FormSelect>
+              </FormField>
 
-              <div>
-                <FormLabel>Monto liquidado</FormLabel>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-medium">$</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={settledAmountArs}
-                    onChange={(e) => setSettledAmountArs(e.target.value)}
-                    placeholder="0"
-                    className="w-full pl-6 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white placeholder:text-slate-400"
-                  />
-                </div>
-                <p className="text-xs text-slate-400 mt-1">Completar cuando la aseguradora apruebe la liquidación</p>
-              </div>
+              <FormField label="Tipo de Cambio (ARS/USD)" required={currency === 'USD'} error={errors.exchangeRate}>
+                <FormInput
+                  type="number"
+                  placeholder="Ej: 1150"
+                  value={exchangeRate}
+                  onChange={(e) => { setExchangeRate(e.target.value); setErrors((p) => ({ ...p, exchangeRate: undefined })) }}
+                  min="0.01"
+                  step="0.01"
+                  disabled={currency === 'ARS' && !exchangeRate}
+                />
+                {currency === 'ARS' && (
+                  <p className="text-xs text-slate-400 mt-0.5">Opcional para mostrar equivalente en USD</p>
+                )}
+              </FormField>
 
-              <div>
-                <FormLabel>Franquicia</FormLabel>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-medium">$</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={deductibleArs}
-                    onChange={(e) => setDeductibleArs(e.target.value)}
-                    placeholder="0"
-                    className="w-full pl-6 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white placeholder:text-slate-400"
-                  />
+              <FormField label={`Monto reclamado (${mainPrefix})`} required error={errors.claimedAmount}>
+                <FormInput
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0"
+                  value={claimedAmount}
+                  onChange={(e) => { setClaimedAmount(e.target.value); setErrors((p) => ({ ...p, claimedAmount: undefined })) }}
+                />
+              </FormField>
+
+              <FormField label={`Valor real del siniestro (${mainPrefix})`}>
+                <FormInput
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0"
+                  value={realAmount}
+                  onChange={(e) => setRealAmount(e.target.value)}
+                />
+                <p className="text-xs text-slate-400 mt-0.5">El daño real puede superar el límite cubierto</p>
+              </FormField>
+
+              <FormField label={`Monto liquidado (${mainPrefix})`}>
+                <FormInput
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0"
+                  value={settledAmount}
+                  onChange={(e) => setSettledAmount(e.target.value)}
+                />
+                <p className="text-xs text-slate-400 mt-0.5">Completar cuando la aseguradora apruebe</p>
+              </FormField>
+
+              <FormField label={`Franquicia (${mainPrefix})`}>
+                <FormInput
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0"
+                  value={deductible}
+                  onChange={(e) => setDeductible(e.target.value)}
+                />
+              </FormField>
+            </FormSection>
+
+            {/* Equivalente */}
+            {claimedAmountArs > 0 && tc > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Reclamado</span>
+                  <span className="text-sm font-bold text-slate-800 tabular-nums">
+                    {mainPrefix}{' '}
+                    {(parseFloat(claimedAmount) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 bg-blue-50 rounded-xl border border-blue-100">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-500 uppercase tracking-wider">
+                    <ArrowLeftRight size={11} />
+                    Equivalente
+                  </span>
+                  <span className="text-sm font-bold text-blue-700 tabular-nums">
+                    {altPrefix}{' '}
+                    {altAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                 </div>
               </div>
-            </div>
+            )}
           </SectionCard>
 
-          {/* Observaciones */}
+          {/* Sección 6: Documentación */}
+          <SectionCard title="Documentación Adjunta" subtitle="Denuncias, peritajes, facturas de reparación (PDF, Word)">
+            <FileDropzone
+              label="Adjuntá documentos del siniestro (denuncia policial, peritaje, presupuestos)"
+              accept=".pdf,.doc,.docx,.xls,.xlsx"
+              maxFiles={10}
+            />
+          </SectionCard>
+
+          {/* Sección 7: Fotos y Videos */}
+          <SectionCard title="Fotos y Videos" subtitle="Evidencia fotográfica y audiovisual del daño">
+            <FileDropzone
+              label="Adjuntá fotos y videos del siniestro (JPG, PNG, MP4, MOV)"
+              accept=".jpg,.jpeg,.png,.gif,.mp4,.mov,.avi,.webm"
+              maxFiles={20}
+            />
+          </SectionCard>
+
+          {/* Sección 8: Observaciones */}
           <SectionCard title="Observaciones">
-            <textarea
+            <FormTextarea
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
               rows={3}
               placeholder="Notas internas, estado de gestión, contactos en la aseguradora, próximos pasos, etc."
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white placeholder:text-slate-400 resize-none"
             />
           </SectionCard>
         </div>
 
-        {/* Right sidebar — 1/3 */}
+        {/* ── Sidebar: 1/3 ──────────────────────────────────────────────────── */}
         <div className="space-y-4">
 
           {/* Resumen */}
           <SectionCard title="Resumen">
             <div className="space-y-3">
-              <SummaryRow label="Tipo" value={claimType ? CLAIM_TYPE_LABELS[claimType] : '—'} />
+              <SummaryRow label="Tipo" value={claimType ? (CLAIM_TYPE_LABELS[claimType] ?? claimType) : '—'} />
               <SummaryRow label="Estado" value={CLAIM_STATUS_LABELS[status]} />
               <SummaryRow label="Activo" value={selectedAsset?.internalCode ?? '—'} />
               <SummaryRow label="Póliza" value={selectedPolicy?.policyNumber ?? '—'} />
               <SummaryRow label="Aseguradora" value={insuranceCompany || '—'} />
               <SummaryRow
-                label="Monto reclamado"
-                value={claimedAmountArs ? `AR$ ${Number(claimedAmountArs).toLocaleString('es-AR')}` : '—'}
+                label={`Reclamado (${mainPrefix})`}
+                value={claimedAmount ? `${mainPrefix} ${(parseFloat(claimedAmount) || 0).toLocaleString('es-AR')}` : '—'}
               />
+              {realAmount && (
+                <SummaryRow
+                  label={`Valor real (${mainPrefix})`}
+                  value={`${mainPrefix} ${(parseFloat(realAmount) || 0).toLocaleString('es-AR')}`}
+                />
+              )}
+              {claimedAmountArs > 0 && tc > 0 && (
+                <SummaryRow
+                  label={`Equiv. ${altPrefix}`}
+                  value={`${altPrefix} ${altAmount.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
+                />
+              )}
             </div>
           </SectionCard>
 
+          {/* Coverage banner */}
+          {selectedPolicy && (
+            <div className={clsx(
+              'flex items-start gap-3 px-4 py-3.5 rounded-xl border',
+              noCoverageWarning
+                ? 'bg-amber-50 border-amber-200'
+                : selectedTypeCovered
+                  ? 'bg-emerald-50 border-emerald-200'
+                  : 'bg-slate-50 border-slate-200',
+            )}>
+              {noCoverageWarning ? (
+                <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
+              ) : selectedTypeCovered ? (
+                <CheckCircle2 size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+              ) : (
+                <ShieldAlert size={14} className="text-slate-500 mt-0.5 flex-shrink-0" />
+              )}
+              <div>
+                <p className={clsx(
+                  'text-xs font-semibold mb-0.5',
+                  noCoverageWarning ? 'text-amber-800' : selectedTypeCovered ? 'text-emerald-800' : 'text-slate-700',
+                )}>
+                  {noCoverageWarning
+                    ? 'Posible falta de cobertura'
+                    : selectedTypeCovered
+                      ? 'Tipo cubierto por la póliza'
+                      : `Cobertura: ${selectedPolicy.insuranceType}`}
+                </p>
+                <p className={clsx(
+                  'text-xs leading-relaxed',
+                  noCoverageWarning ? 'text-amber-700' : 'text-slate-500',
+                )}>
+                  {noCoverageWarning
+                    ? `Verificá la cobertura antes de continuar el trámite.`
+                    : selectedTypeCovered
+                      ? `Este tipo está incluido en ${selectedPolicy.insuranceType}.`
+                      : 'Seleccioná un tipo de siniestro para ver la cobertura.'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Hint */}
           <div className="flex items-start gap-3 px-4 py-3.5 bg-blue-50 border border-blue-100 rounded-xl">
-            <ShieldAlert size={15} className="text-blue-500 mt-0.5 flex-shrink-0" />
+            <ShieldAlert size={14} className="text-blue-500 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-blue-700 leading-relaxed">
-              El número de siniestro se genera automáticamente al guardar. Podés actualizarlo luego con el
-              número asignado por la aseguradora.
+              El número de siniestro se genera automáticamente. Podés actualizarlo luego con el número asignado por la aseguradora.
             </p>
           </div>
 

@@ -194,28 +194,28 @@ function CategoryPicker({
   )
 }
 
-// ── Auto-generated code (simulates Finnegans assignment) ──────────────────────
+// ── Auto-generated internal code (system-assigned) ────────────────────────────
 
 function generateNextCode(): string {
   const nums = mockAssets
     .map((a) => a.internalCode)
-    .filter((c) => /^BU-\d+$/.test(c))
-    .map((c) => parseInt(c.replace('BU-', ''), 10))
+    .filter((c) => /^ACT-\d+$/.test(c))
+    .map((c) => parseInt(c.replace('ACT-', ''), 10))
   const max = nums.length > 0 ? Math.max(...nums) : 0
-  return `BU-${String(max + 1).padStart(5, '0')}`
+  return `ACT-${String(max + 1).padStart(5, '0')}`
 }
 
 function AutoCodeDisplay({ code }: { code: string }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50">
-      <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-        <Hash size={14} className="text-blue-600" />
+      <div className="w-7 h-7 rounded-lg bg-slate-200 flex items-center justify-center flex-shrink-0">
+        <Hash size={14} className="text-slate-500" />
       </div>
       <div className="min-w-0">
         <p className="text-sm font-semibold font-mono text-slate-800 tracking-wider">{code}</p>
-        <p className="text-xs text-slate-400 mt-0.5">Asignado automáticamente por Finnegans al guardar</p>
+        <p className="text-xs text-slate-400 mt-0.5">Asignado automáticamente por el sistema</p>
       </div>
-      <span className="ml-auto flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+      <span className="ml-auto flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
         Auto
       </span>
     </div>
@@ -224,35 +224,72 @@ function AutoCodeDisplay({ code }: { code: string }) {
 
 // ── Bien de Uso selector (Finnegans catalog) ───────────────────────────────────
 
+// Maps AssetCategory to matching Finnegans categories for filtering
+const CATEGORY_TO_FINNEGANS: Partial<Record<AssetCategory, string[]>> = {
+  vehiculo:       ['Rodados'],
+  camioneta:      ['Rodados'],
+  camion:         ['Rodados'],
+  moto:           ['Rodados'],
+  tractor:        ['Maquinaria y Equipo'],
+  cosechadora:    ['Maquinaria y Equipo'],
+  pulverizadora:  ['Maquinaria y Equipo'],
+  implemento:     ['Maquinaria y Equipo', 'Implementos Agrícolas'],
+  equipo:         ['Maquinaria y Equipo'],
+  maquinaria:     ['Maquinaria y Equipo'],
+  edificio:       ['Inmuebles'],
+  establecimiento: ['Inmuebles'],
+  infraestructura: ['Infraestructura y Mejoras'],
+}
+
 function BienDeUsoField({
-  value, onChange,
-}: { value: string; onChange: (id: string) => void }) {
+  value, onChange, categoryFilter,
+}: { value: string; onChange: (id: string) => void; categoryFilter?: string[] }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
 
+  const filteredCatalog = useMemo(() => {
+    if (!categoryFilter?.length) return mockBienesDeUso
+    return mockBienesDeUso.filter((b) => categoryFilter.includes(b.category))
+  }, [categoryFilter])
+
   const results = useMemo(() => {
-    if (!query.trim()) return mockBienesDeUso.slice(0, 8)
+    if (!query.trim()) return filteredCatalog.slice(0, 8)
     const q = query.toLowerCase()
-    return mockBienesDeUso.filter(
+    return filteredCatalog.filter(
       (b) => b.code.toLowerCase().includes(q) || b.description.toLowerCase().includes(q),
     ).slice(0, 8)
-  }, [query])
+  }, [query, filteredCatalog])
 
   const selected = mockBienesDeUso.find((b) => b.id === value)
 
   return (
     <div className="relative">
       {selected ? (
-        <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-blue-300 bg-blue-50">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-blue-700 font-mono">{selected.code}</p>
-            <p className="text-sm text-slate-700 truncate">{selected.description}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{selected.category}</p>
+        <div className="flex items-start justify-between gap-2 px-3 py-3 rounded-lg border border-blue-300 bg-blue-50">
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-bold text-blue-700 font-mono tracking-wide">{selected.code}</p>
+              <span className="text-xs text-blue-400 bg-blue-100 px-1.5 py-0.5 rounded font-medium">{selected.category}</span>
+            </div>
+            <p className="text-sm font-medium text-slate-700">{selected.description}</p>
+            <div className="flex items-center gap-3 pt-0.5">
+              <span className="text-xs text-slate-500">
+                Incorporación: <span className="font-medium">{selected.incorporationDate}</span>
+              </span>
+              <span className="text-xs text-slate-400">·</span>
+              <span className="text-xs text-slate-500">
+                VU: <span className="font-medium">{selected.usefulLifeYears} años</span>
+              </span>
+              <span className="text-xs text-slate-400">·</span>
+              <span className="text-xs text-slate-500">
+                Amort: <span className="font-medium">{selected.depreciationRate}% anual</span>
+              </span>
+            </div>
           </div>
           <button
             type="button"
             onClick={() => { onChange(''); setQuery('') }}
-            className="flex-shrink-0 p-1 text-slate-400 hover:text-red-500 transition-colors"
+            className="flex-shrink-0 p-1 text-slate-400 hover:text-red-500 transition-colors mt-0.5"
             title="Limpiar selección"
           >
             <X size={14} />
@@ -710,9 +747,11 @@ export default function AssetNewPage() {
 
     const primaryAlloc = allocations[0]
 
+    const selectedBienDeUso = mockBienesDeUso.find((b) => b.id === form.bienDeUsoId)
+
     const newAsset = assetRepository.create({
       internalCode: generatedCode,
-      fixedAssetCode: generatedCode,
+      fixedAssetCode: selectedBienDeUso?.code ?? '',
       name: form.name.trim(),
       assetType: CATEGORY_LABEL[category],
       brand: form.brand.trim(),
@@ -781,14 +820,15 @@ export default function AssetNewPage() {
               subtitle="Código de Bien de Uso (Finnegans), nombre y estado."
             >
               <FormSection title="">
+                <FormField label="Código de activo (sistema)">
+                  <AutoCodeDisplay code={generatedCode} />
+                </FormField>
                 <FormField label="Bien de Uso (Finnegans)" fullWidth>
                   <BienDeUsoField
                     value={form.bienDeUsoId}
                     onChange={(id) => setForm((prev) => ({ ...prev, bienDeUsoId: id }))}
+                    categoryFilter={category ? CATEGORY_TO_FINNEGANS[category] : undefined}
                   />
-                </FormField>
-                <FormField label="Código de Bien de Uso">
-                  <AutoCodeDisplay code={generatedCode} />
                 </FormField>
                 <FormField label="Nombre / Descripción" required>
                   <FormInput placeholder={namePlaceholder} value={form.name} onChange={set('name')} />

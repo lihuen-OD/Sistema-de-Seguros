@@ -2,22 +2,19 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   FileDown,
-  Hash,
-  Calendar,
-  DollarSign,
+  Edit2,
   Receipt,
   CheckCircle2,
   Clock,
   AlertCircle,
-  Check,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
-import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
+import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
 import {
   formatCurrencyFull,
   formatCurrencyCompact,
@@ -25,8 +22,9 @@ import {
 } from '../../../shared/utils/format'
 import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
 import { policyRepository } from '../../../services/repositories/policy.repository'
-import { DOCUMENT_TYPE_LABELS, PAYMENT_STATUS_LABELS } from '../../../shared/constants'
-import type { DocumentPolicyAllocation, Installment, TableColumn } from '../../../shared/types'
+import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
+import { ROUTES } from '../../../app/routes'
+import type { DocumentPolicyAllocation, Installment, InstallmentUpdate, TableColumn } from '../../../shared/types'
 
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -34,7 +32,6 @@ export default function DocumentDetailPage() {
 
   const doc = accountingDocumentRepository.findById(id!)
 
-  // Must be before early return to satisfy rules of hooks
   const [installments, setInstallments] = useState<Installment[]>(() =>
     doc ? accountingDocumentRepository.findInstallmentsByDocument(doc.id) : []
   )
@@ -50,33 +47,32 @@ export default function DocumentDetailPage() {
     )
   }
 
+  const today = new Date().toISOString().slice(0, 10)
   const allocations = accountingDocumentRepository.findAllocationsByDocument(doc.id)
-
   const computedTotal = doc.netAmount + doc.vatAmount + doc.otherTaxesAmount
 
   const paidCount = installments.filter((i) => i.paymentStatus === 'pagado').length
   const pendingCount = installments.filter((i) => i.paymentStatus === 'pendiente').length
   const partialCount = installments.filter((i) => i.paymentStatus === 'parcial').length
 
-  // Derived document-level status from live installments state
+  const saldo = installments
+    .filter((i) => i.paymentStatus !== 'pagado')
+    .reduce((sum, i) => sum + Math.abs(i.amount), 0)
+
   const derivedDocStatus: string =
     installments.length > 0 && installments.every((i) => i.paymentStatus === 'pagado')
       ? 'pagado'
-      : installments.some((i) => i.paymentStatus === 'pagado')
-      ? 'parcial'
-      : doc.paymentStatus
+      : installments.some((i) => i.paymentStatus === 'pagado' || i.paymentStatus === 'parcial')
+        ? 'parcial'
+        : doc.paymentStatus
 
-  function handleMarkPaid(installmentId: string) {
+  function handleInstallmentUpdate(instId: string, updates: InstallmentUpdate) {
+    accountingDocumentRepository.updateInstallment(instId, updates)
     setInstallments((prev) =>
-      prev.map((inst) =>
-        inst.id === installmentId
-          ? { ...inst, paymentStatus: 'pagado' as const, paidAt: '2026-06-11' }
-          : inst
-      )
+      prev.map((i) => (i.id === instId ? { ...i, ...updates } : i))
     )
   }
 
-  // Allocation columns
   const allocationColumns: TableColumn<DocumentPolicyAllocation>[] = [
     {
       key: 'policyId',
@@ -95,9 +91,7 @@ export default function DocumentDetailPage() {
       label: 'Aseguradora',
       render: (v) => {
         const policy = policyRepository.findById(v as string)
-        return (
-          <span className="text-xs text-slate-600">{policy?.insuranceCompany ?? '—'}</span>
-        )
+        return <span className="text-xs text-slate-600">{policy?.insuranceCompany ?? '—'}</span>
       },
     },
     {
@@ -132,64 +126,6 @@ export default function DocumentDetailPage() {
     },
   ]
 
-  // Installment columns
-  const installmentColumns: TableColumn<Installment>[] = [
-    {
-      key: 'installmentNumber',
-      label: 'N°',
-      render: (v) => (
-        <span className="text-xs font-semibold text-slate-500 tabular-nums">
-          {String(v).padStart(2, '0')}
-        </span>
-      ),
-      className: 'w-12',
-    },
-    {
-      key: 'dueDate',
-      label: 'Vencimiento',
-      render: (v) => (
-        <span className="text-xs text-slate-600">{formatDate(v as string)}</span>
-      ),
-    },
-    {
-      key: 'amount',
-      label: 'Importe',
-      render: (v, row) => (
-        <span className="tabular-nums font-semibold text-slate-800 text-sm">
-          {formatCurrencyFull(v as number, row.currency)}
-        </span>
-      ),
-      className: 'text-right',
-      headerClassName: 'text-right',
-    },
-    {
-      key: 'paymentStatus',
-      label: 'Estado',
-      render: (v, row) => {
-        const status = v as string
-        if (status === 'pendiente' || status === 'parcial') {
-          return (
-            <button
-              onClick={() => handleMarkPaid(row.id)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg transition-colors"
-            >
-              <Check size={11} strokeWidth={2.5} />
-              Registrar pago
-            </button>
-          )
-        }
-        return <StatusPill status={status} size="sm" />
-      },
-    },
-    {
-      key: 'paidAt',
-      label: 'Fecha Pago',
-      render: (v) => (
-        <span className="text-xs text-slate-400">{formatDate(v as string | null)}</span>
-      ),
-    },
-  ]
-
   return (
     <PageContent>
       <PageHeader
@@ -207,10 +143,19 @@ export default function DocumentDetailPage() {
           </div>
         }
         actions={
-          <button className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors">
-            <FileDown size={15} />
-            Exportar PDF
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate(ROUTES.DOCUMENTS_EDIT(doc.id))}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Edit2 size={15} />
+              Editar
+            </button>
+            <button className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors">
+              <FileDown size={15} />
+              Exportar PDF
+            </button>
+          </div>
         }
       />
 
@@ -283,7 +228,7 @@ export default function DocumentDetailPage() {
         {partialCount > 0 && (
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium">
             <AlertCircle size={13} />
-            {partialCount} cuota{partialCount !== 1 ? 's' : ''} parcial{partialCount !== 1 ? 'es' : ''}
+            {partialCount} cuota{partialCount !== 1 ? 'es' : ''}  parcial{partialCount !== 1 ? 'es' : ''}
           </div>
         )}
         <span className="text-xs text-slate-400 ml-auto">
@@ -313,46 +258,45 @@ export default function DocumentDetailPage() {
           title="Cuotas"
           subtitle={`${installments.length} cuota${installments.length !== 1 ? 's' : ''} registrada${installments.length !== 1 ? 's' : ''}`}
           noPadding
-          actions={
-            installments.length > 0 ? (
-              <div className="flex items-center gap-1.5">
-                <KpiCard
-                  label=""
-                  value={formatCurrencyCompact(
-                    installments.filter((i) => i.paymentStatus === 'pagado').reduce((s, i) => s + i.amount, 0),
-                    doc.currency,
-                  )}
-                  description="pagado"
-                  variant="success"
-                  className="!p-2 !gap-1 min-w-[80px] border-0 bg-emerald-50"
-                />
-              </div>
-            ) : undefined
-          }
         >
-          <DataTable
-            columns={installmentColumns}
-            data={installments}
-            rowKey="id"
-            emptyTitle="Sin cuotas"
-            emptyDescription="Este documento no tiene cuotas registradas."
-          />
+          {installments.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm text-slate-400">Sin cuotas registradas</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {installments.map((inst) => (
+                <InstallmentRow
+                  key={inst.id}
+                  inst={inst}
+                  currency={doc.currency}
+                  today={today}
+                  onUpdate={(updates) => handleInstallmentUpdate(inst.id, updates)}
+                />
+              ))}
+              {/* Footer: saldo */}
+              <div className="flex items-center justify-between px-5 py-3 bg-slate-50 border-t border-slate-200">
+                <span className="text-xs font-medium text-slate-500">
+                  {saldo > 0 ? 'Saldo pendiente' : 'Estado'}
+                </span>
+                {saldo > 0 ? (
+                  <span className="text-sm font-bold text-amber-700 tabular-nums">
+                    {doc.currency} {saldo.toLocaleString('es-AR', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                    <CheckCircle2 size={12} />
+                    Todo pagado
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </SectionCard>
       </div>
     </PageContent>
   )
 }
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
-function InfoField({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
-      <p className="text-sm font-medium text-slate-800">{value}</p>
-    </div>
-  )
-}
-
-// Suppress unused warning — InfoField is available for future use inside this module
-void InfoField

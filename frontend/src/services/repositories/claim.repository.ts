@@ -1,7 +1,9 @@
 import { mockClaims } from '../../data/mock-claims'
-import type { Claim, ClaimStatus } from '../../shared/types'
+import { mockClaimEvents } from '../../data/mock-claim-events'
+import type { Claim, ClaimStatus, ClaimEvent } from '../../shared/types'
 
 let claims: Claim[] = [...mockClaims]
+let events: ClaimEvent[] = [...mockClaimEvents]
 
 export const claimRepository = {
   findAll(): Claim[] {
@@ -56,5 +58,16 @@ export const claimRepository = {
 
   remove(id: string): void {
     claims = claims.filter((c) => c.id !== id)
+  },
+
+  findEventsByClaim(claimId: string): ClaimEvent[] {
+    return events
+      .filter((e) => e.claimId === claimId)
+      .sort((a, b) => b.date.localeCompare(a.date))
+  },
+
+  addEvent(event: ClaimEvent): ClaimEvent {
+    events = [event, ...events]
+    return event
   },
 }

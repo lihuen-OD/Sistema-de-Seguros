@@ -23,6 +23,7 @@ const PolicyEditPage = lazy(() => import('../modules/insurance/policies/PolicyEd
 const DocumentsPage = lazy(() => import('../modules/insurance/accounting-documents/DocumentsPage'))
 const DocumentDetailPage = lazy(() => import('../modules/insurance/accounting-documents/DocumentDetailPage'))
 const DocumentNewPage = lazy(() => import('../modules/insurance/accounting-documents/DocumentNewPage'))
+const DocumentEditPage = lazy(() => import('../modules/insurance/accounting-documents/DocumentEditPage'))
 
 // Insurance — Analysis
 const FinancialAnalysisPage = lazy(() => import('../modules/insurance/financial-analysis/FinancialAnalysisPage'))
@@ -37,6 +38,7 @@ const ProducerTasksPage = lazy(() => import('../modules/producers/ProducerTasksP
 const ClaimsPage = lazy(() => import('../modules/claims/ClaimsPage'))
 const ClaimNewPage = lazy(() => import('../modules/claims/ClaimNewPage'))
 const ClaimDetailPage = lazy(() => import('../modules/claims/ClaimDetailPage'))
+const ClaimEditPage = lazy(() => import('../modules/claims/ClaimEditPage'))
 
 // Fire Extinguishers
 const FireExtinguishersPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguishersPage'))
@@ -83,6 +85,7 @@ export default function App() {
           <Route path="/insurance/documents" element={<DocumentsPage />} />
           <Route path="/insurance/documents/new" element={<DocumentNewPage />} />
           <Route path="/insurance/documents/:id" element={<DocumentDetailPage />} />
+          <Route path="/insurance/documents/:id/edit" element={<DocumentEditPage />} />
 
           {/* Analysis */}
           <Route path="/insurance/financial-analysis" element={<FinancialAnalysisPage />} />
@@ -97,6 +100,7 @@ export default function App() {
           <Route path="/claims" element={<ClaimsPage />} />
           <Route path="/claims/new" element={<ClaimNewPage />} />
           <Route path="/claims/:id" element={<ClaimDetailPage />} />
+          <Route path="/claims/:id/edit" element={<ClaimEditPage />} />
 
           {/* Fire Extinguishers */}
           <Route path="/fire-extinguishers" element={<FireExtinguishersPage />} />

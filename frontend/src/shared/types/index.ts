@@ -26,14 +26,44 @@ export type ClaimStatus =
   | 'rechazado'
   | 'cerrado'
 
+export type ClaimEventType =
+  | 'siniestro_creado'
+  | 'estado_cambiado'
+  | 'monto_actualizado'
+  | 'liquidacion_registrada'
+  | 'franquicia_aplicada'
+  | 'nota_agregada'
+  | 'documento_adjunto'
+  | 'siniestro_editado'
+
+export interface ClaimEvent {
+  id: string
+  claimId: string
+  date: string
+  type: ClaimEventType
+  description: string
+  previousStatus?: ClaimStatus
+  newStatus?: ClaimStatus
+  amountLabel?: string
+  previousAmount?: number
+  newAmount?: number
+  author?: string
+}
+
 export type ClaimType =
   | 'accidente'
   | 'robo'
+  | 'hurto'
   | 'incendio'
   | 'granizo'
+  | 'granizo_cosecha'
+  | 'inundacion'
   | 'daños'
+  | 'daños_electricos'
   | 'rotura_mecanica'
   | 'responsabilidad_civil'
+  | 'muerte_accidental'
+  | 'incapacidad'
   | 'otro'
 
 export type AssetCategory =
@@ -96,7 +126,7 @@ export interface CostCenter {
 
 export interface Asset {
   id: string
-  /** Código de Bien de Uso (Finnegans) — es el mismo que internalCode */
+  /** Código interno del sistema — asignado automáticamente al crear el activo (ACT-XXXXX) */
   internalCode: string
   name: string
   assetType: string
@@ -116,7 +146,7 @@ export interface Asset {
   costCenterId: string
   /** Asignaciones multi-empresa con porcentaje */
   allocations?: AssetAllocation[]
-  /** Código de Bien de Uso (Finnegans) — idéntico a internalCode */
+  /** Código de Bien de Uso de Finnegans — obtenido desde la API externa al seleccionar el bien */
   fixedAssetCode: string
   productiveUnit: string
   area: string
@@ -191,6 +221,8 @@ export interface Installment {
   paidAt: string | null
 }
 
+export type InstallmentUpdate = Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate'>>
+
 export interface Producer {
   id: string
   name: string
@@ -257,8 +289,11 @@ export interface Claim {
   insuranceCompany: string
   status: ClaimStatus
   claimedAmountArs: number
+  realAmountArs?: number | null
   settledAmountArs: number | null
   deductibleArs: number | null
+  currency?: Currency
+  exchangeRate?: number
   observations: string | null
   createdAt: string
   updatedAt: string
@@ -275,13 +310,20 @@ export interface FireExtinguisherHistory {
   createdBy: string
 }
 
-// ─── Bien de Uso (Finnegans catalog) ─────────────────────────────────────────
+// ─── Bien de Uso (Finnegans API response) ────────────────────────────────────
+// Represents a fixed-asset record from Finnegans. NOT the same as a physical
+// asset — it is the accounting ledger entry that our assets can reference.
 
 export interface BienDeUso {
-  id: string
-  code: string
-  description: string
-  category: string
+  id: string                 // Finnegans internal UUID
+  code: string               // Finnegans display code  (e.g. ROD-001)
+  description: string        // Accounting description
+  category: string           // Accounting category (Rodados, Maquinaria, etc.)
+  incorporationDate: string  // Fecha de incorporación al patrimonio
+  usefulLifeYears: number    // Vida útil contable (años)
+  depreciationRate: number   // Tasa de amortización anual (%)
+  originalValueArs: number   // Valor de incorporación en ARS
+  bookValueArs: number       // Valor residual contable actual en ARS
 }
 
 // ─── Filter / UI types ────────────────────────────────────────────────────────

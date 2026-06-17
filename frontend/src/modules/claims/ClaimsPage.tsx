@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Plus, ShieldAlert, Clock, CheckCircle2, XCircle, FileSearch, Eye,
+  Plus, ShieldAlert, Clock, CheckCircle2, XCircle, FileSearch, Eye, Edit2,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -172,14 +172,24 @@ export default function ClaimsPage() {
     {
       key: 'id',
       label: '',
-      className: 'w-10',
+      className: 'w-20',
       render: (_, row) => (
-        <button
-          onClick={(e) => { e.stopPropagation(); navigate(`/claims/${row.id}`) }}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-        >
-          <Eye size={15} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); navigate(`/claims/${row.id}`) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            title="Ver detalle"
+          >
+            <Eye size={15} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); navigate(`/claims/${row.id}/edit`) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+            title="Editar"
+          >
+            <Edit2 size={15} />
+          </button>
+        </div>
       ),
     },
   ]

@@ -13,6 +13,7 @@ export const ROUTES = {
   DOCUMENTS: '/insurance/documents',
   DOCUMENTS_NEW: '/insurance/documents/new',
   DOCUMENTS_DETAIL: (id: string) => `/insurance/documents/${id}`,
+  DOCUMENTS_EDIT: (id: string) => `/insurance/documents/${id}/edit`,
 
   FINANCIAL_ANALYSIS: '/insurance/financial-analysis',
   ECONOMIC_ANALYSIS: '/insurance/economic-analysis',
@@ -25,6 +26,11 @@ export const ROUTES = {
   FIRE_EXTINGUISHERS: '/fire-extinguishers',
   FIRE_EXTINGUISHERS_NEW: '/fire-extinguishers/new',
   FIRE_EXTINGUISHERS_DETAIL: (id: string) => `/fire-extinguishers/${id}`,
+
+  CLAIMS: '/claims',
+  CLAIMS_NEW: '/claims/new',
+  CLAIMS_DETAIL: (id: string) => `/claims/${id}`,
+  CLAIMS_EDIT: (id: string) => `/claims/${id}/edit`,
 
   SETTINGS_COMPANIES: '/settings/companies',
   SETTINGS_COST_CENTERS: '/settings/cost-centers',

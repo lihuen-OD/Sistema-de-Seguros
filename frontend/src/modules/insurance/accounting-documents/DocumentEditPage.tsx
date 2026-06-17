@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Save,
   X,
@@ -20,6 +20,7 @@ import {
   FormSelect,
 } from '../../../shared/components/forms/FormSection'
 import { FileDropzone } from '../../../shared/components/file-upload/FileDropzone'
+import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { policyRepository } from '../../../services/repositories/policy.repository'
 import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
 import { mockAssets } from '../../../data/mock-assets'
@@ -29,6 +30,7 @@ import {
   DOCUMENT_TYPE_LABELS,
   PAYMENT_METHOD_LABELS,
 } from '../../../shared/constants'
+import { ROUTES } from '../../../app/routes'
 import type { Currency, DocumentType, PaymentMethod } from '../../../shared/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -39,7 +41,7 @@ interface PolicyRowData {
   allocatedAmount: string
 }
 
-interface InstallmentRow {
+interface InstallmentRowData {
   installmentNumber: number
   dueDate: string
   amount: string
@@ -61,43 +63,93 @@ interface DocumentForm {
 
 type FormErrors = Partial<Record<keyof DocumentForm | 'policies', string>>
 
-const INITIAL_FORM: DocumentForm = {
-  insuranceCompany: '',
-  documentType: '',
-  documentNumber: '',
-  issueDate: '',
-  currency: '',
-  exchangeRate: '',
-  paymentMethod: '',
-  netAmount: '',
-  vatAmount: '',
-  otherTaxesAmount: '',
-  linkedDocumentId: '',
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function DocumentNewPage() {
+export default function DocumentEditPage() {
+  const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const [form, setForm] = useState<DocumentForm>(INITIAL_FORM)
+  const doc = accountingDocumentRepository.findById(id!)
+  const existingAllocations = doc
+    ? accountingDocumentRepository.findAllocationsByDocument(doc.id)
+    : []
+  const existingInstallments = doc
+    ? accountingDocumentRepository.findInstallmentsByDocument(doc.id)
+    : []
+
+  // Must be before early return to satisfy rules of hooks
+  const [form, setForm] = useState<DocumentForm>(() =>
+    doc
+      ? {
+          insuranceCompany: doc.insuranceCompany ?? '',
+          documentType: doc.documentType,
+          documentNumber: doc.documentNumber,
+          issueDate: doc.issueDate,
+          currency: doc.currency,
+          exchangeRate: String(doc.exchangeRate),
+          paymentMethod: doc.paymentMethod ?? '',
+          netAmount: String(doc.netAmount),
+          vatAmount: String(doc.vatAmount),
+          otherTaxesAmount: String(doc.otherTaxesAmount),
+          linkedDocumentId: doc.linkedDocumentId ?? '',
+        }
+      : {
+          insuranceCompany: '',
+          documentType: '',
+          documentNumber: '',
+          issueDate: '',
+          currency: '',
+          exchangeRate: '',
+          paymentMethod: '',
+          netAmount: '',
+          vatAmount: '',
+          otherTaxesAmount: '',
+          linkedDocumentId: '',
+        },
+  )
+
   const [errors, setErrors] = useState<FormErrors>({})
-  const [policyRows, setPolicyRows] = useState<PolicyRowData[]>([
-    { id: crypto.randomUUID(), policyId: '', allocatedAmount: '' },
-  ])
-  const [installmentCount, setInstallmentCount] = useState(1)
-  const [installmentRows, setInstallmentRows] = useState<InstallmentRow[]>([
-    { installmentNumber: 1, dueDate: '', amount: '' },
-  ])
-  const [isSaved, setIsSaved] = useState(false)
-  const [savedPolicyNumbers, setSavedPolicyNumbers] = useState<string[]>([])
+
+  const [policyRows, setPolicyRows] = useState<PolicyRowData[]>(() =>
+    existingAllocations.length > 0
+      ? existingAllocations.map((a) => ({
+          id: a.id,
+          policyId: a.policyId,
+          allocatedAmount: String(Math.abs(a.allocatedAmount)),
+        }))
+      : [{ id: crypto.randomUUID(), policyId: '', allocatedAmount: '' }],
+  )
+
+  const [installmentCount, setInstallmentCount] = useState(() => existingInstallments.length || 1)
+  const [installmentRows, setInstallmentRows] = useState<InstallmentRowData[]>(() =>
+    existingInstallments.length > 0
+      ? existingInstallments.map((i) => ({
+          installmentNumber: i.installmentNumber,
+          dueDate: i.dueDate,
+          amount: String(Math.abs(i.amount)),
+        }))
+      : [{ installmentNumber: 1, dueDate: '', amount: '' }],
+  )
+
+  const [isSaved, setIsSaved] = useState(true)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [emailTo, setEmailTo] = useState('')
   const [emailSent, setEmailSent] = useState(false)
 
+  if (!doc) {
+    return (
+      <PageContent>
+        <EmptyState
+          title="Documento no encontrado"
+          description="El documento solicitado no existe o fue eliminado."
+        />
+      </PageContent>
+    )
+  }
+
   const allPolicies = policyRepository.findAll()
   const existingFacturas = useMemo(
-    () => accountingDocumentRepository.findByDocumentType('factura'),
+    () => accountingDocumentRepository.findByDocumentType('factura').filter((f) => f.id !== doc.id),
     [],
   )
 
@@ -123,20 +175,14 @@ export default function DocumentNewPage() {
     [policyRows],
   )
 
-  // Only active policies from the selected insurance company
+  // All policies for selected company (no status filter — edit must show existing allocations)
   const availablePolicies = useMemo(() => {
     if (!form.insuranceCompany) return []
-    return allPolicies.filter(
-      (p) =>
-        p.insuranceCompany === form.insuranceCompany &&
-        (p.status === 'vigente' || p.status === 'proximo_vencer'),
-    )
+    return allPolicies.filter((p) => p.insuranceCompany === form.insuranceCompany)
   }, [allPolicies, form.insuranceCompany])
 
-  const isRefDoc =
-    form.documentType === 'nota_credito' || form.documentType === 'endoso'
+  const isRefDoc = form.documentType === 'nota_credito' || form.documentType === 'endoso'
 
-  // Distribution for email modal
   const distribution = useMemo(
     () =>
       policyRows
@@ -190,11 +236,7 @@ export default function DocumentNewPage() {
     markUnsaved()
   }
 
-  const updatePolicyRow = (
-    rowId: string,
-    field: 'policyId' | 'allocatedAmount',
-    value: string,
-  ) => {
+  const updatePolicyRow = (rowId: string, field: 'policyId' | 'allocatedAmount', value: string) => {
     setPolicyRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, [field]: value } : r)))
     markUnsaved()
   }
@@ -204,7 +246,7 @@ export default function DocumentNewPage() {
   const rebuildInstallments = useCallback(
     (count: number, total: number) => {
       const per = count > 0 && total > 0 ? total / count : 0
-      const rows: InstallmentRow[] = Array.from({ length: count }, (_, i) => ({
+      const rows: InstallmentRowData[] = Array.from({ length: count }, (_, i) => ({
         installmentNumber: i + 1,
         dueDate: installmentRows[i]?.dueDate ?? '',
         amount: per > 0 ? per.toFixed(2) : '',
@@ -219,12 +261,17 @@ export default function DocumentNewPage() {
     const count = Math.max(1, Math.min(60, parseInt(e.target.value) || 1))
     setInstallmentCount(count)
     rebuildInstallments(count, computedTotal)
+    markUnsaved()
   }
 
-  const handleAutoDistribute = () => rebuildInstallments(installmentCount, computedTotal)
+  const handleAutoDistribute = () => {
+    rebuildInstallments(installmentCount, computedTotal)
+    markUnsaved()
+  }
 
   const updateInstallmentRow = (idx: number, field: 'dueDate' | 'amount', value: string) => {
     setInstallmentRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)))
+    markUnsaved()
   }
 
   // ─── Validation ──────────────────────────────────────────────────────────────
@@ -240,8 +287,7 @@ export default function DocumentNewPage() {
     if (!form.paymentMethod) next.paymentMethod = 'Requerido'
     if (!form.netAmount || isNaN(parseFloat(form.netAmount))) next.netAmount = 'Requerido'
     if (!form.vatAmount || isNaN(parseFloat(form.vatAmount))) next.vatAmount = 'Requerido'
-    if (!form.otherTaxesAmount || isNaN(parseFloat(form.otherTaxesAmount)))
-      next.otherTaxesAmount = 'Requerido'
+    if (!form.otherTaxesAmount || isNaN(parseFloat(form.otherTaxesAmount))) next.otherTaxesAmount = 'Requerido'
     if (policyRows.length === 0 || policyRows.every((r) => !r.policyId))
       next.policies = 'Asociá al menos una póliza'
     setErrors(next)
@@ -255,11 +301,8 @@ export default function DocumentNewPage() {
     if (!validate()) return
 
     const validRows = policyRows.filter((r) => r.policyId)
-    const policyNumbers = validRows
-      .map((r) => allPolicies.find((p) => p.id === r.policyId)?.policyNumber)
-      .filter(Boolean) as string[]
 
-    accountingDocumentRepository.create({
+    accountingDocumentRepository.update(doc.id, {
       documentType: form.documentType as DocumentType,
       documentNumber: form.documentNumber.trim(),
       issueDate: form.issueDate,
@@ -269,13 +312,34 @@ export default function DocumentNewPage() {
       vatAmount: parsedVat,
       otherTaxesAmount: parsedOther,
       totalAmount: computedTotal,
-      paymentStatus: 'pendiente',
       insuranceCompany: form.insuranceCompany,
       paymentMethod: form.paymentMethod as PaymentMethod,
       linkedDocumentId: isRefDoc && form.linkedDocumentId ? form.linkedDocumentId : undefined,
     })
 
-    setSavedPolicyNumbers(policyNumbers)
+    const total = totalAllocated || computedTotal
+    accountingDocumentRepository.replaceAllocations(
+      doc.id,
+      validRows.map((r) => {
+        const amount = parseFloat(r.allocatedAmount) || 0
+        return {
+          policyId: r.policyId,
+          allocatedAmount: amount,
+          allocationPercentage: total > 0 ? (amount / total) * 100 : 0,
+        }
+      }),
+    )
+
+    accountingDocumentRepository.replaceInstallments(
+      doc.id,
+      installmentRows.map((r) => ({
+        installmentNumber: r.installmentNumber,
+        dueDate: r.dueDate,
+        amount: parseFloat(r.amount) || 0,
+      })),
+      form.currency as Currency,
+    )
+
     setIsSaved(true)
   }
 
@@ -293,18 +357,15 @@ export default function DocumentNewPage() {
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
-  const emailSubject =
-    savedPolicyNumbers.length > 0
-      ? `Documento póliza ${savedPolicyNumbers.join(', ')} — ${form.insuranceCompany}`
-      : ''
+  const emailSubject = `Documento ${doc.documentNumber} — ${form.insuranceCompany}`
 
   return (
     <PageContent>
       <PageHeader
-        title="Nuevo Documento Contable"
-        subtitle="Factura, nota de crédito o endoso"
-        backTo="/insurance/documents"
-        backLabel="Volver a documentos"
+        title={`Editar ${doc.documentNumber}`}
+        subtitle={`${DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType} · Emisión: ${doc.issueDate}`}
+        backTo={ROUTES.DOCUMENTS_DETAIL(doc.id)}
+        backLabel="Volver al documento"
       />
 
       <form onSubmit={handleSubmit} className="max-w-5xl space-y-5">
@@ -313,11 +374,7 @@ export default function DocumentNewPage() {
         <SectionCard title="Identificación" subtitle="Compañía, tipo y datos del documento">
           <FormSection title="">
             <FormField label="Compañía Aseguradora" required error={errors.insuranceCompany}>
-              <FormSelect
-                value={form.insuranceCompany}
-                onChange={handleInsuranceCompanyChange}
-                required
-              >
+              <FormSelect value={form.insuranceCompany} onChange={handleInsuranceCompanyChange} required>
                 <option value="">Seleccionar compañía…</option>
                 {INSURANCE_COMPANIES.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -344,20 +401,11 @@ export default function DocumentNewPage() {
             </FormField>
 
             <FormField label="Fecha de Emisión" required error={errors.issueDate}>
-              <FormInput
-                type="date"
-                value={form.issueDate}
-                onChange={set('issueDate')}
-                required
-              />
+              <FormInput type="date" value={form.issueDate} onChange={set('issueDate')} required />
             </FormField>
 
-            {/* Factura de referencia — solo para NC y Endoso */}
             {isRefDoc && (
-              <FormField
-                label="Factura de referencia"
-                fullWidth
-              >
+              <FormField label="Factura de referencia" fullWidth>
                 <FormSelect value={form.linkedDocumentId} onChange={set('linkedDocumentId')}>
                   <option value="">Seleccionar factura base…</option>
                   {existingFacturas.map((f) => (
@@ -368,7 +416,7 @@ export default function DocumentNewPage() {
                   ))}
                 </FormSelect>
                 <p className="text-xs text-slate-400 mt-1">
-                  Una {DOCUMENT_TYPE_LABELS[form.documentType]} siempre está asociada a una factura preexistente. La imputación sobre cuotas se gestiona desde la póliza.
+                  Una {DOCUMENT_TYPE_LABELS[form.documentType]} siempre está asociada a una factura preexistente.
                 </p>
               </FormField>
             )}
@@ -444,7 +492,6 @@ export default function DocumentNewPage() {
             </FormField>
           </FormSection>
 
-          {/* Total + Equivalente */}
           {computedTotal > 0 && (
             <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -475,7 +522,7 @@ export default function DocumentNewPage() {
           title="Pólizas Asociadas"
           subtitle={
             form.insuranceCompany
-              ? `Pólizas activas de ${form.insuranceCompany}`
+              ? `Pólizas de ${form.insuranceCompany}`
               : 'Seleccioná primero la compañía aseguradora para filtrar las pólizas'
           }
           actions={
@@ -498,28 +545,21 @@ export default function DocumentNewPage() {
           {!form.insuranceCompany ? (
             <div className="rounded-xl border-2 border-dashed border-slate-200 py-6 text-center">
               <p className="text-sm text-slate-400">
-                Seleccioná una compañía aseguradora para ver sus pólizas activas.
+                Seleccioná una compañía aseguradora para ver sus pólizas.
               </p>
             </div>
           ) : availablePolicies.length === 0 ? (
             <div className="rounded-xl border-2 border-dashed border-slate-200 py-6 text-center">
               <p className="text-sm text-slate-400">
-                No hay pólizas activas para <strong>{form.insuranceCompany}</strong>.
+                No hay pólizas para <strong>{form.insuranceCompany}</strong>.
               </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Column headers */}
               <div className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center px-1">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Póliza
-                </span>
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">
-                  Importe asignado
-                </span>
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">
-                  Participación
-                </span>
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Póliza</span>
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">Importe asignado</span>
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">Participación</span>
                 <span />
               </div>
 
@@ -581,7 +621,6 @@ export default function DocumentNewPage() {
                       </button>
                     </div>
 
-                    {/* Auto-filled: Bien de Uso + Centro de Costo */}
                     {selectedPolicy && (asset || costCenter) && (
                       <div className="flex items-center gap-2 pl-1 flex-wrap">
                         {asset && (
@@ -602,12 +641,9 @@ export default function DocumentNewPage() {
                 )
               })}
 
-              {/* Total asignado */}
               {policyRows.length > 1 && (
                 <div className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center pt-2 border-t border-slate-100">
-                  <span className="text-xs font-semibold text-slate-500 pl-1">
-                    Total asignado
-                  </span>
+                  <span className="text-xs font-semibold text-slate-500 pl-1">Total asignado</span>
                   <span className="text-xs font-bold text-slate-800 tabular-nums text-right pr-1">
                     {mainPrefix}{' '}
                     {totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -621,7 +657,10 @@ export default function DocumentNewPage() {
         </SectionCard>
 
         {/* ── Sección 4: Cuotas ────────────────────────────────────────────── */}
-        <SectionCard title="Cuotas" subtitle="Cantidad de cuotas, fechas e importes">
+        <SectionCard
+          title="Cuotas"
+          subtitle="Cantidad, fechas e importes. El estado de pago se mantiene para cuotas existentes."
+        >
           <div className="flex items-end gap-4 mb-5 flex-wrap">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-slate-600">Cantidad de cuotas</label>
@@ -702,7 +741,7 @@ export default function DocumentNewPage() {
             className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Save size={15} />
-            Guardar Documento
+            Guardar cambios
           </button>
 
           <button
@@ -710,7 +749,7 @@ export default function DocumentNewPage() {
             disabled={!isSaved}
             onClick={() => setEmailModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={!isSaved ? 'Guardá primero el documento para poder enviarlo' : 'Enviar por mail'}
+            title={!isSaved ? 'Guardá los cambios primero para poder enviar' : 'Enviar por mail'}
           >
             <Mail size={15} />
             Enviar por mail
@@ -718,7 +757,7 @@ export default function DocumentNewPage() {
 
           <button
             type="button"
-            onClick={() => navigate('/insurance/documents')}
+            onClick={() => navigate(ROUTES.DOCUMENTS_DETAIL(doc.id))}
             className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
           >
             <X size={15} />
@@ -737,15 +776,12 @@ export default function DocumentNewPage() {
       {/* ── Modal: Enviar por mail ──────────────────────────────────────────── */}
       {emailModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => !emailSent && setEmailModalOpen(false)}
           />
 
-          {/* Modal card */}
           <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg">
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -772,7 +808,6 @@ export default function DocumentNewPage() {
               </div>
             ) : (
               <div className="px-6 py-5 space-y-4">
-                {/* Para */}
                 <div>
                   <label className="text-xs font-medium text-slate-600 block mb-1">
                     Para <span className="text-red-500">*</span>
@@ -786,7 +821,6 @@ export default function DocumentNewPage() {
                   />
                 </div>
 
-                {/* Asunto */}
                 <div>
                   <label className="text-xs font-medium text-slate-600 block mb-1">Asunto</label>
                   <input
@@ -797,7 +831,6 @@ export default function DocumentNewPage() {
                   />
                 </div>
 
-                {/* Contenido del mail */}
                 <div className="rounded-xl border border-slate-200 overflow-hidden">
                   <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -805,8 +838,6 @@ export default function DocumentNewPage() {
                     </p>
                   </div>
                   <div className="px-4 py-3 space-y-3">
-
-                    {/* Forma de pago */}
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-slate-500">Forma de pago</span>
                       <span className="text-xs font-semibold text-slate-700">
@@ -814,7 +845,6 @@ export default function DocumentNewPage() {
                       </span>
                     </div>
 
-                    {/* Distribución */}
                     <div>
                       <p className="text-xs font-semibold text-slate-500 mb-2">Distribución por póliza</p>
                       {distribution.length === 0 ? (
@@ -856,7 +886,6 @@ export default function DocumentNewPage() {
                       )}
                     </div>
 
-                    {/* Adjuntos */}
                     <div className="flex items-center justify-between border-t border-slate-100 pt-2.5">
                       <span className="text-xs text-slate-500">Adjuntos</span>
                       <span className="text-xs text-slate-400 italic">Ver en la plataforma</span>
@@ -864,7 +893,6 @@ export default function DocumentNewPage() {
                   </div>
                 </div>
 
-                {/* Acciones del modal */}
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="button"
