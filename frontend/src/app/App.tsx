@@ -32,7 +32,13 @@ const EconomicAnalysisPage = lazy(() => import('../modules/insurance/economic-an
 // Producers
 const ProducersPage = lazy(() => import('../modules/producers/ProducersPage'))
 const ProducerDetailPage = lazy(() => import('../modules/producers/ProducerDetailPage'))
-const ProducerTasksPage = lazy(() => import('../modules/producers/ProducerTasksPage'))
+const ProducerNewPage = lazy(() => import('../modules/producers/ProducerNewPage'))
+const ProducerEditPage = lazy(() => import('../modules/producers/ProducerEditPage'))
+
+// Tasks
+const TasksPage = lazy(() => import('../modules/producers/ProducerTasksPage'))
+const TaskNewPage = lazy(() => import('../modules/tasks/TaskNewPage'))
+const TaskEditPage = lazy(() => import('../modules/tasks/TaskEditPage'))
 
 // Claims (Siniestros)
 const ClaimsPage = lazy(() => import('../modules/claims/ClaimsPage'))
@@ -93,8 +99,14 @@ export default function App() {
 
           {/* Producers */}
           <Route path="/producers" element={<ProducersPage />} />
-          <Route path="/producers/tasks" element={<ProducerTasksPage />} />
+          <Route path="/producers/new" element={<ProducerNewPage />} />
           <Route path="/producers/:id" element={<ProducerDetailPage />} />
+          <Route path="/producers/:id/edit" element={<ProducerEditPage />} />
+
+          {/* Tasks */}
+          <Route path="/tasks" element={<TasksPage />} />
+          <Route path="/tasks/new" element={<TaskNewPage />} />
+          <Route path="/tasks/:id/edit" element={<TaskEditPage />} />
 
           {/* Claims (Siniestros) */}
           <Route path="/claims" element={<ClaimsPage />} />

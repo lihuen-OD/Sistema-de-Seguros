@@ -14,6 +14,7 @@ import {
   ChevronRight,
   ShieldAlert,
   Shield,
+  ClipboardList,
 } from 'lucide-react'
 import { useState } from 'react'
 import clsx from 'clsx'
@@ -60,6 +61,7 @@ const navGroups: NavGroup[] = [
     label: 'Operaciones',
     items: [
       { label: 'Productores', to: '/producers', icon: Users },
+      { label: 'Tareas', to: '/tasks', icon: ClipboardList },
       { label: 'Matafuegos', to: '/fire-extinguishers', icon: Flame },
     ],
   },

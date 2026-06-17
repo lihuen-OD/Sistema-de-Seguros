@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
-import { Plus, ClipboardList, Clock, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Plus, ClipboardList, Clock, CheckCircle2, AlertTriangle, Edit2 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -16,6 +16,7 @@ import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { producerRepository } from '../../services/repositories/producer.repository'
 import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '../../shared/constants'
+import { ROUTES } from '../../app/routes'
 import type { ProducerTask, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(TASK_STATUS_LABELS).map(([value, label]) => ({ value, label }))
@@ -31,7 +32,10 @@ export default function ProducerTasksPage() {
   const allTasks = producerRepository.findAllTasks()
   const allProducers = producerRepository.findAll()
 
-  const producerOptions = allProducers.map((p) => ({ value: p.id, label: p.name }))
+  const producerOptions = [
+    { value: '__none__', label: '— Tareas propias' },
+    ...allProducers.map((p) => ({ value: p.id, label: p.name })),
+  ]
 
   const filtered = useMemo(() => {
     return allTasks.filter((task) => {
@@ -41,7 +45,9 @@ export default function ProducerTasksPage() {
         task.title.toLowerCase().includes(search.toLowerCase()) ||
         task.description.toLowerCase().includes(search.toLowerCase()) ||
         (producer?.name ?? '').toLowerCase().includes(search.toLowerCase())
-      const matchProducer = !filterProducer || task.producerId === filterProducer
+      const matchProducer =
+        !filterProducer ||
+        (filterProducer === '__none__' ? task.producerId === null : task.producerId === filterProducer)
       const matchStatus = !filterStatus || task.status === filterStatus
       const matchPriority = !filterPriority || task.priority === filterPriority
       return matchSearch && matchProducer && matchStatus && matchPriority
@@ -78,6 +84,7 @@ export default function ProducerTasksPage() {
       key: 'producerId',
       label: 'Productor',
       render: (v) => {
+        if (!v) return <span className="text-xs text-slate-400 italic">— Tarea propia</span>
         const producer = allProducers.find((p) => p.id === v)
         return (
           <button
@@ -132,6 +139,20 @@ export default function ProducerTasksPage() {
       label: 'Estado',
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
+    {
+      key: 'id',
+      label: '',
+      className: 'w-10',
+      render: (_, row) => (
+        <button
+          onClick={(e) => { e.stopPropagation(); navigate(ROUTES.TASKS_EDIT(row.id)) }}
+          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+          title="Editar tarea"
+        >
+          <Edit2 size={14} />
+        </button>
+      ),
+    },
   ]
 
   return (
@@ -141,7 +162,7 @@ export default function ProducerTasksPage() {
         subtitle="Panel de tareas por productor"
         actions={
           <button
-            onClick={() => navigate('/producers/tasks/new')}
+            onClick={() => navigate(ROUTES.TASKS_NEW)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Plus size={16} />

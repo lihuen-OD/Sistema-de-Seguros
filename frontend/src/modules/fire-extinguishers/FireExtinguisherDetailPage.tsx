@@ -1,3 +1,4 @@
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Flame,
@@ -17,8 +18,10 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
+import type { RechargeData } from '../../services/repositories/fire-extinguisher.repository'
 import { mockAssets } from '../../data/mock-assets'
 import { LOCATION_TYPES, FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
+import { RechargeModal } from './RechargeModal'
 import type { FireExtinguisherHistory } from '../../shared/types'
 
 function TimelineItem({ item }: { item: FireExtinguisherHistory }) {
@@ -85,11 +88,21 @@ export default function FireExtinguisherDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const fe = fireExtinguisherRepository.findById(id ?? '')
-  const history = fireExtinguisherRepository.findHistoryByExtinguisher(id ?? '')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [showRechargeModal, setShowRechargeModal] = useState(false)
+
+  const fe = useMemo(() => fireExtinguisherRepository.findById(id ?? ''), [refreshKey, id])
+  const history = useMemo(() => fireExtinguisherRepository.findHistoryByExtinguisher(id ?? ''), [refreshKey, id])
   const asset = fe?.associatedAssetId
     ? mockAssets.find((a) => a.id === fe.associatedAssetId)
     : null
+
+  function handleRecharge(data: RechargeData) {
+    if (!fe) return
+    fireExtinguisherRepository.recharge(fe.id, data)
+    setShowRechargeModal(false)
+    setRefreshKey((k) => k + 1)
+  }
 
   if (!fe) {
     return (
@@ -130,13 +143,22 @@ export default function FireExtinguisherDetailPage() {
         backLabel="Volver a matafuegos"
         badge={<StatusPill status={fe.status} />}
         actions={
-          <button
-            onClick={() => navigate(`/fire-extinguishers/${fe.id}/edit`)}
-            className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
-          >
-            <Pencil size={15} />
-            Editar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowRechargeModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <RefreshCw size={15} />
+              Registrar Recarga
+            </button>
+            <button
+              onClick={() => navigate(`/fire-extinguishers/${fe.id}/edit`)}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+            >
+              <Pencil size={15} />
+              Editar
+            </button>
+          </div>
         }
       />
 
@@ -261,6 +283,15 @@ export default function FireExtinguisherDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Recharge modal */}
+      {showRechargeModal && (
+        <RechargeModal
+          extinguishers={[fe]}
+          onConfirm={handleRecharge}
+          onClose={() => setShowRechargeModal(false)}
+        />
+      )}
 
       {/* History as timeline */}
       <SectionCard

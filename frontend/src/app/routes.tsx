@@ -21,7 +21,11 @@ export const ROUTES = {
   PRODUCERS: '/producers',
   PRODUCERS_NEW: '/producers/new',
   PRODUCERS_DETAIL: (id: string) => `/producers/${id}`,
-  PRODUCERS_TASKS: '/producers/tasks',
+  PRODUCERS_EDIT: (id: string) => `/producers/${id}/edit`,
+
+  TASKS: '/tasks',
+  TASKS_NEW: '/tasks/new',
+  TASKS_EDIT: (id: string) => `/tasks/${id}/edit`,
 
   FIRE_EXTINGUISHERS: '/fire-extinguishers',
   FIRE_EXTINGUISHERS_NEW: '/fire-extinguishers/new',

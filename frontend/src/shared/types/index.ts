@@ -238,7 +238,7 @@ export interface ProducerTask {
   id: string
   title: string
   description: string
-  producerId: string
+  producerId: string | null
   policyId: string | null
   assetId: string | null
   assignedTo: string | null

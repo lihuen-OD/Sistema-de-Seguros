@@ -1,19 +1,9 @@
 import { useState, useMemo } from 'react'
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import {
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  AlertCircle,
+  TrendingUp, TrendingDown, DollarSign, AlertCircle, FileSpreadsheet, FileDown,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -22,6 +12,9 @@ import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
+import {
+  downloadCSV, printTableAsPDF, getISOWeekKey, generateWeekRange,
+} from '../../../shared/utils/export'
 import { mockInstallments } from '../../../data/mock-installments'
 import { mockPolicies } from '../../../data/mock-policies'
 import { mockAssets } from '../../../data/mock-assets'
@@ -35,9 +28,9 @@ import type { Currency } from '../../../shared/types'
 const USD_RATE = 970
 
 type RowGrouping = 'empresa' | 'centro_costo' | 'activo' | 'poliza'
-type ColPeriod = 'mes' | 'trimestre'
+type ColPeriod = 'semana' | 'mes' | 'trimestre'
 
-// ─── Dynamic period generators ────────────────────────────────────────────────
+// ─── Month range generator ────────────────────────────────────────────────────
 
 function generateMonthRange(
   from: string,
@@ -47,26 +40,24 @@ function generateMonthRange(
   const [ty, tm] = to.split('-').map(Number)
   const months: { key: string; label: string; year: number; month: number }[] = []
   let y = fy
-  let m = fm // 1-indexed
-
+  let m = fm
   while ((y < ty || (y === ty && m <= tm)) && months.length < 60) {
     const d = new Date(y, m - 1, 1)
     const key = `${y}-${String(m).padStart(2, '0')}`
     const label = d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
-    months.push({ key, label, year: y, month: m - 1 }) // month 0-indexed for consistency
+    months.push({ key, label, year: y, month: m - 1 })
     m++
     if (m > 12) { m = 1; y++ }
   }
-
   return months
 }
 
-// ─── Data helpers ──────────────────────────────────────────────────────────────
+// ─── Data helpers ─────────────────────────────────────────────────────────────
 
-function convertAmount(amount: number, fromCurrency: Currency, toCurrency: Currency): number {
-  if (fromCurrency === toCurrency) return amount
-  if (fromCurrency === 'ARS' && toCurrency === 'USD') return amount / USD_RATE
-  if (fromCurrency === 'USD' && toCurrency === 'ARS') return amount * USD_RATE
+function convertAmount(amount: number, from: Currency, to: Currency): number {
+  if (from === to) return amount
+  if (from === 'ARS' && to === 'USD') return amount / USD_RATE
+  if (from === 'USD' && to === 'ARS') return amount * USD_RATE
   return amount
 }
 
@@ -76,7 +67,6 @@ function buildPolicyContext() {
     let companyId = pol.companyId ?? ''
     let costCenterId = pol.costCenterId ?? ''
     const assetId = pol.assetId
-
     if (assetId) {
       const asset = mockAssets.find((a) => a.id === assetId)
       if (asset) {
@@ -101,58 +91,44 @@ function buildDocumentPolicies() {
 
 // ─── Row descriptor ───────────────────────────────────────────────────────────
 
-interface MatrixRow {
-  id: string
-  label: string
-  sublabel?: string
-}
+interface MatrixRow { id: string; label: string; sublabel?: string }
 
 function getRows(grouping: RowGrouping): MatrixRow[] {
   switch (grouping) {
     case 'empresa':
-      return mockCompanies
-        .filter((c) => c.status === 'activo')
-        .map((c) => ({ id: c.id, label: c.name }))
+      return mockCompanies.filter((c) => c.status === 'activo').map((c) => ({ id: c.id, label: c.name }))
     case 'centro_costo':
-      return mockCostCenters
-        .filter((cc) => cc.status === 'activo')
-        .map((cc) => {
-          const company = mockCompanies.find((c) => c.id === cc.companyId)
-          return { id: cc.id, label: cc.name, sublabel: company?.name }
-        })
+      return mockCostCenters.filter((cc) => cc.status === 'activo').map((cc) => {
+        const company = mockCompanies.find((c) => c.id === cc.companyId)
+        return { id: cc.id, label: cc.name, sublabel: company?.name }
+      })
     case 'activo':
-      return mockAssets.map((a) => ({
-        id: a.id,
-        label: a.name,
-        sublabel: `${a.internalCode} · ${a.assetType}`,
-      }))
+      return mockAssets.map((a) => ({ id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}` }))
     case 'poliza':
-      return mockPolicies
-        .filter((p) => p.status !== 'vencida')
-        .map((p) => ({
-          id: p.id,
-          label: p.policyNumber,
-          sublabel: `${p.insuranceType} · ${p.insuranceCompany}`,
-        }))
+      return mockPolicies.filter((p) => p.status !== 'vencida').map((p) => ({
+        id: p.id, label: p.policyNumber, sublabel: `${p.insuranceType} · ${p.insuranceCompany}`,
+      }))
   }
 }
 
-// ─── Matrix cell computation ──────────────────────────────────────────────────
+// ─── Matrix computation ───────────────────────────────────────────────────────
 
-interface CellData {
-  paid: number
-  pending: number
-}
-
+interface CellData { paid: number; pending: number }
 type MatrixData = Map<string, Map<string, CellData>>
 
-function buildMatrixData(grouping: RowGrouping, displayCurrency: Currency): MatrixData {
+function buildMatrixData(
+  grouping: RowGrouping,
+  displayCurrency: Currency,
+  granularity: 'week' | 'month',
+): MatrixData {
   const policyContext = buildPolicyContext()
   const documentPolicies = buildDocumentPolicies()
   const matrix: MatrixData = new Map()
 
   mockInstallments.forEach((inst) => {
-    const monthKey = inst.dueDate.substring(0, 7)
+    const key = granularity === 'week'
+      ? getISOWeekKey(inst.dueDate)
+      : inst.dueDate.substring(0, 7)
     const amount = convertAmount(inst.amount, inst.currency, displayCurrency)
     const isPaid = inst.paymentStatus === 'pagado'
     const policyIds = documentPolicies.get(inst.accountingDocumentId) ?? []
@@ -162,18 +138,10 @@ function buildMatrixData(grouping: RowGrouping, displayCurrency: Currency): Matr
       const ctx = policyContext.get(policyId)
       if (!ctx) return
       switch (grouping) {
-        case 'empresa':
-          if (ctx.companyId) matchingRowIds.add(ctx.companyId)
-          break
-        case 'centro_costo':
-          if (ctx.costCenterId) matchingRowIds.add(ctx.costCenterId)
-          break
-        case 'activo':
-          if (ctx.assetId) matchingRowIds.add(ctx.assetId)
-          break
-        case 'poliza':
-          matchingRowIds.add(policyId)
-          break
+        case 'empresa':      if (ctx.companyId)   matchingRowIds.add(ctx.companyId);   break
+        case 'centro_costo': if (ctx.costCenterId) matchingRowIds.add(ctx.costCenterId); break
+        case 'activo':       if (ctx.assetId)      matchingRowIds.add(ctx.assetId);     break
+        case 'poliza':       matchingRowIds.add(policyId); break
       }
     })
 
@@ -182,8 +150,8 @@ function buildMatrixData(grouping: RowGrouping, displayCurrency: Currency): Matr
     matchingRowIds.forEach((rowId) => {
       if (!matrix.has(rowId)) matrix.set(rowId, new Map())
       const rowMap = matrix.get(rowId)!
-      if (!rowMap.has(monthKey)) rowMap.set(monthKey, { paid: 0, pending: 0 })
-      const cell = rowMap.get(monthKey)!
+      if (!rowMap.has(key)) rowMap.set(key, { paid: 0, pending: 0 })
+      const cell = rowMap.get(key)!
       if (isPaid) cell.paid += splitAmount
       else cell.pending += splitAmount
     })
@@ -212,16 +180,14 @@ function ChartTooltip({ active, payload, label, currency }: ChartTooltipProps) {
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
             <span className="text-slate-600">{entry.name}</span>
           </span>
-          <span className="font-medium text-slate-800">
-            {formatCurrencyCompact(entry.value, currency)}
-          </span>
+          <span className="font-medium text-slate-800">{formatCurrencyCompact(entry.value, currency)}</span>
         </div>
       ))}
     </div>
   )
 }
 
-// ─── Main page ─────────────────────────────────────────────────────────────────
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function FinancialAnalysisPage() {
   const [currency, setCurrency] = useState<Currency>('ARS')
@@ -231,6 +197,7 @@ export default function FinancialAnalysisPage() {
   const [dateTo, setDateTo] = useState('2026-12')
 
   // ─── Period columns ──────────────────────────────────────────────────────────
+
   const months = useMemo(() => generateMonthRange(dateFrom, dateTo), [dateFrom, dateTo])
 
   const quarters = useMemo(() => {
@@ -251,20 +218,26 @@ export default function FinancialAnalysisPage() {
     return result
   }, [months])
 
-  const matrixData = useMemo(() => buildMatrixData(grouping, currency), [grouping, currency])
+  const weeks = useMemo(() => generateWeekRange(dateFrom, dateTo), [dateFrom, dateTo])
+
+  // Matrix granularity depends on period: weeks use week keys, the rest use month keys
+  const matrixGranularity: 'week' | 'month' = colPeriod === 'semana' ? 'week' : 'month'
+  const matrixData = useMemo(
+    () => buildMatrixData(grouping, currency, matrixGranularity),
+    [grouping, currency, matrixGranularity],
+  )
   const rows = useMemo(() => getRows(grouping), [grouping])
 
-  // ─── KPIs (filtered by date range) ───────────────────────────────────────────
+  // ─── KPIs (always month-level, unaffected by colPeriod) ──────────────────────
+
   const kpis = useMemo(() => {
     let totalPaid = 0
     let totalPending = 0
     let overdueCount = 0
     const today = new Date(2026, 5, 10)
-
     mockInstallments.forEach((inst) => {
       const monthKey = inst.dueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
-
       const amount = convertAmount(inst.amount, inst.currency, currency)
       if (inst.paymentStatus === 'pagado') {
         totalPaid += amount
@@ -273,54 +246,48 @@ export default function FinancialAnalysisPage() {
         if (new Date(inst.dueDate) < today) overdueCount++
       }
     })
-
     return { totalPaid, totalPending, total: totalPaid + totalPending, overdueCount }
   }, [currency, dateFrom, dateTo])
 
-  // ─── Chart data ────────────────────────────────────────────────────────────
+  // ─── Chart data (always monthly, for readability) ────────────────────────────
+
   const chartData = useMemo(() => {
-    if (colPeriod === 'mes') {
-      return months.map(({ key, label }) => {
-        let paid = 0
-        let pending = 0
-        matrixData.forEach((rowMap) => {
-          const cell = rowMap.get(key)
-          if (cell) { paid += cell.paid; pending += cell.pending }
-        })
-        return { label, paid, pending }
+    return months.map(({ key, label }) => {
+      let paid = 0
+      let pending = 0
+      // Build a temporary month matrix for chart (always month granularity)
+      mockInstallments.forEach((inst) => {
+        if (inst.dueDate.substring(0, 7) !== key) return
+        const amount = convertAmount(inst.amount, inst.currency, currency)
+        if (inst.paymentStatus === 'pagado') paid += amount
+        else pending += amount
       })
-    } else {
-      return quarters.map(({ key, label, months: qMonths }) => {
-        let paid = 0
-        let pending = 0
-        matrixData.forEach((rowMap) => {
-          qMonths.forEach((mk) => {
-            const cell = rowMap.get(mk)
-            if (cell) { paid += cell.paid; pending += cell.pending }
-          })
-        })
-        return { label, paid, pending }
-      })
-    }
-  }, [matrixData, months, quarters, colPeriod])
+      return { label, paid, pending }
+    })
+  }, [months, currency])
 
-  // ─── Column definitions ────────────────────────────────────────────────────
+  // ─── Column definitions ───────────────────────────────────────────────────────
+
   const columns = useMemo(() => {
-    if (colPeriod === 'mes') return months
+    if (colPeriod === 'semana')    return weeks
+    if (colPeriod === 'mes')       return months
     return quarters.map((q) => ({ key: q.key, label: q.label }))
-  }, [colPeriod, months, quarters])
+  }, [colPeriod, weeks, months, quarters])
 
-  // ─── Cell / row aggregation ────────────────────────────────────────────────
+  // ─── Cell / row aggregation ───────────────────────────────────────────────────
+
   function getCellValue(rowId: string, colKey: string): CellData {
     const rowMap = matrixData.get(rowId)
     if (!rowMap) return { paid: 0, pending: 0 }
 
-    if (colPeriod === 'mes') return rowMap.get(colKey) ?? { paid: 0, pending: 0 }
+    if (colPeriod === 'mes' || colPeriod === 'semana') {
+      return rowMap.get(colKey) ?? { paid: 0, pending: 0 }
+    }
 
+    // trimestre: sum month cells
     const q = quarters.find((q) => q.key === colKey)
     if (!q) return { paid: 0, pending: 0 }
-    let paid = 0
-    let pending = 0
+    let paid = 0, pending = 0
     q.months.forEach((mk) => {
       const cell = rowMap.get(mk)
       if (cell) { paid += cell.paid; pending += cell.pending }
@@ -329,8 +296,7 @@ export default function FinancialAnalysisPage() {
   }
 
   function getRowTotals(rowId: string): CellData {
-    let paid = 0
-    let pending = 0
+    let paid = 0, pending = 0
     columns.forEach(({ key }) => {
       const cell = getCellValue(rowId, key)
       paid += cell.paid
@@ -340,11 +306,15 @@ export default function FinancialAnalysisPage() {
   }
 
   function fmtCell(value: number): string {
-    if (value === 0) return '—'
-    return formatCurrencyCompact(value, currency)
+    return value === 0 ? '—' : formatCurrencyCompact(value, currency)
   }
 
-  // ─── UI config ─────────────────────────────────────────────────────────────
+  function fmtNumber(value: number): string {
+    return value === 0 ? '—' : value.toLocaleString('es-AR', { maximumFractionDigits: 0 })
+  }
+
+  // ─── UI config ────────────────────────────────────────────────────────────────
+
   const groupingButtons: { value: RowGrouping; label: string }[] = [
     { value: 'empresa', label: 'Empresa' },
     { value: 'centro_costo', label: 'Centro de Costo' },
@@ -353,9 +323,97 @@ export default function FinancialAnalysisPage() {
   ]
 
   const periodButtons: { value: ColPeriod; label: string }[] = [
+    { value: 'semana', label: 'Semana' },
     { value: 'mes', label: 'Mes' },
     { value: 'trimestre', label: 'Trimestre' },
   ]
+
+  // ─── Export handlers ──────────────────────────────────────────────────────────
+
+  const periodLabel = colPeriod === 'semana' ? 'semanal' : colPeriod === 'mes' ? 'mensual' : 'trimestral'
+  const groupingLabel = groupingButtons.find((b) => b.value === grouping)?.label ?? grouping
+
+  function handleExportCSV() {
+    const header = [groupingLabel, ...columns.map((c) => `${c.label} Pag`), ...columns.map((c) => `${c.label} Pen`), 'Total Pag', 'Total Pen']
+    const dataRows = rows.map((row) => {
+      const totals = getRowTotals(row.id)
+      return [
+        row.label,
+        ...columns.map((c) => {
+          const v = getCellValue(row.id, c.key).paid
+          return v === 0 ? '' : v.toFixed(0)
+        }),
+        ...columns.map((c) => {
+          const v = getCellValue(row.id, c.key).pending
+          return v === 0 ? '' : v.toFixed(0)
+        }),
+        totals.paid === 0 ? '' : totals.paid.toFixed(0),
+        totals.pending === 0 ? '' : totals.pending.toFixed(0),
+      ]
+    })
+
+    // Column totals row
+    const colTotals = columns.flatMap((col) => {
+      let paid = 0, pending = 0
+      rows.forEach((r) => { const c = getCellValue(r.id, col.key); paid += c.paid; pending += c.pending })
+      return [paid.toFixed(0), pending.toFixed(0)]
+    })
+    dataRows.push(['TOTAL', ...colTotals, kpis.totalPaid.toFixed(0), kpis.totalPending.toFixed(0)])
+
+    downloadCSV([header, ...dataRows], `analisis-financiero-${periodLabel}-${dateFrom}-${dateTo}.csv`)
+  }
+
+  function handleExportPDF() {
+    const pdfColumns = [
+      { label: groupingLabel, align: 'left' as const },
+      ...columns.map((c) => ({ label: c.label, align: 'right' as const })),
+      { label: 'Total', align: 'right' as const },
+    ]
+
+    const pdfRows: { cells: string[]; isDim?: boolean; isTotal?: boolean }[] = rows.map((row) => {
+      const totals = getRowTotals(row.id)
+      const hasData = totals.paid + totals.pending > 0
+      return {
+        cells: [
+          row.label,
+          ...columns.map((c) => {
+            const cell = getCellValue(row.id, c.key)
+            if (!cell.paid && !cell.pending) return '—'
+            const parts = []
+            if (cell.paid)    parts.push(`+${fmtNumber(cell.paid)}`)
+            if (cell.pending) parts.push(`-${fmtNumber(cell.pending)}`)
+            return parts.join(' / ')
+          }),
+          totals.paid + totals.pending === 0
+            ? '—'
+            : `${fmtNumber(totals.paid)} / ${fmtNumber(totals.pending)}`,
+        ],
+        isDim: !hasData,
+      }
+    })
+
+    // Totals row
+    pdfRows.push({
+      cells: [
+        'TOTAL',
+        ...columns.map((col) => {
+          let paid = 0, pending = 0
+          rows.forEach((r) => { const c = getCellValue(r.id, col.key); paid += c.paid; pending += c.pending })
+          if (!paid && !pending) return '—'
+          return `${fmtNumber(paid)} / ${fmtNumber(pending)}`
+        }),
+        `${fmtNumber(kpis.totalPaid)} / ${fmtNumber(kpis.totalPending)}`,
+      ],
+      isTotal: true,
+    })
+
+    printTableAsPDF(
+      'Análisis Financiero',
+      `Vista ${periodLabel} · Agrupado por ${groupingLabel} · ${currency} · ${dateFrom} – ${dateTo}`,
+      pdfColumns,
+      pdfRows,
+    )
+  }
 
   const handleDateRange = (from: string, to: string) => {
     setDateFrom(from)
@@ -371,7 +429,6 @@ export default function FinancialAnalysisPage() {
 
       {/* Controls */}
       <div className="space-y-3 mb-6">
-        {/* Row 1: view options */}
         <div className="flex flex-wrap items-center gap-4">
           {/* Currency */}
           <div className="flex items-center gap-2">
@@ -382,9 +439,7 @@ export default function FinancialAnalysisPage() {
                   key={c}
                   onClick={() => setCurrency(c)}
                   className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    currency === c
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                    currency === c ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {c}
@@ -404,9 +459,7 @@ export default function FinancialAnalysisPage() {
                   key={btn.value}
                   onClick={() => setGrouping(btn.value)}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                    grouping === btn.value
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                    grouping === btn.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {btn.label}
@@ -426,9 +479,7 @@ export default function FinancialAnalysisPage() {
                   key={btn.value}
                   onClick={() => setColPeriod(btn.value)}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                    colPeriod === btn.value
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                    colPeriod === btn.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {btn.label}
@@ -438,13 +489,14 @@ export default function FinancialAnalysisPage() {
           </div>
         </div>
 
-        {/* Row 2: date range filter */}
+        {/* Date range */}
         <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
-          <DateRangeMonthPicker
-            from={dateFrom}
-            to={dateTo}
-            onChange={handleDateRange}
-          />
+          <DateRangeMonthPicker from={dateFrom} to={dateTo} onChange={handleDateRange} />
+          {colPeriod === 'semana' && (
+            <span className="text-xs text-slate-400 ml-2">
+              {weeks.length} semanas en el rango seleccionado
+            </span>
+          )}
         </div>
       </div>
 
@@ -480,10 +532,10 @@ export default function FinancialAnalysisPage() {
         />
       </MetricGrid>
 
-      {/* Bar chart */}
+      {/* Bar chart (always monthly) */}
       <SectionCard
-        title="Pagado vs Pendiente por período"
-        subtitle={`Vista en ${currency} · agrupado por ${colPeriod === 'mes' ? 'mes' : 'trimestre'}`}
+        title="Pagado vs Pendiente por mes"
+        subtitle={`Vista en ${currency} · agrupado mensualmente`}
         className="mb-6"
       >
         <div style={{ height: 220 }}>
@@ -495,12 +547,7 @@ export default function FinancialAnalysisPage() {
               barGap={2}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: '#94a3b8' }}
-                axisLine={false}
-                tickLine={false}
-              />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
               <YAxis
                 tick={{ fontSize: 10, fill: '#94a3b8' }}
                 axisLine={false}
@@ -518,11 +565,7 @@ export default function FinancialAnalysisPage() {
                   />
                 )}
               />
-              <Legend
-                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
-                iconType="circle"
-                iconSize={8}
-              />
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={8} />
               <Bar dataKey="paid" name="Pagado" fill="#10b981" radius={[3, 3, 0, 0]} />
               <Bar dataKey="pending" name="Pendiente" fill="#f87171" radius={[3, 3, 0, 0]} />
             </BarChart>
@@ -533,8 +576,28 @@ export default function FinancialAnalysisPage() {
       {/* Matrix table */}
       <SectionCard
         title="Matriz de cuotas"
-        subtitle={`Agrupado por ${groupingButtons.find((b) => b.value === grouping)?.label} · ${currency}`}
+        subtitle={`Agrupado por ${groupingLabel} · ${currency} · vista ${periodLabel}`}
         noPadding
+        actions={
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-emerald-700 hover:border-emerald-200 transition-colors"
+              title="Exportar a Excel (CSV)"
+            >
+              <FileSpreadsheet size={13} />
+              Excel
+            </button>
+            <button
+              onClick={handleExportPDF}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-red-600 hover:border-red-200 transition-colors"
+              title="Exportar a PDF"
+            >
+              <FileDown size={13} />
+              PDF
+            </button>
+          </div>
+        }
       >
         <div className="table-container">
           <table className="enterprise-table">
@@ -544,7 +607,7 @@ export default function FinancialAnalysisPage() {
                   className="text-left sticky left-0 bg-slate-50 z-10 min-w-[200px] max-w-[260px]"
                   style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}
                 >
-                  {groupingButtons.find((b) => b.value === grouping)?.label}
+                  {groupingLabel}
                 </th>
                 {columns.map((col) => (
                   <th key={col.key} className="text-right min-w-[110px] whitespace-nowrap">
@@ -560,13 +623,9 @@ export default function FinancialAnalysisPage() {
               {rows.map((row) => {
                 const rowTotals = getRowTotals(row.id)
                 const hasData = rowTotals.paid + rowTotals.pending > 0
-
                 return (
                   <tr key={row.id} className={!hasData ? 'opacity-40' : ''}>
-                    <td
-                      className="sticky left-0 bg-white z-10"
-                      style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}
-                    >
+                    <td className="sticky left-0 bg-white z-10" style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}>
                       <div className="min-w-0">
                         <span className="text-sm font-medium text-slate-800 block truncate max-w-[240px]">
                           {row.label}
@@ -583,11 +642,9 @@ export default function FinancialAnalysisPage() {
                       const cell = getCellValue(row.id, col.key)
                       const hasPaid = cell.paid > 0
                       const hasPending = cell.pending > 0
-                      const hasAny = hasPaid || hasPending
-
                       return (
                         <td key={col.key} className="text-right align-top p-0">
-                          {hasAny ? (
+                          {hasPaid || hasPending ? (
                             <div className="flex flex-col gap-px py-2 px-3">
                               {hasPaid && (
                                 <span className="inline-flex items-center justify-end">
@@ -605,9 +662,7 @@ export default function FinancialAnalysisPage() {
                               )}
                             </div>
                           ) : (
-                            <span className="block text-center text-slate-300 text-xs py-2 px-3">
-                              —
-                            </span>
+                            <span className="block text-center text-slate-300 text-xs py-2 px-3">—</span>
                           )}
                         </td>
                       )
@@ -625,7 +680,7 @@ export default function FinancialAnalysisPage() {
                             {fmtCell(rowTotals.pending)}
                           </span>
                         )}
-                        {rowTotals.paid === 0 && rowTotals.pending === 0 && (
+                        {!rowTotals.paid && !rowTotals.pending && (
                           <span className="block text-xs text-slate-300">—</span>
                         )}
                       </div>
@@ -643,8 +698,7 @@ export default function FinancialAnalysisPage() {
                   Total período
                 </td>
                 {columns.map((col) => {
-                  let colPaid = 0
-                  let colPending = 0
+                  let colPaid = 0, colPending = 0
                   rows.forEach((row) => {
                     const cell = getCellValue(row.id, col.key)
                     colPaid += cell.paid

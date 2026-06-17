@@ -1,18 +1,9 @@
 import { useState, useMemo } from 'react'
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { TrendingUp, Building2, FileText } from 'lucide-react'
+import { TrendingUp, Building2, FileText, FileSpreadsheet, FileDown } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -20,6 +11,9 @@ import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
+import {
+  downloadCSV, printTableAsPDF, getISOWeekKey, generateWeekRange,
+} from '../../../shared/utils/export'
 import { mockDocuments, mockDocumentAllocations } from '../../../data/mock-documents'
 import { mockPolicies } from '../../../data/mock-policies'
 import { mockAssets } from '../../../data/mock-assets'
@@ -37,9 +31,9 @@ const PIE_COLORS = [
 ]
 
 type RowGrouping = 'empresa' | 'centro_costo' | 'aseguradora' | 'poliza' | 'activo'
-type ColPeriod = 'mes' | 'trimestre' | 'año'
+type ColPeriod = 'semana' | 'mes' | 'trimestre' | 'año'
 
-// ─── Dynamic period generators ────────────────────────────────────────────────
+// ─── Month range generator ────────────────────────────────────────────────────
 
 function generateMonthRange(
   from: string,
@@ -48,27 +42,24 @@ function generateMonthRange(
   const [fy, fm] = from.split('-').map(Number)
   const [ty, tm] = to.split('-').map(Number)
   const months: { key: string; label: string; year: number; month: number }[] = []
-  let y = fy
-  let m = fm // 1-indexed
-
+  let y = fy; let m = fm
   while ((y < ty || (y === ty && m <= tm)) && months.length < 60) {
     const d = new Date(y, m - 1, 1)
     const key = `${y}-${String(m).padStart(2, '0')}`
     const label = d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
-    months.push({ key, label, year: y, month: m - 1 }) // month 0-indexed
+    months.push({ key, label, year: y, month: m - 1 })
     m++
     if (m > 12) { m = 1; y++ }
   }
-
   return months
 }
 
-// ─── Currency conversion ───────────────────────────────────────────────────────
+// ─── Currency conversion ──────────────────────────────────────────────────────
 
-function convertAmount(amount: number, fromCurrency: Currency, toCurrency: Currency): number {
-  if (fromCurrency === toCurrency) return amount
-  if (fromCurrency === 'ARS' && toCurrency === 'USD') return amount / USD_RATE
-  if (fromCurrency === 'USD' && toCurrency === 'ARS') return amount * USD_RATE
+function convertAmount(amount: number, from: Currency, to: Currency): number {
+  if (from === to) return amount
+  if (from === 'ARS' && to === 'USD') return amount / USD_RATE
+  if (from === 'USD' && to === 'ARS') return amount * USD_RATE
   return amount
 }
 
@@ -76,17 +67,12 @@ function convertAmount(amount: number, fromCurrency: Currency, toCurrency: Curre
 
 function buildPolicyContext() {
   const map = new Map<string, {
-    companyId: string
-    costCenterId: string
-    assetId: string | null
-    insuranceCompany: string
+    companyId: string; costCenterId: string; assetId: string | null; insuranceCompany: string
   }>()
-
   mockPolicies.forEach((pol) => {
     let companyId = pol.companyId ?? ''
     let costCenterId = pol.costCenterId ?? ''
     const assetId = pol.assetId
-
     if (assetId) {
       const asset = mockAssets.find((a) => a.id === assetId)
       if (asset) {
@@ -103,50 +89,35 @@ function buildDocumentAllocMap(): Map<string, Map<string, number>> {
   const map = new Map<string, Map<string, number>>()
   mockDocumentAllocations.forEach((alloc) => {
     if (!map.has(alloc.accountingDocumentId)) map.set(alloc.accountingDocumentId, new Map())
-    const inner = map.get(alloc.accountingDocumentId)!
-    inner.set(alloc.policyId, alloc.allocationPercentage / 100)
+    map.get(alloc.accountingDocumentId)!.set(alloc.policyId, alloc.allocationPercentage / 100)
   })
   return map
 }
 
 // ─── Row descriptor ───────────────────────────────────────────────────────────
 
-interface MatrixRow {
-  id: string
-  label: string
-  sublabel?: string
-}
+interface MatrixRow { id: string; label: string; sublabel?: string }
 
 function getRows(grouping: RowGrouping): MatrixRow[] {
   switch (grouping) {
     case 'empresa':
-      return mockCompanies
-        .filter((c) => c.status === 'activo')
-        .map((c) => ({ id: c.id, label: c.name }))
+      return mockCompanies.filter((c) => c.status === 'activo').map((c) => ({ id: c.id, label: c.name }))
     case 'centro_costo':
-      return mockCostCenters
-        .filter((cc) => cc.status === 'activo')
-        .map((cc) => {
-          const company = mockCompanies.find((c) => c.id === cc.companyId)
-          return { id: cc.id, label: cc.name, sublabel: company?.name }
-        })
+      return mockCostCenters.filter((cc) => cc.status === 'activo').map((cc) => {
+        const company = mockCompanies.find((c) => c.id === cc.companyId)
+        return { id: cc.id, label: cc.name, sublabel: company?.name }
+      })
     case 'aseguradora': {
       const companies = Array.from(new Set(mockPolicies.map((p) => p.insuranceCompany))).sort()
       return companies.map((name) => ({ id: name, label: name }))
     }
     case 'poliza':
-      return mockPolicies
-        .filter((p) => p.status !== 'vencida')
-        .map((p) => ({
-          id: p.id,
-          label: p.policyNumber,
-          sublabel: `${p.insuranceType} · ${p.insuranceCompany}`,
-        }))
+      return mockPolicies.filter((p) => p.status !== 'vencida').map((p) => ({
+        id: p.id, label: p.policyNumber, sublabel: `${p.insuranceType} · ${p.insuranceCompany}`,
+      }))
     case 'activo':
       return mockAssets.map((a) => ({
-        id: a.id,
-        label: a.name,
-        sublabel: `${a.internalCode} · ${a.assetType}`,
+        id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}`,
       }))
   }
 }
@@ -155,45 +126,41 @@ function getRows(grouping: RowGrouping): MatrixRow[] {
 
 type EconomicMatrixData = Map<string, Map<string, number>>
 
-function buildEconomicMatrix(grouping: RowGrouping, displayCurrency: Currency): EconomicMatrixData {
+function buildEconomicMatrix(
+  grouping: RowGrouping,
+  displayCurrency: Currency,
+  granularity: 'week' | 'month',
+): EconomicMatrixData {
   const policyCtx = buildPolicyContext()
   const allocMap = buildDocumentAllocMap()
   const matrix: EconomicMatrixData = new Map()
 
   mockDocuments.forEach((doc) => {
-    const monthKey = doc.issueDate.substring(0, 7)
-    const docAmountInDisplay = convertAmount(doc.totalAmount, doc.currency, displayCurrency)
+    const key = granularity === 'week'
+      ? getISOWeekKey(doc.issueDate)
+      : doc.issueDate.substring(0, 7)
+    const docAmount = convertAmount(doc.totalAmount, doc.currency, displayCurrency)
     const docAllocs = allocMap.get(doc.id)
     if (!docAllocs || docAllocs.size === 0) return
 
     docAllocs.forEach((pctOfDoc, policyId) => {
-      const policyAmount = docAmountInDisplay * pctOfDoc
+      const policyAmount = docAmount * pctOfDoc
       const ctx = policyCtx.get(policyId)
       if (!ctx) return
 
       const rowIds: string[] = []
       switch (grouping) {
-        case 'empresa':
-          if (ctx.companyId) rowIds.push(ctx.companyId)
-          break
-        case 'centro_costo':
-          if (ctx.costCenterId) rowIds.push(ctx.costCenterId)
-          break
-        case 'aseguradora':
-          rowIds.push(ctx.insuranceCompany)
-          break
-        case 'poliza':
-          rowIds.push(policyId)
-          break
-        case 'activo':
-          if (ctx.assetId) rowIds.push(ctx.assetId)
-          break
+        case 'empresa':      if (ctx.companyId)    rowIds.push(ctx.companyId);    break
+        case 'centro_costo': if (ctx.costCenterId) rowIds.push(ctx.costCenterId); break
+        case 'aseguradora':  rowIds.push(ctx.insuranceCompany); break
+        case 'poliza':       rowIds.push(policyId); break
+        case 'activo':       if (ctx.assetId)      rowIds.push(ctx.assetId);      break
       }
 
       rowIds.forEach((rowId) => {
         if (!matrix.has(rowId)) matrix.set(rowId, new Map())
         const rowMap = matrix.get(rowId)!
-        rowMap.set(monthKey, (rowMap.get(monthKey) ?? 0) + policyAmount)
+        rowMap.set(key, (rowMap.get(key) ?? 0) + policyAmount)
       })
     })
   })
@@ -221,9 +188,7 @@ function BarTooltip({ active, payload, label, currency }: BarTooltipProps) {
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
             <span className="text-slate-600">{entry.name}</span>
           </span>
-          <span className="font-medium text-slate-800">
-            {formatCurrencyCompact(entry.value, currency)}
-          </span>
+          <span className="font-medium text-slate-800">{formatCurrencyCompact(entry.value, currency)}</span>
         </div>
       ))}
     </div>
@@ -248,7 +213,7 @@ function PieTooltip({ active, payload, currency }: PieTooltipProps) {
   )
 }
 
-// ─── Main page ─────────────────────────────────────────────────────────────────
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function EconomicAnalysisPage() {
   const [currency, setCurrency] = useState<Currency>('ARS')
@@ -257,7 +222,8 @@ export default function EconomicAnalysisPage() {
   const [dateFrom, setDateFrom] = useState('2025-07')
   const [dateTo, setDateTo] = useState('2026-06')
 
-  // ─── Period columns (derived from date range) ─────────────────────────────
+  // ─── Period columns ──────────────────────────────────────────────────────────
+
   const viewMonths = useMemo(() => generateMonthRange(dateFrom, dateTo), [dateFrom, dateTo])
 
   const viewQuarters = useMemo(() => {
@@ -295,22 +261,32 @@ export default function EconomicAnalysisPage() {
     return result
   }, [viewMonths])
 
-  const matrixData = useMemo(() => buildEconomicMatrix(grouping, currency), [grouping, currency])
+  const viewWeeks = useMemo(() => generateWeekRange(dateFrom, dateTo), [dateFrom, dateTo])
+
+  // Matrix granularity: only 'semana' uses week keys, everything else uses month keys
+  const matrixGranularity: 'week' | 'month' = colPeriod === 'semana' ? 'week' : 'month'
+  const matrixData = useMemo(
+    () => buildEconomicMatrix(grouping, currency, matrixGranularity),
+    [grouping, currency, matrixGranularity],
+  )
   const rows = useMemo(() => getRows(grouping), [grouping])
 
-  // ─── Column definitions based on period ──────────────────────────────────────
+  // ─── Column definitions ───────────────────────────────────────────────────────
+
   const columns = useMemo(() => {
-    if (colPeriod === 'mes') return viewMonths
+    if (colPeriod === 'semana')    return viewWeeks
+    if (colPeriod === 'mes')       return viewMonths
     if (colPeriod === 'trimestre') return viewQuarters.map((q) => ({ key: q.key, label: q.label }))
     return viewYears.map((y) => ({ key: y.key, label: y.label }))
-  }, [colPeriod, viewMonths, viewQuarters, viewYears])
+  }, [colPeriod, viewWeeks, viewMonths, viewQuarters, viewYears])
 
   // ─── Cell aggregation ─────────────────────────────────────────────────────────
+
   function getCellAmount(rowId: string, colKey: string): number {
     const rowMap = matrixData.get(rowId)
     if (!rowMap) return 0
 
-    if (colPeriod === 'mes') return rowMap.get(colKey) ?? 0
+    if (colPeriod === 'mes' || colPeriod === 'semana') return rowMap.get(colKey) ?? 0
 
     if (colPeriod === 'trimestre') {
       const q = viewQuarters.find((q) => q.key === colKey)
@@ -327,7 +303,12 @@ export default function EconomicAnalysisPage() {
     return columns.reduce((sum, col) => sum + getCellAmount(rowId, col.key), 0)
   }
 
-  // ─── KPIs + pie data (single pass, filtered by date range) ───────────────────
+  function getColumnTotal(colKey: string): number {
+    return rows.reduce((sum, row) => sum + getCellAmount(row.id, colKey), 0)
+  }
+
+  // ─── KPIs + pie data ─────────────────────────────────────────────────────────
+
   const { kpis, pieChartData } = useMemo(() => {
     let totalCost = 0
     const byInsurer = new Map<string, number>()
@@ -338,13 +319,10 @@ export default function EconomicAnalysisPage() {
     mockDocuments.forEach((doc) => {
       const monthKey = doc.issueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
-
       const docAmount = convertAmount(doc.totalAmount, doc.currency, currency)
       totalCost += docAmount
-
       const docAllocs = allocMap.get(doc.id)
       if (!docAllocs) return
-
       docAllocs.forEach((pct, policyId) => {
         allocedPolicies.add(policyId)
         const ctx = policyCtx.get(policyId)
@@ -354,21 +332,17 @@ export default function EconomicAnalysisPage() {
     })
 
     let topInsurer = { name: '—', amount: 0 }
-    byInsurer.forEach((amount, name) => {
-      if (amount > topInsurer.amount) topInsurer = { name, amount }
-    })
+    byInsurer.forEach((amount, name) => { if (amount > topInsurer.amount) topInsurer = { name, amount } })
 
     const pie = Array.from(byInsurer.entries())
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
 
-    return {
-      kpis: { totalCost, topInsurer, policiesWithCost: allocedPolicies.size },
-      pieChartData: pie,
-    }
+    return { kpis: { totalCost, topInsurer, policiesWithCost: allocedPolicies.size }, pieChartData: pie }
   }, [currency, dateFrom, dateTo])
 
-  // ─── Bar chart: monthly costs for selected range ──────────────────────────────
+  // ─── Bar chart (always monthly) ───────────────────────────────────────────────
+
   const barChartData = useMemo(() => {
     return viewMonths.map(({ key, label }) => {
       let total = 0
@@ -381,17 +355,18 @@ export default function EconomicAnalysisPage() {
     })
   }, [viewMonths, currency])
 
-  // ─── Column totals ────────────────────────────────────────────────────────────
-  function getColumnTotal(colKey: string): number {
-    return rows.reduce((sum, row) => sum + getCellAmount(row.id, colKey), 0)
-  }
+  // ─── Formatters ───────────────────────────────────────────────────────────────
 
   function fmtCell(value: number): string {
-    if (value === 0) return '—'
-    return formatCurrencyCompact(value, currency)
+    return value === 0 ? '—' : formatCurrencyCompact(value, currency)
+  }
+
+  function fmtNumber(value: number): string {
+    return value === 0 ? '—' : value.toLocaleString('es-AR', { maximumFractionDigits: 0 })
   }
 
   // ─── UI config ────────────────────────────────────────────────────────────────
+
   const groupingButtons: { value: RowGrouping; label: string }[] = [
     { value: 'empresa', label: 'Empresa' },
     { value: 'centro_costo', label: 'Centro Costo' },
@@ -401,15 +376,75 @@ export default function EconomicAnalysisPage() {
   ]
 
   const periodButtons: { value: ColPeriod; label: string }[] = [
+    { value: 'semana', label: 'Semana' },
     { value: 'mes', label: 'Mes' },
     { value: 'trimestre', label: 'Trimestre' },
     { value: 'año', label: 'Año' },
   ]
 
-  const handleDateRange = (from: string, to: string) => {
-    setDateFrom(from)
-    setDateTo(to)
+  // ─── Export handlers ──────────────────────────────────────────────────────────
+
+  const periodLabel = colPeriod === 'semana' ? 'semanal' : colPeriod === 'mes' ? 'mensual' : colPeriod === 'trimestre' ? 'trimestral' : 'anual'
+  const groupingLabel = groupingButtons.find((b) => b.value === grouping)?.label ?? grouping
+
+  function handleExportCSV() {
+    const header = [groupingLabel, ...columns.map((c) => c.label), 'Total']
+    const dataRows = rows.map((row) => [
+      row.label,
+      ...columns.map((c) => {
+        const v = getCellAmount(row.id, c.key)
+        return v === 0 ? '' : v.toFixed(0)
+      }),
+      getRowTotal(row.id).toFixed(0),
+    ])
+    const totalRow = [
+      'TOTAL',
+      ...columns.map((c) => getColumnTotal(c.key).toFixed(0)),
+      columns.reduce((s, c) => s + getColumnTotal(c.key), 0).toFixed(0),
+    ]
+    downloadCSV(
+      [header, ...dataRows, totalRow],
+      `analisis-economico-${periodLabel}-${dateFrom}-${dateTo}.csv`,
+    )
   }
+
+  function handleExportPDF() {
+    const pdfColumns = [
+      { label: groupingLabel, align: 'left' as const },
+      ...columns.map((c) => ({ label: c.label, align: 'right' as const })),
+      { label: 'Total', align: 'right' as const },
+    ]
+
+    const pdfRows: { cells: string[]; isDim?: boolean; isTotal?: boolean }[] = rows.map((row) => {
+      const rowTotal = getRowTotal(row.id)
+      return {
+        cells: [
+          row.label,
+          ...columns.map((c) => fmtNumber(getCellAmount(row.id, c.key))),
+          fmtNumber(rowTotal),
+        ],
+        isDim: rowTotal === 0,
+      }
+    })
+
+    pdfRows.push({
+      cells: [
+        'TOTAL',
+        ...columns.map((c) => fmtNumber(getColumnTotal(c.key))),
+        fmtNumber(columns.reduce((s, c) => s + getColumnTotal(c.key), 0)),
+      ],
+      isTotal: true,
+    })
+
+    printTableAsPDF(
+      'Análisis Económico',
+      `Vista ${periodLabel} · Agrupado por ${groupingLabel} · ${currency} · ${dateFrom} – ${dateTo}`,
+      pdfColumns,
+      pdfRows,
+    )
+  }
+
+  const handleDateRange = (from: string, to: string) => { setDateFrom(from); setDateTo(to) }
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -422,7 +457,6 @@ export default function EconomicAnalysisPage() {
 
       {/* Controls */}
       <div className="space-y-3 mb-6">
-        {/* Row 1: view options */}
         <div className="flex flex-wrap items-center gap-4">
           {/* Currency */}
           <div className="flex items-center gap-2">
@@ -433,9 +467,7 @@ export default function EconomicAnalysisPage() {
                   key={c}
                   onClick={() => setCurrency(c)}
                   className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    currency === c
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                    currency === c ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {c}
@@ -455,9 +487,7 @@ export default function EconomicAnalysisPage() {
                   key={btn.value}
                   onClick={() => setColPeriod(btn.value)}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                    colPeriod === btn.value
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                    colPeriod === btn.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {btn.label}
@@ -477,9 +507,7 @@ export default function EconomicAnalysisPage() {
                   key={btn.value}
                   onClick={() => setGrouping(btn.value)}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                    grouping === btn.value
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                    grouping === btn.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {btn.label}
@@ -489,13 +517,14 @@ export default function EconomicAnalysisPage() {
           </div>
         </div>
 
-        {/* Row 2: date range filter */}
+        {/* Date range */}
         <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
-          <DateRangeMonthPicker
-            from={dateFrom}
-            to={dateTo}
-            onChange={handleDateRange}
-          />
+          <DateRangeMonthPicker from={dateFrom} to={dateTo} onChange={handleDateRange} />
+          {colPeriod === 'semana' && (
+            <span className="text-xs text-slate-400 ml-2">
+              {viewWeeks.length} semanas en el rango seleccionado
+            </span>
+          )}
         </div>
       </div>
 
@@ -524,7 +553,7 @@ export default function EconomicAnalysisPage() {
         />
       </MetricGrid>
 
-      {/* Charts row: bar + pie */}
+      {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <SectionCard
           title="Evolución mensual de costos"
@@ -532,18 +561,9 @@ export default function EconomicAnalysisPage() {
         >
           <div style={{ height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={barChartData}
-                margin={{ top: 4, right: 16, left: 0, bottom: 4 }}
-                barCategoryGap="35%"
-              >
+              <BarChart data={barChartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }} barCategoryGap="35%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 10, fill: '#94a3b8' }}
-                  axisLine={false}
-                  tickLine={false}
-                />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis
                   tick={{ fontSize: 10, fill: '#94a3b8' }}
                   axisLine={false}
@@ -603,9 +623,7 @@ export default function EconomicAnalysisPage() {
                   iconType="circle"
                   iconSize={8}
                   wrapperStyle={{ fontSize: 11, paddingLeft: 12 }}
-                  formatter={(value: string) =>
-                    value.length > 18 ? value.substring(0, 17) + '…' : value
-                  }
+                  formatter={(value: string) => value.length > 18 ? value.substring(0, 17) + '…' : value}
                 />
               </PieChart>
             </ResponsiveContainer>
@@ -616,8 +634,28 @@ export default function EconomicAnalysisPage() {
       {/* Data matrix table */}
       <SectionCard
         title="Matriz de costos económicos"
-        subtitle={`Agrupado por ${groupingButtons.find((b) => b.value === grouping)?.label} · ${currency} · por fecha de emisión`}
+        subtitle={`Agrupado por ${groupingLabel} · ${currency} · vista ${periodLabel}`}
         noPadding
+        actions={
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-emerald-700 hover:border-emerald-200 transition-colors"
+              title="Exportar a Excel (CSV)"
+            >
+              <FileSpreadsheet size={13} />
+              Excel
+            </button>
+            <button
+              onClick={handleExportPDF}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-red-600 hover:border-red-200 transition-colors"
+              title="Exportar a PDF"
+            >
+              <FileDown size={13} />
+              PDF
+            </button>
+          </div>
+        }
       >
         <div className="table-container">
           <table className="enterprise-table">
@@ -627,7 +665,7 @@ export default function EconomicAnalysisPage() {
                   className="text-left sticky left-0 bg-slate-50 z-10 min-w-[200px] max-w-[260px]"
                   style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}
                 >
-                  {groupingButtons.find((b) => b.value === grouping)?.label}
+                  {groupingLabel}
                 </th>
                 {columns.map((col) => (
                   <th key={col.key} className="text-right min-w-[110px] whitespace-nowrap">
@@ -642,14 +680,9 @@ export default function EconomicAnalysisPage() {
             <tbody>
               {rows.map((row) => {
                 const rowTotal = getRowTotal(row.id)
-                const hasData = rowTotal !== 0
-
                 return (
-                  <tr key={row.id} className={!hasData ? 'opacity-40' : ''}>
-                    <td
-                      className="sticky left-0 bg-white z-10"
-                      style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}
-                    >
+                  <tr key={row.id} className={rowTotal === 0 ? 'opacity-40' : ''}>
+                    <td className="sticky left-0 bg-white z-10" style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}>
                       <div className="min-w-0">
                         <span className="text-sm font-medium text-slate-800 block truncate max-w-[240px]">
                           {row.label}
@@ -670,9 +703,7 @@ export default function EconomicAnalysisPage() {
                           {amount !== 0 ? (
                             <span
                               className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                                isNegative
-                                  ? 'text-amber-700 bg-amber-50'
-                                  : 'text-blue-700 bg-blue-50'
+                                isNegative ? 'text-amber-700 bg-amber-50' : 'text-blue-700 bg-blue-50'
                               }`}
                             >
                               {fmtCell(amount)}
@@ -686,11 +717,7 @@ export default function EconomicAnalysisPage() {
 
                     <td className="text-right bg-slate-50/80 tabular-nums">
                       {rowTotal !== 0 ? (
-                        <span
-                          className={`text-xs font-semibold ${
-                            rowTotal < 0 ? 'text-amber-700' : 'text-slate-800'
-                          }`}
-                        >
+                        <span className={`text-xs font-semibold ${rowTotal < 0 ? 'text-amber-700' : 'text-slate-800'}`}>
                           {fmtCell(rowTotal)}
                         </span>
                       ) : (
@@ -714,9 +741,7 @@ export default function EconomicAnalysisPage() {
                   return (
                     <td key={col.key} className="text-right tabular-nums">
                       {colTotal !== 0 ? (
-                        <span className="text-xs font-semibold text-slate-700">
-                          {fmtCell(colTotal)}
-                        </span>
+                        <span className="text-xs font-semibold text-slate-700">{fmtCell(colTotal)}</span>
                       ) : (
                         <span className="text-slate-300 text-xs">—</span>
                       )}
@@ -733,7 +758,7 @@ export default function EconomicAnalysisPage() {
           </table>
         </div>
 
-        {/* Footer note */}
+        {/* Footer */}
         <div className="flex items-center gap-5 px-5 py-3 border-t border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-sm bg-blue-100 border border-blue-300 inline-block" />
@@ -749,7 +774,6 @@ export default function EconomicAnalysisPage() {
         </div>
       </SectionCard>
 
-      {/* Bottom note */}
       <p className="mt-4 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
         <span className="font-medium text-slate-500">Nota metodológica:</span>{' '}
         El análisis económico considera la fecha de emisión del documento, no las fechas de

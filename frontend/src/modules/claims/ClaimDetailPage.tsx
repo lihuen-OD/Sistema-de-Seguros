@@ -132,6 +132,7 @@ interface FinStat {
   value: string
   sub?: string
   highlight?: 'amber' | 'emerald' | 'red' | 'default'
+  isTotal?: boolean
 }
 
 function FinStatCell({ stat }: { stat: FinStat }) {
@@ -140,6 +141,18 @@ function FinStatCell({ stat }: { stat: FinStat }) {
     : stat.highlight === 'amber' ? 'text-amber-700'
     : stat.highlight === 'red' ? 'text-red-700'
     : 'text-slate-800'
+
+  if (stat.isTotal) {
+    return (
+      <div className={`px-4 py-3 rounded-xl border-2 bg-white ${
+        stat.highlight === 'red' ? 'border-red-300' : stat.highlight === 'emerald' ? 'border-emerald-300' : 'border-slate-300'
+      }`}>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-0.5">{stat.label}</p>
+        <p className={`text-sm font-bold tabular-nums leading-snug ${valueColor}`}>{stat.value}</p>
+        {stat.sub && <p className="text-[11px] text-slate-400 mt-0.5 leading-tight">{stat.sub}</p>}
+      </div>
+    )
+  }
 
   return (
     <div className="px-4 py-3 rounded-xl border border-slate-200 bg-white">
@@ -209,6 +222,16 @@ export default function ClaimDetailPage() {
       ? claim.realAmountArs - claim.claimedAmountArs
       : null
 
+  // Costo Neto a Cargo = what the company actually absorbed
+  // Base: real damage if known, otherwise claimed amount
+  // Minus: what the insurance paid back
+  const costoNeto: number | null =
+    claim.settledAmountArs != null
+      ? Math.max(0, (claim.realAmountArs ?? claim.claimedAmountArs) - claim.settledAmountArs)
+      : null
+  // True when settled but real damage wasn't entered → number is an underestimate
+  const costoNetoIsEstimate = costoNeto != null && claim.realAmountArs == null
+
   // Financial summary stats
   const finStats: FinStat[] = []
   if (claim.realAmountArs != null && claim.realAmountArs > 0) {
@@ -252,6 +275,15 @@ export default function ClaimDetailPage() {
       value: `${recoveryRate}%`,
       sub: 'Liquidado / reclamado',
       highlight: Number(recoveryRate) >= 80 ? 'emerald' : 'amber',
+    })
+  }
+  if (costoNeto != null) {
+    finStats.push({
+      label: 'Costo Neto a Cargo',
+      value: formatCurrencyCompact(costoNeto, 'ARS'),
+      sub: costoNetoIsEstimate ? 'Estimado · falta daño real' : costoNeto === 0 ? 'Totalmente cubierto' : 'Lo que absorbió la empresa',
+      highlight: costoNeto === 0 ? 'emerald' : costoNetoIsEstimate ? 'amber' : 'red',
+      isTotal: true,
     })
   }
 
@@ -500,6 +532,58 @@ export default function ClaimDetailPage() {
               variant="warning"
             />
           )}
+
+          {/* Costo Neto a Cargo — bottom-line card */}
+          {(costoNeto != null || isLiquidado) && (
+            <div className={`rounded-xl border-2 px-4 py-4 ${
+              costoNeto != null && costoNeto > 0
+                ? 'border-red-200 bg-red-50'
+                : costoNeto === 0
+                ? 'border-emerald-200 bg-emerald-50'
+                : 'border-slate-200 bg-slate-50'
+            }`}>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                Costo Neto a Cargo
+              </p>
+              {costoNeto != null ? (
+                <>
+                  <p className={`text-2xl font-bold tabular-nums leading-none ${
+                    costoNeto === 0 ? 'text-emerald-700' : 'text-red-700'
+                  }`}>
+                    {formatCurrencyFull(costoNeto, 'ARS')}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1.5 leading-snug">
+                    {costoNetoIsEstimate
+                      ? 'Estimado — cargá el valor real del daño para precisar'
+                      : costoNeto === 0
+                      ? 'El seguro cubrió el total del daño'
+                      : 'Absorbido por la empresa'}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-slate-400">Pendiente de liquidación</p>
+              )}
+
+              {/* Warning: liquidado but real amount missing */}
+              {isLiquidado && !claim.realAmountArs && (
+                <div className="mt-3 pt-3 border-t border-amber-200 flex items-start gap-2">
+                  <AlertTriangle size={12} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-[11px] text-amber-700 leading-snug">
+                      Cargá el <strong>valor real del daño</strong> para un costo neto definitivo.
+                    </p>
+                    <button
+                      onClick={() => navigate(ROUTES.CLAIMS_EDIT(claim.id))}
+                      className="text-[11px] font-semibold text-amber-700 underline decoration-amber-400 underline-offset-2 mt-1"
+                    >
+                      Completar ahora →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {tc > 0 && (
             <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
               <ArrowLeftRight size={13} className="text-slate-400 flex-shrink-0" />

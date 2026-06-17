@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Phone, Mail, MapPin, Hash, ShieldCheck, ClipboardList, AlertTriangle,
-  Calendar, Flag, Eye,
+  Calendar, Flag, Eye, Edit2, Plus,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -16,6 +16,7 @@ import { producerRepository } from '../../services/repositories/producer.reposit
 import { policyRepository } from '../../services/repositories/policy.repository'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
+import { ROUTES } from '../../app/routes'
 import type { Policy, ProducerTask, TableColumn } from '../../shared/types'
 
 export default function ProducerDetailPage() {
@@ -149,6 +150,20 @@ export default function ProducerDetailPage() {
       label: 'Asignado a',
       render: (v) => <span className="text-xs text-slate-500">{v ? String(v) : '—'}</span>,
     },
+    {
+      key: 'id',
+      label: '',
+      className: 'w-10',
+      render: (_, row) => (
+        <button
+          onClick={(e) => { e.stopPropagation(); navigate(ROUTES.TASKS_EDIT(row.id)) }}
+          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+          title="Editar tarea"
+        >
+          <Edit2 size={14} />
+        </button>
+      ),
+    },
   ]
 
   // Tasks for sidebar list (pending + overdue, max 5)
@@ -167,9 +182,22 @@ export default function ProducerDetailPage() {
         backLabel="Volver a Productores"
         badge={<StatusPill status={producer.status} />}
         actions={
-          <button className="flex items-center gap-2 px-3 py-1.5 text-sm border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
-            Editar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate(`${ROUTES.TASKS_NEW}?producerId=${producer.id}`)}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+            >
+              <Plus size={14} />
+              Nueva Tarea
+            </button>
+            <button
+              onClick={() => navigate(ROUTES.PRODUCERS_EDIT(producer.id))}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+            >
+              <Edit2 size={14} />
+              Editar
+            </button>
+          </div>
         }
       />
 

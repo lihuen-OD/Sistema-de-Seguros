@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Users, ShieldCheck, AlertTriangle, CheckCircle2,
-  Phone, Mail, ClipboardList, Clock,
+  Phone, Mail, ClipboardList, Clock, ListTodo,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -69,13 +69,22 @@ export default function ProducersPage() {
         title="Productores Asesores"
         subtitle="Cartera de productores y gestión de tareas operativas"
         actions={
-          <button
-            onClick={() => navigate('/producers/new')}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus size={16} />
-            Nuevo Productor
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/tasks')}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
+            >
+              <ListTodo size={15} />
+              Ver Tareas
+            </button>
+            <button
+              onClick={() => navigate('/producers/new')}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus size={16} />
+              Nuevo Productor
+            </button>
+          </div>
         }
       />
 
