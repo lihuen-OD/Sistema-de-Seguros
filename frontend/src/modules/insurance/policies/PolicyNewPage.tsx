@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Save, X, Settings, CheckSquare } from 'lucide-react'
+import { Save, X, Settings, CheckSquare, Plus, Paperclip } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -11,7 +11,12 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
-import { FileDropzone } from '../../../shared/components/file-upload/FileDropzone'
+import {
+  AddAttachmentModal,
+  FileTypeIcon,
+  ExpirationCell,
+} from '../../../shared/components/file-upload/AttachmentListEditor'
+import { policyAttachmentRepository } from '../../../services/repositories/policy-attachment.repository'
 import { companyRepository } from '../../../services/repositories/company.repository'
 import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
 import { producerRepository } from '../../../services/repositories/producer.repository'
@@ -19,8 +24,10 @@ import { assetRepository } from '../../../services/repositories/asset.repository
 import { insuranceTypeRepository } from '../../../services/repositories/insurance-type.repository'
 import { INSURANCE_COMPANIES } from '../../../shared/constants'
 import { policyRepository } from '../../../services/repositories/policy.repository'
+import type { PolicyAttachment } from '../../../shared/types'
 
 type AssociationType = 'activo' | 'sin_activo'
+type PolicyAttachmentDraft = Omit<PolicyAttachment, 'id' | 'policyId'>
 
 interface PolicyForm {
   policyNumber: string
@@ -165,6 +172,8 @@ export default function PolicyNewPage() {
   const navigate = useNavigate()
   const [form, setForm] = useState<PolicyForm>(INITIAL)
   const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm | 'coverageTypes', string>>>({})
+  const [attachmentDrafts, setAttachmentDrafts] = useState<PolicyAttachmentDraft[]>([])
+  const [showAttachModal, setShowAttachModal] = useState(false)
 
   const set =
     (key: keyof PolicyForm) =>
@@ -236,7 +245,7 @@ export default function PolicyNewPage() {
     const now = new Date().toISOString().slice(0, 10)
     const ars = parseFloat(form.insuredAmountArs)
     const rate = parseFloat(form.exchangeRate)
-    policyRepository.create({
+    const newPolicy = policyRepository.create({
       policyNumber: form.policyNumber.trim(),
       insuranceCompany: form.insuranceCompany,
       producerId: form.producerId,
@@ -257,7 +266,21 @@ export default function PolicyNewPage() {
       createdAt: now,
       updatedAt: now,
     })
-    navigate('/insurance/policies')
+
+    attachmentDrafts.forEach((draft) => {
+      policyAttachmentRepository.create({
+        policyId: newPolicy.id,
+        name: draft.name,
+        description: draft.description,
+        fileType: draft.fileType,
+        fileSize: draft.fileSize,
+        expirationDate: draft.expirationDate,
+        notifyEmail: draft.notifyEmail,
+        uploadedBy: draft.uploadedBy,
+      })
+    })
+
+    navigate(`/insurance/policies/${newPolicy.id}`)
   }
 
   return (
@@ -505,11 +528,78 @@ export default function PolicyNewPage() {
           title="Documentación de la Póliza"
           subtitle="Adjuntá la póliza, certificados y documentación adicional"
         >
-          <FileDropzone
-            label="Documentos de la póliza (PDF, imágenes, certificados)"
-            accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls"
-            maxFiles={10}
-          />
+          {/* Header */}
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs text-slate-500">
+              {attachmentDrafts.length === 0
+                ? 'Sin archivos adjuntos'
+                : `${attachmentDrafts.length} archivo${attachmentDrafts.length !== 1 ? 's' : ''} adjunto${attachmentDrafts.length !== 1 ? 's' : ''}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAttachModal(true)}
+              className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              <Plus size={12} />
+              Adjuntar archivo
+            </button>
+          </div>
+
+          {attachmentDrafts.length === 0 ? (
+            <div
+              onClick={() => setShowAttachModal(true)}
+              className="border-2 border-dashed border-slate-200 rounded-xl py-6 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50/20 transition-colors"
+            >
+              <Paperclip size={18} className="mx-auto text-slate-300 mb-1.5" />
+              <p className="text-sm text-slate-500">Adjuntá la póliza, certificados u otros documentos</p>
+              <p className="text-xs text-slate-400 mt-0.5">PDF, Excel o imágenes — con fecha de vencimiento opcional</p>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {attachmentDrafts.map((att, idx) => (
+                <li key={idx} className="flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-xl group">
+                  <FileTypeIcon fileType={att.fileType} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-800 truncate">{att.name}</p>
+                    <p className="text-xs text-slate-400">
+                      {att.description ? <>{att.description} · {att.fileSize}</> : att.fileSize}
+                    </p>
+                  </div>
+                  {att.expirationDate && (
+                    <div className="flex-shrink-0">
+                      <ExpirationCell date={att.expirationDate} />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setAttachmentDrafts((prev) => prev.filter((_, i) => i !== idx))}
+                    className="p-1 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                  >
+                    <X size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {showAttachModal && (
+            <AddAttachmentModal
+              onClose={() => setShowAttachModal(false)}
+              onAdd={(partial) => {
+                setAttachmentDrafts((prev) => [...prev, {
+                  name: partial.name,
+                  description: partial.description,
+                  fileType: partial.fileType,
+                  fileSize: partial.fileSize,
+                  expirationDate: partial.expirationDate,
+                  notifyEmail: partial.notifyEmail,
+                  uploadedAt: partial.uploadedAt,
+                  uploadedBy: partial.uploadedBy,
+                }])
+                setShowAttachModal(false)
+              }}
+            />
+          )}
         </SectionCard>
 
         {/* Footer */}

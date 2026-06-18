@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, FileText, CheckCircle2, Clock, AlertCircle, Eye, Edit2 } from 'lucide-react'
+import { Plus, FileText, CheckCircle2, Clock, AlertCircle, Eye, Edit2, Trash2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -34,6 +34,8 @@ export default function DocumentsPage() {
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   const allDocuments = accountingDocumentRepository.findAll()
   const totals = accountingDocumentRepository.getTotalByStatus()
@@ -50,7 +52,14 @@ export default function DocumentsPage() {
       const matchStatus = !filterStatus || doc.paymentStatus === filterStatus
       return matchSearch && matchType && matchStatus
     })
-  }, [allDocuments, search, filterType, filterStatus])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allDocuments, search, filterType, filterStatus, refreshKey])
+
+  function handleDelete(id: string) {
+    accountingDocumentRepository.delete(id)
+    setConfirmDeleteId(null)
+    setRefreshKey((k) => k + 1)
+  }
 
   const columns: TableColumn<AccountingDocument>[] = [
     {
@@ -126,30 +135,51 @@ export default function DocumentsPage() {
       key: 'id',
       label: '',
       render: (_, row) => (
-        <div className="flex items-center gap-1">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              navigate(`/insurance/documents/${row.id}`)
-            }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-            title="Ver detalle"
-          >
-            <Eye size={15} />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              navigate(`/insurance/documents/${row.id}/edit`)
-            }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-            title="Editar"
-          >
-            <Edit2 size={15} />
-          </button>
+        <div className="flex items-center gap-1 justify-end">
+          {confirmDeleteId === row.id ? (
+            <>
+              <span className="text-xs text-red-600 font-medium mr-1">¿Eliminar?</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleDelete(row.id) }}
+                className="px-2 py-1 rounded-lg text-xs font-medium text-white bg-red-600 hover:bg-red-700 transition-colors"
+              >
+                Sí
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null) }}
+                className="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                No
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); navigate(`/insurance/documents/${row.id}`) }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                title="Ver detalle"
+              >
+                <Eye size={15} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); navigate(`/insurance/documents/${row.id}/edit`) }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                title="Editar"
+              >
+                <Edit2 size={15} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(row.id) }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                title="Eliminar"
+              >
+                <Trash2 size={15} />
+              </button>
+            </>
+          )}
         </div>
       ),
-      className: 'w-20',
+      className: 'w-36',
     },
   ]
 

@@ -161,6 +161,30 @@ export interface Asset {
   updatedAt: string
 }
 
+export interface AccountingDocumentAttachment {
+  id: string
+  documentId: string
+  name: string
+  description: string
+  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileSize: string
+  uploadedAt: string
+  uploadedBy: string
+}
+
+export interface PolicyAttachment {
+  id: string
+  policyId: string
+  name: string
+  description: string
+  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileSize: string
+  expirationDate: string | null
+  notifyEmail?: string
+  uploadedAt: string
+  uploadedBy: string
+}
+
 export interface Policy {
   id: string
   policyNumber: string

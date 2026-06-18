@@ -35,25 +35,30 @@ export interface RechargeData {
   technician: string
 }
 
+function withDerivedStatus(f: FireExtinguisher): FireExtinguisher {
+  return { ...f, status: computeStatus(f.expirationDate) }
+}
+
 export const fireExtinguisherRepository = {
   findAll(): FireExtinguisher[] {
-    return [...extinguishers]
+    return extinguishers.map(withDerivedStatus)
   },
 
   findById(id: string): FireExtinguisher | undefined {
-    return extinguishers.find((f) => f.id === id)
+    const f = extinguishers.find((e) => e.id === id)
+    return f ? withDerivedStatus(f) : undefined
   },
 
   findByAsset(assetId: string): FireExtinguisher[] {
-    return extinguishers.filter((f) => f.associatedAssetId === assetId)
+    return extinguishers.filter((f) => f.associatedAssetId === assetId).map(withDerivedStatus)
   },
 
   findByStatus(status: FireExtinguisher['status']): FireExtinguisher[] {
-    return extinguishers.filter((f) => f.status === status)
+    return extinguishers.map(withDerivedStatus).filter((f) => f.status === status)
   },
 
   findByLocationType(type: FireExtinguisher['associatedLocationType']): FireExtinguisher[] {
-    return extinguishers.filter((f) => f.associatedLocationType === type)
+    return extinguishers.filter((f) => f.associatedLocationType === type).map(withDerivedStatus)
   },
 
   findHistoryByExtinguisher(id: string): FireExtinguisherHistory[] {

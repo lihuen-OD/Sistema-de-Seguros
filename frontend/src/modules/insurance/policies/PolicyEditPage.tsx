@@ -11,8 +11,8 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
-import { FileDropzone } from '../../../shared/components/file-upload/FileDropzone'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
+import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
 import { companyRepository } from '../../../services/repositories/company.repository'
 import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
 import { producerRepository } from '../../../services/repositories/producer.repository'
@@ -519,13 +519,10 @@ export default function PolicyEditPage() {
         {/* 5. Documentación */}
         <SectionCard
           title="Documentación de la Póliza"
-          subtitle="Reemplazá o agregá documentos (póliza, certificados, adjuntos)"
+          subtitle="Adjuntá la póliza, certificados y documentación adicional"
+          noPadding
         >
-          <FileDropzone
-            label="Documentos de la póliza (PDF, imágenes, certificados)"
-            accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls"
-            maxFiles={10}
-          />
+          <PolicyAttachmentsSection policyId={policy.id} />
         </SectionCard>
 
         {/* Footer */}

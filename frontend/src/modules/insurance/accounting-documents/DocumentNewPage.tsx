@@ -9,6 +9,7 @@ import {
   Mail,
   CheckCircle2,
   ArrowLeftRight,
+  Paperclip,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -19,9 +20,10 @@ import {
   FormInput,
   FormSelect,
 } from '../../../shared/components/forms/FormSection'
-import { FileDropzone } from '../../../shared/components/file-upload/FileDropzone'
 import { policyRepository } from '../../../services/repositories/policy.repository'
 import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
+import { accountingDocumentAttachmentRepository } from '../../../services/repositories/accounting-document-attachment.repository'
+import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
 import { assetRepository } from '../../../services/repositories/asset.repository'
 import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
 import {
@@ -90,6 +92,7 @@ export default function DocumentNewPage() {
     { installmentNumber: 1, dueDate: '', amount: '' },
   ])
   const [isSaved, setIsSaved] = useState(false)
+  const [savedDocId, setSavedDocId] = useState<string | null>(null)
   const [savedPolicyNumbers, setSavedPolicyNumbers] = useState<string[]>([])
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [emailTo, setEmailTo] = useState('')
@@ -259,7 +262,7 @@ export default function DocumentNewPage() {
       .map((r) => allPolicies.find((p) => p.id === r.policyId)?.policyNumber)
       .filter(Boolean) as string[]
 
-    accountingDocumentRepository.create({
+    const newDoc = accountingDocumentRepository.create({
       documentType: form.documentType as DocumentType,
       documentNumber: form.documentNumber.trim(),
       issueDate: form.issueDate,
@@ -275,6 +278,7 @@ export default function DocumentNewPage() {
       linkedDocumentId: isRefDoc && form.linkedDocumentId ? form.linkedDocumentId : undefined,
     })
 
+    setSavedDocId(newDoc.id)
     setSavedPolicyNumbers(policyNumbers)
     setIsSaved(true)
   }
@@ -687,12 +691,19 @@ export default function DocumentNewPage() {
         </SectionCard>
 
         {/* ── Sección 5: Adjuntos ──────────────────────────────────────────── */}
-        <SectionCard title="Documentación Adjunta" subtitle="Factura PDF, endosos o documentación relacionada">
-          <FileDropzone
-            label="Adjuntá la factura, endoso u otros documentos (PDF, imágenes)"
-            accept=".pdf,.jpg,.jpeg,.png"
-            maxFiles={5}
-          />
+        <SectionCard
+          title="Documentación Adjunta"
+          subtitle={isSaved ? 'Podés agregar o quitar archivos adjuntos' : 'Guardá el documento primero para adjuntar archivos'}
+          noPadding
+        >
+          {isSaved && savedDocId ? (
+            <DocumentAttachmentsSection documentId={savedDocId} />
+          ) : (
+            <div className="px-5 py-8 text-center">
+              <Paperclip size={20} className="mx-auto text-slate-300 mb-2" />
+              <p className="text-sm text-slate-500">Guardá el documento para adjuntar la factura PDF u otros archivos</p>
+            </div>
+          )}
         </SectionCard>
 
         {/* ── Acciones ─────────────────────────────────────────────────────── */}

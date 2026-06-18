@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   FileDown,
   Edit2,
+  Trash2,
   Receipt,
   CheckCircle2,
   Clock,
@@ -24,11 +25,14 @@ import { accountingDocumentRepository } from '../../../services/repositories/acc
 import { policyRepository } from '../../../services/repositories/policy.repository'
 import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
+import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
+import { accountingDocumentAttachmentRepository } from '../../../services/repositories/accounting-document-attachment.repository'
 import type { DocumentPolicyAllocation, Installment, InstallmentUpdate, TableColumn } from '../../../shared/types'
 
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const doc = accountingDocumentRepository.findById(id!)
 
@@ -155,6 +159,34 @@ export default function DocumentDetailPage() {
               <FileDown size={15} />
               Exportar PDF
             </button>
+            {confirmDelete ? (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50">
+                <span className="text-xs font-medium text-red-700">¿Eliminar documento?</span>
+                <button
+                  onClick={() => {
+                    accountingDocumentRepository.delete(doc.id)
+                    navigate('/insurance/documents')
+                  }}
+                  className="px-2.5 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+                >
+                  Sí, eliminar
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-white rounded-md transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-600 hover:bg-red-50 text-sm font-medium rounded-lg transition-colors"
+              >
+                <Trash2 size={15} />
+                Eliminar
+              </button>
+            )}
           </div>
         }
       />
@@ -297,6 +329,15 @@ export default function DocumentDetailPage() {
           )}
         </SectionCard>
       </div>
+
+      {/* Adjuntos */}
+      <SectionCard
+        title="Archivos Adjuntos"
+        subtitle={`${accountingDocumentAttachmentRepository.findByDocument(doc.id).length} archivo${accountingDocumentAttachmentRepository.findByDocument(doc.id).length !== 1 ? 's' : ''} adjunto${accountingDocumentAttachmentRepository.findByDocument(doc.id).length !== 1 ? 's' : ''}`}
+        noPadding
+      >
+        <DocumentAttachmentsSection documentId={doc.id} />
+      </SectionCard>
     </PageContent>
   )
 }

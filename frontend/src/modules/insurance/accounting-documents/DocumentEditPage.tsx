@@ -19,8 +19,8 @@ import {
   FormInput,
   FormSelect,
 } from '../../../shared/components/forms/FormSection'
-import { FileDropzone } from '../../../shared/components/file-upload/FileDropzone'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
+import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
 import { policyRepository } from '../../../services/repositories/policy.repository'
 import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
 import { assetRepository } from '../../../services/repositories/asset.repository'
@@ -726,12 +726,8 @@ export default function DocumentEditPage() {
         </SectionCard>
 
         {/* ── Sección 5: Adjuntos ──────────────────────────────────────────── */}
-        <SectionCard title="Documentación Adjunta" subtitle="Factura PDF, endosos o documentación relacionada">
-          <FileDropzone
-            label="Adjuntá la factura, endoso u otros documentos (PDF, imágenes)"
-            accept=".pdf,.jpg,.jpeg,.png"
-            maxFiles={5}
-          />
+        <SectionCard title="Documentación Adjunta" subtitle="Factura PDF, endosos o documentación relacionada" noPadding>
+          <DocumentAttachmentsSection documentId={doc.id} />
         </SectionCard>
 
         {/* ── Acciones ─────────────────────────────────────────────────────── */}

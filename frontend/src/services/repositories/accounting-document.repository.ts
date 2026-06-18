@@ -55,8 +55,23 @@ export const accountingDocumentRepository = {
     updates: Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate'>>,
   ): void {
     const idx = mockInstallments.findIndex((i) => i.id === id)
-    if (idx >= 0) {
-      mockInstallments[idx] = { ...mockInstallments[idx], ...updates }
+    if (idx < 0) return
+    const installment = mockInstallments[idx]
+    mockInstallments[idx] = { ...installment, ...updates }
+
+    // Recalculate the document's payment status from its installments
+    const docInstallments = mockInstallments.filter(
+      (i) => i.accountingDocumentId === installment.accountingDocumentId,
+    )
+    const paidCount = docInstallments.filter((i) => i.paymentStatus === 'pagado').length
+    const derivedStatus: 'pagado' | 'parcial' | 'pendiente' =
+      paidCount === 0 ? 'pendiente'
+      : paidCount === docInstallments.length ? 'pagado'
+      : 'parcial'
+
+    const docIdx = mockDocuments.findIndex((d) => d.id === installment.accountingDocumentId)
+    if (docIdx >= 0) {
+      mockDocuments[docIdx] = { ...mockDocuments[docIdx], paymentStatus: derivedStatus }
     }
   },
 
@@ -119,6 +134,20 @@ export const accountingDocumentRepository = {
         paidAt: prev?.paidAt ?? null,
       })
     })
+  },
+
+  delete(id: string): boolean {
+    const idx = mockDocuments.findIndex((d) => d.id === id)
+    if (idx < 0) return false
+    mockDocuments.splice(idx, 1)
+    // Cascade: remove installments and allocations for this document
+    const instIndexes: number[] = []
+    mockInstallments.forEach((i, n) => { if (i.accountingDocumentId === id) instIndexes.push(n) })
+    for (let i = instIndexes.length - 1; i >= 0; i--) mockInstallments.splice(instIndexes[i], 1)
+    const allocIndexes: number[] = []
+    mockDocumentAllocations.forEach((a, n) => { if (a.accountingDocumentId === id) allocIndexes.push(n) })
+    for (let i = allocIndexes.length - 1; i >= 0; i--) mockDocumentAllocations.splice(allocIndexes[i], 1)
+    return true
   },
 
   getTotalPending(): number {

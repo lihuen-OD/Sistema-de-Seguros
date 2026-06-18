@@ -28,6 +28,8 @@ import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { exportPolicyToPdf } from '../../../shared/utils/policyPdf'
 import { ROUTES } from '../../../app/routes'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
+import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
+import { policyAttachmentRepository } from '../../../services/repositories/policy-attachment.repository'
 import type { AccountingDocument, Installment, InstallmentUpdate, ProducerTask, TableColumn } from '../../../shared/types'
 
 export default function PolicyDetailPage() {
@@ -61,7 +63,8 @@ export default function PolicyDetailPage() {
   // Tasks linked to this policy
   const tasks = producerRepository.findTasksByPolicy(policy.id) as ProducerTask[]
 
-  const [activeDocTab, setActiveDocTab] = useState<'documentos' | 'tareas'>('documentos')
+  const [activeDocTab, setActiveDocTab] = useState<'documentos' | 'tareas' | 'adjuntos'>('documentos')
+  const attachmentCount = policyAttachmentRepository.findByPolicy(policy.id).length
 
   // Local installment state — allows inline editing without leaving the page
   const [localInstallments, setLocalInstallments] = useState<Map<string, Installment[]>>(() => {
@@ -303,6 +306,7 @@ export default function PolicyDetailPage() {
           {[
             { key: 'documentos' as const, label: 'Documentos', count: documents.length },
             { key: 'tareas' as const, label: 'Tareas', count: tasks.length },
+            { key: 'adjuntos' as const, label: 'Adjuntos', count: attachmentCount },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -334,6 +338,9 @@ export default function PolicyDetailPage() {
               <Plus size={13} />
               Nuevo documento
             </button>
+          )}
+          {activeDocTab === 'adjuntos' && (
+            <span className="text-xs text-slate-400">Archivos PDF, imágenes y certificados</span>
           )}
         </div>
 
@@ -408,6 +415,13 @@ export default function PolicyDetailPage() {
               />
             </SectionCard>
           )
+        )}
+
+        {/* Adjuntos tab */}
+        {activeDocTab === 'adjuntos' && (
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <PolicyAttachmentsSection policyId={policy.id} />
+          </div>
         )}
       </div>
     </PageContent>
