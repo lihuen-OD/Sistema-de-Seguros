@@ -1,0 +1,358 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 2 — Catálogos
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  cuit      String?  @unique
+  email     String?
+  phone     String?
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policies  Policy[]
+
+  @@map("companies")
+}
+
+model CostCenter {
+  id          String   @id @default(uuid())
+  name        String
+  code        String?  @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assetAllocations AssetAllocation[]
+
+  @@map("cost_centers")
+}
+
+model InsuranceType {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  coverages InsuranceCoverage[]
+  policies  Policy[]
+
+  @@map("insurance_types")
+}
+
+model InsuranceCoverage {
+  id              String        @id @default(uuid())
+  name            String
+  description     String?
+  insuranceTypeId String
+  insuranceType   InsuranceType @relation(fields: [insuranceTypeId], references: [id], onDelete: Cascade)
+
+  @@map("insurance_coverages")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 3 — Activos (forward references para que Company/CostCenter compilen)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Asset {
+  id            String   @id @default(uuid())
+  name          String
+  assetType     String
+  brand         String?
+  model         String?
+  serialNumber  String?
+  purchaseDate  String?
+  purchaseValue Float?
+  currentValue  Float?
+  location      String?
+  description   String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  allocations       AssetAllocation[]
+  valueHistory      AssetValueHistory[]
+  attachments       AssetAttachment[]
+  fireExtinguishers FireExtinguisher[]
+
+  @@map("assets")
+}
+
+model AssetAllocation {
+  id           String     @id @default(uuid())
+  assetId      String
+  costCenterId String
+  percentage   Float
+  asset        Asset      @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  costCenter   CostCenter @relation(fields: [costCenterId], references: [id])
+
+  @@map("asset_allocations")
+}
+
+model AssetValueHistory {
+  id      String  @id @default(uuid())
+  assetId String
+  value   Float
+  date    String
+  note    String?
+  asset   Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_value_history")
+}
+
+model AssetAttachment {
+  id             String   @id @default(uuid())
+  assetId        String
+  name           String
+  description    String?
+  fileType       String
+  fileSize       String
+  fileUrl        String
+  expirationDate String?
+  notifyEmail    String?
+  uploadedAt     DateTime @default(now())
+  uploadedBy     String
+  asset          Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_attachments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 4 — Productores
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Producer {
+  id        String   @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  matricula String?  @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks    ProducerTask[]
+  policies Policy[]
+
+  @@map("producers")
+}
+
+model ProducerTask {
+  id          String   @id @default(uuid())
+  producerId  String
+  title       String
+  description String?
+  dueDate     String?
+  status      String   @default("pendiente")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  producer    Producer @relation(fields: [producerId], references: [id], onDelete: Cascade)
+
+  @@map("producer_tasks")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 5 — Pólizas
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Policy {
+  id              String   @id @default(uuid())
+  policyNumber    String   @unique
+  insuranceTypeId String
+  companyId       String
+  producerId      String?
+  insuredName     String
+  startDate       String
+  endDate         String
+  premium         Float
+  currency        String   @default("ARS")
+  description     String?
+  coverageIds     String[]
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  insuranceType InsuranceType              @relation(fields: [insuranceTypeId], references: [id])
+  company       Company                    @relation(fields: [companyId], references: [id])
+  producer      Producer?                  @relation(fields: [producerId], references: [id])
+  attachments   PolicyAttachment[]
+  allocations   DocumentPolicyAllocation[]
+
+  @@map("policies")
+}
+
+model PolicyAttachment {
+  id             String   @id @default(uuid())
+  policyId       String
+  name           String
+  description    String?
+  fileType       String
+  fileSize       String
+  fileUrl        String
+  expirationDate String?
+  notifyEmail    String?
+  uploadedAt     DateTime @default(now())
+  uploadedBy     String
+  policy         Policy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@map("policy_attachments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 6 — Documentos Contables
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AccountingDocument {
+  id               String   @id @default(uuid())
+  documentNumber   String   @unique
+  documentType     String
+  issueDate        String
+  netAmount        Float
+  vatAmount        Float    @default(0)
+  otherTaxesAmount Float    @default(0)
+  currency         String   @default("ARS")
+  exchangeRate     Float    @default(1)
+  description      String?
+  paymentStatus    String   @default("pendiente")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  installments DocumentInstallment[]
+  allocations  DocumentPolicyAllocation[]
+  attachments  DocumentAttachment[]
+
+  @@map("accounting_documents")
+}
+
+model DocumentInstallment {
+  id                   String             @id @default(uuid())
+  accountingDocumentId String
+  installmentNumber    Int
+  dueDate              String
+  amount               Float
+  paymentStatus        String             @default("pendiente")
+  paymentDate          String?
+  paymentMethod        String?
+  notes                String?
+  document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
+
+  @@map("document_installments")
+}
+
+model DocumentPolicyAllocation {
+  id                   String             @id @default(uuid())
+  accountingDocumentId String
+  policyId             String
+  allocatedAmount      Float
+  allocationPercentage Float
+  document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
+  policy               Policy             @relation(fields: [policyId], references: [id])
+
+  @@map("document_policy_allocations")
+}
+
+model DocumentAttachment {
+  id                   String             @id @default(uuid())
+  accountingDocumentId String
+  name                 String
+  description          String?
+  fileType             String
+  fileSize             String
+  fileUrl              String
+  uploadedAt           DateTime           @default(now())
+  uploadedBy           String
+  document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
+
+  @@map("document_attachments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 7 — Matafuegos
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FireExtinguisher {
+  id               String   @id @default(uuid())
+  assetId          String?
+  locationType     String
+  location         String
+  type             String
+  capacity         String
+  brand            String?
+  serialNumber     String?
+  expirationDate   String
+  lastRechargeDate String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  asset   Asset?                   @relation(fields: [assetId], references: [id])
+  history FireExtinguisherHistory[]
+
+  @@map("fire_extinguishers")
+}
+
+model FireExtinguisherHistory {
+  id                 String           @id @default(uuid())
+  fireExtinguisherId String
+  action             String
+  date               String
+  performedBy        String?
+  notes              String?
+  nextDueDate        String?
+  createdAt          DateTime         @default(now())
+  extinguisher       FireExtinguisher @relation(fields: [fireExtinguisherId], references: [id], onDelete: Cascade)
+
+  @@map("fire_extinguisher_history")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 8 — Siniestros
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Claim {
+  id          String   @id @default(uuid())
+  policyId    String?
+  title       String
+  description String?
+  claimDate   String
+  status      String   @default("abierto")
+  amount      Float?
+  currency    String   @default("ARS")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  events ClaimEvent[]
+
+  @@map("claims")
+}
+
+model ClaimEvent {
+  id          String   @id @default(uuid())
+  claimId     String
+  title       String
+  description String?
+  date        String
+  type        String
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  claim       Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@map("claim_events")
+}
