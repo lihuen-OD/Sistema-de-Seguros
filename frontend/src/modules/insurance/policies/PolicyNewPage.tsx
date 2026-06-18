@@ -127,7 +127,7 @@ function CoverageSelector({
               <label
                 key={coverage}
                 className={[
-                  'flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors select-none',
+                  'relative flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors select-none',
                   checked ? 'bg-blue-50' : 'bg-white hover:bg-slate-50',
                   idx % 2 === 0 && idx < config.coverages.length - 1 ? 'sm:border-r border-slate-100' : '',
                   !isLastRow ? 'border-b border-slate-100' : '',
