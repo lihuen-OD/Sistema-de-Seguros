@@ -20,7 +20,7 @@ import {
 import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
 import { claimRepository } from '../../services/repositories/claim.repository'
 import { policyRepository } from '../../services/repositories/policy.repository'
-import { mockAssets } from '../../data/mock-assets'
+import { assetRepository } from '../../services/repositories/asset.repository'
 import {
   CLAIM_TYPE_LABELS,
   CLAIM_STATUS_LABELS,
@@ -71,7 +71,7 @@ export default function ClaimNewPage() {
   const preselectedAssetId = searchParams.get('assetId') ?? ''
   const preselectedPolicyId = searchParams.get('policyId') ?? ''
   const preselectedAsset = preselectedAssetId
-    ? mockAssets.find((a) => a.id === preselectedAssetId) ?? null
+    ? assetRepository.findById(preselectedAssetId) ?? null
     : null
 
   // Identity
@@ -97,7 +97,7 @@ export default function ClaimNewPage() {
   const [submitting, setSubmitting] = useState(false)
 
   // Derived
-  const selectedAsset = assetId ? mockAssets.find((a) => a.id === assetId) ?? null : null
+  const selectedAsset = assetId ? assetRepository.findById(assetId) ?? null : null
   const availablePolicies = assetId ? policyRepository.findByAsset(assetId) : []
   const selectedPolicy = policyId ? availablePolicies.find((p) => p.id === policyId) ?? null : null
 
@@ -220,7 +220,7 @@ export default function ClaimNewPage() {
                 ) : (
                   <FormSelect value={assetId} onChange={(e) => handleAssetChange(e.target.value)}>
                     <option value="">Sin activo asociado</option>
-                    {mockAssets.map((a) => (
+                    {assetRepository.findAll().map((a) => (
                       <option key={a.id} value={a.id}>{a.internalCode} — {a.name}</option>
                     ))}
                   </FormSelect>

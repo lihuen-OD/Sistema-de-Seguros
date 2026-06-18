@@ -13,7 +13,7 @@ import {
 } from '../../shared/components/forms/FormSection'
 import { producerRepository } from '../../services/repositories/producer.repository'
 import { policyRepository } from '../../services/repositories/policy.repository'
-import { mockAssets } from '../../data/mock-assets'
+import { assetRepository } from '../../services/repositories/asset.repository'
 import { TASK_PRIORITY_LABELS, TASK_TYPES } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TaskPriority } from '../../shared/types'
@@ -161,7 +161,7 @@ export default function TaskNewPage() {
               <FormField label="Activo asociado">
                 <FormSelect value={assetId} onChange={(e) => setAssetId(e.target.value)}>
                   <option value="">— Sin activo</option>
-                  {mockAssets.map((a) => (
+                  {assetRepository.findAll().map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.internalCode} — {a.name}
                     </option>

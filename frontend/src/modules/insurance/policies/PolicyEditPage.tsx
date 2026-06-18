@@ -13,11 +13,11 @@ import {
 } from '../../../shared/components/forms/FormSection'
 import { FileDropzone } from '../../../shared/components/file-upload/FileDropzone'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
-import { mockCompanies } from '../../../data/mock-companies'
-import { mockCostCenters } from '../../../data/mock-cost-centers'
-import { mockProducers } from '../../../data/mock-producers'
-import { mockAssets } from '../../../data/mock-assets'
-import { mockInsuranceTypes } from '../../../data/mock-insurance-settings'
+import { companyRepository } from '../../../services/repositories/company.repository'
+import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
+import { producerRepository } from '../../../services/repositories/producer.repository'
+import { assetRepository } from '../../../services/repositories/asset.repository'
+import { insuranceTypeRepository } from '../../../services/repositories/insurance-type.repository'
 import { policyRepository } from '../../../services/repositories/policy.repository'
 import { INSURANCE_COMPANIES } from '../../../shared/constants'
 import type { Policy } from '../../../shared/types'
@@ -75,7 +75,7 @@ function CoverageSelector({
   onChange: (v: string[]) => void
   error?: string
 }) {
-  const config = mockInsuranceTypes.find((t) => t.label === insuranceType)
+  const config = insuranceTypeRepository.findAll().find((t) => t.label === insuranceType)
 
   if (!insuranceType) {
     return (
@@ -220,7 +220,7 @@ export default function PolicyEditPage() {
   }, [form.insuredAmountArs, form.exchangeRate])
 
   const filteredCostCenters = useMemo(
-    () => mockCostCenters.filter(
+    () => costCenterRepository.findAll().filter(
       (cc) => cc.status === 'activo' && (!form.companyId || cc.companyId === form.companyId),
     ),
     [form.companyId],
@@ -313,7 +313,7 @@ export default function PolicyEditPage() {
               <FormField label="Productor Asesor" required error={errors.producerId}>
                 <FormSelect value={form.producerId} onChange={set('producerId')} required>
                   <option value="">Seleccionar productor…</option>
-                  {mockProducers.filter((p) => p.status === 'activo').map((p) => (
+                  {producerRepository.findActive().map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </FormSelect>
@@ -327,7 +327,7 @@ export default function PolicyEditPage() {
                       required
                     >
                       <option value="">Seleccionar tipo…</option>
-                      {mockInsuranceTypes.map((t) => (
+                      {insuranceTypeRepository.findAll().map((t) => (
                         <option key={t.id} value={t.label}>{t.label}</option>
                       ))}
                     </FormSelect>
@@ -418,7 +418,7 @@ export default function PolicyEditPage() {
               <FormField label="Activo Asegurado" required error={errors.assetId} fullWidth>
                 <FormSelect value={form.assetId} onChange={set('assetId')} required>
                   <option value="">Seleccionar activo…</option>
-                  {mockAssets.filter((a) => a.status === 'activo').map((a) => (
+                  {assetRepository.findAll().filter((a) => a.status === 'activo').map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.internalCode} — {a.name} ({a.assetType})
                     </option>
@@ -432,7 +432,7 @@ export default function PolicyEditPage() {
                 <FormField label="Empresa" required error={errors.companyId}>
                   <FormSelect value={form.companyId} onChange={set('companyId')} required>
                     <option value="">Seleccionar empresa…</option>
-                    {mockCompanies.filter((c) => c.status === 'activo').map((c) => (
+                    {companyRepository.findActive().map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </FormSelect>

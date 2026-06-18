@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Package, DollarSign, AlertTriangle, Archive, Eye } from 'lucide-react'
+import { Plus, Package, DollarSign, AlertTriangle, Archive, Eye, Trash2 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -13,8 +13,9 @@ import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { formatCurrencyFull, formatDate, formatCurrencyCompact } from '../../shared/utils/format'
 import { assetRepository } from '../../services/repositories/asset.repository'
-import { mockCompanies } from '../../data/mock-companies'
-import { mockCostCenters } from '../../data/mock-cost-centers'
+import { companyRepository } from '../../services/repositories/company.repository'
+import { costCenterRepository } from '../../services/repositories/cost-center.repository'
+import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ASSET_TYPES, ASSET_STATUS_LABELS } from '../../shared/constants'
 import type { Asset, TableColumn } from '../../shared/types'
 
@@ -27,8 +28,14 @@ export default function AssetsPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterCompany, setFilterCompany] = useState('')
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const allAssets = assetRepository.findAll()
+
+  function handleDelete(id: string) {
+    assetRepository.delete(id)
+    setDeleteId(null)
+  }
 
   const filtered = useMemo(() => {
     return allAssets.filter((a) => {
@@ -50,7 +57,9 @@ export default function AssetsPage() {
   const vendido = allAssets.filter((a) => a.status === 'vendido')
   const totalValueUsd = active.reduce((s, a) => s + a.patrimonialValueUsd, 0)
 
-  const companyOptions = mockCompanies.map((c) => ({ value: c.id, label: c.name }))
+  const allCompanies = companyRepository.findAll()
+  const allCostCenters = costCenterRepository.findAll()
+  const companyOptions = allCompanies.map((c) => ({ value: c.id, label: c.name }))
 
   const columns: TableColumn<Asset>[] = [
     {
@@ -82,7 +91,7 @@ export default function AssetsPage() {
       key: 'companyId',
       label: 'Empresa',
       render: (v) => {
-        const c = mockCompanies.find((co) => co.id === v)
+        const c = allCompanies.find((co) => co.id === v)
         return <span className="text-slate-600 text-xs">{c?.name ?? '—'}</span>
       },
     },
@@ -90,7 +99,7 @@ export default function AssetsPage() {
       key: 'costCenterId',
       label: 'C. Costo',
       render: (v) => {
-        const cc = mockCostCenters.find((c) => c.id === v)
+        const cc = allCostCenters.find((c) => c.id === v)
         return <span className="text-slate-500 text-xs">{cc?.code ?? '—'}</span>
       },
     },
@@ -114,14 +123,24 @@ export default function AssetsPage() {
       key: 'id',
       label: '',
       render: (_, row) => (
-        <button
-          onClick={(e) => { e.stopPropagation(); navigate(`/assets/${row.id}`) }}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-        >
-          <Eye size={15} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); navigate(`/assets/${row.id}`) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            title="Ver detalle"
+          >
+            <Eye size={15} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            title="Eliminar activo"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
       ),
-      className: 'w-10',
+      className: 'w-20',
     },
   ]
 
@@ -203,6 +222,14 @@ export default function AssetsPage() {
           minWidth={1020}
         />
       </SectionCard>
+      <ConfirmDialog
+        open={deleteId !== null}
+        title="Eliminar activo"
+        description={`¿Eliminar "${allAssets.find((a) => a.id === deleteId)?.name ?? 'este activo'}"? Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        onConfirm={() => deleteId && handleDelete(deleteId)}
+        onCancel={() => setDeleteId(null)}
+      />
     </PageContent>
   )
 }

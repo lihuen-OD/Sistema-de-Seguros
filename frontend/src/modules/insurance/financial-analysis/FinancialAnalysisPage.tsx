@@ -15,12 +15,11 @@ import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils
 import {
   downloadCSV, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
-import { mockInstallments } from '../../../data/mock-installments'
-import { mockPolicies } from '../../../data/mock-policies'
-import { mockAssets } from '../../../data/mock-assets'
-import { mockCostCenters } from '../../../data/mock-cost-centers'
-import { mockCompanies } from '../../../data/mock-companies'
-import { mockDocumentAllocations } from '../../../data/mock-documents'
+import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
+import { policyRepository } from '../../../services/repositories/policy.repository'
+import { assetRepository } from '../../../services/repositories/asset.repository'
+import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
+import { companyRepository } from '../../../services/repositories/company.repository'
 import type { Currency } from '../../../shared/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -63,12 +62,12 @@ function convertAmount(amount: number, from: Currency, to: Currency): number {
 
 function buildPolicyContext() {
   const map = new Map<string, { companyId: string; costCenterId: string; assetId: string | null }>()
-  mockPolicies.forEach((pol) => {
+  policyRepository.findAll().forEach((pol) => {
     let companyId = pol.companyId ?? ''
     let costCenterId = pol.costCenterId ?? ''
     const assetId = pol.assetId
     if (assetId) {
-      const asset = mockAssets.find((a) => a.id === assetId)
+      const asset = assetRepository.findById(assetId)
       if (asset) {
         companyId = companyId || asset.companyId
         costCenterId = costCenterId || asset.costCenterId
@@ -81,7 +80,7 @@ function buildPolicyContext() {
 
 function buildDocumentPolicies() {
   const map = new Map<string, string[]>()
-  mockDocumentAllocations.forEach((alloc) => {
+  accountingDocumentRepository.findAllAllocations().forEach((alloc) => {
     const existing = map.get(alloc.accountingDocumentId) ?? []
     existing.push(alloc.policyId)
     map.set(alloc.accountingDocumentId, existing)
@@ -96,16 +95,16 @@ interface MatrixRow { id: string; label: string; sublabel?: string }
 function getRows(grouping: RowGrouping): MatrixRow[] {
   switch (grouping) {
     case 'empresa':
-      return mockCompanies.filter((c) => c.status === 'activo').map((c) => ({ id: c.id, label: c.name }))
+      return companyRepository.findActive().map((c) => ({ id: c.id, label: c.name }))
     case 'centro_costo':
-      return mockCostCenters.filter((cc) => cc.status === 'activo').map((cc) => {
-        const company = mockCompanies.find((c) => c.id === cc.companyId)
+      return costCenterRepository.findAll().filter((cc) => cc.status === 'activo').map((cc) => {
+        const company = companyRepository.findById(cc.companyId)
         return { id: cc.id, label: cc.name, sublabel: company?.name }
       })
     case 'activo':
-      return mockAssets.map((a) => ({ id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}` }))
+      return assetRepository.findAll().map((a) => ({ id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}` }))
     case 'poliza':
-      return mockPolicies.filter((p) => p.status !== 'vencida').map((p) => ({
+      return policyRepository.findAll().filter((p) => p.status !== 'vencida').map((p) => ({
         id: p.id, label: p.policyNumber, sublabel: `${p.insuranceType} · ${p.insuranceCompany}`,
       }))
   }
@@ -125,7 +124,7 @@ function buildMatrixData(
   const documentPolicies = buildDocumentPolicies()
   const matrix: MatrixData = new Map()
 
-  mockInstallments.forEach((inst) => {
+  accountingDocumentRepository.findAllInstallments().forEach((inst) => {
     const key = granularity === 'week'
       ? getISOWeekKey(inst.dueDate)
       : inst.dueDate.substring(0, 7)
@@ -235,7 +234,7 @@ export default function FinancialAnalysisPage() {
     let totalPending = 0
     let overdueCount = 0
     const today = new Date(2026, 5, 10)
-    mockInstallments.forEach((inst) => {
+    accountingDocumentRepository.findAllInstallments().forEach((inst) => {
       const monthKey = inst.dueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
       const amount = convertAmount(inst.amount, inst.currency, currency)
@@ -256,7 +255,7 @@ export default function FinancialAnalysisPage() {
       let paid = 0
       let pending = 0
       // Build a temporary month matrix for chart (always month granularity)
-      mockInstallments.forEach((inst) => {
+      accountingDocumentRepository.findAllInstallments().forEach((inst) => {
         if (inst.dueDate.substring(0, 7) !== key) return
         const amount = convertAmount(inst.amount, inst.currency, currency)
         if (inst.paymentStatus === 'pagado') paid += amount

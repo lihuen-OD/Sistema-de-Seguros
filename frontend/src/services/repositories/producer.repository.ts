@@ -37,7 +37,14 @@ export const producerRepository = {
     return updated
   },
 
-  // ── Tasks ─────────────────────────────────────────────────────────────────
+  delete(id: string): boolean {
+    const exists = producers.some((p) => p.id === id)
+    if (!exists) return false
+    producers = producers.filter((p) => p.id !== id)
+    return true
+  },
+
+  // ── Tasks ──────────────────────────────────────────────────────────────────
 
   findAllTasks(): ProducerTask[] {
     return [...tasks]
@@ -87,6 +94,13 @@ export const producerRepository = {
       return updated
     })
     return updated
+  },
+
+  deleteTask(id: string): boolean {
+    const exists = tasks.some((t) => t.id === id)
+    if (!exists) return false
+    tasks = tasks.filter((t) => t.id !== id)
+    return true
   },
 
   getTaskSummaryByProducer(producerId: string) {

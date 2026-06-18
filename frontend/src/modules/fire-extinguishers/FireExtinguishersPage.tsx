@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
-import { Plus, Flame, ShieldCheck, ShieldOff, AlertTriangle, Eye, RefreshCw, X } from 'lucide-react'
+import { Plus, Flame, ShieldCheck, ShieldOff, AlertTriangle, Eye, RefreshCw, X, Trash2 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -16,9 +16,10 @@ import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
 import type { RechargeData } from '../../services/repositories/fire-extinguisher.repository'
-import { mockAssets } from '../../data/mock-assets'
+import { assetRepository } from '../../services/repositories/asset.repository'
 import { FIRE_EXT_STATUS_LABELS, LOCATION_TYPES } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
+import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import type { FireExtinguisher } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
@@ -61,6 +62,7 @@ export default function FireExtinguishersPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showRechargeModal, setShowRechargeModal] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const all = useMemo(() => fireExtinguisherRepository.findAll(), [refreshKey])
   const counts = useMemo(() => fireExtinguisherRepository.getCountByStatus(), [refreshKey])
@@ -69,7 +71,7 @@ export default function FireExtinguishersPage() {
     return all.filter((fe) => {
       const q = search.toLowerCase()
       const asset = fe.associatedAssetId
-        ? mockAssets.find((a) => a.id === fe.associatedAssetId)
+        ? assetRepository.findById(fe.associatedAssetId!)
         : null
       const matchSearch =
         !search ||
@@ -107,6 +109,12 @@ export default function FireExtinguishersPage() {
     fireExtinguisherRepository.bulkRecharge([...selectedIds], data)
     setShowRechargeModal(false)
     setSelectedIds(new Set())
+    setRefreshKey((k) => k + 1)
+  }
+
+  function handleDelete(id: string) {
+    fireExtinguisherRepository.delete(id)
+    setDeleteId(null)
     setRefreshKey((k) => k + 1)
   }
 
@@ -242,6 +250,7 @@ export default function FireExtinguishersPage() {
           onToggleAll={toggleAll}
           onToggleOne={toggleOne}
           onNavigate={(id) => navigate(`/fire-extinguishers/${id}`)}
+          onDelete={(id) => setDeleteId(id)}
         />
       </SectionCard>
 
@@ -253,6 +262,15 @@ export default function FireExtinguishersPage() {
           onClose={() => setShowRechargeModal(false)}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteId !== null}
+        title="Eliminar matafuego"
+        description={`¿Eliminar el matafuego "${all.find((f) => f.id === deleteId)?.code ?? ''}"? Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        onConfirm={() => deleteId && handleDelete(deleteId)}
+        onCancel={() => setDeleteId(null)}
+      />
     </PageContent>
   )
 }
@@ -267,6 +285,7 @@ interface FireExtTableProps {
   onToggleAll: (checked: boolean) => void
   onToggleOne: (id: string) => void
   onNavigate: (id: string) => void
+  onDelete: (id: string) => void
 }
 
 function FireExtTable({
@@ -277,6 +296,7 @@ function FireExtTable({
   onToggleAll,
   onToggleOne,
   onNavigate,
+  onDelete,
 }: FireExtTableProps) {
   const navigate = useNavigate()
 
@@ -320,7 +340,7 @@ function FireExtTable({
             const isExp = days < 0
             const isSoon = !isExp && days <= 30
             const asset = fe.associatedAssetId
-              ? mockAssets.find((a) => a.id === fe.associatedAssetId)
+              ? assetRepository.findById(fe.associatedAssetId!)
               : null
             const locationLabel = LOCATION_TYPES[fe.associatedLocationType] ?? fe.associatedLocationType
 
@@ -412,13 +432,23 @@ function FireExtTable({
                 </td>
 
                 {/* Action */}
-                <td className="px-4 py-3 w-10" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    onClick={() => onNavigate(fe.id)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                  >
-                    <Eye size={15} />
-                  </button>
+                <td className="px-4 py-3 w-20" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => onNavigate(fe.id)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                      title="Ver detalle"
+                    >
+                      <Eye size={15} />
+                    </button>
+                    <button
+                      onClick={() => onDelete(fe.id)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="Eliminar matafuego"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             )

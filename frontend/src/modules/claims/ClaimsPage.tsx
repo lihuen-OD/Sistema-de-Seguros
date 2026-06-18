@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Plus, ShieldAlert, Clock, CheckCircle2, XCircle, FileSearch, Eye, Edit2,
+  Plus, ShieldAlert, Clock, CheckCircle2, XCircle, FileSearch, Eye, Edit2, Trash2,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -14,33 +14,19 @@ import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { claimRepository } from '../../services/repositories/claim.repository'
-import { mockAssets } from '../../data/mock-assets'
-import { mockPolicies } from '../../data/mock-policies'
+import { assetRepository } from '../../services/repositories/asset.repository'
+import { policyRepository as policyRepo } from '../../services/repositories/policy.repository'
+import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS, INSURANCE_COMPANIES } from '../../shared/constants'
+import { CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS } from '../../shared/constants/claim-status'
 import type { Claim, ClaimStatus, ClaimType, TableColumn } from '../../shared/types'
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 
-const STATUS_STYLES: Record<ClaimStatus, string> = {
-  denunciado:  'bg-blue-50 text-blue-700 border-blue-200',
-  en_tramite:  'bg-amber-50 text-amber-700 border-amber-200',
-  liquidado:   'bg-emerald-50 text-emerald-700 border-emerald-200',
-  rechazado:   'bg-red-50 text-red-700 border-red-200',
-  cerrado:     'bg-slate-100 text-slate-600 border-slate-200',
-}
-
-const STATUS_ICONS: Record<ClaimStatus, React.ElementType> = {
-  denunciado:  FileSearch,
-  en_tramite:  Clock,
-  liquidado:   CheckCircle2,
-  rechazado:   XCircle,
-  cerrado:     XCircle,
-}
-
 function ClaimStatusPill({ status }: { status: ClaimStatus }) {
-  const Icon = STATUS_ICONS[status]
+  const Icon = CLAIM_STATUS_ICONS[status]
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${STATUS_STYLES[status]}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${CLAIM_STATUS_STYLES[status]}`}>
       <Icon size={10} />
       {CLAIM_STATUS_LABELS[status]}
     </span>
@@ -61,15 +47,23 @@ export default function ClaimsPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterCompany, setFilterCompany] = useState('')
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const all = claimRepository.findAll()
+  const allAssets = assetRepository.findAll()
+  const allPolicies = policyRepo.findAll()
+
+  function handleDelete(id: string) {
+    claimRepository.remove(id)
+    setDeleteId(null)
+  }
   const counts = claimRepository.getCountByStatus()
   const totals = claimRepository.getTotals()
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return all.filter((c) => {
-      const asset = c.assetId ? mockAssets.find((a) => a.id === c.assetId) : null
+      const asset = c.assetId ? allAssets.find((a) => a.id === c.assetId) : null
       const matchSearch =
         !search ||
         c.claimNumber.toLowerCase().includes(q) ||
@@ -105,7 +99,7 @@ export default function ClaimsPage() {
       label: 'Activo',
       render: (v) => {
         if (!v) return <span className="text-xs text-slate-400">—</span>
-        const asset = mockAssets.find((a) => a.id === v)
+        const asset = allAssets.find((a) => a.id === v)
         if (!asset) return <span className="text-xs text-slate-400">—</span>
         return (
           <button
@@ -123,7 +117,7 @@ export default function ClaimsPage() {
       label: 'Póliza',
       render: (v) => {
         if (!v) return <span className="text-xs text-slate-400">—</span>
-        const pol = mockPolicies.find((p) => p.id === v)
+        const pol = allPolicies.find((p) => p.id === v)
         return pol
           ? <span className="text-xs font-mono text-slate-600">{pol.policyNumber}</span>
           : <span className="text-xs text-slate-400">—</span>
@@ -188,6 +182,13 @@ export default function ClaimsPage() {
             title="Editar"
           >
             <Edit2 size={15} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            title="Eliminar siniestro"
+          >
+            <Trash2 size={15} />
           </button>
         </div>
       ),
@@ -301,6 +302,14 @@ export default function ClaimsPage() {
           minWidth={1060}
         />
       </SectionCard>
+      <ConfirmDialog
+        open={deleteId !== null}
+        title="Eliminar siniestro"
+        description={`¿Eliminar el siniestro "${all.find((c) => c.id === deleteId)?.claimNumber ?? ''}"? Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        onConfirm={() => deleteId && handleDelete(deleteId)}
+        onCancel={() => setDeleteId(null)}
+      />
     </PageContent>
   )
 }

@@ -18,7 +18,7 @@ import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { producerRepository } from '../../services/repositories/producer.repository'
 import { policyRepository } from '../../services/repositories/policy.repository'
-import { mockAssets } from '../../data/mock-assets'
+import { assetRepository } from '../../services/repositories/asset.repository'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 
@@ -64,7 +64,7 @@ export default function TaskDetailPage() {
 
   const producer = allProducers.find((p) => p.id === task.producerId)
   const policy = task.policyId ? policyRepository.findById(task.policyId) : undefined
-  const asset = task.assetId ? mockAssets.find((a) => a.id === task.assetId) : undefined
+  const asset = task.assetId ? assetRepository.findById(task.assetId) : undefined
 
   const days = daysUntil(task.dueDate)
   const isOverdue = days < 0 && task.status !== 'finalizada'

@@ -20,8 +20,8 @@ import { policyRepository } from '../../services/repositories/policy.repository'
 import { accountingDocumentRepository } from '../../services/repositories/accounting-document.repository'
 import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
 import { assetAttachmentRepository } from '../../services/repositories/asset-attachment.repository'
-import { mockCompanies } from '../../data/mock-companies'
-import { mockCostCenters } from '../../data/mock-cost-centers'
+import { companyRepository } from '../../services/repositories/company.repository'
+import { costCenterRepository } from '../../services/repositories/cost-center.repository'
 import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../shared/constants'
 import type { Policy, AccountingDocument, FireExtinguisher, TableColumn, AssetValueEntry } from '../../shared/types'
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
@@ -76,8 +76,8 @@ export default function AssetDetailPage() {
     )
   }
 
-  const company = mockCompanies.find((c) => c.id === asset.companyId)
-  const costCenter = mockCostCenters.find((c) => c.id === asset.costCenterId)
+  const company = companyRepository.findById(asset.companyId)
+  const costCenter = costCenterRepository.findById(asset.costCenterId)
   const policies = policyRepository.findByAsset(asset.id)
   const fireExtinguishers = fireExtinguisherRepository.findByAsset(asset.id)
   const attachmentsCount = assetAttachmentRepository.findByAsset(asset.id).length
@@ -308,8 +308,8 @@ export default function AssetDetailPage() {
             {asset.allocations && asset.allocations.length > 1 ? (
               <div className="space-y-2">
                 {asset.allocations.map((alloc) => {
-                  const allocCompany = mockCompanies.find((c) => c.id === alloc.companyId)
-                  const allocCC = mockCostCenters.find((c) => c.id === alloc.costCenterId)
+                  const allocCompany = companyRepository.findById(alloc.companyId)
+                  const allocCC = costCenterRepository.findById(alloc.costCenterId)
                   return (
                     <div key={alloc.id} className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50">
                       <div className="min-w-0">

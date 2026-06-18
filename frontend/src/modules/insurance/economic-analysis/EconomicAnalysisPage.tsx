@@ -14,11 +14,11 @@ import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils
 import {
   downloadCSV, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
-import { mockDocuments, mockDocumentAllocations } from '../../../data/mock-documents'
-import { mockPolicies } from '../../../data/mock-policies'
-import { mockAssets } from '../../../data/mock-assets'
-import { mockCostCenters } from '../../../data/mock-cost-centers'
-import { mockCompanies } from '../../../data/mock-companies'
+import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
+import { policyRepository } from '../../../services/repositories/policy.repository'
+import { assetRepository } from '../../../services/repositories/asset.repository'
+import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
+import { companyRepository } from '../../../services/repositories/company.repository'
 import type { Currency } from '../../../shared/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -69,12 +69,12 @@ function buildPolicyContext() {
   const map = new Map<string, {
     companyId: string; costCenterId: string; assetId: string | null; insuranceCompany: string
   }>()
-  mockPolicies.forEach((pol) => {
+  policyRepository.findAll().forEach((pol) => {
     let companyId = pol.companyId ?? ''
     let costCenterId = pol.costCenterId ?? ''
     const assetId = pol.assetId
     if (assetId) {
-      const asset = mockAssets.find((a) => a.id === assetId)
+      const asset = assetRepository.findById(assetId)
       if (asset) {
         companyId = companyId || asset.companyId
         costCenterId = costCenterId || asset.costCenterId
@@ -87,7 +87,7 @@ function buildPolicyContext() {
 
 function buildDocumentAllocMap(): Map<string, Map<string, number>> {
   const map = new Map<string, Map<string, number>>()
-  mockDocumentAllocations.forEach((alloc) => {
+  accountingDocumentRepository.findAllAllocations().forEach((alloc) => {
     if (!map.has(alloc.accountingDocumentId)) map.set(alloc.accountingDocumentId, new Map())
     map.get(alloc.accountingDocumentId)!.set(alloc.policyId, alloc.allocationPercentage / 100)
   })
@@ -101,22 +101,22 @@ interface MatrixRow { id: string; label: string; sublabel?: string }
 function getRows(grouping: RowGrouping): MatrixRow[] {
   switch (grouping) {
     case 'empresa':
-      return mockCompanies.filter((c) => c.status === 'activo').map((c) => ({ id: c.id, label: c.name }))
+      return companyRepository.findActive().map((c) => ({ id: c.id, label: c.name }))
     case 'centro_costo':
-      return mockCostCenters.filter((cc) => cc.status === 'activo').map((cc) => {
-        const company = mockCompanies.find((c) => c.id === cc.companyId)
+      return costCenterRepository.findAll().filter((cc) => cc.status === 'activo').map((cc) => {
+        const company = companyRepository.findById(cc.companyId)
         return { id: cc.id, label: cc.name, sublabel: company?.name }
       })
     case 'aseguradora': {
-      const companies = Array.from(new Set(mockPolicies.map((p) => p.insuranceCompany))).sort()
+      const companies = Array.from(new Set(policyRepository.findAll().map((p) => p.insuranceCompany))).sort()
       return companies.map((name) => ({ id: name, label: name }))
     }
     case 'poliza':
-      return mockPolicies.filter((p) => p.status !== 'vencida').map((p) => ({
+      return policyRepository.findAll().filter((p) => p.status !== 'vencida').map((p) => ({
         id: p.id, label: p.policyNumber, sublabel: `${p.insuranceType} · ${p.insuranceCompany}`,
       }))
     case 'activo':
-      return mockAssets.map((a) => ({
+      return assetRepository.findAll().map((a) => ({
         id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}`,
       }))
   }
@@ -135,7 +135,7 @@ function buildEconomicMatrix(
   const allocMap = buildDocumentAllocMap()
   const matrix: EconomicMatrixData = new Map()
 
-  mockDocuments.forEach((doc) => {
+  accountingDocumentRepository.findAll().forEach((doc) => {
     const key = granularity === 'week'
       ? getISOWeekKey(doc.issueDate)
       : doc.issueDate.substring(0, 7)
@@ -316,7 +316,7 @@ export default function EconomicAnalysisPage() {
     const policyCtx = buildPolicyContext()
     const allocMap = buildDocumentAllocMap()
 
-    mockDocuments.forEach((doc) => {
+    accountingDocumentRepository.findAll().forEach((doc) => {
       const monthKey = doc.issueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
       const docAmount = convertAmount(doc.totalAmount, doc.currency, currency)
@@ -346,7 +346,7 @@ export default function EconomicAnalysisPage() {
   const barChartData = useMemo(() => {
     return viewMonths.map(({ key, label }) => {
       let total = 0
-      mockDocuments.forEach((doc) => {
+      accountingDocumentRepository.findAll().forEach((doc) => {
         if (doc.issueDate.substring(0, 7) === key) {
           total += convertAmount(doc.totalAmount, doc.currency, currency)
         }

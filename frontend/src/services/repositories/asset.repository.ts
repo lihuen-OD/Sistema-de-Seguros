@@ -1,30 +1,32 @@
 import type { Asset } from '../../shared/types'
 import { mockAssets } from '../../data/mock-assets'
 
+let assets: Asset[] = [...mockAssets]
+
 export const assetRepository = {
   findAll(): Asset[] {
-    return [...mockAssets]
+    return [...assets]
   },
 
   findById(id: string): Asset | undefined {
-    return mockAssets.find((a) => a.id === id)
+    return assets.find((a) => a.id === id)
   },
 
   findByCompany(companyId: string): Asset[] {
-    return mockAssets.filter((a) => a.companyId === companyId)
+    return assets.filter((a) => a.companyId === companyId)
   },
 
   findByCostCenter(costCenterId: string): Asset[] {
-    return mockAssets.filter((a) => a.costCenterId === costCenterId)
+    return assets.filter((a) => a.costCenterId === costCenterId)
   },
 
   findByStatus(status: Asset['status']): Asset[] {
-    return mockAssets.filter((a) => a.status === status)
+    return assets.filter((a) => a.status === status)
   },
 
   search(query: string): Asset[] {
     const q = query.toLowerCase()
-    return mockAssets.filter(
+    return assets.filter(
       (a) =>
         a.name.toLowerCase().includes(q) ||
         a.internalCode.toLowerCase().includes(q) ||
@@ -42,19 +44,29 @@ export const assetRepository = {
       createdAt: now,
       updatedAt: now,
     }
-    mockAssets.push(newAsset)
+    assets = [...assets, newAsset]
     return newAsset
   },
 
   update(id: string, changes: Partial<Omit<Asset, 'id' | 'createdAt'>>): Asset | undefined {
-    const idx = mockAssets.findIndex((a) => a.id === id)
-    if (idx === -1) return undefined
-    Object.assign(mockAssets[idx], changes, { updatedAt: '2026-06-11' })
-    return { ...mockAssets[idx] }
+    let updated: Asset | undefined
+    assets = assets.map((a) => {
+      if (a.id !== id) return a
+      updated = { ...a, ...changes, updatedAt: new Date().toISOString().slice(0, 10) }
+      return updated!
+    })
+    return updated
+  },
+
+  delete(id: string): boolean {
+    const exists = assets.some((a) => a.id === id)
+    if (!exists) return false
+    assets = assets.filter((a) => a.id !== id)
+    return true
   },
 
   getTotalPatrimonialValue(): number {
-    return mockAssets
+    return assets
       .filter((a) => a.status === 'activo')
       .reduce((sum, a) => sum + a.patrimonialValueUsd, 0)
   },

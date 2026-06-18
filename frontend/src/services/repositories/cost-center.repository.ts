@@ -55,4 +55,13 @@ export const costCenterRepository = {
     if (idx !== -1) mockCostCenters[idx] = updated
     return updated
   },
+
+  delete(id: string): boolean {
+    const exists = costCenters.some((cc) => cc.id === id)
+    if (!exists) return false
+    costCenters = costCenters.filter((cc) => cc.id !== id)
+    const idx = mockCostCenters.findIndex((cc) => cc.id === id)
+    if (idx !== -1) mockCostCenters.splice(idx, 1)
+    return true
+  },
 }

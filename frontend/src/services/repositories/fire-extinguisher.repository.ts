@@ -165,4 +165,12 @@ export const fireExtinguisherRepository = {
     extinguishers = extinguishers.map((fe) => (fe.id === id ? updated : fe))
     return updated
   },
+
+  delete(id: string): boolean {
+    const exists = extinguishers.some((fe) => fe.id === id)
+    if (!exists) return false
+    extinguishers = extinguishers.filter((fe) => fe.id !== id)
+    history = history.filter((h) => h.fireExtinguisherId !== id)
+    return true
+  },
 }

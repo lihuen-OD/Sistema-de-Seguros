@@ -18,14 +18,13 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
 import { ASSET_TYPES } from '../../shared/constants'
-import { mockPolicies } from '../../data/mock-policies'
-import { mockAssets } from '../../data/mock-assets'
-import { mockDocuments } from '../../data/mock-documents'
-import { mockFireExtinguishers } from '../../data/mock-fire-extinguishers'
-import { mockProducerTasks } from '../../data/mock-producers'
-import { mockInstallments } from '../../data/mock-installments'
-import { mockCompanies } from '../../data/mock-companies'
-import { mockCostCenters } from '../../data/mock-cost-centers'
+import { policyRepository } from '../../services/repositories/policy.repository'
+import { assetRepository } from '../../services/repositories/asset.repository'
+import { accountingDocumentRepository } from '../../services/repositories/accounting-document.repository'
+import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
+import { producerRepository } from '../../services/repositories/producer.repository'
+import { companyRepository } from '../../services/repositories/company.repository'
+import { costCenterRepository } from '../../services/repositories/cost-center.repository'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
 
@@ -51,15 +50,19 @@ export default function DashboardPage() {
   }
 
   // ── Lookup map ────────────────────────────────────────────────────
+  const allAssets = assetRepository.findAll()
+  const allPolicies = policyRepository.findAll()
+  const allFireExtinguishers = fireExtinguisherRepository.findAll()
+
   const assetById = useMemo(
-    () => new Map(mockAssets.map((a) => [a.id, a])),
-    [],
+    () => new Map(allAssets.map((a) => [a.id, a])),
+    [allAssets],
   )
 
   // ── Cascading cost center options ─────────────────────────────────
   const costCenterOptions = useMemo(
     () =>
-      mockCostCenters
+      costCenterRepository.findAll()
         .filter((cc) => !filterCompany || cc.companyId === filterCompany)
         .filter((cc) => cc.status === 'activo'),
     [filterCompany],
@@ -68,18 +71,18 @@ export default function DashboardPage() {
   // ── Filtered datasets ─────────────────────────────────────────────
   const filteredAssets = useMemo(
     () =>
-      mockAssets.filter((a) => {
+      allAssets.filter((a) => {
         if (filterCompany && a.companyId !== filterCompany) return false
         if (filterCostCenter && a.costCenterId !== filterCostCenter) return false
         if (filterAssetType && a.assetType !== filterAssetType) return false
         return true
       }),
-    [filterCompany, filterCostCenter, filterAssetType],
+    [filterCompany, filterCostCenter, filterAssetType, allAssets],
   )
 
   const filteredPolicies = useMemo(
     () =>
-      mockPolicies.filter((p) => {
+      allPolicies.filter((p) => {
         if (!filterCompany && !filterCostCenter && !filterAssetType) return true
         const asset = p.assetId ? assetById.get(p.assetId) : undefined
         if (filterCompany && p.companyId !== filterCompany && asset?.companyId !== filterCompany) return false
@@ -87,12 +90,12 @@ export default function DashboardPage() {
         if (filterAssetType && asset?.assetType !== filterAssetType) return false
         return true
       }),
-    [filterCompany, filterCostCenter, filterAssetType, assetById],
+    [filterCompany, filterCostCenter, filterAssetType, assetById, allPolicies],
   )
 
   const filteredFireExtinguishers = useMemo(
     () =>
-      mockFireExtinguishers.filter((fe) => {
+      allFireExtinguishers.filter((fe) => {
         if (!filterCompany && !filterCostCenter && !filterAssetType) return true
         if (!fe.associatedAssetId) return false
         const asset = assetById.get(fe.associatedAssetId)
@@ -102,7 +105,7 @@ export default function DashboardPage() {
         if (filterAssetType && asset.assetType !== filterAssetType) return false
         return true
       }),
-    [filterCompany, filterCostCenter, filterAssetType, assetById],
+    [filterCompany, filterCostCenter, filterAssetType, assetById, allFireExtinguishers],
   )
 
   // ── KPI calculations ─────────────────────────────────────────────
@@ -115,14 +118,14 @@ export default function DashboardPage() {
   const totalInsuredArs = vigentePolicies.reduce((s, p) => s + p.insuredAmountArs, 0)
 
   // Documents and installments are global — no company link in current data model
-  const pendingDocs = mockDocuments.filter((d) => d.paymentStatus !== 'pagado')
+  const pendingDocs = accountingDocumentRepository.findAll().filter((d) => d.paymentStatus !== 'pagado')
   const pendingTotal = pendingDocs.reduce((s, d) => s + d.totalAmount, 0)
 
   const expiredFe = filteredFireExtinguishers.filter((f) => f.status === 'vencido')
   const expiringFe = filteredFireExtinguishers.filter((f) => f.status === 'proximo_vencer')
 
-  const overdueTasks = mockProducerTasks.filter((t) => t.status === 'vencida')
-  const pendingInstallments = mockInstallments.filter((i) => i.paymentStatus === 'pendiente')
+  const overdueTasks = producerRepository.findAllTasks().filter((t) => t.status === 'vencida')
+  const pendingInstallments = accountingDocumentRepository.findAllInstallments().filter((i) => i.paymentStatus === 'pendiente')
   const pendingInstallmentsTotal = pendingInstallments.reduce((s, i) => s + i.amount, 0)
 
   // ── Chart data ────────────────────────────────────────────────────
@@ -196,8 +199,7 @@ export default function DashboardPage() {
               label: 'Empresa',
               value: filterCompany,
               onChange: handleCompanyChange,
-              options: mockCompanies
-                .filter((c) => c.status === 'activo')
+              options: companyRepository.findActive()
                 .map((c) => ({ value: c.id, label: c.name })),
             },
             {
@@ -299,7 +301,7 @@ export default function DashboardPage() {
         <KpiCard
           label="Pólizas Total"
           value={filteredPolicies.length}
-          description={`${mockCompanies.filter((c) => c.status === 'activo').length} empresas aseguradas`}
+          description={`${companyRepository.findActive().length} empresas aseguradas`}
           icon={TrendingUp}
           variant="default"
           onClick={() => navigate('/insurance/policies')}

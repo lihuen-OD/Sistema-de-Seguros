@@ -23,8 +23,8 @@ import { FileDropzone } from '../../../shared/components/file-upload/FileDropzon
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { policyRepository } from '../../../services/repositories/policy.repository'
 import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
-import { mockAssets } from '../../../data/mock-assets'
-import { mockCostCenters } from '../../../data/mock-cost-centers'
+import { assetRepository } from '../../../services/repositories/asset.repository'
+import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
 import {
   INSURANCE_COMPANIES,
   DOCUMENT_TYPE_LABELS,
@@ -190,10 +190,10 @@ export default function DocumentEditPage() {
         .map((r) => {
           const policy = allPolicies.find((p) => p.id === r.policyId)
           const asset = policy?.assetId
-            ? mockAssets.find((a) => a.id === policy.assetId)
+            ? assetRepository.findById(policy.assetId!)
             : null
           const costCenter = policy?.costCenterId
-            ? mockCostCenters.find((cc) => cc.id === policy.costCenterId)
+            ? costCenterRepository.findById(policy.costCenterId!)
             : null
           const amount = parseFloat(r.allocatedAmount) || 0
           const pct = totalAllocated > 0 ? (amount / totalAllocated) * 100 : 0
@@ -568,10 +568,10 @@ export default function DocumentEditPage() {
                 const pct = totalAllocated > 0 ? (allocated / totalAllocated) * 100 : 0
                 const selectedPolicy = availablePolicies.find((p) => p.id === row.policyId)
                 const asset = selectedPolicy?.assetId
-                  ? mockAssets.find((a) => a.id === selectedPolicy.assetId)
+                  ? assetRepository.findById(selectedPolicy.assetId!)
                   : null
                 const costCenter = selectedPolicy?.costCenterId
-                  ? mockCostCenters.find((cc) => cc.id === selectedPolicy.costCenterId)
+                  ? costCenterRepository.findById(selectedPolicy.costCenterId!)
                   : null
 
                 return (

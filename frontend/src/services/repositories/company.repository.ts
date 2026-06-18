@@ -51,4 +51,13 @@ export const companyRepository = {
     if (idx !== -1) mockCompanies[idx] = updated
     return updated
   },
+
+  delete(id: string): boolean {
+    const exists = companies.some((c) => c.id === id)
+    if (!exists) return false
+    companies = companies.filter((c) => c.id !== id)
+    const idx = mockCompanies.findIndex((c) => c.id === id)
+    if (idx !== -1) mockCompanies.splice(idx, 1)
+    return true
+  },
 }

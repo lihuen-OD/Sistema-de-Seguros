@@ -14,8 +14,8 @@ import {
   FormSelect,
 } from '../../../shared/components/forms/FormSection'
 import { formatDate } from '../../../shared/utils/format'
-import { mockCostCenters } from '../../../data/mock-cost-centers'
-import { mockAssets } from '../../../data/mock-assets'
+import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
+import { assetRepository } from '../../../services/repositories/asset.repository'
 import { companyRepository, type CompanyInput } from '../../../services/repositories/company.repository'
 import type { Company, TableColumn } from '../../../shared/types'
 
@@ -157,8 +157,8 @@ export default function CompaniesPage() {
 
   const activeCount = allCompanies.filter((c) => c.status === 'activo').length
   const inactiveCount = allCompanies.filter((c) => c.status === 'inactivo').length
-  const totalCostCenters = mockCostCenters.filter((cc) => cc.status === 'activo').length
-  const totalAssets = mockAssets.filter((a) => a.status === 'activo').length
+  const totalCostCenters = costCenterRepository.findAll().filter((cc) => cc.status === 'activo').length
+  const totalAssets = assetRepository.findAll().filter((a) => a.status === 'activo').length
 
   function handleSave() {
     setModalCompany(undefined)
@@ -185,7 +185,7 @@ export default function CompaniesPage() {
       key: 'id',
       label: 'Centros de Costo',
       render: (v) => {
-        const ccCount = mockCostCenters.filter((cc) => cc.companyId === v && cc.status === 'activo').length
+        const ccCount = costCenterRepository.findAll().filter((cc) => cc.companyId === v && cc.status === 'activo').length
         return (
           <span className="inline-flex items-center gap-1 text-xs text-slate-600">
             <Hash size={12} />
@@ -198,7 +198,7 @@ export default function CompaniesPage() {
       key: 'id',
       label: 'Activos',
       render: (v) => {
-        const assetCount = mockAssets.filter((a) => a.companyId === v && a.status === 'activo').length
+        const assetCount = assetRepository.findAll().filter((a) => a.companyId === v && a.status === 'activo').length
         return (
           <span className="text-xs text-slate-600">
             {assetCount} activo{assetCount !== 1 ? 's' : ''}
@@ -307,8 +307,8 @@ export default function CompaniesPage() {
       {/* Company cards — visual summary */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {allCompanies.map((company) => {
-          const ccList = mockCostCenters.filter((cc) => cc.companyId === company.id)
-          const assetList = mockAssets.filter((a) => a.companyId === company.id && a.status === 'activo')
+          const ccList = costCenterRepository.findAll().filter((cc) => cc.companyId === company.id)
+          const assetList = assetRepository.findAll().filter((a) => a.companyId === company.id && a.status === 'activo')
           return (
             <div
               key={company.id}

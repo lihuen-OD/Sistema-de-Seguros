@@ -1,6 +1,6 @@
 ﻿import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye } from 'lucide-react'
+import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -17,7 +17,8 @@ import {
   formatDate,
 } from '../../../shared/utils/format'
 import { policyRepository } from '../../../services/repositories/policy.repository'
-import { mockProducers } from '../../../data/mock-producers'
+import { producerRepository } from '../../../services/repositories/producer.repository'
+import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import {
   INSURANCE_TYPES,
   INSURANCE_COMPANIES,
@@ -38,8 +39,14 @@ export default function PoliciesPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterCompany, setFilterCompany] = useState('')
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const allPolicies = policyRepository.findAll()
+
+  function handleDelete(id: string) {
+    policyRepository.delete(id)
+    setDeleteId(null)
+  }
 
   const filtered = useMemo(() => {
     return allPolicies.filter((p) => {
@@ -75,7 +82,7 @@ export default function PoliciesPage() {
       key: 'producerId',
       label: 'Productor',
       render: (v) => {
-        const producer = mockProducers.find((p) => p.id === v)
+        const producer = producerRepository.findById(v as string)
         return (
           <div className="max-w-[180px]">
             <OverflowCell value={producer?.name ?? null} lines={1} className="text-xs text-slate-500" />
@@ -123,17 +130,24 @@ export default function PoliciesPage() {
       key: 'id',
       label: '',
       render: (_, row) => (
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            navigate(`/insurance/policies/${row.id}`)
-          }}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-        >
-          <Eye size={15} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); navigate(`/insurance/policies/${row.id}`) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            title="Ver detalle"
+          >
+            <Eye size={15} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            title="Eliminar póliza"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
       ),
-      className: 'w-10',
+      className: 'w-20',
     },
   ]
 
@@ -233,6 +247,14 @@ export default function PoliciesPage() {
           minWidth={1100}
         />
       </SectionCard>
+      <ConfirmDialog
+        open={deleteId !== null}
+        title="Eliminar póliza"
+        description={`¿Eliminar la póliza "${allPolicies.find((p) => p.id === deleteId)?.policyNumber ?? ''}"? Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        onConfirm={() => deleteId && handleDelete(deleteId)}
+        onCancel={() => setDeleteId(null)}
+      />
     </PageContent>
   )
 }

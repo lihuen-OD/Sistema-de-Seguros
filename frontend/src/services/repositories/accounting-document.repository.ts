@@ -26,6 +26,10 @@ export const accountingDocumentRepository = {
     return mockDocuments.filter((d) => d.documentType === type)
   },
 
+  findAllAllocations(): DocumentPolicyAllocation[] {
+    return [...mockDocumentAllocations]
+  },
+
   findAllocationsByDocument(documentId: string): DocumentPolicyAllocation[] {
     return mockDocumentAllocations.filter((a) => a.accountingDocumentId === documentId)
   },

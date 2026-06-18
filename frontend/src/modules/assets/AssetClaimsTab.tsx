@@ -7,29 +7,14 @@ import { claimRepository } from '../../services/repositories/claim.repository'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS } from '../../shared/constants'
+import { CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS } from '../../shared/constants/claim-status'
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 
-const STATUS_STYLES: Record<ClaimStatus, string> = {
-  denunciado:  'bg-blue-50 text-blue-700 border-blue-200',
-  en_tramite:  'bg-amber-50 text-amber-700 border-amber-200',
-  liquidado:   'bg-emerald-50 text-emerald-700 border-emerald-200',
-  rechazado:   'bg-red-50 text-red-700 border-red-200',
-  cerrado:     'bg-slate-100 text-slate-600 border-slate-200',
-}
-
-const STATUS_ICONS: Record<ClaimStatus, React.ElementType> = {
-  denunciado:  FileSearch,
-  en_tramite:  Clock,
-  liquidado:   CheckCircle2,
-  rechazado:   XCircle,
-  cerrado:     XCircle,
-}
-
 function ClaimStatusPill({ status }: { status: ClaimStatus }) {
-  const Icon = STATUS_ICONS[status]
+  const Icon = CLAIM_STATUS_ICONS[status]
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${STATUS_STYLES[status]}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${CLAIM_STATUS_STYLES[status]}`}>
       <Icon size={10} />
       {CLAIM_STATUS_LABELS[status]}
     </span>

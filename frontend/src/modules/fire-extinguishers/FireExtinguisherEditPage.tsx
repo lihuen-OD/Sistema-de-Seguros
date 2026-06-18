@@ -14,7 +14,7 @@ import {
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
 import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
-import { mockAssets } from '../../data/mock-assets'
+import { assetRepository } from '../../services/repositories/asset.repository'
 import {
   FIRE_EXT_TYPES,
   FIRE_EXT_CAPACITIES,
@@ -185,7 +185,7 @@ export default function FireExtinguisherEditPage() {
                 onChange={(e) => setAssociatedAssetId(e.target.value)}
               >
                 <option value="">— Sin activo específico</option>
-                {mockAssets
+                {assetRepository.findAll()
                   .filter((a) => a.status === 'activo')
                   .map((a) => (
                     <option key={a.id} value={a.id}>

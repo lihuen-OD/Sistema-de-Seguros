@@ -14,34 +14,19 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { claimRepository } from '../../services/repositories/claim.repository'
-import { mockAssets } from '../../data/mock-assets'
-import { mockPolicies } from '../../data/mock-policies'
+import { assetRepository } from '../../services/repositories/asset.repository'
+import { policyRepository as policyRepo } from '../../services/repositories/policy.repository'
 import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS } from '../../shared/constants'
+import { CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS } from '../../shared/constants/claim-status'
 import { ROUTES } from '../../app/routes'
 import type { ClaimStatus, ClaimType, ClaimEvent, ClaimEventType } from '../../shared/types'
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 
-const STATUS_STYLES: Record<ClaimStatus, string> = {
-  denunciado:  'bg-blue-50 text-blue-700 border-blue-200',
-  en_tramite:  'bg-amber-50 text-amber-700 border-amber-200',
-  liquidado:   'bg-emerald-50 text-emerald-700 border-emerald-200',
-  rechazado:   'bg-red-50 text-red-700 border-red-200',
-  cerrado:     'bg-slate-100 text-slate-600 border-slate-200',
-}
-
-const STATUS_ICONS: Record<ClaimStatus, React.ElementType> = {
-  denunciado:  FileSearch,
-  en_tramite:  Clock,
-  liquidado:   CheckCircle2,
-  rechazado:   XCircle,
-  cerrado:     XCircle,
-}
-
 function StatusBadge({ status }: { status: ClaimStatus }) {
-  const Icon = STATUS_ICONS[status]
+  const Icon = CLAIM_STATUS_ICONS[status]
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border ${STATUS_STYLES[status]}`}>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border ${CLAIM_STATUS_STYLES[status]}`}>
       <Icon size={13} />
       {CLAIM_STATUS_LABELS[status]}
     </span>
@@ -195,8 +180,8 @@ export default function ClaimDetailPage() {
     )
   }
 
-  const asset = claim.assetId ? mockAssets.find((a) => a.id === claim.assetId) ?? null : null
-  const policy = claim.policyId ? mockPolicies.find((p) => p.id === claim.policyId) ?? null : null
+  const asset = claim.assetId ? assetRepository.findById(claim.assetId) ?? null : null
+  const policy = claim.policyId ? policyRepo.findById(claim.policyId) ?? null : null
   const events = claimRepository.findEventsByClaim(claim.id)
 
   const isActive = currentStatus === 'denunciado' || currentStatus === 'en_tramite'

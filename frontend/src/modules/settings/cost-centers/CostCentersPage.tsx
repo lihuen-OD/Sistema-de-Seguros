@@ -15,7 +15,7 @@ import {
   FormInput,
   FormSelect,
 } from '../../../shared/components/forms/FormSection'
-import { mockAssets } from '../../../data/mock-assets'
+import { assetRepository } from '../../../services/repositories/asset.repository'
 import { companyRepository } from '../../../services/repositories/company.repository'
 import { costCenterRepository, type CostCenterInput } from '../../../services/repositories/cost-center.repository'
 import type { CostCenter, TableColumn } from '../../../shared/types'
@@ -230,7 +230,7 @@ export default function CostCentersPage() {
       key: 'id',
       label: 'Activos',
       render: (v) => {
-        const count = mockAssets.filter((a) => a.costCenterId === v && a.status === 'activo').length
+        const count = assetRepository.findAll().filter((a) => a.costCenterId === v && a.status === 'activo').length
         return <span className="text-xs text-slate-500">{count} activo{count !== 1 ? 's' : ''}</span>
       },
     },
@@ -353,7 +353,7 @@ export default function CostCentersPage() {
             <SectionCard key={company.id} title={company.name} subtitle={`CUIT ${company.taxId}`}>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {ccs.map((cc) => {
-                  const assetCount = mockAssets.filter((a) => a.costCenterId === cc.id && a.status === 'activo').length
+                  const assetCount = assetRepository.findAll().filter((a) => a.costCenterId === cc.id && a.status === 'activo').length
                   return (
                     <div
                       key={cc.id}

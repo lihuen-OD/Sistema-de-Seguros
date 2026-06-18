@@ -21,9 +21,9 @@ import {
 import { policyRepository } from '../../../services/repositories/policy.repository'
 import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
 import { producerRepository } from '../../../services/repositories/producer.repository'
-import { mockCompanies } from '../../../data/mock-companies'
-import { mockCostCenters } from '../../../data/mock-cost-centers'
-import { mockAssets } from '../../../data/mock-assets'
+import { companyRepository } from '../../../services/repositories/company.repository'
+import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
+import { assetRepository } from '../../../services/repositories/asset.repository'
 import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { exportPolicyToPdf } from '../../../shared/utils/policyPdf'
 import { ROUTES } from '../../../app/routes'
@@ -48,11 +48,9 @@ export default function PolicyDetailPage() {
   }
 
   const producer = producerRepository.findById(policy.producerId)
-  const company = policy.companyId ? mockCompanies.find((c) => c.id === policy.companyId) : null
-  const costCenter = policy.costCenterId
-    ? mockCostCenters.find((c) => c.id === policy.costCenterId)
-    : null
-  const asset = policy.assetId ? mockAssets.find((a) => a.id === policy.assetId) : null
+  const company = policy.companyId ? companyRepository.findById(policy.companyId) ?? null : null
+  const costCenter = policy.costCenterId ? costCenterRepository.findById(policy.costCenterId) ?? null : null
+  const asset = policy.assetId ? assetRepository.findById(policy.assetId) ?? null : null
 
   // Documents linked to this policy via allocations
   const allocations = accountingDocumentRepository.findAllocationsByPolicy(policy.id)

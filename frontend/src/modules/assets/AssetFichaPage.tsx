@@ -6,8 +6,8 @@ import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { assetRepository } from '../../services/repositories/asset.repository'
 import { policyRepository } from '../../services/repositories/policy.repository'
-import { mockCompanies } from '../../data/mock-companies'
-import { mockCostCenters } from '../../data/mock-cost-centers'
+import { companyRepository } from '../../services/repositories/company.repository'
+import { costCenterRepository } from '../../services/repositories/cost-center.repository'
 import { ASSET_STATUS_LABELS } from '../../shared/constants'
 import type { Policy } from '../../shared/types'
 
@@ -27,8 +27,8 @@ export default function AssetFichaPage() {
     )
   }
 
-  const company = mockCompanies.find((c) => c.id === asset.companyId)
-  const costCenter = mockCostCenters.find((c) => c.id === asset.costCenterId)
+  const company = companyRepository.findById(asset.companyId)
+  const costCenter = costCenterRepository.findById(asset.costCenterId)
   const policies = policyRepository.findByAsset(asset.id)
   const vigentPolicies = policies.filter((p) => p.status === 'vigente')
 

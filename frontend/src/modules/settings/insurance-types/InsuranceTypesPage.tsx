@@ -3,10 +3,10 @@ import { Plus, Trash2, ChevronDown, ChevronUp, Tag, Shield } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
-import { mockInsuranceTypes, type InsuranceTypeConfig } from '../../../data/mock-insurance-settings'
+import { insuranceTypeRepository, type InsuranceTypeConfig } from '../../../services/repositories/insurance-type.repository'
 
 export default function InsuranceTypesPage() {
-  const [types, setTypes] = useState<InsuranceTypeConfig[]>(() => [...mockInsuranceTypes])
+  const [types, setTypes] = useState<InsuranceTypeConfig[]>(() => insuranceTypeRepository.findAll())
   const [expandedId, setExpandedId] = useState<string | null>(types[0]?.id ?? null)
 
   // New type form
@@ -28,7 +28,7 @@ export default function InsuranceTypesPage() {
     const updated = [...types, newT]
     setTypes(updated)
     // Sync to mock store
-    mockInsuranceTypes.splice(0, mockInsuranceTypes.length, ...updated)
+    insuranceTypeRepository.replaceAll(updated)
     setNewTypeLabel('')
     setNewTypeError('')
     setExpandedId(id)
@@ -37,7 +37,7 @@ export default function InsuranceTypesPage() {
   const removeType = (id: string) => {
     const updated = types.filter((t) => t.id !== id)
     setTypes(updated)
-    mockInsuranceTypes.splice(0, mockInsuranceTypes.length, ...updated)
+    insuranceTypeRepository.replaceAll(updated)
     if (expandedId === id) setExpandedId(updated[0]?.id ?? null)
   }
 
@@ -50,7 +50,7 @@ export default function InsuranceTypesPage() {
         : t,
     )
     setTypes(updated)
-    mockInsuranceTypes.splice(0, mockInsuranceTypes.length, ...updated)
+    insuranceTypeRepository.replaceAll(updated)
     setNewCoverage((prev) => ({ ...prev, [typeId]: '' }))
   }
 
@@ -59,7 +59,7 @@ export default function InsuranceTypesPage() {
       t.id === typeId ? { ...t, coverages: t.coverages.filter((c) => c !== coverage) } : t,
     )
     setTypes(updated)
-    mockInsuranceTypes.splice(0, mockInsuranceTypes.length, ...updated)
+    insuranceTypeRepository.replaceAll(updated)
   }
 
   return (

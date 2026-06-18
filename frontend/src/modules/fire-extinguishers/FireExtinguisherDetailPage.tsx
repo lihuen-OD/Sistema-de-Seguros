@@ -19,7 +19,7 @@ import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
 import type { RechargeData } from '../../services/repositories/fire-extinguisher.repository'
-import { mockAssets } from '../../data/mock-assets'
+import { assetRepository } from '../../services/repositories/asset.repository'
 import { LOCATION_TYPES, FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import type { FireExtinguisherHistory } from '../../shared/types'
@@ -94,7 +94,7 @@ export default function FireExtinguisherDetailPage() {
   const fe = useMemo(() => fireExtinguisherRepository.findById(id ?? ''), [refreshKey, id])
   const history = useMemo(() => fireExtinguisherRepository.findHistoryByExtinguisher(id ?? ''), [refreshKey, id])
   const asset = fe?.associatedAssetId
-    ? mockAssets.find((a) => a.id === fe.associatedAssetId)
+    ? assetRepository.findById(fe.associatedAssetId!)
     : null
 
   function handleRecharge(data: RechargeData) {
