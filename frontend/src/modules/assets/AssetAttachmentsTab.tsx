@@ -393,10 +393,21 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
   const [showModal, setShowModal] = useState(false)
 
   const handleAdd = (attachment: AssetAttachment) => {
-    setAttachments((prev) => [...prev, attachment])
+    const saved = assetAttachmentRepository.create({
+      assetId: attachment.assetId,
+      name: attachment.name,
+      description: attachment.description,
+      fileType: attachment.fileType,
+      fileSize: attachment.fileSize,
+      expirationDate: attachment.expirationDate,
+      notifyEmail: attachment.notifyEmail,
+      uploadedBy: attachment.uploadedBy,
+    })
+    setAttachments((prev) => [...prev, saved])
   }
 
   const handleRemove = (id: string) => {
+    assetAttachmentRepository.delete(id)
     setAttachments((prev) => prev.filter((a) => a.id !== id))
   }
 

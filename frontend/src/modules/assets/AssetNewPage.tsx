@@ -12,6 +12,7 @@ import {
 import { AttachmentListEditor } from '../../shared/components/file-upload/AttachmentListEditor'
 import { bienDeUsoRepository } from '../../services/repositories/bien-de-uso.repository'
 import { assetRepository } from '../../services/repositories/asset.repository'
+import { assetAttachmentRepository } from '../../services/repositories/asset-attachment.repository'
 import {
   BUILDING_PURPOSES, FUEL_TYPES, INFRASTRUCTURE_TYPES,
   PRODUCTIVE_UNITS, AREAS, PROVINCES, SILO_CONTENTS, CARGO_SPECIES,
@@ -342,6 +343,19 @@ export default function AssetNewPage() {
       mapsUrl: form.mapsUrl || undefined,
       silos: silos.length > 0 ? silos : undefined,
       photos: [],
+    })
+
+    attachments.forEach((att) => {
+      assetAttachmentRepository.create({
+        assetId: newAsset.id,
+        name: att.name,
+        description: att.description,
+        fileType: att.fileType,
+        fileSize: att.fileSize,
+        expirationDate: att.expirationDate,
+        notifyEmail: att.notifyEmail,
+        uploadedBy: att.uploadedBy,
+      })
     })
 
     navigate(`/assets/${newAsset.id}`)
