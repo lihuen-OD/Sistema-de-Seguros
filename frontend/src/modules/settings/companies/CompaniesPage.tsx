@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Building2, CheckCircle2, XCircle, Hash, Plus, Edit2 } from 'lucide-react'
+import { Building2, CheckCircle2, XCircle, Hash, Plus, Edit2, X, Save } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -8,29 +8,162 @@ import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
+import {
+  FormField,
+  FormInput,
+  FormSelect,
+} from '../../../shared/components/forms/FormSection'
 import { formatDate } from '../../../shared/utils/format'
-import { mockCompanies } from '../../../data/mock-companies'
 import { mockCostCenters } from '../../../data/mock-cost-centers'
 import { mockAssets } from '../../../data/mock-assets'
+import { companyRepository, type CompanyInput } from '../../../services/repositories/company.repository'
 import type { Company, TableColumn } from '../../../shared/types'
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+
+interface CompanyModalProps {
+  company: Company | null
+  onClose: () => void
+  onSave: () => void
+}
+
+function CompanyModal({ company, onClose, onSave }: CompanyModalProps) {
+  const isEdit = company !== null
+
+  const [name, setName] = useState(company?.name ?? '')
+  const [taxId, setTaxId] = useState(company?.taxId ?? '')
+  const [status, setStatus] = useState<'activo' | 'inactivo'>(company?.status ?? 'activo')
+  const [errors, setErrors] = useState<{ name?: string; taxId?: string }>({})
+
+  function validate(): boolean {
+    const e: { name?: string; taxId?: string } = {}
+    if (!name.trim()) e.name = 'La razón social es obligatoria'
+    if (!taxId.trim()) e.taxId = 'El CUIT es obligatorio'
+    setErrors(e)
+    return Object.keys(e).length === 0
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!validate()) return
+    const input: CompanyInput = { name, taxId, status }
+    if (isEdit) {
+      companyRepository.update(company!.id, input)
+    } else {
+      companyRepository.create(input)
+    }
+    onSave()
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-slate-100">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Building2 size={15} className="text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-800">
+                {isEdit ? 'Editar Empresa' : 'Nueva Empresa'}
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isEdit ? company!.name : 'Completá los datos de la nueva empresa'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <FormField label="Razón Social" required error={errors.name} fullWidth>
+            <FormInput
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej: Agropecuaria Los Olivos S.A."
+              autoFocus
+            />
+          </FormField>
+          <FormField label="CUIT" required error={errors.taxId} fullWidth>
+            <FormInput
+              value={taxId}
+              onChange={(e) => setTaxId(e.target.value)}
+              placeholder="Ej: 30-71234567-8"
+            />
+          </FormField>
+          <FormField label="Estado" fullWidth>
+            <FormSelect
+              value={status}
+              onChange={(e) => setStatus(e.target.value as 'activo' | 'inactivo')}
+            >
+              <option value="activo">Activo</option>
+              <option value="inactivo">Inactivo</option>
+            </FormSelect>
+          </FormField>
+
+          <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Save size={14} />
+              {isEdit ? 'Guardar Cambios' : 'Crear Empresa'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CompaniesPage() {
   const [search, setSearch] = useState('')
+  const [modalCompany, setModalCompany] = useState<Company | null | undefined>(undefined)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const allCompanies = useMemo(() => companyRepository.findAll(), [refreshKey])
 
   const filtered = useMemo(() => {
-    if (!search) return mockCompanies
+    if (!search) return allCompanies
     const q = search.toLowerCase()
-    return mockCompanies.filter(
+    return allCompanies.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.taxId.toLowerCase().includes(q),
     )
-  }, [search])
+  }, [search, allCompanies])
 
-  const activeCount = mockCompanies.filter((c) => c.status === 'activo').length
-  const inactiveCount = mockCompanies.filter((c) => c.status === 'inactivo').length
+  const activeCount = allCompanies.filter((c) => c.status === 'activo').length
+  const inactiveCount = allCompanies.filter((c) => c.status === 'inactivo').length
   const totalCostCenters = mockCostCenters.filter((cc) => cc.status === 'activo').length
   const totalAssets = mockAssets.filter((a) => a.status === 'activo').length
+
+  function handleSave() {
+    setModalCompany(undefined)
+    setRefreshKey((k) => k + 1)
+  }
 
   const columns: TableColumn<Company>[] = [
     {
@@ -88,10 +221,11 @@ export default function CompaniesPage() {
     {
       key: 'id',
       label: '',
-      render: () => (
+      render: (_, row) => (
         <button
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setModalCompany(row) }}
           className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+          title="Editar empresa"
         >
           <Edit2 size={15} />
         </button>
@@ -107,6 +241,7 @@ export default function CompaniesPage() {
         subtitle="Razones sociales que conforman el grupo económico"
         actions={
           <button
+            onClick={() => setModalCompany(null)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Plus size={16} />
@@ -120,7 +255,7 @@ export default function CompaniesPage() {
         <KpiCard
           label="Empresas Activas"
           value={activeCount}
-          description={`${mockCompanies.length} total registradas`}
+          description={`${allCompanies.length} total registradas`}
           icon={Building2}
           variant="default"
         />
@@ -157,7 +292,7 @@ export default function CompaniesPage() {
             className="w-full sm:w-72"
           />
           <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-            {filtered.length} de {mockCompanies.length} empresas
+            {filtered.length} de {allCompanies.length} empresas
           </span>
         </div>
         <DataTable
@@ -171,13 +306,14 @@ export default function CompaniesPage() {
 
       {/* Company cards — visual summary */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {mockCompanies.map((company) => {
+        {allCompanies.map((company) => {
           const ccList = mockCostCenters.filter((cc) => cc.companyId === company.id)
           const assetList = mockAssets.filter((a) => a.companyId === company.id && a.status === 'activo')
           return (
             <div
               key={company.id}
-              className="bg-white rounded-xl border border-slate-200 p-5 hover:border-blue-300 hover:shadow-sm transition-all"
+              className="bg-white rounded-xl border border-slate-200 p-5 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
+              onClick={() => setModalCompany(company)}
             >
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
@@ -202,6 +338,15 @@ export default function CompaniesPage() {
           )
         })}
       </div>
+
+      {/* Modal */}
+      {modalCompany !== undefined && (
+        <CompanyModal
+          company={modalCompany}
+          onClose={() => setModalCompany(undefined)}
+          onSave={handleSave}
+        />
+      )}
     </PageContent>
   )
 }

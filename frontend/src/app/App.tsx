@@ -37,6 +37,7 @@ const ProducerEditPage = lazy(() => import('../modules/producers/ProducerEditPag
 
 // Tasks
 const TasksPage = lazy(() => import('../modules/producers/ProducerTasksPage'))
+const TaskDetailPage = lazy(() => import('../modules/tasks/TaskDetailPage'))
 const TaskNewPage = lazy(() => import('../modules/tasks/TaskNewPage'))
 const TaskEditPage = lazy(() => import('../modules/tasks/TaskEditPage'))
 
@@ -49,6 +50,8 @@ const ClaimEditPage = lazy(() => import('../modules/claims/ClaimEditPage'))
 // Fire Extinguishers
 const FireExtinguishersPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguishersPage'))
 const FireExtinguisherDetailPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherDetailPage'))
+const FireExtinguisherNewPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherNewPage'))
+const FireExtinguisherEditPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherEditPage'))
 
 // Settings
 const CompaniesPage = lazy(() => import('../modules/settings/companies/CompaniesPage'))
@@ -106,6 +109,7 @@ export default function App() {
           {/* Tasks */}
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/tasks/new" element={<TaskNewPage />} />
+          <Route path="/tasks/:id" element={<TaskDetailPage />} />
           <Route path="/tasks/:id/edit" element={<TaskEditPage />} />
 
           {/* Claims (Siniestros) */}
@@ -116,7 +120,9 @@ export default function App() {
 
           {/* Fire Extinguishers */}
           <Route path="/fire-extinguishers" element={<FireExtinguishersPage />} />
+          <Route path="/fire-extinguishers/new" element={<FireExtinguisherNewPage />} />
           <Route path="/fire-extinguishers/:id" element={<FireExtinguisherDetailPage />} />
+          <Route path="/fire-extinguishers/:id/edit" element={<FireExtinguisherEditPage />} />
 
           {/* Settings */}
           <Route path="/settings/companies" element={<CompaniesPage />} />

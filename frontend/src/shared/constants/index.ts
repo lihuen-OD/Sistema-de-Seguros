@@ -12,6 +12,17 @@ export const ASSET_TYPES = [
   'Infraestructura',
   'Equipo',
   'Maquinaria',
+  'Carga',
+]
+
+export const CARGO_SPECIES = [
+  'Porcino',
+  'Bovino',
+  'Ovino',
+  'Caprino',
+  'Avícola',
+  'Equino',
+  'Otro',
 ]
 
 export const INSURANCE_TYPES = [

@@ -30,6 +30,9 @@ export const ROUTES = {
   FIRE_EXTINGUISHERS: '/fire-extinguishers',
   FIRE_EXTINGUISHERS_NEW: '/fire-extinguishers/new',
   FIRE_EXTINGUISHERS_DETAIL: (id: string) => `/fire-extinguishers/${id}`,
+  FIRE_EXTINGUISHERS_EDIT: (id: string) => `/fire-extinguishers/${id}/edit`,
+
+  TASKS_DETAIL: (id: string) => `/tasks/${id}`,
 
   CLAIMS: '/claims',
   CLAIMS_NEW: '/claims/new',

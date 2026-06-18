@@ -71,6 +71,7 @@ export type AssetCategory =
   | 'tractor' | 'cosechadora' | 'pulverizadora' | 'implemento'
   | 'edificio' | 'establecimiento'
   | 'equipo' | 'maquinaria' | 'infraestructura'
+  | 'carga'
 
 export type Currency = 'ARS' | 'USD'
 

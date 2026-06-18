@@ -4,6 +4,7 @@ import {
   Save, X, Car, Truck, Settings2, Layers, Wrench,
   Building2, Landmark, Box, Cog, Network,
   Check, Plus, Trash2, MapPin, Bike, Hash, Search,
+  Package, Info,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -20,7 +21,7 @@ import { mockBienesDeUso } from '../../data/mock-bienes-de-uso'
 import { assetRepository } from '../../services/repositories/asset.repository'
 import {
   BUILDING_PURPOSES, FUEL_TYPES, INFRASTRUCTURE_TYPES,
-  PRODUCTIVE_UNITS, AREAS, PROVINCES, SILO_CONTENTS,
+  PRODUCTIVE_UNITS, AREAS, PROVINCES, SILO_CONTENTS, CARGO_SPECIES,
 } from '../../shared/constants'
 import type { AssetCategory, AssetAttachment, AssetAllocation, Silo, AssetStatus } from '../../shared/types'
 
@@ -31,6 +32,7 @@ const IS_WHEELED = (c: AssetCategory | '') =>
 const IS_AGRO = (c: AssetCategory | '') =>
   ['tractor', 'cosechadora', 'pulverizadora', 'implemento'].includes(c)
 const HAS_BRAND = (c: AssetCategory | '') => IS_WHEELED(c) || IS_AGRO(c)
+const IS_CARGA = (c: AssetCategory | '') => c === 'carga'
 
 // ── Local form state ───────────────────────────────────────────────────────────
 
@@ -132,6 +134,12 @@ const CATEGORY_GROUPS: {
       { key: 'infraestructura', label: 'Infraestructura', desc: 'Silo, tanque, obra civil, alambrado', icon: Network, color: 'text-slate-600 bg-slate-100' },
     ],
   },
+  {
+    label: 'Producción animal',
+    items: [
+      { key: 'carga', label: 'Carga', desc: 'Hacienda en pie u otra carga animal (porcino, bovino, etc.)', icon: Package, color: 'text-amber-600 bg-amber-50' },
+    ],
+  },
 ]
 
 const CATEGORY_LABEL: Record<AssetCategory, string> = {
@@ -139,6 +147,7 @@ const CATEGORY_LABEL: Record<AssetCategory, string> = {
   tractor: 'Tractor', cosechadora: 'Cosechadora', pulverizadora: 'Pulverizadora', implemento: 'Implemento',
   edificio: 'Edificio', establecimiento: 'Establecimiento',
   equipo: 'Equipo', maquinaria: 'Maquinaria', infraestructura: 'Infraestructura',
+  carga: 'Carga',
 }
 
 const IMPL_TYPES = ['Sembradora', 'Arado', 'Rastra', 'Fertilizadora', 'Cincel', 'Rolo', 'Acoplado', 'Otro']
@@ -789,6 +798,7 @@ export default function AssetNewPage() {
     IS_AGRO(category) ? 'Ej: John Deere 8R 340' :
     category === 'establecimiento' ? 'Ej: Establecimiento La Esperanza' :
     category === 'edificio' ? 'Ej: Galpón de almacenamiento Norte' :
+    IS_CARGA(category) ? 'Ej: Carga porcina — Lote Norte 2024' :
     'Ej: Nombre del activo'
 
   const isSiloInfra = category === 'infraestructura' && form.infraType === 'Silo'
@@ -823,13 +833,24 @@ export default function AssetNewPage() {
                 <FormField label="Código de activo (sistema)">
                   <AutoCodeDisplay code={generatedCode} />
                 </FormField>
-                <FormField label="Bien de Uso (Finnegans)" fullWidth>
-                  <BienDeUsoField
-                    value={form.bienDeUsoId}
-                    onChange={(id) => setForm((prev) => ({ ...prev, bienDeUsoId: id }))}
-                    categoryFilter={category ? CATEGORY_TO_FINNEGANS[category] : undefined}
-                  />
-                </FormField>
+                {IS_CARGA(category) ? (
+                  <FormField label="Bien de Uso (Finnegans)" fullWidth>
+                    <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-lg border border-amber-200 bg-amber-50">
+                      <Info size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm text-amber-800">
+                        Este tipo de activo <strong>no requiere código de Bien de Uso de Finnegans</strong>. La carga animal se contabiliza como inventario, no como bien de uso fijo.
+                      </p>
+                    </div>
+                  </FormField>
+                ) : (
+                  <FormField label="Bien de Uso (Finnegans)" fullWidth>
+                    <BienDeUsoField
+                      value={form.bienDeUsoId}
+                      onChange={(id) => setForm((prev) => ({ ...prev, bienDeUsoId: id }))}
+                      categoryFilter={category ? CATEGORY_TO_FINNEGANS[category] : undefined}
+                    />
+                  </FormField>
+                )}
                 <FormField label="Nombre / Descripción" required>
                   <FormInput placeholder={namePlaceholder} value={form.name} onChange={set('name')} />
                 </FormField>
@@ -1071,6 +1092,23 @@ export default function AssetNewPage() {
                 <FormSection title="">
                   <FormField label="Especificaciones" fullWidth>
                     <FormTextarea rows={3} placeholder="Ej: Equipo de bombeo 50HP, marca X, modelo Y…" value={form.technicalSpec} onChange={set('technicalSpec')} />
+                  </FormField>
+                </FormSection>
+              </SectionCard>
+            )}
+
+            {/* Carga animal */}
+            {IS_CARGA(category) && (
+              <SectionCard title="Datos de la Carga" subtitle="Especie, categoría y características de la hacienda o carga animal.">
+                <FormSection title="">
+                  <FormField label="Especie">
+                    <FormSelect value={form.brand} onChange={set('brand')}>
+                      <option value="">Seleccionar especie…</option>
+                      {CARGO_SPECIES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </FormSelect>
+                  </FormField>
+                  <FormField label="Categoría / Raza">
+                    <FormInput placeholder="Ej: Capón — Yorkshire, Novillo, Pollo parrillero…" value={form.model} onChange={set('model')} />
                   </FormField>
                 </FormSection>
               </SectionCard>

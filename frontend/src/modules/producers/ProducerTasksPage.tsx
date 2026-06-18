@@ -243,7 +243,7 @@ export default function ProducerTasksPage() {
         </div>
 
         {/* Custom table with overdue row highlight */}
-        <TasksTable tasks={filtered} columns={columns} />
+        <TasksTable tasks={filtered} columns={columns} onRowClick={(t) => navigate(ROUTES.TASKS_DETAIL(t.id))} />
       </SectionCard>
     </PageContent>
   )
@@ -254,9 +254,11 @@ export default function ProducerTasksPage() {
 function TasksTable({
   tasks,
   columns,
+  onRowClick,
 }: {
   tasks: ProducerTask[]
   columns: TableColumn<ProducerTask>[]
+  onRowClick?: (task: ProducerTask) => void
 }) {
   if (tasks.length === 0) {
     return (
@@ -293,8 +295,10 @@ function TasksTable({
             return (
               <tr
                 key={task.id}
+                onClick={() => onRowClick?.(task)}
                 className={clsx(
                   'border-b border-slate-100 transition-colors',
+                  onRowClick && 'cursor-pointer hover:bg-blue-50/50',
                   rowIdx % 2 === 1 && 'bg-slate-50/40',
                   isOverdue && 'border-l-2 border-l-red-400',
                 )}

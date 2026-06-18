@@ -1,6 +1,7 @@
+import { useState, useMemo } from 'react'
 import {
-  Package, ShieldCheck, AlertTriangle, Clock, DollarSign,
-  FileText, Flame, TrendingUp, Building2, CheckCircle2, ArrowRight,
+  Package, ShieldCheck, AlertTriangle, Clock,
+  FileText, Flame, TrendingUp, CheckCircle2, ArrowRight, X,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -14,7 +15,9 @@ import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { ChartCard } from '../../shared/components/cards/ChartCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
+import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
+import { ASSET_TYPES } from '../../shared/constants'
 import { mockPolicies } from '../../data/mock-policies'
 import { mockAssets } from '../../data/mock-assets'
 import { mockDocuments } from '../../data/mock-documents'
@@ -22,26 +25,101 @@ import { mockFireExtinguishers } from '../../data/mock-fire-extinguishers'
 import { mockProducerTasks } from '../../data/mock-producers'
 import { mockInstallments } from '../../data/mock-installments'
 import { mockCompanies } from '../../data/mock-companies'
+import { mockCostCenters } from '../../data/mock-cost-centers'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
 
 export default function DashboardPage() {
   const navigate = useNavigate()
 
+  // ── Filter state ──────────────────────────────────────────────────
+  const [filterCompany, setFilterCompany] = useState('')
+  const [filterCostCenter, setFilterCostCenter] = useState('')
+  const [filterAssetType, setFilterAssetType] = useState('')
+
+  const activeFilterCount = [filterCompany, filterCostCenter, filterAssetType].filter(Boolean).length
+
+  function clearFilters() {
+    setFilterCompany('')
+    setFilterCostCenter('')
+    setFilterAssetType('')
+  }
+
+  function handleCompanyChange(value: string) {
+    setFilterCompany(value)
+    setFilterCostCenter('')
+  }
+
+  // ── Lookup map ────────────────────────────────────────────────────
+  const assetById = useMemo(
+    () => new Map(mockAssets.map((a) => [a.id, a])),
+    [],
+  )
+
+  // ── Cascading cost center options ─────────────────────────────────
+  const costCenterOptions = useMemo(
+    () =>
+      mockCostCenters
+        .filter((cc) => !filterCompany || cc.companyId === filterCompany)
+        .filter((cc) => cc.status === 'activo'),
+    [filterCompany],
+  )
+
+  // ── Filtered datasets ─────────────────────────────────────────────
+  const filteredAssets = useMemo(
+    () =>
+      mockAssets.filter((a) => {
+        if (filterCompany && a.companyId !== filterCompany) return false
+        if (filterCostCenter && a.costCenterId !== filterCostCenter) return false
+        if (filterAssetType && a.assetType !== filterAssetType) return false
+        return true
+      }),
+    [filterCompany, filterCostCenter, filterAssetType],
+  )
+
+  const filteredPolicies = useMemo(
+    () =>
+      mockPolicies.filter((p) => {
+        if (!filterCompany && !filterCostCenter && !filterAssetType) return true
+        const asset = p.assetId ? assetById.get(p.assetId) : undefined
+        if (filterCompany && p.companyId !== filterCompany && asset?.companyId !== filterCompany) return false
+        if (filterCostCenter && p.costCenterId !== filterCostCenter && asset?.costCenterId !== filterCostCenter) return false
+        if (filterAssetType && asset?.assetType !== filterAssetType) return false
+        return true
+      }),
+    [filterCompany, filterCostCenter, filterAssetType, assetById],
+  )
+
+  const filteredFireExtinguishers = useMemo(
+    () =>
+      mockFireExtinguishers.filter((fe) => {
+        if (!filterCompany && !filterCostCenter && !filterAssetType) return true
+        if (!fe.associatedAssetId) return false
+        const asset = assetById.get(fe.associatedAssetId)
+        if (!asset) return false
+        if (filterCompany && asset.companyId !== filterCompany) return false
+        if (filterCostCenter && asset.costCenterId !== filterCostCenter) return false
+        if (filterAssetType && asset.assetType !== filterAssetType) return false
+        return true
+      }),
+    [filterCompany, filterCostCenter, filterAssetType, assetById],
+  )
+
   // ── KPI calculations ─────────────────────────────────────────────
-  const activeAssets = mockAssets.filter((a) => a.status === 'activo')
+  const activeAssets = filteredAssets.filter((a) => a.status === 'activo')
   const totalPatrimonialUsd = activeAssets.reduce((s, a) => s + a.patrimonialValueUsd, 0)
 
-  const vigentePolicies = mockPolicies.filter((p) => p.status === 'vigente')
-  const expiredPolicies = mockPolicies.filter((p) => p.status === 'vencida')
-  const expiringSoon = mockPolicies.filter((p) => p.status === 'proximo_vencer')
+  const vigentePolicies = filteredPolicies.filter((p) => p.status === 'vigente')
+  const expiredPolicies = filteredPolicies.filter((p) => p.status === 'vencida')
+  const expiringSoon = filteredPolicies.filter((p) => p.status === 'proximo_vencer')
   const totalInsuredArs = vigentePolicies.reduce((s, p) => s + p.insuredAmountArs, 0)
 
+  // Documents and installments are global — no company link in current data model
   const pendingDocs = mockDocuments.filter((d) => d.paymentStatus !== 'pagado')
   const pendingTotal = pendingDocs.reduce((s, d) => s + d.totalAmount, 0)
 
-  const expiredFe = mockFireExtinguishers.filter((f) => f.status === 'vencido')
-  const expiringFe = mockFireExtinguishers.filter((f) => f.status === 'proximo_vencer')
+  const expiredFe = filteredFireExtinguishers.filter((f) => f.status === 'vencido')
+  const expiringFe = filteredFireExtinguishers.filter((f) => f.status === 'proximo_vencer')
 
   const overdueTasks = mockProducerTasks.filter((t) => t.status === 'vencida')
   const pendingInstallments = mockInstallments.filter((i) => i.paymentStatus === 'pendiente')
@@ -64,7 +142,7 @@ export default function DashboardPage() {
   ]
 
   const fireStatusData = [
-    { name: 'Vigentes', value: mockFireExtinguishers.filter((f) => f.status === 'vigente').length, color: '#10b981' },
+    { name: 'Vigentes', value: filteredFireExtinguishers.filter((f) => f.status === 'vigente').length, color: '#10b981' },
     { name: 'Próx.', value: expiringFe.length, color: '#f59e0b' },
     { name: 'Vencidos', value: expiredFe.length, color: '#ef4444' },
   ]
@@ -82,7 +160,7 @@ export default function DashboardPage() {
   ]
 
   // ── Upcoming policy expirations ───────────────────────────────────
-  const upcomingPolicies = mockPolicies
+  const upcomingPolicies = filteredPolicies
     .filter((p) => {
       const d = daysUntil(p.endDate)
       return d >= 0 && d <= 90
@@ -108,6 +186,53 @@ export default function DashboardPage() {
           </div>
         }
       />
+
+      {/* ─── Filter bar ───────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-5 bg-white border border-slate-200 rounded-xl px-4 py-3">
+        <FilterBar
+          filters={[
+            {
+              key: 'company',
+              label: 'Empresa',
+              value: filterCompany,
+              onChange: handleCompanyChange,
+              options: mockCompanies
+                .filter((c) => c.status === 'activo')
+                .map((c) => ({ value: c.id, label: c.name })),
+            },
+            {
+              key: 'costCenter',
+              label: 'Centro de Costo',
+              value: filterCostCenter,
+              onChange: setFilterCostCenter,
+              options: costCenterOptions.map((cc) => ({ value: cc.id, label: cc.name })),
+            },
+            {
+              key: 'assetType',
+              label: 'Tipo de Activo',
+              value: filterAssetType,
+              onChange: setFilterAssetType,
+              options: ASSET_TYPES.map((t) => ({ value: t, label: t })),
+            },
+          ]}
+        />
+        <div className="flex items-center gap-3">
+          {activeFilterCount > 0 && (
+            <>
+              <span className="text-xs text-slate-500 bg-blue-50 text-blue-700 border border-blue-100 rounded-full px-2.5 py-0.5 font-medium">
+                {activeFilterCount} {activeFilterCount === 1 ? 'filtro activo' : 'filtros activos'}
+              </span>
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 font-medium transition-colors"
+              >
+                <X size={12} />
+                Limpiar
+              </button>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* ─── KPI Row 1: Patrimonio y Pólizas ─────────────────────── */}
       <MetricGrid cols={4} className="mb-5">
@@ -173,7 +298,7 @@ export default function DashboardPage() {
         />
         <KpiCard
           label="Pólizas Total"
-          value={mockPolicies.length}
+          value={filteredPolicies.length}
           description={`${mockCompanies.filter((c) => c.status === 'activo').length} empresas aseguradas`}
           icon={TrendingUp}
           variant="default"
@@ -228,29 +353,40 @@ export default function DashboardPage() {
       {/* ─── Charts Row 2 ─────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
         {/* Insurer distribution */}
-        <ChartCard title="Prima por Aseguradora" subtitle="Suma asegurada vigente" className="lg:col-span-2" height={240}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={insurerChartData} layout="vertical" margin={{ top: 4, right: 40, left: 40, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-              <XAxis
-                type="number"
-                tick={{ fontSize: 11, fill: '#94a3b8' }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(v) => `${(v / 1_000_000_000).toFixed(2)}B`}
-              />
-              <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={70} />
-              <Tooltip
-                formatter={(v: number) => [formatCurrencyCompact(v, 'ARS'), 'Suma Asegurada']}
-                contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}
-              />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                {insurerChartData.map((_, i) => (
-                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+        <ChartCard
+          title="Prima por Aseguradora"
+          subtitle="Suma asegurada vigente"
+          className="lg:col-span-2"
+          height={240}
+        >
+          {insurerChartData.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-sm text-slate-400">Sin datos para los filtros seleccionados</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={insurerChartData} layout="vertical" margin={{ top: 4, right: 40, left: 40, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => `${(v / 1_000_000_000).toFixed(2)}B`}
+                />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={70} />
+                <Tooltip
+                  formatter={(v: number) => [formatCurrencyCompact(v, 'ARS'), 'Suma Asegurada']}
+                  contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}
+                />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                  {insurerChartData.map((_, i) => (
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </ChartCard>
 
         {/* Fire extinguisher status */}

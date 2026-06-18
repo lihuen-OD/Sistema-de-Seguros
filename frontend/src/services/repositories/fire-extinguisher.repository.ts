@@ -1,4 +1,4 @@
-import type { FireExtinguisher, FireExtinguisherHistory } from '../../shared/types'
+import type { FireExtinguisher, FireExtinguisherHistory, AssociatedLocationType } from '../../shared/types'
 import { mockFireExtinguishers, mockFireExtinguisherHistory } from '../../data/mock-fire-extinguishers'
 
 let extinguishers: FireExtinguisher[] = [...mockFireExtinguishers]
@@ -15,7 +15,18 @@ function computeStatus(expirationDate: string): FireExtinguisher['status'] {
   return 'vigente'
 }
 
+let idSeq = mockFireExtinguishers.length + 1
 let historyIdSeq = 100
+
+export interface FireExtinguisherInput {
+  type: string
+  capacity: string
+  chargeDate: string
+  expirationDate: string
+  associatedAssetId: string | null
+  associatedLocationType: AssociatedLocationType
+  observations: string
+}
 
 export interface RechargeData {
   chargeDate: string
@@ -106,5 +117,52 @@ export const fireExtinguisherRepository = {
     return ids
       .map((id) => this.recharge(id, data))
       .filter((fe): fe is FireExtinguisher => fe !== null)
+  },
+
+  // ── CRUD ──────────────────────────────────────────────────────────────────
+
+  create(input: FireExtinguisherInput): FireExtinguisher {
+    const prefix = {
+      vehiculo: 'VEH',
+      maquinaria: 'MAQ',
+      establecimiento: 'EST',
+      edificio: 'EDI',
+      infraestructura: 'INF',
+    }[input.associatedLocationType] ?? 'GEN'
+    const seq = String(idSeq++).padStart(3, '0')
+    const code = `MAT-${prefix}${seq}-A`
+    const today = new Date().toISOString().slice(0, 10)
+    const fe: FireExtinguisher = {
+      id: `fe-${Date.now()}`,
+      code,
+      type: input.type,
+      capacity: input.capacity,
+      chargeDate: input.chargeDate,
+      expirationDate: input.expirationDate,
+      associatedAssetId: input.associatedAssetId,
+      associatedLocationType: input.associatedLocationType,
+      status: computeStatus(input.expirationDate),
+      observations: input.observations,
+      createdAt: today,
+      updatedAt: today,
+    }
+    extinguishers = [...extinguishers, fe]
+    return fe
+  },
+
+  update(id: string, input: Partial<FireExtinguisherInput>): FireExtinguisher | null {
+    const existing = extinguishers.find((fe) => fe.id === id)
+    if (!existing) return null
+    const today = new Date().toISOString().slice(0, 10)
+    const updated: FireExtinguisher = {
+      ...existing,
+      ...input,
+      status: input.expirationDate
+        ? computeStatus(input.expirationDate)
+        : existing.status,
+      updatedAt: today,
+    }
+    extinguishers = extinguishers.map((fe) => (fe.id === id ? updated : fe))
+    return updated
   },
 }

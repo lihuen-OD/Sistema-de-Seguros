@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Save, X, Plus, Trash2, Check, Search, Building2,
-  TrendingUp, Calendar, MapPin, Wheat, Hash,
+  TrendingUp, Calendar, MapPin, Wheat, Hash, Info,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -17,7 +17,7 @@ import { assetRepository } from '../../services/repositories/asset.repository'
 import { mockCompanies } from '../../data/mock-companies'
 import { mockCostCenters } from '../../data/mock-cost-centers'
 import { mockBienesDeUso } from '../../data/mock-bienes-de-uso'
-import { ASSET_STATUS_LABELS, PRODUCTIVE_UNITS, AREAS, SILO_CONTENTS } from '../../shared/constants'
+import { ASSET_STATUS_LABELS, PRODUCTIVE_UNITS, AREAS, SILO_CONTENTS, CARGO_SPECIES } from '../../shared/constants'
 import { formatDate } from '../../shared/utils/format'
 import type { AssetStatus, AssetAllocation, AssetValueEntry, AssetAttachment, Silo } from '../../shared/types'
 
@@ -754,13 +754,24 @@ export default function AssetEditPage() {
               <FormField label="Código de activo (sistema)">
                 <AutoCodeDisplay code={asset.internalCode} />
               </FormField>
-              <FormField label="Bien de Uso (Finnegans)" fullWidth>
-                <BienDeUsoField
-                  value={form.fixedAssetCode}
-                  onChange={(id) => setForm((p) => ({ ...p, fixedAssetCode: id }))}
-                  categoryFilter={ASSET_TYPE_TO_FINNEGANS[asset.assetType]}
-                />
-              </FormField>
+              {asset.assetType === 'Carga' ? (
+                <FormField label="Bien de Uso (Finnegans)" fullWidth>
+                  <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-lg border border-amber-200 bg-amber-50">
+                    <Info size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-amber-800">
+                      Este tipo de activo <strong>no requiere código de Bien de Uso de Finnegans</strong>. La carga animal se contabiliza como inventario, no como bien de uso fijo.
+                    </p>
+                  </div>
+                </FormField>
+              ) : (
+                <FormField label="Bien de Uso (Finnegans)" fullWidth>
+                  <BienDeUsoField
+                    value={form.fixedAssetCode}
+                    onChange={(id) => setForm((p) => ({ ...p, fixedAssetCode: id }))}
+                    categoryFilter={ASSET_TYPE_TO_FINNEGANS[asset.assetType]}
+                  />
+                </FormField>
+              )}
               <FormField label="Nombre del activo" required>
                 <FormInput
                   placeholder="Ej: Toyota Hilux 4x4 Doble Cabina"
@@ -788,15 +799,26 @@ export default function AssetEditPage() {
 
           {/* 2. Características técnicas */}
           <SectionCard
-            title="Características técnicas"
-            subtitle="Marca, modelo, año y números de identificación."
+            title={asset.assetType === 'Carga' ? 'Datos de la Carga' : 'Características técnicas'}
+            subtitle={asset.assetType === 'Carga' ? 'Especie, categoría y números de identificación.' : 'Marca, modelo, año y números de identificación.'}
           >
             <FormSection title="">
-              <FormField label="Marca">
-                <FormInput placeholder="Ej: Toyota, John Deere…" value={form.brand} onChange={set('brand')} />
+              <FormField label={asset.assetType === 'Carga' ? 'Especie' : 'Marca'}>
+                {asset.assetType === 'Carga' ? (
+                  <FormSelect value={form.brand} onChange={set('brand')}>
+                    <option value="">Seleccionar especie…</option>
+                    {CARGO_SPECIES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </FormSelect>
+                ) : (
+                  <FormInput placeholder="Ej: Toyota, John Deere…" value={form.brand} onChange={set('brand')} />
+                )}
               </FormField>
-              <FormField label="Modelo">
-                <FormInput placeholder="Ej: Hilux SRX, 8R 340…" value={form.model} onChange={set('model')} />
+              <FormField label={asset.assetType === 'Carga' ? 'Categoría / Raza' : 'Modelo'}>
+                <FormInput
+                  placeholder={asset.assetType === 'Carga' ? 'Ej: Capón — Yorkshire, Novillo…' : 'Ej: Hilux SRX, 8R 340…'}
+                  value={form.model}
+                  onChange={set('model')}
+                />
               </FormField>
               <FormField label="Año de fabricación">
                 <FormInput type="number" min={1950} max={2030} placeholder="Ej: 2022" value={form.year} onChange={set('year')} />
