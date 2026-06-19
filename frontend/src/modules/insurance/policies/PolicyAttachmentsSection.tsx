@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Plus, X, Download, Paperclip } from 'lucide-react'
 import type { PolicyAttachment } from '../../../shared/types'
-import { policyAttachmentRepository } from '../../../services/repositories/policy-attachment.repository'
 import { formatDate } from '../../../shared/utils/format'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import {
@@ -18,27 +17,26 @@ interface PolicyAttachmentsSectionProps {
 }
 
 export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionProps) {
-  const [attachments, setAttachments] = useState<PolicyAttachment[]>(() =>
-    policyAttachmentRepository.findByPolicy(policyId),
-  )
+  const [attachments, setAttachments] = useState<PolicyAttachment[]>([])
   const [showModal, setShowModal] = useState(false)
 
   const handleAdd = (partial: Omit<AssetAttachment, 'assetId'>) => {
-    const saved = policyAttachmentRepository.create({
+    const saved: PolicyAttachment = {
+      id: crypto.randomUUID(),
       policyId,
       name: partial.name,
-      description: partial.description,
+      description: partial.description ?? '',
       fileType: partial.fileType,
-      fileSize: partial.fileSize,
+      fileSize: partial.fileSize ?? '',
       expirationDate: partial.expirationDate,
-      notifyEmail: partial.notifyEmail,
-      uploadedBy: partial.uploadedBy,
-    })
+      notifyEmail: partial.notifyEmail ?? '',
+      uploadedBy: partial.uploadedBy ?? '',
+      uploadedAt: new Date().toISOString(),
+    }
     setAttachments((prev) => [...prev, saved])
   }
 
   const handleRemove = (id: string) => {
-    policyAttachmentRepository.delete(id)
     setAttachments((prev) => prev.filter((a) => a.id !== id))
   }
 

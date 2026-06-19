@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ShieldAlert, TriangleAlert, ArrowLeftRight,
   Car, Lock, Package, Flame, CloudRain, Wheat, Waves, Wrench,
@@ -18,16 +19,16 @@ import {
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
 import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
-import { claimRepository } from '../../services/repositories/claim.repository'
-import { policyRepository } from '../../services/repositories/policy.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
+import { claimsApi } from '../../shared/api/claims.api'
+import { assetsApi } from '../../shared/api/assets.api'
+import { policiesApi } from '../../shared/api/policies.api'
 import {
   CLAIM_TYPE_LABELS,
   CLAIM_STATUS_LABELS,
   INSURANCE_COMPANIES,
   INSURANCE_TYPE_CLAIM_COVERAGE,
 } from '../../shared/constants'
-import type { Claim, ClaimStatus, ClaimType, Currency } from '../../shared/types'
+import type { ClaimStatus, ClaimType, Currency } from '../../shared/types'
 
 // ─── Claim type card config ───────────────────────────────────────────────────
 
@@ -66,12 +67,17 @@ interface FormErrors {
 
 export default function ClaimNewPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
 
   const preselectedAssetId = searchParams.get('assetId') ?? ''
   const preselectedPolicyId = searchParams.get('policyId') ?? ''
+
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: () => assetsApi.findAll() })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
+
   const preselectedAsset = preselectedAssetId
-    ? assetRepository.findById(preselectedAssetId) ?? null
+    ? (allAssets.find((a) => a.id === preselectedAssetId) ?? null)
     : null
 
   // Identity
@@ -97,8 +103,8 @@ export default function ClaimNewPage() {
   const [submitting, setSubmitting] = useState(false)
 
   // Derived
-  const selectedAsset = assetId ? assetRepository.findById(assetId) ?? null : null
-  const availablePolicies = assetId ? policyRepository.findByAsset(assetId) : []
+  const selectedAsset = assetId ? (allAssets.find((a) => a.id === assetId) ?? null) : null
+  const availablePolicies = assetId ? allPolicies.filter((p) => p.assetId === assetId) : allPolicies
   const selectedPolicy = policyId ? availablePolicies.find((p) => p.id === policyId) ?? null : null
 
   const tc = parseFloat(exchangeRate) || 0
@@ -154,34 +160,30 @@ export default function ClaimNewPage() {
     return Object.keys(e).length === 0
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return
     setSubmitting(true)
 
-    const claim: Claim = {
-      id: `claim-${Date.now()}`,
-      assetId: assetId || '',
-      policyId: policyId || null,
-      claimNumber: `SIN-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 90000) + 10000)}`,
-      claimType: claimType as ClaimType,
-      occurrenceDate,
-      reportDate,
-      description: description.trim(),
-      insuranceCompany: insuranceCompany.trim(),
-      status,
-      currency,
-      exchangeRate: tc || undefined,
-      claimedAmountArs: toArs(claimedAmount),
-      realAmountArs: realAmount ? toArs(realAmount) : null,
-      settledAmountArs: settledAmount ? toArs(settledAmount) : null,
-      deductibleArs: deductible ? toArs(deductible) : null,
-      observations: observations.trim() || null,
-      createdAt: new Date().toISOString().split('T')[0],
-      updatedAt: new Date().toISOString().split('T')[0],
+    try {
+      const claimNumber = `SIN-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 90000) + 10000)}`
+      const created = await claimsApi.create({
+        claimNumber,
+        claimType: claimType as ClaimType,
+        occurrenceDate,
+        reportDate,
+        description: description.trim(),
+        insuranceCompany: insuranceCompany.trim(),
+        status,
+        currency,
+        assetId: assetId || undefined,
+        policyId: policyId || undefined,
+        claimedAmountArs: toArs(claimedAmount),
+      })
+      queryClient.invalidateQueries({ queryKey: ['claims'] })
+      navigate(`/claims/${created.id}`)
+    } finally {
+      setSubmitting(false)
     }
-
-    claimRepository.create(claim)
-    navigate(`/claims/${claim.id}`)
   }
 
   return (
@@ -220,7 +222,7 @@ export default function ClaimNewPage() {
                 ) : (
                   <FormSelect value={assetId} onChange={(e) => handleAssetChange(e.target.value)}>
                     <option value="">Sin activo asociado</option>
-                    {assetRepository.findAll().map((a) => (
+                    {allAssets.map((a) => (
                       <option key={a.id} value={a.id}>{a.internalCode} — {a.name}</option>
                     ))}
                   </FormSelect>

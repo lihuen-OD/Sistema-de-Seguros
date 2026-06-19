@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { Save } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -12,7 +13,7 @@ import {
   FormInput,
   FormSelect,
 } from '../../shared/components/forms/FormSection'
-import { producerRepository } from '../../services/repositories/producer.repository'
+import { producersApi } from '../../shared/api/producers.api'
 import { ROUTES } from '../../app/routes'
 
 interface FormErrors {
@@ -25,16 +26,39 @@ export default function ProducerEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const original = producerRepository.findById(id!)
+  const { data: original, isLoading } = useQuery({
+    queryKey: ['producers', id],
+    queryFn: () => producersApi.findById(id!),
+    enabled: !!id,
+  })
 
-  const [name, setName] = useState(original?.name ?? '')
-  const [registrationNumber, setRegistrationNumber] = useState(original?.registrationNumber ?? '')
-  const [phone, setPhone] = useState(original?.phone ?? '')
-  const [email, setEmail] = useState(original?.email ?? '')
-  const [address, setAddress] = useState(original?.address ?? '')
-  const [status, setStatus] = useState<'activo' | 'inactivo'>(original?.status ?? 'activo')
+  const [name, setName] = useState('')
+  const [registrationNumber, setRegistrationNumber] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [address, setAddress] = useState('')
+  const [status, setStatus] = useState<'activo' | 'inactivo'>('activo')
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (original) {
+      setName(original.name)
+      setRegistrationNumber(original.registrationNumber)
+      setPhone(original.phone ?? '')
+      setEmail(original.email ?? '')
+      setAddress(original.address ?? '')
+      setStatus(original.status ?? 'activo')
+    }
+  }, [original])
+
+  if (isLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-20 text-slate-400 text-sm">Cargando...</div>
+      </PageContent>
+    )
+  }
 
   if (!original) {
     return (
@@ -58,19 +82,21 @@ export default function ProducerEditPage() {
     return Object.keys(e).length === 0
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
     setSubmitting(true)
-    producerRepository.update(original!.id, {
-      name: name.trim(),
-      registrationNumber: registrationNumber.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      address: address.trim(),
-      status,
-    })
-    navigate(ROUTES.PRODUCERS_DETAIL(original!.id))
+    try {
+      await producersApi.update(original!.id, {
+        name: name.trim(),
+        matricula: registrationNumber.trim(),
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+      })
+      navigate(ROUTES.PRODUCERS_DETAIL(original!.id))
+    } catch {
+      setSubmitting(false)
+    }
   }
 
   return (

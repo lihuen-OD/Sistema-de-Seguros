@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   Phone, Mail, MapPin, Hash, ShieldCheck, ClipboardList, AlertTriangle,
   Calendar, Flag, Eye, Edit2, Plus,
@@ -12,10 +13,10 @@ import { DataTable } from '../../shared/components/data-table/DataTable'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
-import { producerRepository } from '../../services/repositories/producer.repository'
-import { policyRepository } from '../../services/repositories/policy.repository'
+import { producersApi } from '../../shared/api/producers.api'
+import { policiesApi } from '../../shared/api/policies.api'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
-import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
+import { TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { Policy, ProducerTask, TableColumn } from '../../shared/types'
 
@@ -23,7 +24,31 @@ export default function ProducerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const producer = producerRepository.findById(id!)
+  const { data: producer, isLoading: producerLoading } = useQuery({
+    queryKey: ['producers', id],
+    queryFn: () => producersApi.findById(id!),
+    enabled: !!id,
+  })
+
+  const { data: allPolicies = [] } = useQuery({
+    queryKey: ['policies'],
+    queryFn: () => policiesApi.findAll(),
+    enabled: !!producer,
+  })
+
+  const { data: tasks = [] } = useQuery({
+    queryKey: ['producers', id, 'tasks'],
+    queryFn: () => producersApi.findTasks(id!),
+    enabled: !!id,
+  })
+
+  if (producerLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-20 text-slate-400 text-sm">Cargando...</div>
+      </PageContent>
+    )
+  }
 
   if (!producer) {
     return (
@@ -36,12 +61,10 @@ export default function ProducerDetailPage() {
     )
   }
 
-  const policies = policyRepository.findByProducer(producer.id)
-  const tasks = producerRepository.findTasksByProducer(producer.id)
-  const taskSummary = producerRepository.getTaskSummaryByProducer(producer.id)
+  const policies = allPolicies.filter((p) => p.producerId === producer.id)
 
-  const pendingCount = taskSummary.pendiente + taskSummary.en_curso
-  const overdueCount = taskSummary.vencida
+  const pendingCount = tasks.filter((t) => t.status === 'pendiente' || t.status === 'en_curso').length
+  const overdueCount = tasks.filter((t) => t.status === 'vencida').length
 
   // Policy columns
   const policyColumns: TableColumn<Policy>[] = [
@@ -235,7 +258,7 @@ export default function ProducerDetailPage() {
         <KpiCard
           label="Tareas Pendientes"
           value={pendingCount}
-          description={`${taskSummary.en_curso} en curso, ${taskSummary.pendiente} sin iniciar`}
+          description={`${tasks.filter((t) => t.status === 'en_curso').length} en curso, ${tasks.filter((t) => t.status === 'pendiente').length} sin iniciar`}
           icon={ClipboardList}
           variant={pendingCount > 0 ? 'warning' : 'default'}
         />

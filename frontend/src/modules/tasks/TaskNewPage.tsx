@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ClipboardPlus } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -11,9 +12,9 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
-import { producerRepository } from '../../services/repositories/producer.repository'
-import { policyRepository } from '../../services/repositories/policy.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
+import { producersApi } from '../../shared/api/producers.api'
+import { policiesApi } from '../../shared/api/policies.api'
+import { assetsApi } from '../../shared/api/assets.api'
 import { TASK_PRIORITY_LABELS, TASK_TYPES } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TaskPriority } from '../../shared/types'
@@ -25,11 +26,13 @@ interface FormErrors {
 
 export default function TaskNewPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const prefilledProducerId = searchParams.get('producerId') ?? ''
 
-  const allProducers = producerRepository.findAll()
-  const allPolicies = policyRepository.findAll()
+  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -54,22 +57,28 @@ export default function TaskNewPage() {
     return Object.keys(e).length === 0
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
     setSubmitting(true)
-    producerRepository.addTask({
-      title: title.trim(),
-      description: description.trim(),
-      producerId: producerId || null,
-      policyId: policyId || null,
-      assetId: assetId || null,
-      assignedTo: assignedTo.trim() || null,
-      dueDate,
-      priority,
-      status: 'pendiente',
-    })
-    navigate(ROUTES.TASKS)
+
+    if (!producerId) {
+      setErrors({ title: 'Debe seleccionar un productor para crear la tarea' })
+      setSubmitting(false)
+      return
+    }
+
+    try {
+      await producersApi.createTask(producerId, {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        dueDate: dueDate || undefined,
+      })
+      queryClient.invalidateQueries({ queryKey: ['producers'] })
+      navigate(ROUTES.TASKS)
+    } catch {
+      setSubmitting(false)
+    }
   }
 
   const backTo = prefilledProducerId
@@ -161,7 +170,7 @@ export default function TaskNewPage() {
               <FormField label="Activo asociado">
                 <FormSelect value={assetId} onChange={(e) => setAssetId(e.target.value)}>
                   <option value="">— Sin activo</option>
-                  {assetRepository.findAll().map((a) => (
+                  {allAssets.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.internalCode} — {a.name}
                     </option>

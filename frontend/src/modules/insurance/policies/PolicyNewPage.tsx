@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Save, X, Settings, CheckSquare, Plus, Paperclip } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -16,14 +17,13 @@ import {
   FileTypeIcon,
   ExpirationCell,
 } from '../../../shared/components/file-upload/AttachmentListEditor'
-import { policyAttachmentRepository } from '../../../services/repositories/policy-attachment.repository'
-import { companyRepository } from '../../../services/repositories/company.repository'
-import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
-import { producerRepository } from '../../../services/repositories/producer.repository'
-import { assetRepository } from '../../../services/repositories/asset.repository'
-import { insuranceTypeRepository } from '../../../services/repositories/insurance-type.repository'
+import { policiesApi } from '../../../shared/api/policies.api'
+import { companiesApi } from '../../../shared/api/companies.api'
+import { costCentersApi } from '../../../shared/api/cost-centers.api'
+import { producersApi } from '../../../shared/api/producers.api'
+import { assetsApi } from '../../../shared/api/assets.api'
+import { insuranceTypesApi } from '../../../shared/api/insurance-types.api'
 import { INSURANCE_COMPANIES } from '../../../shared/constants'
-import { policyRepository } from '../../../services/repositories/policy.repository'
 import type { PolicyAttachment } from '../../../shared/types'
 
 type AssociationType = 'activo' | 'sin_activo'
@@ -67,18 +67,22 @@ const INITIAL: PolicyForm = {
 
 // ── CoverageSelector ──────────────────────────────────────────────────────────
 
+import type { InsuranceTypeConfig } from '../../../data/mock-insurance-settings'
+
 function CoverageSelector({
   insuranceType,
+  insuranceTypes,
   selected,
   onChange,
   error,
 }: {
   insuranceType: string
+  insuranceTypes: InsuranceTypeConfig[]
   selected: string[]
   onChange: (v: string[]) => void
   error?: string
 }) {
-  const config = insuranceTypeRepository.findAll().find((t) => t.label === insuranceType)
+  const config = insuranceTypes.find((t) => t.label === insuranceType)
 
   if (!insuranceType) {
     return (
@@ -170,10 +174,44 @@ function CoverageSelector({
 
 export default function PolicyNewPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [form, setForm] = useState<PolicyForm>(INITIAL)
   const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm | 'coverageTypes', string>>>({})
   const [attachmentDrafts, setAttachmentDrafts] = useState<PolicyAttachmentDraft[]>([])
   const [showAttachModal, setShowAttachModal] = useState(false)
+
+  const { data: producers = [] } = useQuery({
+    queryKey: ['producers'],
+    queryFn: () => producersApi.findAll(),
+  })
+
+  const { data: allAssets = [] } = useQuery({
+    queryKey: ['assets'],
+    queryFn: () => assetsApi.findAll(),
+  })
+
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => companiesApi.findAll(),
+  })
+
+  const { data: costCenters = [] } = useQuery({
+    queryKey: ['cost-centers'],
+    queryFn: () => costCentersApi.findAll(),
+  })
+
+  const { data: insuranceTypes = [] } = useQuery({
+    queryKey: ['insurance-types'],
+    queryFn: () => insuranceTypesApi.findAll(),
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (input: Parameters<typeof policiesApi.create>[0]) => policiesApi.create(input),
+    onSuccess: (newPolicy) => {
+      queryClient.invalidateQueries({ queryKey: ['policies'] })
+      navigate(`/insurance/policies/${newPolicy.id}`)
+    },
+  })
 
   const set =
     (key: keyof PolicyForm) =>
@@ -206,10 +244,10 @@ export default function PolicyNewPage() {
   }, [form.insuredAmountArs, form.exchangeRate])
 
   const filteredCostCenters = useMemo(
-    () => costCenterRepository.findAll().filter(
+    () => costCenters.filter(
       (cc) => cc.status === 'activo' && (!form.companyId || cc.companyId === form.companyId),
     ),
-    [form.companyId],
+    [costCenters, form.companyId],
   )
 
   // "Accidentes Personales" sin activo → pide descripción del asegurado
@@ -242,45 +280,35 @@ export default function PolicyNewPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
-    const now = new Date().toISOString().slice(0, 10)
+
     const ars = parseFloat(form.insuredAmountArs)
     const rate = parseFloat(form.exchangeRate)
-    const newPolicy = policyRepository.create({
+
+    // Resolve insuranceTypeId from the loaded list
+    const insuranceTypeObj = insuranceTypes.find((t) => t.label === form.insuranceType)
+    const insuranceTypeId = insuranceTypeObj?.id ?? ''
+
+    // Resolve companyId: use form.companyId for sin_activo, or asset's companyId for activo
+    const selectedAsset = form.association === 'activo'
+      ? allAssets.find((a) => a.id === form.assetId)
+      : undefined
+    const companyId = form.association === 'sin_activo'
+      ? form.companyId
+      : (selectedAsset?.companyId ?? '')
+
+    createMutation.mutate({
       policyNumber: form.policyNumber.trim(),
-      insuranceCompany: form.insuranceCompany,
-      producerId: form.producerId,
-      insuranceType: form.insuranceType,
-      coverageType: form.coverageTypes[0] ?? '',
-      coverageTypes: form.coverageTypes,
-      beneficiaryDescription: form.beneficiaryDescription.trim() || undefined,
+      insuranceTypeId,
+      companyId,
+      producerId: form.producerId || undefined,
+      insuredName: form.insuranceCompany,
       startDate: form.startDate,
       endDate: form.endDate,
-      description: form.description.trim(),
-      assetId: form.association === 'activo' ? form.assetId : null,
-      companyId: form.association === 'sin_activo' ? form.companyId : null,
-      costCenterId: form.association === 'sin_activo' ? form.costCenterId : null,
-      insuredAmountArs: ars,
-      exchangeRate: rate,
-      insuredAmountUsd: rate > 0 ? ars / rate : 0,
-      status: 'vigente',
-      createdAt: now,
-      updatedAt: now,
+      premium: ars,
+      currency: rate > 0 ? 'ARS' : 'ARS',
+      description: form.description.trim() || undefined,
+      coverageIds: [],
     })
-
-    attachmentDrafts.forEach((draft) => {
-      policyAttachmentRepository.create({
-        policyId: newPolicy.id,
-        name: draft.name,
-        description: draft.description,
-        fileType: draft.fileType,
-        fileSize: draft.fileSize,
-        expirationDate: draft.expirationDate,
-        notifyEmail: draft.notifyEmail,
-        uploadedBy: draft.uploadedBy,
-      })
-    })
-
-    navigate(`/insurance/policies/${newPolicy.id}`)
   }
 
   return (
@@ -318,7 +346,7 @@ export default function PolicyNewPage() {
               <FormField label="Productor Asesor" required error={errors.producerId}>
                 <FormSelect value={form.producerId} onChange={set('producerId')} required>
                   <option value="">Seleccionar productor…</option>
-                  {producerRepository.findActive().map((p) => (
+                  {producers.filter((p) => p.status === 'activo').map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </FormSelect>
@@ -332,7 +360,7 @@ export default function PolicyNewPage() {
                       required
                     >
                       <option value="">Seleccionar tipo…</option>
-                      {insuranceTypeRepository.findAll().map((t) => (
+                      {insuranceTypes.map((t) => (
                         <option key={t.id} value={t.label}>{t.label}</option>
                       ))}
                     </FormSelect>
@@ -360,6 +388,7 @@ export default function PolicyNewPage() {
               </div>
               <CoverageSelector
                 insuranceType={form.insuranceType}
+                insuranceTypes={insuranceTypes}
                 selected={form.coverageTypes}
                 onChange={(v) => {
                   setForm((prev) => ({ ...prev, coverageTypes: v }))
@@ -424,7 +453,7 @@ export default function PolicyNewPage() {
               <FormField label="Activo Asegurado" required error={errors.assetId} fullWidth>
                 <FormSelect value={form.assetId} onChange={set('assetId')} required>
                   <option value="">Seleccionar activo…</option>
-                  {assetRepository.findAll().filter((a) => a.status === 'activo').map((a) => (
+                  {allAssets.filter((a) => a.status === 'activo').map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.internalCode} — {a.name} ({a.assetType})
                     </option>
@@ -438,7 +467,7 @@ export default function PolicyNewPage() {
                 <FormField label="Empresa" required error={errors.companyId}>
                   <FormSelect value={form.companyId} onChange={set('companyId')} required>
                     <option value="">Seleccionar empresa…</option>
-                    {companyRepository.findActive().map((c) => (
+                    {companies.filter((c) => c.status === 'activo').map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </FormSelect>
@@ -606,10 +635,11 @@ export default function PolicyNewPage() {
         <div className="flex items-center gap-3 pt-2 pb-6">
           <button
             type="submit"
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            disabled={createMutation.isPending}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
           >
             <Save size={16} />
-            Guardar Póliza
+            {createMutation.isPending ? 'Guardando…' : 'Guardar Póliza'}
           </button>
           <button
             type="button"

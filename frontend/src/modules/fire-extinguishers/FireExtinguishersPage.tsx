@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Plus, Flame, ShieldCheck, ShieldOff, AlertTriangle, Eye, RefreshCw, X, Trash2 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -14,13 +15,13 @@ import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { TableShell } from '../../shared/components/data-table/TableShell'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
-import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
-import type { RechargeData } from '../../services/repositories/fire-extinguisher.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
+import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
+import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
+import { assetsApi } from '../../shared/api/assets.api'
 import { FIRE_EXT_STATUS_LABELS, LOCATION_TYPES } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
-import type { FireExtinguisher } from '../../shared/types'
+import type { FireExtinguisher, Asset } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 const LOCATION_OPTIONS = Object.entries(LOCATION_TYPES).map(([value, label]) => ({ value, label }))
@@ -61,18 +62,22 @@ export default function FireExtinguishersPage() {
   const [filterLocation, setFilterLocation] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showRechargeModal, setShowRechargeModal] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
-  const all = useMemo(() => fireExtinguisherRepository.findAll(), [refreshKey])
-  const counts = useMemo(() => fireExtinguisherRepository.getCountByStatus(), [refreshKey])
+  const { data: all = [] } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: fireExtinguishersApi.findAll })
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+
+  const counts = useMemo(() => ({
+    vigente: all.filter((f) => f.status === 'vigente').length,
+    proximo_vencer: all.filter((f) => f.status === 'proximo_vencer').length,
+    vencido: all.filter((f) => f.status === 'vencido').length,
+  }), [all])
 
   const filtered = useMemo(() => {
     return all.filter((fe) => {
       const q = search.toLowerCase()
-      const asset = fe.associatedAssetId
-        ? assetRepository.findById(fe.associatedAssetId!)
-        : null
+      const asset = fe.associatedAssetId ? allAssets.find((a) => a.id === fe.associatedAssetId) : null
       const matchSearch =
         !search ||
         fe.code.toLowerCase().includes(q) ||
@@ -82,7 +87,7 @@ export default function FireExtinguishersPage() {
       const matchLocation = !filterLocation || fe.associatedLocationType === filterLocation
       return matchSearch && matchStatus && matchLocation
     })
-  }, [all, search, filterStatus, filterLocation])
+  }, [all, allAssets, search, filterStatus, filterLocation])
 
   // Selection helpers
   const selectedCount = selectedIds.size
@@ -105,17 +110,17 @@ export default function FireExtinguishersPage() {
     setSelectedIds(new Set())
   }
 
-  function handleRecharge(data: RechargeData) {
-    fireExtinguisherRepository.bulkRecharge([...selectedIds], data)
+  async function handleRecharge(data: RechargeInput) {
+    await fireExtinguishersApi.bulkRecharge([...selectedIds], data)
+    queryClient.invalidateQueries({ queryKey: ['fire-extinguishers'] })
     setShowRechargeModal(false)
     setSelectedIds(new Set())
-    setRefreshKey((k) => k + 1)
   }
 
-  function handleDelete(id: string) {
-    fireExtinguisherRepository.delete(id)
+  async function handleDelete(id: string) {
+    await fireExtinguishersApi.softDelete(id)
+    queryClient.invalidateQueries({ queryKey: ['fire-extinguishers'] })
     setDeleteId(null)
-    setRefreshKey((k) => k + 1)
   }
 
   // Extinguishers selected (for modal)
@@ -244,6 +249,7 @@ export default function FireExtinguishersPage() {
         {/* Table */}
         <FireExtTable
           extinguishers={filtered}
+          allAssets={allAssets}
           selectedIds={selectedIds}
           allSelected={allFilteredSelected}
           someSelected={someFilteredSelected}
@@ -279,6 +285,7 @@ export default function FireExtinguishersPage() {
 
 interface FireExtTableProps {
   extinguishers: FireExtinguisher[]
+  allAssets: Asset[]
   selectedIds: Set<string>
   allSelected: boolean
   someSelected: boolean
@@ -290,6 +297,7 @@ interface FireExtTableProps {
 
 function FireExtTable({
   extinguishers,
+  allAssets,
   selectedIds,
   allSelected,
   someSelected,
@@ -339,9 +347,7 @@ function FireExtTable({
             const days = daysUntil(fe.expirationDate)
             const isExp = days < 0
             const isSoon = !isExp && days <= 30
-            const asset = fe.associatedAssetId
-              ? assetRepository.findById(fe.associatedAssetId!)
-              : null
+            const asset = fe.associatedAssetId ? allAssets.find((a) => a.id === fe.associatedAssetId) ?? null : null
             const locationLabel = LOCATION_TYPES[fe.associatedLocationType] ?? fe.associatedLocationType
 
             return (

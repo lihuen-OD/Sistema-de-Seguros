@@ -1,7 +1,8 @@
 import { Plus, Trash2, Check, Building2 } from 'lucide-react'
 import clsx from 'clsx'
-import { companyRepository } from '../../../services/repositories/company.repository'
-import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
+import { useQuery } from '@tanstack/react-query'
+import { companiesApi } from '../../../shared/api/companies.api'
+import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import type { AssetAllocation } from '../../../shared/types'
 
 interface AllocationEditorProps {
@@ -10,8 +11,8 @@ interface AllocationEditorProps {
 }
 
 export function AllocationEditor({ allocations, onChange }: AllocationEditorProps) {
-  const activeCompanies = companyRepository.findActive()
-  const allCostCenters = costCenterRepository.findAll()
+  const { data: activeCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findActive })
+  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
 
   function add() {
     onChange([...allocations, { id: `alloc-${Date.now()}`, companyId: '', costCenterId: '', percentage: 0 }])

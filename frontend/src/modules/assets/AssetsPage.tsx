@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Package, DollarSign, AlertTriangle, Archive, Eye, Trash2 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -11,10 +12,10 @@ import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
-import { formatCurrencyFull, formatDate, formatCurrencyCompact } from '../../shared/utils/format'
-import { assetRepository } from '../../services/repositories/asset.repository'
-import { companyRepository } from '../../services/repositories/company.repository'
-import { costCenterRepository } from '../../services/repositories/cost-center.repository'
+import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
+import { assetsApi } from '../../shared/api/assets.api'
+import { companiesApi } from '../../shared/api/companies.api'
+import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ASSET_TYPES, ASSET_STATUS_LABELS } from '../../shared/constants'
 import type { Asset, TableColumn } from '../../shared/types'
@@ -24,16 +25,20 @@ const TYPE_OPTIONS = ASSET_TYPES.map((t) => ({ value: t, label: t }))
 
 export default function AssetsPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterCompany, setFilterCompany] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const allAssets = assetRepository.findAll()
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
+  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
 
-  function handleDelete(id: string) {
-    assetRepository.delete(id)
+  async function handleDelete(id: string) {
+    await assetsApi.softDelete(id)
+    queryClient.invalidateQueries({ queryKey: ['assets'] })
     setDeleteId(null)
   }
 
@@ -57,8 +62,6 @@ export default function AssetsPage() {
   const vendido = allAssets.filter((a) => a.status === 'vendido')
   const totalValueUsd = active.reduce((s, a) => s + a.patrimonialValueUsd, 0)
 
-  const allCompanies = companyRepository.findAll()
-  const allCostCenters = costCenterRepository.findAll()
   const companyOptions = allCompanies.map((c) => ({ value: c.id, label: c.name }))
 
   const columns: TableColumn<Asset>[] = [

@@ -14,7 +14,7 @@ import type {
 // Relaciones incluidas en detalle y lista
 const ASSET_INCLUDE = {
   allocations: {
-    include: { costCenter: { select: { id: true, name: true, code: true } } },
+    include: { costCenter: { select: { id: true, name: true, code: true, companyId: true } } },
     orderBy: { percentage: 'desc' as const },
   },
   _count: { select: { attachments: true, fireExtinguishers: true } },

@@ -10,7 +10,7 @@ import {
   FormInput,
   FormSelect,
 } from '../../shared/components/forms/FormSection'
-import { producerRepository } from '../../services/repositories/producer.repository'
+import { producersApi } from '../../shared/api/producers.api'
 import { ROUTES } from '../../app/routes'
 
 interface FormErrors {
@@ -42,19 +42,21 @@ export default function ProducerNewPage() {
     return Object.keys(e).length === 0
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
     setSubmitting(true)
-    const newProducer = producerRepository.create({
-      name: name.trim(),
-      registrationNumber: registrationNumber.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      address: address.trim(),
-      status,
-    })
-    navigate(ROUTES.PRODUCERS_DETAIL(newProducer.id))
+    try {
+      const newProducer = await producersApi.create({
+        name: name.trim(),
+        matricula: registrationNumber.trim(),
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+      })
+      navigate(ROUTES.PRODUCERS_DETAIL(newProducer.id))
+    } catch {
+      setSubmitting(false)
+    }
   }
 
   return (

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, ShieldAlert, Clock, CheckCircle2, XCircle, FileSearch, Eye, Edit2, Trash2,
 } from 'lucide-react'
@@ -13,11 +14,11 @@ import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
-import { claimRepository } from '../../services/repositories/claim.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
-import { policyRepository as policyRepo } from '../../services/repositories/policy.repository'
+import { claimsApi } from '../../shared/api/claims.api'
+import { assetsApi } from '../../shared/api/assets.api'
+import { policiesApi } from '../../shared/api/policies.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
-import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS, INSURANCE_COMPANIES } from '../../shared/constants'
+import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS } from '../../shared/constants'
 import { CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS } from '../../shared/constants/claim-status'
 import type { Claim, ClaimStatus, ClaimType, TableColumn } from '../../shared/types'
 
@@ -37,7 +38,6 @@ function ClaimStatusPill({ status }: { status: ClaimStatus }) {
 
 const STATUS_OPTIONS = Object.entries(CLAIM_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 const TYPE_OPTIONS = Object.entries(CLAIM_TYPE_LABELS).map(([value, label]) => ({ value, label }))
-const COMPANY_OPTIONS = INSURANCE_COMPANIES.map((c) => ({ value: c, label: c }))
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -46,19 +46,31 @@ export default function ClaimsPage() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
-  const [filterCompany, setFilterCompany] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
-  const all = claimRepository.findAll()
-  const allAssets = assetRepository.findAll()
-  const allPolicies = policyRepo.findAll()
+  const { data: all = [] } = useQuery({ queryKey: ['claims'], queryFn: claimsApi.findAll })
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
 
-  function handleDelete(id: string) {
-    claimRepository.remove(id)
+  async function handleDelete(id: string) {
+    await claimsApi.softDelete(id)
+    queryClient.invalidateQueries({ queryKey: ['claims'] })
     setDeleteId(null)
   }
-  const counts = claimRepository.getCountByStatus()
-  const totals = claimRepository.getTotals()
+
+  const counts = useMemo(() => ({
+    denunciado: all.filter((c) => c.status === 'denunciado').length,
+    en_tramite: all.filter((c) => c.status === 'en_tramite').length,
+    liquidado: all.filter((c) => c.status === 'liquidado').length,
+    rechazado: all.filter((c) => c.status === 'rechazado').length,
+    cerrado: all.filter((c) => c.status === 'cerrado').length,
+  }), [all])
+
+  const totals = useMemo(() => ({
+    totalClaimed: all.reduce((s, c) => s + c.claimedAmountArs, 0),
+    totalSettled: all.reduce((s, c) => s + (c.settledAmountArs ?? 0), 0),
+  }), [all])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -70,12 +82,11 @@ export default function ClaimsPage() {
         c.insuranceCompany.toLowerCase().includes(q) ||
         (asset?.name.toLowerCase().includes(q) ?? false) ||
         CLAIM_TYPE_LABELS[c.claimType]?.toLowerCase().includes(q)
-      const matchStatus  = !filterStatus  || c.status === filterStatus
-      const matchType    = !filterType    || c.claimType === filterType
-      const matchCompany = !filterCompany || c.insuranceCompany === filterCompany
-      return matchSearch && matchStatus && matchType && matchCompany
+      const matchStatus = !filterStatus || c.status === filterStatus
+      const matchType   = !filterType   || c.claimType === filterType
+      return matchSearch && matchStatus && matchType
     })
-  }, [all, search, filterStatus, filterType, filterCompany])
+  }, [all, allAssets, search, filterStatus, filterType])
 
   const inProgress = counts.denunciado + counts.en_tramite
 
@@ -278,13 +289,6 @@ export default function ClaimsPage() {
                 options: TYPE_OPTIONS,
                 value: filterType,
                 onChange: setFilterType,
-              },
-              {
-                key: 'company',
-                label: 'Aseguradora',
-                options: COMPANY_OPTIONS,
-                value: filterCompany,
-                onChange: setFilterCompany,
               },
             ]}
           />

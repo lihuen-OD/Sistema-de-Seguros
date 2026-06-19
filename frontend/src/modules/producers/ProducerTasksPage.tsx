@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { Plus, ClipboardList, Clock, CheckCircle2, AlertTriangle, Edit2 } from 'lucide-react'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -14,7 +15,7 @@ import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { TableShell } from '../../shared/components/data-table/TableShell'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
-import { producerRepository } from '../../services/repositories/producer.repository'
+import { producersApi } from '../../shared/api/producers.api'
 import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { ProducerTask, TableColumn } from '../../shared/types'
@@ -29,8 +30,19 @@ export default function ProducerTasksPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
 
-  const allTasks = producerRepository.findAllTasks()
-  const allProducers = producerRepository.findAll()
+  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+
+  const taskQueries = useQueries({
+    queries: allProducers.map((p) => ({
+      queryKey: ['producers', p.id, 'tasks'],
+      queryFn: () => producersApi.findTasks(p.id),
+      enabled: allProducers.length > 0,
+    })),
+  })
+
+  const allTasks = taskQueries.flatMap((q, i) =>
+    (q.data ?? []).map((t) => ({ ...t, producerId: allProducers[i]?.id ?? null }))
+  )
 
   const producerOptions = [
     { value: '__none__', label: '— Tareas propias' },

@@ -37,12 +37,26 @@ export const costCentersService = {
   },
 
   async create(data: CreateCostCenterDTO) {
-    if (data.code) {
-      const exists = await prisma.costCenter.findUnique({ where: { code: data.code } })
+    let code = data.code
+
+    if (!code) {
+      const last = await prisma.costCenter.findFirst({
+        where: { code: { startsWith: 'CC-' } },
+        orderBy: { code: 'desc' },
+      })
+      const lastNum = last?.code ? parseInt(last.code.replace('CC-', ''), 10) || 0 : 0
+      let seq = lastNum + 1
+      code = `CC-${String(seq).padStart(3, '0')}`
+      while (await prisma.costCenter.findUnique({ where: { code } })) {
+        seq++
+        code = `CC-${String(seq).padStart(3, '0')}`
+      }
+    } else {
+      const exists = await prisma.costCenter.findUnique({ where: { code } })
       if (exists) throw new AppError(409, 'Ya existe un centro de costo con ese código', 'CONFLICT')
     }
 
-    return prisma.costCenter.create({ data })
+    return prisma.costCenter.create({ data: { ...data, code } })
   },
 
   async update(id: string, data: UpdateCostCenterDTO) {

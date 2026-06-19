@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
@@ -15,12 +16,12 @@ import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils
 import {
   downloadCSV, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
-import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
-import { policyRepository } from '../../../services/repositories/policy.repository'
-import { assetRepository } from '../../../services/repositories/asset.repository'
-import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
-import { companyRepository } from '../../../services/repositories/company.repository'
-import type { Currency } from '../../../shared/types'
+import { documentsApi } from '../../../shared/api/documents.api'
+import { policiesApi } from '../../../shared/api/policies.api'
+import { assetsApi } from '../../../shared/api/assets.api'
+import { companiesApi } from '../../../shared/api/companies.api'
+import { costCentersApi } from '../../../shared/api/cost-centers.api'
+import type { Currency, Policy, Asset, Company, CostCenter, Installment, DocumentPolicyAllocation } from '../../../shared/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -60,14 +61,14 @@ function convertAmount(amount: number, from: Currency, to: Currency): number {
   return amount
 }
 
-function buildPolicyContext() {
+function buildPolicyContext(policies: Policy[], assets: Asset[]) {
   const map = new Map<string, { companyId: string; costCenterId: string; assetId: string | null }>()
-  policyRepository.findAll().forEach((pol) => {
+  policies.forEach((pol) => {
     let companyId = pol.companyId ?? ''
     let costCenterId = pol.costCenterId ?? ''
     const assetId = pol.assetId
     if (assetId) {
-      const asset = assetRepository.findById(assetId)
+      const asset = assets.find((a) => a.id === assetId)
       if (asset) {
         companyId = companyId || asset.companyId
         costCenterId = costCenterId || asset.costCenterId
@@ -78,9 +79,9 @@ function buildPolicyContext() {
   return map
 }
 
-function buildDocumentPolicies() {
+function buildDocumentPolicies(allocations: DocumentPolicyAllocation[]) {
   const map = new Map<string, string[]>()
-  accountingDocumentRepository.findAllAllocations().forEach((alloc) => {
+  allocations.forEach((alloc) => {
     const existing = map.get(alloc.accountingDocumentId) ?? []
     existing.push(alloc.policyId)
     map.set(alloc.accountingDocumentId, existing)
@@ -92,19 +93,25 @@ function buildDocumentPolicies() {
 
 interface MatrixRow { id: string; label: string; sublabel?: string }
 
-function getRows(grouping: RowGrouping): MatrixRow[] {
+function getRows(
+  grouping: RowGrouping,
+  companies: Company[],
+  costCenters: CostCenter[],
+  assets: Asset[],
+  policies: Policy[],
+): MatrixRow[] {
   switch (grouping) {
     case 'empresa':
-      return companyRepository.findActive().map((c) => ({ id: c.id, label: c.name }))
+      return companies.filter((c) => c.status === 'activo').map((c) => ({ id: c.id, label: c.name }))
     case 'centro_costo':
-      return costCenterRepository.findAll().filter((cc) => cc.status === 'activo').map((cc) => {
-        const company = companyRepository.findById(cc.companyId)
+      return costCenters.filter((cc) => cc.status === 'activo').map((cc) => {
+        const company = companies.find((c) => c.id === cc.companyId)
         return { id: cc.id, label: cc.name, sublabel: company?.name }
       })
     case 'activo':
-      return assetRepository.findAll().map((a) => ({ id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}` }))
+      return assets.map((a) => ({ id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}` }))
     case 'poliza':
-      return policyRepository.findAll().filter((p) => p.status !== 'vencida').map((p) => ({
+      return policies.filter((p) => p.status !== 'vencida').map((p) => ({
         id: p.id, label: p.policyNumber, sublabel: `${p.insuranceType} · ${p.insuranceCompany}`,
       }))
   }
@@ -119,12 +126,16 @@ function buildMatrixData(
   grouping: RowGrouping,
   displayCurrency: Currency,
   granularity: 'week' | 'month',
+  policies: Policy[],
+  assets: Asset[],
+  installments: Installment[],
+  allocations: DocumentPolicyAllocation[],
 ): MatrixData {
-  const policyContext = buildPolicyContext()
-  const documentPolicies = buildDocumentPolicies()
+  const policyContext = buildPolicyContext(policies, assets)
+  const documentPolicies = buildDocumentPolicies(allocations)
   const matrix: MatrixData = new Map()
 
-  accountingDocumentRepository.findAllInstallments().forEach((inst) => {
+  installments.forEach((inst) => {
     const key = granularity === 'week'
       ? getISOWeekKey(inst.dueDate)
       : inst.dueDate.substring(0, 7)
@@ -195,6 +206,19 @@ export default function FinancialAnalysisPage() {
   const [dateFrom, setDateFrom] = useState('2026-01')
   const [dateTo, setDateTo] = useState('2026-12')
 
+  // ─── Remote data ─────────────────────────────────────────────────────────────
+
+  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
+  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
+  const allInstallments: Installment[] = []
+  const allAllocations: DocumentPolicyAllocation[] = []
+
+  // suppress unused warning — allDocuments kept for future installments endpoint
+  void allDocuments
+
   // ─── Period columns ──────────────────────────────────────────────────────────
 
   const months = useMemo(() => generateMonthRange(dateFrom, dateTo), [dateFrom, dateTo])
@@ -222,10 +246,13 @@ export default function FinancialAnalysisPage() {
   // Matrix granularity depends on period: weeks use week keys, the rest use month keys
   const matrixGranularity: 'week' | 'month' = colPeriod === 'semana' ? 'week' : 'month'
   const matrixData = useMemo(
-    () => buildMatrixData(grouping, currency, matrixGranularity),
-    [grouping, currency, matrixGranularity],
+    () => buildMatrixData(grouping, currency, matrixGranularity, allPolicies, allAssets, allInstallments, allAllocations),
+    [grouping, currency, matrixGranularity, allPolicies, allAssets],
   )
-  const rows = useMemo(() => getRows(grouping), [grouping])
+  const rows = useMemo(
+    () => getRows(grouping, allCompanies, allCostCenters, allAssets, allPolicies),
+    [grouping, allCompanies, allCostCenters, allAssets, allPolicies],
+  )
 
   // ─── KPIs (always month-level, unaffected by colPeriod) ──────────────────────
 
@@ -234,7 +261,7 @@ export default function FinancialAnalysisPage() {
     let totalPending = 0
     let overdueCount = 0
     const today = new Date(2026, 5, 10)
-    accountingDocumentRepository.findAllInstallments().forEach((inst) => {
+    allInstallments.forEach((inst) => {
       const monthKey = inst.dueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
       const amount = convertAmount(inst.amount, inst.currency, currency)
@@ -254,8 +281,7 @@ export default function FinancialAnalysisPage() {
     return months.map(({ key, label }) => {
       let paid = 0
       let pending = 0
-      // Build a temporary month matrix for chart (always month granularity)
-      accountingDocumentRepository.findAllInstallments().forEach((inst) => {
+      allInstallments.forEach((inst) => {
         if (inst.dueDate.substring(0, 7) !== key) return
         const amount = convertAmount(inst.amount, inst.currency, currency)
         if (inst.paymentStatus === 'pagado') paid += amount

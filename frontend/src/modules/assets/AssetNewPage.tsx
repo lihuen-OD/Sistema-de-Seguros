@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Save, X, Building2, Plus, Trash2, MapPin, Hash, Package, Info,
 } from 'lucide-react'
@@ -10,9 +11,7 @@ import {
   FormSection, FormField, FormInput, FormSelect, FormTextarea,
 } from '../../shared/components/forms/FormSection'
 import { AttachmentListEditor } from '../../shared/components/file-upload/AttachmentListEditor'
-import { bienDeUsoRepository } from '../../services/repositories/bien-de-uso.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
-import { assetAttachmentRepository } from '../../services/repositories/asset-attachment.repository'
+import { assetsApi } from '../../shared/api/assets.api'
 import {
   BUILDING_PURPOSES, FUEL_TYPES, INFRASTRUCTURE_TYPES,
   PRODUCTIVE_UNITS, AREAS, PROVINCES, SILO_CONTENTS, CARGO_SPECIES,
@@ -92,16 +91,7 @@ const EMPTY: FormState = {
   productiveUnit: '', area: '', observations: '',
 }
 
-// ── Auto-generated internal code ───────────────────────────────────────────────
-
-function generateNextCode(): string {
-  const nums = assetRepository.findAll()
-    .map((a) => a.internalCode)
-    .filter((c) => /^ACT-\d+$/.test(c))
-    .map((c) => parseInt(c.replace('ACT-', ''), 10))
-  const max = nums.length > 0 ? Math.max(...nums) : 0
-  return `ACT-${String(max + 1).padStart(5, '0')}`
-}
+// ── Internal code display ──────────────────────────────────────────────────────
 
 function AutoCodeDisplay({ code }: { code: string }) {
   return (
@@ -254,7 +244,7 @@ function EstBuildingsSection({
 
 export default function AssetNewPage() {
   const navigate = useNavigate()
-  const [generatedCode] = useState(() => generateNextCode())
+  const queryClient = useQueryClient()
   const [category, setCategory] = useState<AssetCategory | ''>('')
   const [form, setForm] = useState<FormState>(EMPTY)
   const [errors, setErrors] = useState<FormErrors>({})
@@ -306,58 +296,26 @@ export default function AssetNewPage() {
     setSilos((prev) => prev.map((s) => s.id === id ? { ...s, [field]: value } : s))
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!category) return
     if (!validate()) return
 
-    const primaryAlloc = allocations[0]
-    const selectedBienDeUso = bienDeUsoRepository.findAll().find((b) => b.id === form.bienDeUsoId)
-
-    const newAsset = assetRepository.create({
-      internalCode: generatedCode,
-      fixedAssetCode: selectedBienDeUso?.code ?? '',
+    const newAsset = await assetsApi.create({
       name: form.name.trim(),
       assetType: CATEGORY_LABEL[category],
-      brand: form.brand.trim(),
-      model: form.model.trim(),
-      year: form.year ? parseInt(form.year, 10) : 0,
-      serialNumber: form.serialNumber.trim(),
-      chassisNumber: form.chassisNumber.trim() || undefined,
-      status: form.status as AssetStatus,
-      patrimonialValueUsd: form.patrimonialValueUsd ? parseFloat(form.patrimonialValueUsd) : 0,
-      valuationDate: form.valuationDate,
-      valueHistory: form.patrimonialValueUsd ? [{
-        id: `vh-${Date.now()}`,
-        date: form.valuationDate || new Date().toISOString().slice(0, 10),
-        valueUsd: parseFloat(form.patrimonialValueUsd),
-        notes: 'Alta inicial',
-      }] : [],
-      observations: form.observations.trim(),
-      companyId: primaryAlloc?.companyId ?? '',
-      costCenterId: primaryAlloc?.costCenterId ?? '',
-      allocations,
-      productiveUnit: form.productiveUnit,
-      area: form.area,
-      coordinates: form.mapsUrl ? parseGoogleMapsUrl(form.mapsUrl) ?? undefined : undefined,
-      mapsUrl: form.mapsUrl || undefined,
-      silos: silos.length > 0 ? silos : undefined,
-      photos: [],
+      brand: form.brand.trim() || undefined,
+      model: form.model.trim() || undefined,
+      serialNumber: form.serialNumber.trim() || undefined,
+      purchaseDate: form.valuationDate || undefined,
+      currentValue: form.patrimonialValueUsd ? parseFloat(form.patrimonialValueUsd) : undefined,
+      description: form.observations.trim() || undefined,
+      allocations: allocations
+        .filter((a) => a.costCenterId)
+        .map((a) => ({ costCenterId: a.costCenterId, percentage: a.percentage })),
     })
 
-    attachments.forEach((att) => {
-      assetAttachmentRepository.create({
-        assetId: newAsset.id,
-        name: att.name,
-        description: att.description,
-        fileType: att.fileType,
-        fileSize: att.fileSize,
-        expirationDate: att.expirationDate,
-        notifyEmail: att.notifyEmail,
-        uploadedBy: att.uploadedBy,
-      })
-    })
-
+    await queryClient.invalidateQueries({ queryKey: ['assets'] })
     navigate(`/assets/${newAsset.id}`)
   }
 
@@ -400,7 +358,7 @@ export default function AssetNewPage() {
             >
               <FormSection title="">
                 <FormField label="Código de activo (sistema)">
-                  <AutoCodeDisplay code={generatedCode} />
+                  <AutoCodeDisplay code="Asignado al guardar" />
                 </FormField>
                 {IS_CARGA(category) ? (
                   <FormField label="Bien de Uso (Finnegans)" fullWidth>

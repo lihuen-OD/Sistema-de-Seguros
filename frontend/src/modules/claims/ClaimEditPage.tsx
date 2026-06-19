@@ -1,18 +1,19 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Save, AlertTriangle } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
-import { claimRepository } from '../../services/repositories/claim.repository'
+import { claimsApi } from '../../shared/api/claims.api'
 import {
   CLAIM_TYPE_LABELS,
   CLAIM_STATUS_LABELS,
   INSURANCE_COMPANIES,
 } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
-import type { ClaimStatus, ClaimType, ClaimEvent, Currency } from '../../shared/types'
+import type { ClaimStatus, ClaimType, Currency } from '../../shared/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -55,10 +56,62 @@ const selectCls =
 export default function ClaimEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
-  const original = claimRepository.findById(id ?? '')
+  const { data: original, isLoading, isError } = useQuery({
+    queryKey: ['claims', id],
+    queryFn: () => claimsApi.findById(id!),
+    enabled: !!id,
+  })
 
-  if (!original) {
+  // ── Form state ──────────────────────────────────────────────────────────────
+
+  const [status, setStatus] = useState<ClaimStatus>('denunciado')
+  const [claimType, setClaimType] = useState<string>('')
+  const [occurrenceDate, setOccurrenceDate] = useState('')
+  const [reportDate, setReportDate] = useState('')
+  const [insuranceCompany, setInsuranceCompany] = useState('')
+  const [description, setDescription] = useState('')
+  const [currency, setCurrency] = useState<Currency>('ARS')
+  const [exchangeRate, setExchangeRate] = useState('')
+  const [claimedAmount, setClaimedAmount] = useState('')
+  const [realAmount, setRealAmount] = useState('')
+  const [settledAmount, setSettledAmount] = useState('')
+  const [deductible, setDeductible] = useState('')
+  const [observations, setObservations] = useState('')
+
+  const [saving, setSaving] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Seed form once data loads
+  useEffect(() => {
+    if (!original) return
+    setStatus(original.status)
+    setClaimType(original.claimType)
+    setOccurrenceDate(original.occurrenceDate)
+    setReportDate(original.reportDate)
+    setInsuranceCompany(original.insuranceCompany)
+    setDescription(original.description)
+    setCurrency(original.currency ?? 'ARS')
+    setExchangeRate(original.exchangeRate != null ? original.exchangeRate.toString() : '')
+    setClaimedAmount(original.claimedAmountArs > 0 ? original.claimedAmountArs.toString() : '')
+    setRealAmount(original.realAmountArs != null ? original.realAmountArs.toString() : '')
+    setSettledAmount(original.settledAmountArs != null ? original.settledAmountArs.toString() : '')
+    setDeductible(original.deductibleArs != null ? original.deductibleArs.toString() : '')
+    setObservations(original.observations ?? '')
+  }, [original])
+
+  if (isLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-20">
+          <p className="text-sm text-slate-400">Cargando siniestro…</p>
+        </div>
+      </PageContent>
+    )
+  }
+
+  if (isError || !original) {
     return (
       <PageContent>
         <ErrorState
@@ -78,35 +131,6 @@ export default function ClaimEditPage() {
     )
   }
 
-  // ── Form state ──────────────────────────────────────────────────────────────
-
-  const [status, setStatus] = useState<ClaimStatus>(original.status)
-  const [claimType, setClaimType] = useState<string>(original.claimType)
-  const [occurrenceDate, setOccurrenceDate] = useState(original.occurrenceDate)
-  const [reportDate, setReportDate] = useState(original.reportDate)
-  const [insuranceCompany, setInsuranceCompany] = useState(original.insuranceCompany)
-  const [description, setDescription] = useState(original.description)
-  const [currency, setCurrency] = useState<Currency>(original.currency ?? 'ARS')
-  const [exchangeRate, setExchangeRate] = useState(
-    original.exchangeRate != null ? original.exchangeRate.toString() : '',
-  )
-  const [claimedAmount, setClaimedAmount] = useState(
-    original.claimedAmountArs > 0 ? original.claimedAmountArs.toString() : '',
-  )
-  const [realAmount, setRealAmount] = useState(
-    original.realAmountArs != null ? original.realAmountArs.toString() : '',
-  )
-  const [settledAmount, setSettledAmount] = useState(
-    original.settledAmountArs != null ? original.settledAmountArs.toString() : '',
-  )
-  const [deductible, setDeductible] = useState(
-    original.deductibleArs != null ? original.deductibleArs.toString() : '',
-  )
-  const [observations, setObservations] = useState(original.observations ?? '')
-
-  const [saving, setSaving] = useState(false)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
   // ── Validation ──────────────────────────────────────────────────────────────
 
   const validate = () => {
@@ -124,126 +148,27 @@ export default function ClaimEditPage() {
 
   // ── Submit ───────────────────────────────────────────────────────────────────
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
     setSaving(true)
 
-    const today = new Date().toISOString().split('T')[0]
-    const generatedEvents: ClaimEvent[] = []
-    const ts = Date.now()
-
-    const newClaimed = parseFloat(claimedAmount)
-    const newSettled = settledAmount ? parseFloat(settledAmount) : null
-    const newDeductible = deductible ? parseFloat(deductible) : null
-    const newReal = realAmount ? parseFloat(realAmount) : null
-
-    // Status change
-    if (status !== original.status) {
-      generatedEvents.push({
-        id: `evt-edit-${ts}-status`,
-        claimId: original.id,
-        date: today,
-        type: 'estado_cambiado',
-        description: `Estado actualizado: "${CLAIM_STATUS_LABELS[original.status]}" → "${CLAIM_STATUS_LABELS[status]}".`,
-        previousStatus: original.status,
-        newStatus: status,
-        author: 'Lihuen Segovia',
+    try {
+      await claimsApi.update(original.id, {
+        status,
+        claimType: claimType as ClaimType,
+        occurrenceDate,
+        reportDate,
+        insuranceCompany,
+        description,
+        currency,
+        claimedAmountArs: parseFloat(claimedAmount),
       })
+      queryClient.invalidateQueries({ queryKey: ['claims'] })
+      navigate(ROUTES.CLAIMS_DETAIL(original.id))
+    } finally {
+      setSaving(false)
     }
-
-    // Settled amount (prioritized as liquidacion_registrada when status = liquidado)
-    if (newSettled !== original.settledAmountArs && newSettled != null) {
-      generatedEvents.push({
-        id: `evt-edit-${ts}-settled`,
-        claimId: original.id,
-        date: today,
-        type: status === 'liquidado' ? 'liquidacion_registrada' : 'monto_actualizado',
-        description:
-          status === 'liquidado'
-            ? `Monto liquidado registrado: AR$ ${newSettled.toLocaleString('es-AR')}.`
-            : `Monto liquidado actualizado a AR$ ${newSettled.toLocaleString('es-AR')}.`,
-        amountLabel: 'Monto liquidado',
-        previousAmount: original.settledAmountArs ?? undefined,
-        newAmount: newSettled,
-        author: 'Lihuen Segovia',
-      })
-    }
-
-    // Claimed amount change
-    if (newClaimed !== original.claimedAmountArs) {
-      generatedEvents.push({
-        id: `evt-edit-${ts}-claimed`,
-        claimId: original.id,
-        date: today,
-        type: 'monto_actualizado',
-        description: `Monto reclamado actualizado de AR$ ${original.claimedAmountArs.toLocaleString('es-AR')} a AR$ ${newClaimed.toLocaleString('es-AR')}.`,
-        amountLabel: 'Monto reclamado',
-        previousAmount: original.claimedAmountArs,
-        newAmount: newClaimed,
-        author: 'Lihuen Segovia',
-      })
-    }
-
-    // Franquicia change
-    if (newDeductible !== original.deductibleArs && newDeductible != null) {
-      generatedEvents.push({
-        id: `evt-edit-${ts}-deductible`,
-        claimId: original.id,
-        date: today,
-        type: 'franquicia_aplicada',
-        description: `Franquicia registrada: AR$ ${newDeductible.toLocaleString('es-AR')}.`,
-        amountLabel: 'Franquicia',
-        previousAmount: original.deductibleArs ?? undefined,
-        newAmount: newDeductible,
-        author: 'Lihuen Segovia',
-      })
-    }
-
-    // General field changes
-    const otherChanged =
-      claimType !== original.claimType ||
-      occurrenceDate !== original.occurrenceDate ||
-      reportDate !== original.reportDate ||
-      insuranceCompany !== original.insuranceCompany ||
-      description !== original.description ||
-      observations !== (original.observations ?? '') ||
-      currency !== (original.currency ?? 'ARS') ||
-      (newReal !== original.realAmountArs)
-
-    if (otherChanged) {
-      generatedEvents.push({
-        id: `evt-edit-${ts}-general`,
-        claimId: original.id,
-        date: today,
-        type: 'siniestro_editado',
-        description: 'Datos del siniestro actualizados.',
-        author: 'Lihuen Segovia',
-      })
-    }
-
-    // Save to repository
-    claimRepository.update(original.id, {
-      status,
-      claimType: claimType as ClaimType,
-      occurrenceDate,
-      reportDate,
-      insuranceCompany,
-      description,
-      currency,
-      exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
-      claimedAmountArs: newClaimed,
-      realAmountArs: newReal,
-      settledAmountArs: newSettled,
-      deductibleArs: newDeductible,
-      observations: observations.trim() || null,
-    })
-
-    for (const event of generatedEvents) {
-      claimRepository.addEvent(event)
-    }
-
-    navigate(ROUTES.CLAIMS_DETAIL(original.id))
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────

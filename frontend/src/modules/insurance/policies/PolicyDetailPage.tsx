@@ -1,5 +1,6 @@
 ﻿import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Building2, User, Tag, Calendar, Hash, Link2,
@@ -18,25 +19,64 @@ import {
   formatDate,
   daysUntil,
 } from '../../../shared/utils/format'
-import { policyRepository } from '../../../services/repositories/policy.repository'
-import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
-import { producerRepository } from '../../../services/repositories/producer.repository'
-import { companyRepository } from '../../../services/repositories/company.repository'
-import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
-import { assetRepository } from '../../../services/repositories/asset.repository'
+import { policiesApi } from '../../../shared/api/policies.api'
+import { producersApi } from '../../../shared/api/producers.api'
+import { companiesApi } from '../../../shared/api/companies.api'
+import { costCentersApi } from '../../../shared/api/cost-centers.api'
+import { assetsApi } from '../../../shared/api/assets.api'
 import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { exportPolicyToPdf } from '../../../shared/utils/policyPdf'
 import { ROUTES } from '../../../app/routes'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
-import { policyAttachmentRepository } from '../../../services/repositories/policy-attachment.repository'
 import type { AccountingDocument, Installment, InstallmentUpdate, ProducerTask, TableColumn } from '../../../shared/types'
 
 export default function PolicyDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const policy = policyRepository.findById(id!)
+  const { data: policy, isLoading: loadingPolicy } = useQuery({
+    queryKey: ['policy', id],
+    queryFn: () => policiesApi.findById(id!),
+    enabled: !!id,
+  })
+
+  const { data: producers = [] } = useQuery({
+    queryKey: ['producers'],
+    queryFn: () => producersApi.findAll(),
+  })
+
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => companiesApi.findAll(),
+  })
+
+  const { data: costCenters = [] } = useQuery({
+    queryKey: ['cost-centers'],
+    queryFn: () => costCentersApi.findAll(),
+  })
+
+  const { data: assets = [] } = useQuery({
+    queryKey: ['assets'],
+    queryFn: () => assetsApi.findAll(),
+  })
+
+  const [activeDocTab, setActiveDocTab] = useState<'documentos' | 'tareas' | 'adjuntos'>('documentos')
+
+  // Local installment state — allows inline editing without leaving the page
+  const [localInstallments, setLocalInstallments] = useState<Map<string, Installment[]>>(
+    () => new Map(),
+  )
+
+  if (loadingPolicy) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-20">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </PageContent>
+    )
+  }
 
   if (!policy) {
     return (
@@ -49,38 +89,24 @@ export default function PolicyDetailPage() {
     )
   }
 
-  const producer = producerRepository.findById(policy.producerId)
-  const company = policy.companyId ? companyRepository.findById(policy.companyId) ?? null : null
-  const costCenter = policy.costCenterId ? costCenterRepository.findById(policy.costCenterId) ?? null : null
-  const asset = policy.assetId ? assetRepository.findById(policy.assetId) ?? null : null
+  const producer = producers.find((p) => p.id === policy.producerId) ?? null
+  const company = policy.companyId ? companies.find((c) => c.id === policy.companyId) ?? null : null
+  const costCenter = policy.costCenterId ? costCenters.find((cc) => cc.id === policy.costCenterId) ?? null : null
+  const asset = policy.assetId ? assets.find((a) => a.id === policy.assetId) ?? null : null
 
-  // Documents linked to this policy via allocations
-  const allocations = accountingDocumentRepository.findAllocationsByPolicy(policy.id)
-  const documents = allocations
-    .map((a) => accountingDocumentRepository.findById(a.accountingDocumentId))
-    .filter(Boolean) as AccountingDocument[]
+  // Documents: not linked to policy in current API — shown as empty
+  const documents: AccountingDocument[] = []
 
-  // Tasks linked to this policy
-  const tasks = producerRepository.findTasksByPolicy(policy.id) as ProducerTask[]
+  // Tasks: not linked to policy in current API — shown as empty
+  const tasks: ProducerTask[] = []
 
-  const [activeDocTab, setActiveDocTab] = useState<'documentos' | 'tareas' | 'adjuntos'>('documentos')
-  const attachmentCount = policyAttachmentRepository.findByPolicy(policy.id).length
-
-  // Local installment state — allows inline editing without leaving the page
-  const [localInstallments, setLocalInstallments] = useState<Map<string, Installment[]>>(() => {
-    const map = new Map<string, Installment[]>()
-    documents.forEach((doc) => {
-      map.set(doc.id, accountingDocumentRepository.findInstallmentsByDocument(doc.id))
-    })
-    return map
-  })
+  const attachmentCount = 0
 
   const handleInstallmentUpdate = (
     docId: string,
     instId: string,
     updates: Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate'>>,
   ) => {
-    accountingDocumentRepository.updateInstallment(instId, updates)
     setLocalInstallments((prev) => {
       const next = new Map(prev)
       const updated = (prev.get(docId) ?? []).map((i) => (i.id === instId ? { ...i, ...updates } : i))

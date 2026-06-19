@@ -1,65 +1,78 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, ChevronDown, ChevronUp, Tag, Shield } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
-import { insuranceTypeRepository, type InsuranceTypeConfig } from '../../../services/repositories/insurance-type.repository'
+import { insuranceTypesApi } from '../../../shared/api/insurance-types.api'
 
 export default function InsuranceTypesPage() {
-  const [types, setTypes] = useState<InsuranceTypeConfig[]>(() => insuranceTypeRepository.findAll())
-  const [expandedId, setExpandedId] = useState<string | null>(types[0]?.id ?? null)
+  const queryClient = useQueryClient()
 
-  // New type form
+  const { data: types = [] } = useQuery({
+    queryKey: ['insurance-types'],
+    queryFn: insuranceTypesApi.findAll,
+  })
+
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [newTypeLabel, setNewTypeLabel] = useState('')
   const [newTypeError, setNewTypeError] = useState('')
-
-  // New coverage per type
   const [newCoverage, setNewCoverage] = useState<Record<string, string>>({})
 
-  const addType = () => {
+  // Set first type as expanded once data loads
+  useEffect(() => {
+    if (types.length > 0 && !expandedId) {
+      setExpandedId(types[0].id)
+    }
+  }, [types, expandedId])
+
+  const addType = async () => {
     const label = newTypeLabel.trim()
     if (!label) { setNewTypeError('Ingresá un nombre'); return }
     if (types.some((t) => t.label.toLowerCase() === label.toLowerCase())) {
       setNewTypeError('Ya existe un tipo con ese nombre')
       return
     }
-    const id = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
-    const newT: InsuranceTypeConfig = { id, label, coverages: [] }
-    const updated = [...types, newT]
-    setTypes(updated)
-    // Sync to mock store
-    insuranceTypeRepository.replaceAll(updated)
-    setNewTypeLabel('')
-    setNewTypeError('')
-    setExpandedId(id)
+    try {
+      const created = await insuranceTypesApi.create(label)
+      await queryClient.invalidateQueries({ queryKey: ['insurance-types'] })
+      setNewTypeLabel('')
+      setNewTypeError('')
+      setExpandedId(created.id)
+    } catch (err) {
+      setNewTypeError(err instanceof Error ? err.message : 'Error al crear el tipo')
+    }
   }
 
-  const removeType = (id: string) => {
-    const updated = types.filter((t) => t.id !== id)
-    setTypes(updated)
-    insuranceTypeRepository.replaceAll(updated)
-    if (expandedId === id) setExpandedId(updated[0]?.id ?? null)
+  const removeType = async (id: string) => {
+    try {
+      await insuranceTypesApi.remove(id)
+      await queryClient.invalidateQueries({ queryKey: ['insurance-types'] })
+      if (expandedId === id) setExpandedId(null)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al eliminar el tipo')
+    }
   }
 
-  const addCoverage = (typeId: string) => {
+  const addCoverage = async (typeId: string) => {
     const label = (newCoverage[typeId] ?? '').trim()
     if (!label) return
-    const updated = types.map((t) =>
-      t.id === typeId && !t.coverages.includes(label)
-        ? { ...t, coverages: [...t.coverages, label] }
-        : t,
-    )
-    setTypes(updated)
-    insuranceTypeRepository.replaceAll(updated)
-    setNewCoverage((prev) => ({ ...prev, [typeId]: '' }))
+    try {
+      await insuranceTypesApi.addCoverage(typeId, label)
+      await queryClient.invalidateQueries({ queryKey: ['insurance-types'] })
+      setNewCoverage((prev) => ({ ...prev, [typeId]: '' }))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al agregar cobertura')
+    }
   }
 
-  const removeCoverage = (typeId: string, coverage: string) => {
-    const updated = types.map((t) =>
-      t.id === typeId ? { ...t, coverages: t.coverages.filter((c) => c !== coverage) } : t,
-    )
-    setTypes(updated)
-    insuranceTypeRepository.replaceAll(updated)
+  const removeCoverage = async (typeId: string, coverage: string) => {
+    try {
+      await insuranceTypesApi.removeCoverage(typeId, coverage)
+      await queryClient.invalidateQueries({ queryKey: ['insurance-types'] })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al eliminar cobertura')
+    }
   }
 
   return (
@@ -73,7 +86,6 @@ export default function InsuranceTypesPage() {
 
       <div className="max-w-4xl space-y-5">
 
-        {/* Lista de tipos */}
         <SectionCard
           title="Tipos de seguro configurados"
           subtitle={`${types.length} tipo${types.length !== 1 ? 's' : ''} de seguro`}
@@ -83,7 +95,6 @@ export default function InsuranceTypesPage() {
               const isOpen = expandedId === type.id
               return (
                 <div key={type.id} className="border border-slate-200 rounded-xl overflow-hidden">
-                  {/* Header */}
                   <div className="flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50/60 transition-colors">
                     <button
                       type="button"
@@ -113,10 +124,8 @@ export default function InsuranceTypesPage() {
                     </button>
                   </div>
 
-                  {/* Coberturas */}
                   {isOpen && (
                     <div className="border-t border-slate-100 px-4 py-4 bg-slate-50/40 space-y-3">
-                      {/* Lista de coberturas */}
                       {type.coverages.length === 0 ? (
                         <p className="text-sm text-slate-400 italic">Sin coberturas configuradas.</p>
                       ) : (
@@ -140,7 +149,6 @@ export default function InsuranceTypesPage() {
                         </div>
                       )}
 
-                      {/* Agregar cobertura */}
                       <div className="flex items-center gap-2 pt-1">
                         <input
                           type="text"
@@ -168,7 +176,6 @@ export default function InsuranceTypesPage() {
           </div>
         </SectionCard>
 
-        {/* Agregar nuevo tipo */}
         <SectionCard
           title="Agregar tipo de seguro"
           subtitle="Creá un nuevo tipo para usar en las pólizas"

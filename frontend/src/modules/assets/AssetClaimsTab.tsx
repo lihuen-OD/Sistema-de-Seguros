@@ -1,9 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import {
-  Plus, Clock, CheckCircle2, XCircle, FileSearch, ShieldAlert, ArrowUpRight,
+  Plus, ArrowUpRight, ShieldAlert,
 } from 'lucide-react'
-import type { ClaimStatus, ClaimType, Policy } from '../../shared/types'
-import { claimRepository } from '../../services/repositories/claim.repository'
+import type { Claim, ClaimStatus, ClaimType, Policy } from '../../shared/types'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS } from '../../shared/constants'
@@ -26,11 +25,11 @@ function ClaimStatusPill({ status }: { status: ClaimStatus }) {
 interface AssetClaimsTabProps {
   assetId: string
   policies: Policy[]
+  claims: Claim[]
 }
 
-export function AssetClaimsTab({ assetId, policies: _policies }: AssetClaimsTabProps) {
+export function AssetClaimsTab({ assetId, policies: _policies, claims }: AssetClaimsTabProps) {
   const navigate = useNavigate()
-  const claims = claimRepository.findByAsset(assetId)
 
   return (
     <div className="p-5">

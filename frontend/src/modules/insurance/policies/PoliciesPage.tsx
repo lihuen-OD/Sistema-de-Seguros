@@ -1,5 +1,6 @@
 ﻿import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -16,35 +17,31 @@ import {
   formatCurrencyCompact,
   formatDate,
 } from '../../../shared/utils/format'
-import { policyRepository } from '../../../services/repositories/policy.repository'
-import { producerRepository } from '../../../services/repositories/producer.repository'
+import { policiesApi } from '../../../shared/api/policies.api'
+import { producersApi } from '../../../shared/api/producers.api'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
-import {
-  INSURANCE_TYPES,
-  INSURANCE_COMPANIES,
-  POLICY_STATUS_LABELS,
-} from '../../../shared/constants'
+import { POLICY_STATUS_LABELS } from '../../../shared/constants'
 import type { Policy, TableColumn } from '../../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(POLICY_STATUS_LABELS).map(([value, label]) => ({
   value,
   label,
 }))
-const TYPE_OPTIONS = INSURANCE_TYPES.map((t) => ({ value: t, label: t }))
-const COMPANY_OPTIONS = INSURANCE_COMPANIES.map((c) => ({ value: c, label: c }))
 
 export default function PoliciesPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
-  const [filterCompany, setFilterCompany] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const allPolicies = policyRepository.findAll()
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
 
-  function handleDelete(id: string) {
-    policyRepository.delete(id)
+  async function handleDelete(id: string) {
+    await policiesApi.softDelete(id)
+    queryClient.invalidateQueries({ queryKey: ['policies'] })
     setDeleteId(null)
   }
 
@@ -54,18 +51,28 @@ export default function PoliciesPage() {
       const matchSearch =
         !search ||
         p.policyNumber.toLowerCase().includes(q) ||
-        p.insuranceCompany.toLowerCase().includes(q) ||
         p.insuranceType.toLowerCase().includes(q)
       const matchStatus = !filterStatus || p.status === filterStatus
       const matchType = !filterType || p.insuranceType === filterType
-      const matchCompany = !filterCompany || p.insuranceCompany === filterCompany
-      return matchSearch && matchStatus && matchType && matchCompany
+      return matchSearch && matchStatus && matchType
     })
-  }, [allPolicies, search, filterStatus, filterType, filterCompany])
+  }, [allPolicies, search, filterStatus, filterType])
 
-  // KPI counts
-  const counts = policyRepository.getCountByStatus()
-  const totalInsuredArs = policyRepository.getTotalInsuredAmountArs()
+  const typeOptions = useMemo(
+    () => [...new Set(allPolicies.map((p) => p.insuranceType).filter(Boolean))].map((t) => ({ value: t, label: t })),
+    [allPolicies],
+  )
+
+  // KPI counts computed locally
+  const counts = useMemo(() => ({
+    vigente: allPolicies.filter((p) => p.status === 'vigente').length,
+    vencida: allPolicies.filter((p) => p.status === 'vencida').length,
+    proximo_vencer: allPolicies.filter((p) => p.status === 'proximo_vencer').length,
+  }), [allPolicies])
+  const totalInsuredArs = useMemo(
+    () => allPolicies.filter((p) => p.status === 'vigente').reduce((s, p) => s + p.insuredAmountArs, 0),
+    [allPolicies],
+  )
 
   const columns: TableColumn<Policy>[] = [
     {
@@ -82,7 +89,7 @@ export default function PoliciesPage() {
       key: 'producerId',
       label: 'Productor',
       render: (v) => {
-        const producer = producerRepository.findById(v as string)
+        const producer = allProducers.find((p) => p.id === v)
         return (
           <div className="max-w-[180px]">
             <OverflowCell value={producer?.name ?? null} lines={1} className="text-xs text-slate-500" />
@@ -220,16 +227,9 @@ export default function PoliciesPage() {
               {
                 key: 'type',
                 label: 'Tipo',
-                options: TYPE_OPTIONS,
+                options: typeOptions,
                 value: filterType,
                 onChange: setFilterType,
-              },
-              {
-                key: 'company',
-                label: 'Aseguradora',
-                options: COMPANY_OPTIONS,
-                value: filterCompany,
-                onChange: setFilterCompany,
               },
             ]}
           />

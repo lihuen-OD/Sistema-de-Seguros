@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Flame, Paperclip,
   MapPin, Building2, Download, ShieldAlert, TrendingUp,
@@ -11,22 +12,20 @@ import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
-import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
-import { assetRepository } from '../../services/repositories/asset.repository'
-import { policyRepository } from '../../services/repositories/policy.repository'
-import { accountingDocumentRepository } from '../../services/repositories/accounting-document.repository'
-import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
-import { assetAttachmentRepository } from '../../services/repositories/asset-attachment.repository'
-import { companyRepository } from '../../services/repositories/company.repository'
-import { costCenterRepository } from '../../services/repositories/cost-center.repository'
+import { assetsApi } from '../../shared/api/assets.api'
+import { policiesApi } from '../../shared/api/policies.api'
+import { documentsApi } from '../../shared/api/documents.api'
+import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
+import { companiesApi } from '../../shared/api/companies.api'
+import { costCentersApi } from '../../shared/api/cost-centers.api'
+import { claimsApi } from '../../shared/api/claims.api'
 import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../shared/constants'
 import type { Policy, AccountingDocument, FireExtinguisher, TableColumn, AssetValueEntry } from '../../shared/types'
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
-import { claimRepository } from '../../services/repositories/claim.repository'
 
 const TABS = ['Pólizas', 'Doc. Contables', 'Matafuegos', 'Siniestros', 'Adjuntos'] as const
 type Tab = (typeof TABS)[number]
@@ -35,11 +34,100 @@ export default function AssetDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<Tab>('Pólizas')
-  // Lazy initializer reads asset photos once on mount
-  const [photos, setPhotos] = useState<string[]>(() => assetRepository.findById(id!)?.photos ?? [])
+  const [photos, setPhotos] = useState<string[]>([])
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0)
 
-  const asset = assetRepository.findById(id!)
+  // ── Data fetching ─────────────────────────────────────────────────────────────
+
+  const { data: asset, isLoading: assetLoading } = useQuery({
+    queryKey: ['assets', id],
+    queryFn: () => assetsApi.findById(id!),
+    enabled: !!id,
+  })
+
+  const { data: allPolicies = [] } = useQuery({
+    queryKey: ['policies'],
+    queryFn: () => policiesApi.findAll(),
+    enabled: !!asset,
+  })
+
+  const { data: allDocuments = [] } = useQuery({
+    queryKey: ['documents'],
+    queryFn: () => documentsApi.findAll(),
+    enabled: !!asset,
+  })
+
+  const { data: allFireExtinguishers = [] } = useQuery({
+    queryKey: ['fire-extinguishers'],
+    queryFn: () => fireExtinguishersApi.findAll(),
+    enabled: !!asset,
+  })
+
+  const { data: allClaims = [] } = useQuery({
+    queryKey: ['claims'],
+    queryFn: () => claimsApi.findAll(),
+    enabled: !!asset,
+  })
+
+  const { data: allCompanies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => companiesApi.findAll(),
+    enabled: !!asset,
+  })
+
+  const { data: allCostCenters = [] } = useQuery({
+    queryKey: ['cost-centers'],
+    queryFn: () => costCentersApi.findAll(),
+    enabled: !!asset,
+  })
+
+  // Sync photos when asset loads
+  useEffect(() => {
+    if (asset?.photos) {
+      setPhotos(asset.photos)
+    }
+  }, [asset?.photos])
+
+  useEffect(() => {
+    setSelectedPhotoIndex((current) => {
+      if (photos.length === 0) return 0
+      return Math.min(current, photos.length - 1)
+    })
+  }, [photos])
+
+  // ── Loading state ─────────────────────────────────────────────────────────────
+
+  if (assetLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-24 text-slate-400 text-sm">
+          Cargando activo…
+        </div>
+      </PageContent>
+    )
+  }
+
+  if (!asset) {
+    return (
+      <PageContent>
+        <EmptyState title="Activo no encontrado" description="El activo solicitado no existe o fue eliminado." />
+      </PageContent>
+    )
+  }
+
+  // ── Derived data ──────────────────────────────────────────────────────────────
+
+  const company = allCompanies.find((c) => c.id === asset.companyId)
+  const costCenter = allCostCenters.find((cc) => cc.id === asset.costCenterId)
+  const policies = allPolicies.filter((p) => p.assetId === asset.id)
+  const fireExtinguishers = allFireExtinguishers.filter((f) => f.associatedAssetId === asset.id)
+  const claims = allClaims.filter((cl) => cl.assetId === asset.id)
+  const claimsCount = claims.length
+
+  // Documents: load all; filter client-side by assetId if field exists, otherwise show all
+  const documents: AccountingDocument[] = allDocuments
+
+  // ── Download photo ────────────────────────────────────────────────────────────
 
   const downloadPhoto = async () => {
     const photoUrl = photos[selectedPhotoIndex]
@@ -51,7 +139,7 @@ export default function AssetDetailPage() {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `${asset?.internalCode ?? 'activo'}-${selectedPhotoIndex + 1}.jpg`
+      link.download = `${asset.internalCode ?? 'activo'}-${selectedPhotoIndex + 1}.jpg`
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -61,48 +149,15 @@ export default function AssetDetailPage() {
     }
   }
 
-  useEffect(() => {
-    setSelectedPhotoIndex((current) => {
-      if (photos.length === 0) return 0
-      return Math.min(current, photos.length - 1)
-    })
-  }, [photos])
+  // ── Financial KPIs ────────────────────────────────────────────────────────────
 
-  if (!asset) {
-    return (
-      <PageContent>
-        <EmptyState title="Activo no encontrado" description="El activo solicitado no existe o fue eliminado." />
-      </PageContent>
-    )
-  }
-
-  const company = companyRepository.findById(asset.companyId)
-  const costCenter = costCenterRepository.findById(asset.costCenterId)
-  const policies = policyRepository.findByAsset(asset.id)
-  const fireExtinguishers = fireExtinguisherRepository.findByAsset(asset.id)
-  const attachmentsCount = assetAttachmentRepository.findByAsset(asset.id).length
-  const claimsCount = claimRepository.findByAsset(asset.id).length
-
-  // Documents linked through policy allocations
-  const policyIds = policies.map((p) => p.id)
-  const allAllocations = policyIds.flatMap((pid) =>
-    accountingDocumentRepository.findAllocationsByPolicy(pid),
-  )
-  const documentIds = [...new Set(allAllocations.map((a) => a.accountingDocumentId))]
-  const documents = documentIds
-    .map((did) => accountingDocumentRepository.findById(did))
-    .filter(Boolean) as AccountingDocument[]
-
-  // Financial KPIs
-  const totalInsuredArs = policies
-    .filter((p) => p.status === 'vigente')
-    .reduce((s, p) => s + p.insuredAmountArs, 0)
   const totalInsuredUsd = policies
     .filter((p) => p.status === 'vigente')
     .reduce((s, p) => s + p.insuredAmountUsd, 0)
   const diffUsd = asset.patrimonialValueUsd - totalInsuredUsd
 
-  // Policy columns
+  // ── Table columns ─────────────────────────────────────────────────────────────
+
   const policyColumns: TableColumn<Policy>[] = [
     { key: 'policyNumber', label: 'N° Póliza', className: 'font-mono text-slate-600 text-xs' },
     { key: 'insuranceCompany', label: 'Aseguradora' },
@@ -114,7 +169,6 @@ export default function AssetDetailPage() {
     { key: 'status', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },
   ]
 
-  // Document columns
   const docColumns: TableColumn<AccountingDocument>[] = [
     { key: 'documentNumber', label: 'N° Documento', className: 'font-mono text-xs text-slate-600' },
     { key: 'documentType', label: 'Tipo', render: (v) => DOCUMENT_TYPE_LABELS[v as string] ?? String(v) },
@@ -123,7 +177,6 @@ export default function AssetDetailPage() {
     { key: 'paymentStatus', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },
   ]
 
-  // Fire ext columns
   const feColumns: TableColumn<FireExtinguisher>[] = [
     { key: 'code', label: 'Código', className: 'font-mono text-xs text-slate-600' },
     { key: 'type', label: 'Tipo' },
@@ -169,7 +222,7 @@ export default function AssetDetailPage() {
         }
       />
 
-      {/* Summary bar — datos clave del activo en una fila horizontal */}
+      {/* Summary bar */}
       <div className="card mb-5 overflow-hidden">
         <div className="flex flex-col sm:flex-row divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
           <div className="flex-1 min-w-0 px-5 py-4">
@@ -204,7 +257,7 @@ export default function AssetDetailPage() {
           {/* Ficha patrimonial */}
           <SectionCard title="Ficha Patrimonial">
             <div className="space-y-5">
-              {/* Fotos — solo cuando no hay mapa (los establecimientos con coordenadas usan el mapa) */}
+              {/* Fotos — solo cuando no hay mapa */}
               {!asset.coordinates && (
                 <div className="space-y-4">
                   <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-950">
@@ -268,7 +321,7 @@ export default function AssetDetailPage() {
             </div>
           </SectionCard>
 
-          {/* Silos — solo si el activo tiene silos registrados */}
+          {/* Silos */}
           {asset.silos && asset.silos.length > 0 && (
             <SectionCard
               title="Silos"
@@ -308,8 +361,8 @@ export default function AssetDetailPage() {
             {asset.allocations && asset.allocations.length > 1 ? (
               <div className="space-y-2">
                 {asset.allocations.map((alloc) => {
-                  const allocCompany = companyRepository.findById(alloc.companyId)
-                  const allocCC = costCenterRepository.findById(alloc.costCenterId)
+                  const allocCompany = allCompanies.find((c) => c.id === alloc.companyId)
+                  const allocCC = allCostCenters.find((cc) => cc.id === alloc.costCenterId)
                   return (
                     <div key={alloc.id} className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50">
                       <div className="min-w-0">
@@ -381,7 +434,7 @@ export default function AssetDetailPage() {
             </div>
           </SectionCard>
 
-          {/* Historial de valuaciones — solo si existe */}
+          {/* Historial de valuaciones */}
           {asset.valueHistory && asset.valueHistory.length > 0 && (
             <SectionCard title="Historial de valuaciones">
               <div className="divide-y divide-slate-100">
@@ -477,7 +530,6 @@ export default function AssetDetailPage() {
               : tab === 'Doc. Contables' ? documents.length
               : tab === 'Matafuegos' ? fireExtinguishers.length
               : tab === 'Siniestros' ? claimsCount
-              : tab === 'Adjuntos' ? attachmentsCount
               : 0
             const isActive = activeTab === tab
             return (
@@ -541,7 +593,7 @@ export default function AssetDetailPage() {
             />
           )}
           {activeTab === 'Siniestros' && (
-            <AssetClaimsTab assetId={asset.id} policies={policies} />
+            <AssetClaimsTab assetId={asset.id} policies={policies} claims={claims} />
           )}
           {activeTab === 'Adjuntos' && (
             <AssetAttachmentsTab assetId={asset.id} />

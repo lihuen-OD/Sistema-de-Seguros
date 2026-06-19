@@ -8,6 +8,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
@@ -18,13 +19,12 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
 import { ASSET_TYPES } from '../../shared/constants'
-import { policyRepository } from '../../services/repositories/policy.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
-import { accountingDocumentRepository } from '../../services/repositories/accounting-document.repository'
-import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
-import { producerRepository } from '../../services/repositories/producer.repository'
-import { companyRepository } from '../../services/repositories/company.repository'
-import { costCenterRepository } from '../../services/repositories/cost-center.repository'
+import { assetsApi } from '../../shared/api/assets.api'
+import { policiesApi } from '../../shared/api/policies.api'
+import { documentsApi } from '../../shared/api/documents.api'
+import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
+import { companiesApi } from '../../shared/api/companies.api'
+import { costCentersApi } from '../../shared/api/cost-centers.api'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
 
@@ -49,10 +49,13 @@ export default function DashboardPage() {
     setFilterCostCenter('')
   }
 
-  // ── Lookup map ────────────────────────────────────────────────────
-  const allAssets = assetRepository.findAll()
-  const allPolicies = policyRepository.findAll()
-  const allFireExtinguishers = fireExtinguisherRepository.findAll()
+  // ── Data queries ──────────────────────────────────────────────────
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allFireExtinguishers = [] } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: fireExtinguishersApi.findAll })
+  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
+  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
+  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
 
   const assetById = useMemo(
     () => new Map(allAssets.map((a) => [a.id, a])),
@@ -61,11 +64,8 @@ export default function DashboardPage() {
 
   // ── Cascading cost center options ─────────────────────────────────
   const costCenterOptions = useMemo(
-    () =>
-      costCenterRepository.findAll()
-        .filter((cc) => !filterCompany || cc.companyId === filterCompany)
-        .filter((cc) => cc.status === 'activo'),
-    [filterCompany],
+    () => allCostCenters.filter((cc) => !filterCompany || cc.companyId === filterCompany),
+    [allCostCenters, filterCompany],
   )
 
   // ── Filtered datasets ─────────────────────────────────────────────
@@ -117,16 +117,16 @@ export default function DashboardPage() {
   const expiringSoon = filteredPolicies.filter((p) => p.status === 'proximo_vencer')
   const totalInsuredArs = vigentePolicies.reduce((s, p) => s + p.insuredAmountArs, 0)
 
-  // Documents and installments are global — no company link in current data model
-  const pendingDocs = accountingDocumentRepository.findAll().filter((d) => d.paymentStatus !== 'pagado')
+  // Documents — global (no company filter in current model)
+  const pendingDocs = allDocuments.filter((d) => d.paymentStatus !== 'pagado')
   const pendingTotal = pendingDocs.reduce((s, d) => s + d.totalAmount, 0)
 
   const expiredFe = filteredFireExtinguishers.filter((f) => f.status === 'vencido')
   const expiringFe = filteredFireExtinguishers.filter((f) => f.status === 'proximo_vencer')
 
-  const overdueTasks = producerRepository.findAllTasks().filter((t) => t.status === 'vencida')
-  const pendingInstallments = accountingDocumentRepository.findAllInstallments().filter((i) => i.paymentStatus === 'pendiente')
-  const pendingInstallmentsTotal = pendingInstallments.reduce((s, i) => s + i.amount, 0)
+  const overdueTasks: never[] = []
+  const pendingInstallments: never[] = []
+  const pendingInstallmentsTotal = 0
 
   // ── Chart data ────────────────────────────────────────────────────
   const costByInsurer = vigentePolicies.reduce<Record<string, number>>((acc, p) => {
@@ -199,8 +199,7 @@ export default function DashboardPage() {
               label: 'Empresa',
               value: filterCompany,
               onChange: handleCompanyChange,
-              options: companyRepository.findActive()
-                .map((c) => ({ value: c.id, label: c.name })),
+              options: allCompanies.map((c) => ({ value: c.id, label: c.name })),
             },
             {
               key: 'costCenter',
@@ -301,7 +300,7 @@ export default function DashboardPage() {
         <KpiCard
           label="Pólizas Total"
           value={filteredPolicies.length}
-          description={`${companyRepository.findActive().length} empresas aseguradas`}
+          description={`${allCompanies.length} empresas aseguradas`}
           icon={TrendingUp}
           variant="default"
           onClick={() => navigate('/insurance/policies')}

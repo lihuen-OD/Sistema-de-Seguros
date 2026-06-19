@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FileDown,
   Edit2,
@@ -21,24 +22,41 @@ import {
   formatCurrencyCompact,
   formatDate,
 } from '../../../shared/utils/format'
-import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
-import { policyRepository } from '../../../services/repositories/policy.repository'
+import { documentsApi } from '../../../shared/api/documents.api'
+import { policiesApi } from '../../../shared/api/policies.api'
 import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
-import { accountingDocumentAttachmentRepository } from '../../../services/repositories/accounting-document-attachment.repository'
 import type { DocumentPolicyAllocation, Installment, InstallmentUpdate, TableColumn } from '../../../shared/types'
 
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  const doc = accountingDocumentRepository.findById(id!)
+  const { data: doc, isLoading: docLoading } = useQuery({
+    queryKey: ['documents', id],
+    queryFn: () => documentsApi.findById(id!),
+    enabled: !!id,
+  })
 
-  const [installments, setInstallments] = useState<Installment[]>(() =>
-    doc ? accountingDocumentRepository.findInstallmentsByDocument(doc.id) : []
-  )
+  const { data: allPolicies = [] } = useQuery({
+    queryKey: ['policies'],
+    queryFn: () => policiesApi.findAll(),
+  })
+
+  const [installments, setInstallments] = useState<Installment[]>([])
+
+  if (docLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-24">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </PageContent>
+    )
+  }
 
   if (!doc) {
     return (
@@ -52,7 +70,8 @@ export default function DocumentDetailPage() {
   }
 
   const today = new Date().toISOString().slice(0, 10)
-  const allocations = accountingDocumentRepository.findAllocationsByDocument(doc.id)
+  // Allocations are not available from backend yet — show empty
+  const allocations: DocumentPolicyAllocation[] = []
   const computedTotal = doc.netAmount + doc.vatAmount + doc.otherTaxesAmount
 
   const paidCount = installments.filter((i) => i.paymentStatus === 'pagado').length
@@ -71,7 +90,6 @@ export default function DocumentDetailPage() {
         : doc.paymentStatus
 
   function handleInstallmentUpdate(instId: string, updates: InstallmentUpdate) {
-    accountingDocumentRepository.updateInstallment(instId, updates)
     setInstallments((prev) =>
       prev.map((i) => (i.id === instId ? { ...i, ...updates } : i))
     )
@@ -82,7 +100,7 @@ export default function DocumentDetailPage() {
       key: 'policyId',
       label: 'N° Póliza',
       render: (v) => {
-        const policy = policyRepository.findById(v as string)
+        const policy = allPolicies.find((p) => p.id === (v as string))
         return (
           <span className="font-mono text-xs text-slate-600">
             {policy?.policyNumber ?? (v as string)}
@@ -94,7 +112,7 @@ export default function DocumentDetailPage() {
       key: 'policyId',
       label: 'Aseguradora',
       render: (v) => {
-        const policy = policyRepository.findById(v as string)
+        const policy = allPolicies.find((p) => p.id === (v as string))
         return <span className="text-xs text-slate-600">{policy?.insuranceCompany ?? '—'}</span>
       },
     },
@@ -163,8 +181,9 @@ export default function DocumentDetailPage() {
               <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50">
                 <span className="text-xs font-medium text-red-700">¿Eliminar documento?</span>
                 <button
-                  onClick={() => {
-                    accountingDocumentRepository.delete(doc.id)
+                  onClick={async () => {
+                    await documentsApi.softDelete(doc.id)
+                    queryClient.invalidateQueries({ queryKey: ['documents'] })
                     navigate('/insurance/documents')
                   }}
                   className="px-2.5 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
@@ -333,7 +352,7 @@ export default function DocumentDetailPage() {
       {/* Adjuntos */}
       <SectionCard
         title="Archivos Adjuntos"
-        subtitle={`${accountingDocumentAttachmentRepository.findByDocument(doc.id).length} archivo${accountingDocumentAttachmentRepository.findByDocument(doc.id).length !== 1 ? 's' : ''} adjunto${accountingDocumentAttachmentRepository.findByDocument(doc.id).length !== 1 ? 's' : ''}`}
+        subtitle="0 archivos adjuntos"
         noPadding
       >
         <DocumentAttachmentsSection documentId={doc.id} />

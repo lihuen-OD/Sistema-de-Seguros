@@ -4,10 +4,11 @@ import { PageContent } from '../../shared/components/page-header/PageContent'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
-import { assetRepository } from '../../services/repositories/asset.repository'
-import { policyRepository } from '../../services/repositories/policy.repository'
-import { companyRepository } from '../../services/repositories/company.repository'
-import { costCenterRepository } from '../../services/repositories/cost-center.repository'
+import { useQuery } from '@tanstack/react-query'
+import { assetsApi } from '../../shared/api/assets.api'
+import { policiesApi } from '../../shared/api/policies.api'
+import { companiesApi } from '../../shared/api/companies.api'
+import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { ASSET_STATUS_LABELS } from '../../shared/constants'
 import type { Policy } from '../../shared/types'
 
@@ -17,7 +18,10 @@ export default function AssetFichaPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const asset = assetRepository.findById(id!)
+  const { data: asset } = useQuery({ queryKey: ['assets', id], queryFn: () => assetsApi.findById(id!) })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
+  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
 
   if (!asset) {
     return (
@@ -27,9 +31,9 @@ export default function AssetFichaPage() {
     )
   }
 
-  const company = companyRepository.findById(asset.companyId)
-  const costCenter = costCenterRepository.findById(asset.costCenterId)
-  const policies = policyRepository.findByAsset(asset.id)
+  const company = allCompanies.find((c) => c.id === asset?.companyId)
+  const costCenter = allCostCenters.find((cc) => cc.id === asset?.costCenterId)
+  const policies = allPolicies.filter((p) => p.assetId === asset?.id)
   const vigentPolicies = policies.filter((p) => p.status === 'vigente')
 
   const totalInsuredArs = vigentPolicies.reduce((s, p) => s + p.insuredAmountArs, 0)

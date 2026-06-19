@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Flame,
@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   Clock,
 } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -17,9 +18,9 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatDate, daysUntil } from '../../shared/utils/format'
-import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
-import type { RechargeData } from '../../services/repositories/fire-extinguisher.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
+import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
+import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
+import { assetsApi } from '../../shared/api/assets.api'
 import { LOCATION_TYPES, FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import type { FireExtinguisherHistory } from '../../shared/types'
@@ -88,20 +89,43 @@ export default function FireExtinguisherDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const [refreshKey, setRefreshKey] = useState(0)
+  const queryClient = useQueryClient()
   const [showRechargeModal, setShowRechargeModal] = useState(false)
 
-  const fe = useMemo(() => fireExtinguisherRepository.findById(id ?? ''), [refreshKey, id])
-  const history = useMemo(() => fireExtinguisherRepository.findHistoryByExtinguisher(id ?? ''), [refreshKey, id])
-  const asset = fe?.associatedAssetId
-    ? assetRepository.findById(fe.associatedAssetId!)
-    : null
+  const { data: fe, isLoading } = useQuery({
+    queryKey: ['fire-extinguishers', id],
+    queryFn: () => fireExtinguishersApi.findById(id!),
+    enabled: !!id,
+  })
 
-  function handleRecharge(data: RechargeData) {
+  const { data: history = [] } = useQuery({
+    queryKey: ['fire-extinguishers', id, 'history'],
+    queryFn: () => fireExtinguishersApi.findHistory(id!),
+    enabled: !!id,
+  })
+
+  const { data: asset } = useQuery({
+    queryKey: ['assets', fe?.associatedAssetId],
+    queryFn: () => assetsApi.findById(fe!.associatedAssetId!),
+    enabled: !!fe?.associatedAssetId,
+  })
+
+  async function handleRecharge(data: RechargeInput) {
     if (!fe) return
-    fireExtinguisherRepository.recharge(fe.id, data)
+    await fireExtinguishersApi.recharge(fe.id, data)
     setShowRechargeModal(false)
-    setRefreshKey((k) => k + 1)
+    queryClient.invalidateQueries({ queryKey: ['fire-extinguishers', id] })
+    queryClient.invalidateQueries({ queryKey: ['fire-extinguishers'] })
+  }
+
+  if (isLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-24 text-slate-400 text-sm">
+          Cargando matafuego…
+        </div>
+      </PageContent>
+    )
   }
 
   if (!fe) {

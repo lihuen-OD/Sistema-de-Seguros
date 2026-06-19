@@ -9,6 +9,9 @@ export const CreateCostCenterSchema = z.object({
     .regex(/^[A-Z0-9_-]+$/, 'El código solo puede contener letras mayúsculas, números, - y _')
     .optional(),
   description: z.string().max(500).optional(),
+  companyId: z.string().uuid('El ID de empresa debe ser un UUID válido').optional().nullable(),
+  area: z.string().max(200).optional(),
+  isActive: z.boolean().optional(),
 })
 
 export const UpdateCostCenterSchema = CreateCostCenterSchema.partial()

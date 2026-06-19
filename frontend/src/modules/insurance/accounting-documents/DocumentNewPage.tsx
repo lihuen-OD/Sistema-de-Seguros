@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Save,
   X,
@@ -20,12 +21,9 @@ import {
   FormInput,
   FormSelect,
 } from '../../../shared/components/forms/FormSection'
-import { policyRepository } from '../../../services/repositories/policy.repository'
-import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
-import { accountingDocumentAttachmentRepository } from '../../../services/repositories/accounting-document-attachment.repository'
+import { documentsApi } from '../../../shared/api/documents.api'
+import { policiesApi } from '../../../shared/api/policies.api'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
-import { assetRepository } from '../../../services/repositories/asset.repository'
-import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
 import {
   INSURANCE_COMPANIES,
   DOCUMENT_TYPE_LABELS,
@@ -81,6 +79,7 @@ const INITIAL_FORM: DocumentForm = {
 
 export default function DocumentNewPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const [form, setForm] = useState<DocumentForm>(INITIAL_FORM)
   const [errors, setErrors] = useState<FormErrors>({})
@@ -98,10 +97,19 @@ export default function DocumentNewPage() {
   const [emailTo, setEmailTo] = useState('')
   const [emailSent, setEmailSent] = useState(false)
 
-  const allPolicies = policyRepository.findAll()
+  const { data: allPolicies = [] } = useQuery({
+    queryKey: ['policies'],
+    queryFn: () => policiesApi.findAll(),
+  })
+
+  const { data: allDocuments = [] } = useQuery({
+    queryKey: ['documents'],
+    queryFn: () => documentsApi.findAll(),
+  })
+
   const existingFacturas = useMemo(
-    () => accountingDocumentRepository.findByDocumentType('factura'),
-    [],
+    () => allDocuments.filter((d) => d.documentType === 'factura'),
+    [allDocuments],
   )
 
   // ─── Derived ─────────────────────────────────────────────────────────────────
@@ -146,15 +154,9 @@ export default function DocumentNewPage() {
         .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
         .map((r) => {
           const policy = allPolicies.find((p) => p.id === r.policyId)
-          const asset = policy?.assetId
-            ? assetRepository.findById(policy.assetId!)
-            : null
-          const costCenter = policy?.costCenterId
-            ? costCenterRepository.findById(policy.costCenterId!)
-            : null
           const amount = parseFloat(r.allocatedAmount) || 0
           const pct = totalAllocated > 0 ? (amount / totalAllocated) * 100 : 0
-          return { policy, asset, costCenter, amount, pct }
+          return { policy, amount, pct }
         }),
     [policyRows, allPolicies, totalAllocated],
   )
@@ -253,7 +255,7 @@ export default function DocumentNewPage() {
 
   // ─── Submit ──────────────────────────────────────────────────────────────────
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
 
@@ -262,7 +264,7 @@ export default function DocumentNewPage() {
       .map((r) => allPolicies.find((p) => p.id === r.policyId)?.policyNumber)
       .filter(Boolean) as string[]
 
-    const newDoc = accountingDocumentRepository.create({
+    const newDoc = await documentsApi.create({
       documentType: form.documentType as DocumentType,
       documentNumber: form.documentNumber.trim(),
       issueDate: form.issueDate,
@@ -271,13 +273,12 @@ export default function DocumentNewPage() {
       netAmount: parsedNet,
       vatAmount: parsedVat,
       otherTaxesAmount: parsedOther,
-      totalAmount: computedTotal,
-      paymentStatus: 'pendiente',
       insuranceCompany: form.insuranceCompany,
       paymentMethod: form.paymentMethod as PaymentMethod,
       linkedDocumentId: isRefDoc && form.linkedDocumentId ? form.linkedDocumentId : undefined,
     })
 
+    queryClient.invalidateQueries({ queryKey: ['documents'] })
     setSavedDocId(newDoc.id)
     setSavedPolicyNumbers(policyNumbers)
     setIsSaved(true)
@@ -530,13 +531,6 @@ export default function DocumentNewPage() {
               {policyRows.map((row) => {
                 const allocated = parseFloat(row.allocatedAmount) || 0
                 const pct = totalAllocated > 0 ? (allocated / totalAllocated) * 100 : 0
-                const selectedPolicy = availablePolicies.find((p) => p.id === row.policyId)
-                const asset = selectedPolicy?.assetId
-                  ? assetRepository.findById(selectedPolicy.assetId!)
-                  : null
-                const costCenter = selectedPolicy?.costCenterId
-                  ? costCenterRepository.findById(selectedPolicy.costCenterId!)
-                  : null
 
                 return (
                   <div key={row.id} className="space-y-1.5">
@@ -584,24 +578,6 @@ export default function DocumentNewPage() {
                         <Trash2 size={14} />
                       </button>
                     </div>
-
-                    {/* Auto-filled: Bien de Uso + Centro de Costo */}
-                    {selectedPolicy && (asset || costCenter) && (
-                      <div className="flex items-center gap-2 pl-1 flex-wrap">
-                        {asset && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-slate-50 border border-slate-200 text-slate-600">
-                            <span className="text-slate-400 font-medium">Bien de Uso:</span>
-                            {asset.fixedAssetCode} — {asset.name}
-                          </span>
-                        )}
-                        {costCenter && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-slate-50 border border-slate-200 text-slate-600">
-                            <span className="text-slate-400 font-medium">C. Costo:</span>
-                            {costCenter.code} — {costCenter.name}
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </div>
                 )
               })}
@@ -832,7 +808,7 @@ export default function DocumentNewPage() {
                         <p className="text-xs text-slate-400 italic">Sin pólizas asignadas.</p>
                       ) : (
                         <div className="space-y-2">
-                          {distribution.map(({ policy, asset, costCenter, amount, pct }, i) => (
+                          {distribution.map(({ policy, amount, pct }, i) => (
                             <div
                               key={i}
                               className="flex items-start justify-between gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-100"
@@ -841,16 +817,6 @@ export default function DocumentNewPage() {
                                 <p className="text-xs font-semibold text-slate-700">
                                   {policy?.policyNumber ?? '—'}
                                 </p>
-                                {asset && (
-                                  <p className="text-xs text-slate-500">
-                                    Bien de Uso: {asset.fixedAssetCode} — {asset.name}
-                                  </p>
-                                )}
-                                {costCenter && (
-                                  <p className="text-xs text-slate-500">
-                                    C. Costo: {costCenter.code} — {costCenter.name}
-                                  </p>
-                                )}
                               </div>
                               <div className="text-right flex-shrink-0">
                                 <p className="text-xs font-bold text-blue-600">

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   Plus, Users, ShieldCheck, AlertTriangle, CheckCircle2,
   Phone, Mail, ClipboardList, Clock, ListTodo,
@@ -10,9 +11,8 @@ import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
-import { formatPercent } from '../../shared/utils/format'
-import { producerRepository } from '../../services/repositories/producer.repository'
-import { policyRepository } from '../../services/repositories/policy.repository'
+import { producersApi } from '../../shared/api/producers.api'
+import { policiesApi } from '../../shared/api/policies.api'
 import type { Producer } from '../../shared/types'
 
 interface ProducerCardStats {
@@ -27,20 +27,13 @@ export default function ProducersPage() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<'' | 'activo' | 'inactivo'>('')
 
-  const allProducers = producerRepository.findAll()
-  const allPolicies = policyRepository.findAll()
-  const allTasks = producerRepository.findAllTasks()
+  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
 
   const producerStats: ProducerCardStats[] = useMemo(() => {
     return allProducers.map((p) => {
-      const summary = producerRepository.getTaskSummaryByProducer(p.id)
       const policyCount = allPolicies.filter((pol) => pol.producerId === p.id).length
-      return {
-        producer: p,
-        policyCount,
-        activeTasks: summary.pendiente + summary.en_curso,
-        overdueTasks: summary.vencida,
-      }
+      return { producer: p, policyCount, activeTasks: 0, overdueTasks: 0 }
     })
   }, [allProducers, allPolicies])
 
@@ -59,9 +52,8 @@ export default function ProducersPage() {
   // Global KPIs
   const activeProducers = allProducers.filter((p) => p.status === 'activo').length
   const totalPoliciesManaged = allPolicies.length
-  const totalOverdueTasks = producerStats.reduce((s, ps) => s + ps.overdueTasks, 0)
-  const completedTasks = allTasks.filter((t) => t.status === 'finalizada').length
-  const compliancePct = allTasks.length > 0 ? (completedTasks / allTasks.length) * 100 : 0
+  const totalOverdueTasks = 0
+  const compliancePct = 0
 
   return (
     <PageContent>
@@ -113,8 +105,8 @@ export default function ProducersPage() {
         />
         <KpiCard
           label="Cumplimiento"
-          value={formatPercent(compliancePct)}
-          description={`${completedTasks} de ${allTasks.length} tareas finalizadas`}
+          value="—"
+          description="Calculado desde el detalle de cada productor"
           icon={CheckCircle2}
           variant={compliancePct >= 80 ? 'success' : compliancePct >= 50 ? 'warning' : 'danger'}
         />

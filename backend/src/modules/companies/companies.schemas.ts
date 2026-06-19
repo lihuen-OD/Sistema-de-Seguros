@@ -10,6 +10,7 @@ export const CreateCompanySchema = z.object({
   email: z.string().email('Email inválido').optional().or(z.literal('')),
   phone: z.string().max(50).optional(),
   address: z.string().max(300).optional(),
+  isActive: z.boolean().optional(),
 })
 
 export const UpdateCompanySchema = CreateCompanySchema.partial()

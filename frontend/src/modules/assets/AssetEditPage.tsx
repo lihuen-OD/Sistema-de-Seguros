@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Save, X, MapPin, Hash, Info,
 } from 'lucide-react'
@@ -11,8 +12,7 @@ import {
 } from '../../shared/components/forms/FormSection'
 import { AttachmentListEditor } from '../../shared/components/file-upload/AttachmentListEditor'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
-import { assetRepository } from '../../services/repositories/asset.repository'
-import { bienDeUsoRepository } from '../../services/repositories/bien-de-uso.repository'
+import { assetsApi } from '../../shared/api/assets.api'
 import { ASSET_STATUS_LABELS, PRODUCTIVE_UNITS, AREAS, CARGO_SPECIES } from '../../shared/constants'
 import { ASSET_TYPE_TO_FINNEGANS } from '../../shared/constants/asset-categories'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
@@ -116,18 +116,34 @@ function MapSection({ mapsUrl, onChange }: { mapsUrl: string; onChange: (v: stri
 export default function AssetEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
-  const asset = assetRepository.findById(id!)
+  const { data: asset, isLoading, isError } = useQuery({
+    queryKey: ['assets', id],
+    queryFn: () => assetsApi.findById(id!),
+    enabled: !!id,
+  })
 
-  const [form, setForm] = useState<EditForm>(() => {
-    if (!asset) return {
-      fixedAssetCode: '', name: '', status: 'activo', assetType: '',
-      brand: '', model: '', year: '', serialNumber: '', chassisNumber: '',
-      productiveUnit: '', area: '', observations: '', mapsUrl: '',
-    }
-    const linkedBienDeUso = bienDeUsoRepository.findAll().find((b) => b.code === asset.fixedAssetCode)
-    return {
-      fixedAssetCode: linkedBienDeUso?.id ?? '',
+  const [form, setForm] = useState<EditForm>({
+    fixedAssetCode: '', name: '', status: 'activo', assetType: '',
+    brand: '', model: '', year: '', serialNumber: '', chassisNumber: '',
+    productiveUnit: '', area: '', observations: '', mapsUrl: '',
+  })
+
+  const [patrimonialValueUsd, setPatrimonialValueUsd] = useState('')
+  const [valuationDate, setValuationDate] = useState('')
+  const [allocations, setAllocations] = useState<AssetAllocation[]>([
+    { id: 'alloc-init', companyId: '', costCenterId: '', percentage: 100 },
+  ])
+  const [valueHistory, setValueHistory] = useState<AssetValueEntry[]>([])
+  const [silos, setSilos] = useState<Silo[]>([])
+  const [attachments, setAttachments] = useState<AssetAttachment[]>([])
+  const [errors, setErrors] = useState<FormErrors>({})
+
+  useEffect(() => {
+    if (!asset) return
+    setForm({
+      fixedAssetCode: '',
       name: asset.name,
       status: asset.status,
       assetType: asset.assetType,
@@ -140,26 +156,27 @@ export default function AssetEditPage() {
       area: asset.area,
       observations: asset.observations,
       mapsUrl: asset.mapsUrl ?? '',
+    })
+    setPatrimonialValueUsd(asset.patrimonialValueUsd > 0 ? String(asset.patrimonialValueUsd) : '')
+    setValuationDate(asset.valuationDate ?? '')
+    if (asset.allocations && asset.allocations.length > 0) {
+      setAllocations(asset.allocations)
+    } else {
+      setAllocations([{ id: 'alloc-init', companyId: asset.companyId, costCenterId: asset.costCenterId, percentage: 100 }])
     }
-  })
+    setValueHistory(asset.valueHistory ?? [])
+    setSilos(asset.silos ?? [])
+  }, [asset])
 
-  const [patrimonialValueUsd, setPatrimonialValueUsd] = useState(
-    asset ? String(asset.patrimonialValueUsd) : '',
-  )
-  const [valuationDate, setValuationDate] = useState(asset?.valuationDate ?? '')
+  if (isLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-24 text-slate-400 text-sm">Cargando activo…</div>
+      </PageContent>
+    )
+  }
 
-  const [allocations, setAllocations] = useState<AssetAllocation[]>(() => {
-    if (!asset) return [{ id: 'alloc-init', companyId: '', costCenterId: '', percentage: 100 }]
-    if (asset.allocations && asset.allocations.length > 0) return asset.allocations
-    return [{ id: 'alloc-init', companyId: asset.companyId, costCenterId: asset.costCenterId, percentage: 100 }]
-  })
-
-  const [valueHistory, setValueHistory] = useState<AssetValueEntry[]>(asset?.valueHistory ?? [])
-  const [silos, setSilos] = useState<Silo[]>(asset?.silos ?? [])
-  const [attachments, setAttachments] = useState<AssetAttachment[]>([])
-  const [errors, setErrors] = useState<FormErrors>({})
-
-  if (!asset) {
+  if (isError || !asset) {
     return (
       <PageContent>
         <EmptyState title="Activo no encontrado" description="El activo solicitado no existe o fue eliminado." />
@@ -198,38 +215,24 @@ export default function AssetEditPage() {
     setValuationDate(entry.date)
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!asset) return
     if (!validate()) return
 
-    const primaryAlloc = allocations[0]
-    const selectedBienDeUso = bienDeUsoRepository.findAll().find((b) => b.id === form.fixedAssetCode)
-    assetRepository.update(asset.id, {
+    await assetsApi.update(asset.id, {
       name: form.name.trim(),
-      internalCode: asset.internalCode,
-      fixedAssetCode: selectedBienDeUso?.code ?? asset.fixedAssetCode,
-      status: form.status as AssetStatus,
       assetType: form.assetType.trim(),
-      brand: form.brand.trim(),
-      model: form.model.trim(),
-      year: form.year ? parseInt(form.year, 10) : 0,
-      serialNumber: form.serialNumber.trim(),
-      chassisNumber: form.chassisNumber.trim() || undefined,
-      patrimonialValueUsd: patrimonialValueUsd ? parseFloat(patrimonialValueUsd) : 0,
-      valuationDate,
-      valueHistory,
-      companyId: primaryAlloc?.companyId ?? '',
-      costCenterId: primaryAlloc?.costCenterId ?? '',
-      allocations,
-      productiveUnit: form.productiveUnit,
-      area: form.area,
-      observations: form.observations.trim(),
-      mapsUrl: form.mapsUrl || undefined,
-      coordinates: form.mapsUrl ? parseGoogleMapsUrl(form.mapsUrl) ?? undefined : undefined,
-      silos: silos.length > 0 ? silos : undefined,
+      brand: form.brand.trim() || undefined,
+      model: form.model.trim() || undefined,
+      serialNumber: form.serialNumber.trim() || undefined,
+      purchaseDate: valuationDate || undefined,
+      currentValue: patrimonialValueUsd ? parseFloat(patrimonialValueUsd) : undefined,
+      description: form.observations.trim() || undefined,
     })
 
+    await queryClient.invalidateQueries({ queryKey: ['assets', id] })
+    await queryClient.invalidateQueries({ queryKey: ['assets'] })
     navigate(`/assets/${asset.id}`)
   }
 

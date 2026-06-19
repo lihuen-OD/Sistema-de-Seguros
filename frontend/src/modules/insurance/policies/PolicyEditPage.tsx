@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Save, X, Settings, CheckSquare } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -13,14 +14,15 @@ import {
 } from '../../../shared/components/forms/FormSection'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
-import { companyRepository } from '../../../services/repositories/company.repository'
-import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
-import { producerRepository } from '../../../services/repositories/producer.repository'
-import { assetRepository } from '../../../services/repositories/asset.repository'
-import { insuranceTypeRepository } from '../../../services/repositories/insurance-type.repository'
-import { policyRepository } from '../../../services/repositories/policy.repository'
+import { policiesApi } from '../../../shared/api/policies.api'
+import { companiesApi } from '../../../shared/api/companies.api'
+import { costCentersApi } from '../../../shared/api/cost-centers.api'
+import { producersApi } from '../../../shared/api/producers.api'
+import { assetsApi } from '../../../shared/api/assets.api'
+import { insuranceTypesApi } from '../../../shared/api/insurance-types.api'
 import { INSURANCE_COMPANIES } from '../../../shared/constants'
 import type { Policy } from '../../../shared/types'
+import type { InsuranceTypeConfig } from '../../../data/mock-insurance-settings'
 
 type AssociationType = 'activo' | 'sin_activo'
 
@@ -66,16 +68,18 @@ function policyToForm(p: Policy): PolicyForm {
 
 function CoverageSelector({
   insuranceType,
+  insuranceTypes,
   selected,
   onChange,
   error,
 }: {
   insuranceType: string
+  insuranceTypes: InsuranceTypeConfig[]
   selected: string[]
   onChange: (v: string[]) => void
   error?: string
 }) {
-  const config = insuranceTypeRepository.findAll().find((t) => t.label === insuranceType)
+  const config = insuranceTypes.find((t) => t.label === insuranceType)
 
   if (!insuranceType) {
     return (
@@ -168,18 +172,74 @@ function CoverageSelector({
 export default function PolicyEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
-  const policy = policyRepository.findById(id!)
+  const { data: policy, isLoading: loadingPolicy } = useQuery({
+    queryKey: ['policy', id],
+    queryFn: () => policiesApi.findById(id!),
+    enabled: !!id,
+  })
 
-  const [form, setForm] = useState<PolicyForm>(() =>
-    policy ? policyToForm(policy) : {
-      policyNumber: '', insuranceCompany: '', producerId: '', insuranceType: '',
-      coverageTypes: [], startDate: '', endDate: '', description: '',
-      beneficiaryDescription: '', association: 'activo', assetId: '',
-      companyId: '', costCenterId: '', insuredAmountArs: '', exchangeRate: '',
-    },
-  )
+  const { data: producers = [] } = useQuery({
+    queryKey: ['producers'],
+    queryFn: () => producersApi.findAll(),
+  })
+
+  const { data: allAssets = [] } = useQuery({
+    queryKey: ['assets'],
+    queryFn: () => assetsApi.findAll(),
+  })
+
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => companiesApi.findAll(),
+  })
+
+  const { data: costCenters = [] } = useQuery({
+    queryKey: ['cost-centers'],
+    queryFn: () => costCentersApi.findAll(),
+  })
+
+  const { data: insuranceTypes = [] } = useQuery({
+    queryKey: ['insurance-types'],
+    queryFn: () => insuranceTypesApi.findAll(),
+  })
+
+  const [form, setForm] = useState<PolicyForm>({
+    policyNumber: '', insuranceCompany: '', producerId: '', insuranceType: '',
+    coverageTypes: [], startDate: '', endDate: '', description: '',
+    beneficiaryDescription: '', association: 'activo', assetId: '',
+    companyId: '', costCenterId: '', insuredAmountArs: '', exchangeRate: '',
+  })
   const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm | 'coverageTypes', string>>>({})
+  const [formInitialized, setFormInitialized] = useState(false)
+
+  // Populate form once policy data arrives
+  useEffect(() => {
+    if (policy && !formInitialized) {
+      setForm(policyToForm(policy))
+      setFormInitialized(true)
+    }
+  }, [policy, formInitialized])
+
+  const updateMutation = useMutation({
+    mutationFn: (input: Parameters<typeof policiesApi.update>[1]) => policiesApi.update(id!, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['policies'] })
+      queryClient.invalidateQueries({ queryKey: ['policy', id] })
+      navigate(`/insurance/policies/${id}`)
+    },
+  })
+
+  if (loadingPolicy) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-20">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </PageContent>
+    )
+  }
 
   if (!policy) {
     return (
@@ -220,10 +280,10 @@ export default function PolicyEditPage() {
   }, [form.insuredAmountArs, form.exchangeRate])
 
   const filteredCostCenters = useMemo(
-    () => costCenterRepository.findAll().filter(
+    () => costCenters.filter(
       (cc) => cc.status === 'activo' && (!form.companyId || cc.companyId === form.companyId),
     ),
-    [form.companyId],
+    [costCenters, form.companyId],
   )
 
   const isAP = form.coverageTypes.includes('Accidentes Personales') || form.insuranceType === 'Personal'
@@ -255,27 +315,34 @@ export default function PolicyEditPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
+
     const ars = parseFloat(form.insuredAmountArs)
     const rate = parseFloat(form.exchangeRate)
-    policyRepository.update(policy.id, {
-      policyNumber: form.policyNumber.trim(),
-      insuranceCompany: form.insuranceCompany,
-      producerId: form.producerId,
-      insuranceType: form.insuranceType,
-      coverageType: form.coverageTypes[0] ?? '',
-      coverageTypes: form.coverageTypes,
-      beneficiaryDescription: form.beneficiaryDescription.trim() || undefined,
+
+    // Resolve insuranceTypeId from the loaded list
+    const insuranceTypeObj = insuranceTypes.find((t) => t.label === form.insuranceType)
+    const insuranceTypeId = insuranceTypeObj?.id ?? ''
+
+    // Resolve companyId: use form.companyId for sin_activo, or asset's companyId for activo
+    const selectedAsset = form.association === 'activo'
+      ? allAssets.find((a) => a.id === form.assetId)
+      : undefined
+    const companyId = form.association === 'sin_activo'
+      ? form.companyId
+      : (selectedAsset?.companyId ?? '')
+
+    updateMutation.mutate({
+      insuranceTypeId,
+      companyId,
+      producerId: form.producerId || undefined,
+      insuredName: form.insuranceCompany,
       startDate: form.startDate,
       endDate: form.endDate,
-      description: form.description.trim(),
-      assetId: form.association === 'activo' ? form.assetId : null,
-      companyId: form.association === 'sin_activo' ? form.companyId : null,
-      costCenterId: form.association === 'sin_activo' ? form.costCenterId : null,
-      insuredAmountArs: ars,
-      exchangeRate: rate,
-      insuredAmountUsd: rate > 0 ? ars / rate : 0,
+      premium: ars,
+      currency: 'ARS',
+      description: form.description.trim() || undefined,
+      coverageIds: [],
     })
-    navigate(`/insurance/policies/${id}`)
   }
 
   return (
@@ -313,7 +380,7 @@ export default function PolicyEditPage() {
               <FormField label="Productor Asesor" required error={errors.producerId}>
                 <FormSelect value={form.producerId} onChange={set('producerId')} required>
                   <option value="">Seleccionar productor…</option>
-                  {producerRepository.findActive().map((p) => (
+                  {producers.filter((p) => p.status === 'activo').map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </FormSelect>
@@ -327,7 +394,7 @@ export default function PolicyEditPage() {
                       required
                     >
                       <option value="">Seleccionar tipo…</option>
-                      {insuranceTypeRepository.findAll().map((t) => (
+                      {insuranceTypes.map((t) => (
                         <option key={t.id} value={t.label}>{t.label}</option>
                       ))}
                     </FormSelect>
@@ -354,6 +421,7 @@ export default function PolicyEditPage() {
               </div>
               <CoverageSelector
                 insuranceType={form.insuranceType}
+                insuranceTypes={insuranceTypes}
                 selected={form.coverageTypes}
                 onChange={(v) => {
                   setForm((prev) => ({ ...prev, coverageTypes: v }))
@@ -418,7 +486,7 @@ export default function PolicyEditPage() {
               <FormField label="Activo Asegurado" required error={errors.assetId} fullWidth>
                 <FormSelect value={form.assetId} onChange={set('assetId')} required>
                   <option value="">Seleccionar activo…</option>
-                  {assetRepository.findAll().filter((a) => a.status === 'activo').map((a) => (
+                  {allAssets.filter((a) => a.status === 'activo').map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.internalCode} — {a.name} ({a.assetType})
                     </option>
@@ -432,7 +500,7 @@ export default function PolicyEditPage() {
                 <FormField label="Empresa" required error={errors.companyId}>
                   <FormSelect value={form.companyId} onChange={set('companyId')} required>
                     <option value="">Seleccionar empresa…</option>
-                    {companyRepository.findActive().map((c) => (
+                    {companies.filter((c) => c.status === 'activo').map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </FormSelect>
@@ -529,10 +597,11 @@ export default function PolicyEditPage() {
         <div className="flex items-center gap-3 pt-2 pb-6">
           <button
             type="submit"
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            disabled={updateMutation.isPending}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
           >
             <Save size={16} />
-            Guardar Cambios
+            {updateMutation.isPending ? 'Guardando…' : 'Guardar Cambios'}
           </button>
           <button
             type="button"

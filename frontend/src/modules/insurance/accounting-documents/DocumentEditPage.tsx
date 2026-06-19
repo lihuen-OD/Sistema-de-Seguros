@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Save,
   X,
@@ -21,10 +22,8 @@ import {
 } from '../../../shared/components/forms/FormSection'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
-import { policyRepository } from '../../../services/repositories/policy.repository'
-import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
-import { assetRepository } from '../../../services/repositories/asset.repository'
-import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
+import { documentsApi } from '../../../shared/api/documents.api'
+import { policiesApi } from '../../../shared/api/policies.api'
 import {
   INSURANCE_COMPANIES,
   DOCUMENT_TYPE_LABELS,
@@ -68,73 +67,84 @@ type FormErrors = Partial<Record<keyof DocumentForm | 'policies', string>>
 export default function DocumentEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
-  const doc = accountingDocumentRepository.findById(id!)
-  const existingAllocations = doc
-    ? accountingDocumentRepository.findAllocationsByDocument(doc.id)
-    : []
-  const existingInstallments = doc
-    ? accountingDocumentRepository.findInstallmentsByDocument(doc.id)
-    : []
+  const { data: doc, isLoading: docLoading } = useQuery({
+    queryKey: ['documents', id],
+    queryFn: () => documentsApi.findById(id!),
+    enabled: !!id,
+  })
 
-  // Must be before early return to satisfy rules of hooks
-  const [form, setForm] = useState<DocumentForm>(() =>
-    doc
-      ? {
-          insuranceCompany: doc.insuranceCompany ?? '',
-          documentType: doc.documentType,
-          documentNumber: doc.documentNumber,
-          issueDate: doc.issueDate,
-          currency: doc.currency,
-          exchangeRate: String(doc.exchangeRate),
-          paymentMethod: doc.paymentMethod ?? '',
-          netAmount: String(doc.netAmount),
-          vatAmount: String(doc.vatAmount),
-          otherTaxesAmount: String(doc.otherTaxesAmount),
-          linkedDocumentId: doc.linkedDocumentId ?? '',
-        }
-      : {
-          insuranceCompany: '',
-          documentType: '',
-          documentNumber: '',
-          issueDate: '',
-          currency: '',
-          exchangeRate: '',
-          paymentMethod: '',
-          netAmount: '',
-          vatAmount: '',
-          otherTaxesAmount: '',
-          linkedDocumentId: '',
-        },
+  const { data: allPolicies = [] } = useQuery({
+    queryKey: ['policies'],
+    queryFn: () => policiesApi.findAll(),
+  })
+
+  const { data: allDocuments = [] } = useQuery({
+    queryKey: ['documents'],
+    queryFn: () => documentsApi.findAll(),
+  })
+
+  const existingFacturas = useMemo(
+    () => allDocuments.filter((f) => f.documentType === 'factura' && f.id !== id),
+    [allDocuments, id],
   )
 
+  // All useState hooks must be declared before any early returns
+  const [form, setForm] = useState<DocumentForm>({
+    insuranceCompany: '',
+    documentType: '',
+    documentNumber: '',
+    issueDate: '',
+    currency: '',
+    exchangeRate: '',
+    paymentMethod: '',
+    netAmount: '',
+    vatAmount: '',
+    otherTaxesAmount: '',
+    linkedDocumentId: '',
+  })
+  const [formInitialized, setFormInitialized] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
-
-  const [policyRows, setPolicyRows] = useState<PolicyRowData[]>(() =>
-    existingAllocations.length > 0
-      ? existingAllocations.map((a) => ({
-          id: a.id,
-          policyId: a.policyId,
-          allocatedAmount: String(Math.abs(a.allocatedAmount)),
-        }))
-      : [{ id: crypto.randomUUID(), policyId: '', allocatedAmount: '' }],
-  )
-
-  const [installmentCount, setInstallmentCount] = useState(() => existingInstallments.length || 1)
-  const [installmentRows, setInstallmentRows] = useState<InstallmentRowData[]>(() =>
-    existingInstallments.length > 0
-      ? existingInstallments.map((i) => ({
-          installmentNumber: i.installmentNumber,
-          dueDate: i.dueDate,
-          amount: String(Math.abs(i.amount)),
-        }))
-      : [{ installmentNumber: 1, dueDate: '', amount: '' }],
-  )
-
+  const [policyRows, setPolicyRows] = useState<PolicyRowData[]>([
+    { id: crypto.randomUUID(), policyId: '', allocatedAmount: '' },
+  ])
+  const [installmentCount, setInstallmentCount] = useState(1)
+  const [installmentRows, setInstallmentRows] = useState<InstallmentRowData[]>([
+    { installmentNumber: 1, dueDate: '', amount: '' },
+  ])
   const [isSaved, setIsSaved] = useState(true)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [emailTo, setEmailTo] = useState('')
   const [emailSent, setEmailSent] = useState(false)
+
+  // Initialize form once doc loads
+  if (doc && !formInitialized) {
+    setFormInitialized(true)
+    setForm({
+      insuranceCompany: doc.insuranceCompany ?? '',
+      documentType: doc.documentType,
+      documentNumber: doc.documentNumber,
+      issueDate: doc.issueDate,
+      currency: doc.currency,
+      exchangeRate: String(doc.exchangeRate),
+      paymentMethod: doc.paymentMethod ?? '',
+      netAmount: String(doc.netAmount),
+      vatAmount: String(doc.vatAmount),
+      otherTaxesAmount: String(doc.otherTaxesAmount),
+      linkedDocumentId: doc.linkedDocumentId ?? '',
+    })
+  }
+
+  if (docLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-24">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </PageContent>
+    )
+  }
 
   if (!doc) {
     return (
@@ -146,12 +156,6 @@ export default function DocumentEditPage() {
       </PageContent>
     )
   }
-
-  const allPolicies = policyRepository.findAll()
-  const existingFacturas = useMemo(
-    () => accountingDocumentRepository.findByDocumentType('factura').filter((f) => f.id !== doc.id),
-    [],
-  )
 
   // ─── Derived ─────────────────────────────────────────────────────────────────
 
@@ -189,15 +193,9 @@ export default function DocumentEditPage() {
         .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
         .map((r) => {
           const policy = allPolicies.find((p) => p.id === r.policyId)
-          const asset = policy?.assetId
-            ? assetRepository.findById(policy.assetId!)
-            : null
-          const costCenter = policy?.costCenterId
-            ? costCenterRepository.findById(policy.costCenterId!)
-            : null
           const amount = parseFloat(r.allocatedAmount) || 0
           const pct = totalAllocated > 0 ? (amount / totalAllocated) * 100 : 0
-          return { policy, asset, costCenter, amount, pct }
+          return { policy, amount, pct }
         }),
     [policyRows, allPolicies, totalAllocated],
   )
@@ -296,50 +294,24 @@ export default function DocumentEditPage() {
 
   // ─── Submit ──────────────────────────────────────────────────────────────────
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
 
-    const validRows = policyRows.filter((r) => r.policyId)
-
-    accountingDocumentRepository.update(doc.id, {
+    await documentsApi.update(doc.id, {
       documentType: form.documentType as DocumentType,
-      documentNumber: form.documentNumber.trim(),
       issueDate: form.issueDate,
       currency: form.currency as Currency,
       exchangeRate: tc,
       netAmount: parsedNet,
       vatAmount: parsedVat,
       otherTaxesAmount: parsedOther,
-      totalAmount: computedTotal,
       insuranceCompany: form.insuranceCompany,
       paymentMethod: form.paymentMethod as PaymentMethod,
       linkedDocumentId: isRefDoc && form.linkedDocumentId ? form.linkedDocumentId : undefined,
     })
 
-    const total = totalAllocated || computedTotal
-    accountingDocumentRepository.replaceAllocations(
-      doc.id,
-      validRows.map((r) => {
-        const amount = parseFloat(r.allocatedAmount) || 0
-        return {
-          policyId: r.policyId,
-          allocatedAmount: amount,
-          allocationPercentage: total > 0 ? (amount / total) * 100 : 0,
-        }
-      }),
-    )
-
-    accountingDocumentRepository.replaceInstallments(
-      doc.id,
-      installmentRows.map((r) => ({
-        installmentNumber: r.installmentNumber,
-        dueDate: r.dueDate,
-        amount: parseFloat(r.amount) || 0,
-      })),
-      form.currency as Currency,
-    )
-
+    queryClient.invalidateQueries({ queryKey: ['documents'] })
     setIsSaved(true)
   }
 
@@ -566,13 +538,6 @@ export default function DocumentEditPage() {
               {policyRows.map((row) => {
                 const allocated = parseFloat(row.allocatedAmount) || 0
                 const pct = totalAllocated > 0 ? (allocated / totalAllocated) * 100 : 0
-                const selectedPolicy = availablePolicies.find((p) => p.id === row.policyId)
-                const asset = selectedPolicy?.assetId
-                  ? assetRepository.findById(selectedPolicy.assetId!)
-                  : null
-                const costCenter = selectedPolicy?.costCenterId
-                  ? costCenterRepository.findById(selectedPolicy.costCenterId!)
-                  : null
 
                 return (
                   <div key={row.id} className="space-y-1.5">
@@ -620,23 +585,6 @@ export default function DocumentEditPage() {
                         <Trash2 size={14} />
                       </button>
                     </div>
-
-                    {selectedPolicy && (asset || costCenter) && (
-                      <div className="flex items-center gap-2 pl-1 flex-wrap">
-                        {asset && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-slate-50 border border-slate-200 text-slate-600">
-                            <span className="text-slate-400 font-medium">Bien de Uso:</span>
-                            {asset.fixedAssetCode} — {asset.name}
-                          </span>
-                        )}
-                        {costCenter && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-slate-50 border border-slate-200 text-slate-600">
-                            <span className="text-slate-400 font-medium">C. Costo:</span>
-                            {costCenter.code} — {costCenter.name}
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </div>
                 )
               })}
@@ -847,7 +795,7 @@ export default function DocumentEditPage() {
                         <p className="text-xs text-slate-400 italic">Sin pólizas asignadas.</p>
                       ) : (
                         <div className="space-y-2">
-                          {distribution.map(({ policy, asset, costCenter, amount, pct }, i) => (
+                          {distribution.map(({ policy, amount, pct }, i) => (
                             <div
                               key={i}
                               className="flex items-start justify-between gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-100"
@@ -856,16 +804,6 @@ export default function DocumentEditPage() {
                                 <p className="text-xs font-semibold text-slate-700">
                                   {policy?.policyNumber ?? '—'}
                                 </p>
-                                {asset && (
-                                  <p className="text-xs text-slate-500">
-                                    Bien de Uso: {asset.fixedAssetCode} — {asset.name}
-                                  </p>
-                                )}
-                                {costCenter && (
-                                  <p className="text-xs text-slate-500">
-                                    C. Costo: {costCenter.code} — {costCenter.name}
-                                  </p>
-                                )}
                               </div>
                               <div className="text-right flex-shrink-0">
                                 <p className="text-xs font-bold text-blue-600">

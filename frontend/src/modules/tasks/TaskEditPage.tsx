@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Save } from 'lucide-react'
+import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -13,9 +14,9 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
-import { producerRepository } from '../../services/repositories/producer.repository'
-import { policyRepository } from '../../services/repositories/policy.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
+import { producersApi } from '../../shared/api/producers.api'
+import { policiesApi } from '../../shared/api/policies.api'
+import { assetsApi } from '../../shared/api/assets.api'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TaskPriority, TaskStatus } from '../../shared/types'
@@ -28,24 +29,66 @@ interface FormErrors {
 export default function TaskEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
-  const original = producerRepository.findTaskById(id!)
-  const allProducers = producerRepository.findAll()
-  const allPolicies = policyRepository.findAll()
+  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
 
-  const [title, setTitle] = useState(original?.title ?? '')
-  const [description, setDescription] = useState(original?.description ?? '')
-  const [producerId, setProducerId] = useState(original?.producerId ?? '')
-  const [policyId, setPolicyId] = useState(original?.policyId ?? '')
-  const [assetId, setAssetId] = useState(original?.assetId ?? '')
-  const [assignedTo, setAssignedTo] = useState(original?.assignedTo ?? '')
-  const [dueDate, setDueDate] = useState(original?.dueDate ?? '')
-  const [priority, setPriority] = useState<TaskPriority>(original?.priority ?? 'media')
-  const [status, setStatus] = useState<TaskStatus>(original?.status ?? 'pendiente')
+  const taskQueries = useQueries({
+    queries: allProducers.map((p) => ({
+      queryKey: ['producers', p.id, 'tasks'],
+      queryFn: () => producersApi.findTasks(p.id),
+      enabled: allProducers.length > 0,
+    })),
+  })
+
+  const allTasks = taskQueries.flatMap((q, i) =>
+    (q.data ?? []).map((t) => ({ ...t, producerId: allProducers[i]?.id ?? null }))
+  )
+
+  const original = allTasks.find((t) => t.id === id)
+  const tasksLoading = allProducers.length > 0 && taskQueries.some((q) => q.isLoading)
+
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [producerId, setProducerId] = useState('')
+  const [policyId, setPolicyId] = useState('')
+  const [assetId, setAssetId] = useState('')
+  const [assignedTo, setAssignedTo] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [priority, setPriority] = useState<TaskPriority>('media')
+  const [status, setStatus] = useState<TaskStatus>('pendiente')
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
+  const [formInitialized, setFormInitialized] = useState(false)
 
-  if (!original) {
+  useEffect(() => {
+    if (original && !formInitialized) {
+      setTitle(original.title)
+      setDescription(original.description ?? '')
+      setProducerId(original.producerId ?? '')
+      setPolicyId(original.policyId ?? '')
+      setAssetId(original.assetId ?? '')
+      setAssignedTo(original.assignedTo ?? '')
+      setDueDate(original.dueDate ?? '')
+      setPriority(original.priority ?? 'media')
+      setStatus(original.status ?? 'pendiente')
+      setFormInitialized(true)
+    }
+  }, [original, formInitialized])
+
+  if (tasksLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-20 text-sm text-slate-400">
+          Cargando tarea…
+        </div>
+      </PageContent>
+    )
+  }
+
+  if (!tasksLoading && !original && allProducers.length > 0 && taskQueries.every((q) => !q.isLoading)) {
     return (
       <PageContent>
         <EmptyState
@@ -68,33 +111,34 @@ export default function TaskEditPage() {
     return Object.keys(e).length === 0
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
     setSubmitting(true)
-    producerRepository.updateTask(original!.id, {
-      title: title.trim(),
-      description: description.trim(),
-      producerId: producerId || null,
-      policyId: policyId || null,
-      assetId: assetId || null,
-      assignedTo: assignedTo.trim() || null,
-      dueDate,
-      priority,
-      status,
-    })
-    navigate(ROUTES.TASKS)
+
+    try {
+      await producersApi.updateTask(original!.producerId!, original!.id, {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        dueDate: dueDate || undefined,
+        status,
+      })
+      queryClient.invalidateQueries({ queryKey: ['producers'] })
+      navigate(ROUTES.TASKS)
+    } catch {
+      setSubmitting(false)
+    }
   }
 
   return (
     <PageContent>
       <PageHeader
         title="Editar Tarea"
-        subtitle={original.title}
+        subtitle={original?.title ?? ''}
         category="Tareas"
         backTo={ROUTES.TASKS}
         backLabel="Volver a Tareas"
-        badge={<StatusPill status={original.status} />}
+        badge={original ? <StatusPill status={original.status} /> : undefined}
       />
 
       <form onSubmit={handleSubmit} noValidate>
@@ -159,7 +203,7 @@ export default function TaskEditPage() {
               <FormField label="Activo asociado">
                 <FormSelect value={assetId} onChange={(e) => setAssetId(e.target.value)}>
                   <option value="">— Sin activo</option>
-                  {assetRepository.findAll().map((a) => (
+                  {allAssets.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.internalCode} — {a.name}
                     </option>

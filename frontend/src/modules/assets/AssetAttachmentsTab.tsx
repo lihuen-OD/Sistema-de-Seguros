@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Plus, FileText, FileSpreadsheet, Image as ImageIcon, File as FileIcon,
   X, AlertTriangle, CheckCircle2, Clock, Upload, Calendar, Paperclip, Download,
   Mail, Bell, Send,
 } from 'lucide-react'
 import type { AssetAttachment } from '../../shared/types'
-import { assetAttachmentRepository } from '../../services/repositories/asset-attachment.repository'
+import { assetsApi } from '../../shared/api/assets.api'
 import { formatDate } from '../../shared/utils/format'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 
@@ -387,28 +388,28 @@ interface AssetAttachmentsTabProps {
 }
 
 export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
-  const [attachments, setAttachments] = useState<AssetAttachment[]>(() =>
-    assetAttachmentRepository.findByAsset(assetId),
-  )
+  const { data: fetchedAttachments = [] } = useQuery({
+    queryKey: ['assets', assetId, 'attachments'],
+    queryFn: () => assetsApi.findAttachments(assetId),
+    enabled: !!assetId,
+  })
+
+  const [localAttachments, setLocalAttachments] = useState<AssetAttachment[]>([])
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set())
   const [showModal, setShowModal] = useState(false)
 
+  // Merge server data with locally added attachments, excluding locally removed ones
+  const attachments: AssetAttachment[] = [
+    ...fetchedAttachments.filter((a) => !removedIds.has(a.id)),
+    ...localAttachments.filter((a) => !removedIds.has(a.id)),
+  ]
+
   const handleAdd = (attachment: AssetAttachment) => {
-    const saved = assetAttachmentRepository.create({
-      assetId: attachment.assetId,
-      name: attachment.name,
-      description: attachment.description,
-      fileType: attachment.fileType,
-      fileSize: attachment.fileSize,
-      expirationDate: attachment.expirationDate,
-      notifyEmail: attachment.notifyEmail,
-      uploadedBy: attachment.uploadedBy,
-    })
-    setAttachments((prev) => [...prev, saved])
+    setLocalAttachments((prev) => [...prev, attachment])
   }
 
   const handleRemove = (id: string) => {
-    assetAttachmentRepository.delete(id)
-    setAttachments((prev) => prev.filter((a) => a.id !== id))
+    setRemovedIds((prev) => new Set([...prev, id]))
   }
 
   return (

@@ -1,0 +1,98 @@
+import { apiClient } from './client'
+import type { Asset, AssetAttachment } from '../types'
+
+interface BackendCostCenter { id: string; name: string; code: string | null; companyId: string | null }
+interface BackendAllocation { id: string; assetId: string; costCenterId: string; percentage: number; costCenter: BackendCostCenter }
+interface BackendAsset {
+  id: string; name: string; assetType: string; brand: string | null; model: string | null
+  serialNumber: string | null; purchaseDate: string | null; purchaseValue: number | null
+  currentValue: number | null; location: string | null; description: string | null
+  isActive: boolean; createdAt: string; updatedAt: string
+  allocations: BackendAllocation[]
+  _count?: { attachments: number; fireExtinguishers: number }
+}
+interface BackendAttachment {
+  id: string; assetId: string; name: string; description: string | null; fileType: string
+  fileSize: string; fileUrl: string; expirationDate: string | null; notifyEmail: string | null; uploadedAt: string; uploadedBy: string
+}
+interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
+
+function mapAsset(b: BackendAsset): Asset {
+  const primary = b.allocations[0]
+  return {
+    id: b.id,
+    internalCode: '',
+    fixedAssetCode: '',
+    name: b.name,
+    assetType: b.assetType,
+    brand: b.brand ?? '',
+    model: b.model ?? '',
+    year: b.purchaseDate ? parseInt(b.purchaseDate.slice(0, 4)) : 0,
+    serialNumber: b.serialNumber ?? '',
+    status: b.isActive ? 'activo' : 'baja',
+    patrimonialValueUsd: b.currentValue ?? b.purchaseValue ?? 0,
+    valuationDate: b.purchaseDate ?? '',
+    observations: b.description ?? '',
+    companyId: primary?.costCenter?.companyId ?? '',
+    costCenterId: primary?.costCenterId ?? '',
+    allocations: b.allocations.map((a) => ({
+      id: a.id,
+      companyId: a.costCenter?.companyId ?? '',
+      costCenterId: a.costCenterId,
+      percentage: a.percentage,
+    })),
+    productiveUnit: '',
+    area: '',
+    photos: [],
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt,
+  }
+}
+
+function mapAttachment(a: BackendAttachment): AssetAttachment {
+  const fileType = a.fileType as AssetAttachment['fileType']
+  return {
+    id: a.id, assetId: a.assetId, name: a.name,
+    description: a.description ?? '', fileType, fileSize: a.fileSize,
+    expirationDate: a.expirationDate ?? null,
+    notifyEmail: a.notifyEmail ?? undefined,
+    uploadedAt: a.uploadedAt, uploadedBy: a.uploadedBy,
+  }
+}
+
+export interface AssetCreateInput {
+  name: string; assetType: string; brand?: string; model?: string; serialNumber?: string
+  purchaseDate?: string; currentValue?: number; description?: string
+  allocations: { costCenterId: string; percentage: number }[]
+}
+
+export const assetsApi = {
+  async findAll(): Promise<Asset[]> {
+    const res = await apiClient.get<Paginated<BackendAsset>>('/assets', { params: { limit: 200 } })
+    return res.data.data.map(mapAsset)
+  },
+
+  async findById(id: string): Promise<Asset> {
+    const res = await apiClient.get<{ data: BackendAsset }>(`/assets/${id}`)
+    return mapAsset(res.data.data)
+  },
+
+  async create(input: AssetCreateInput): Promise<Asset> {
+    const res = await apiClient.post<{ data: BackendAsset }>('/assets', input)
+    return mapAsset(res.data.data)
+  },
+
+  async update(id: string, input: Partial<Omit<AssetCreateInput, 'allocations'>>): Promise<Asset> {
+    const res = await apiClient.put<{ data: BackendAsset }>(`/assets/${id}`, input)
+    return mapAsset(res.data.data)
+  },
+
+  async softDelete(id: string): Promise<void> {
+    await apiClient.delete(`/assets/${id}`)
+  },
+
+  async findAttachments(assetId: string): Promise<AssetAttachment[]> {
+    const res = await apiClient.get<{ data: BackendAttachment[] }>(`/assets/${assetId}/attachments`)
+    return res.data.data.map(mapAttachment)
+  },
+}

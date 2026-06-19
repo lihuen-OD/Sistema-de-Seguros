@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react'
 import { Plus, X, Download, Paperclip, Upload } from 'lucide-react'
 import type { AccountingDocumentAttachment } from '../../../shared/types'
-import { accountingDocumentAttachmentRepository } from '../../../services/repositories/accounting-document-attachment.repository'
 import { formatDate } from '../../../shared/utils/format'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import {
@@ -163,19 +162,21 @@ interface DocumentAttachmentsSectionProps {
   documentId: string
 }
 
-export function DocumentAttachmentsSection({ documentId }: DocumentAttachmentsSectionProps) {
-  const [attachments, setAttachments] = useState<AccountingDocumentAttachment[]>(() =>
-    accountingDocumentAttachmentRepository.findByDocument(documentId),
-  )
+export function DocumentAttachmentsSection({ documentId: _documentId }: DocumentAttachmentsSectionProps) {
+  const [attachments, setAttachments] = useState<AccountingDocumentAttachment[]>([])
   const [showModal, setShowModal] = useState(false)
 
   const handleAdd = (partial: Omit<AccountingDocumentAttachment, 'id' | 'documentId' | 'uploadedAt'>) => {
-    const saved = accountingDocumentAttachmentRepository.create({ ...partial, documentId })
-    setAttachments((prev) => [...prev, saved])
+    const newAttachment: AccountingDocumentAttachment = {
+      ...partial,
+      id: crypto.randomUUID(),
+      documentId: _documentId,
+      uploadedAt: new Date().toISOString(),
+    }
+    setAttachments((prev) => [...prev, newAttachment])
   }
 
   const handleRemove = (id: string) => {
-    accountingDocumentAttachmentRepository.delete(id)
     setAttachments((prev) => prev.filter((a) => a.id !== id))
   }
 

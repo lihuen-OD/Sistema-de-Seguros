@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Flame } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -12,10 +13,10 @@ import {
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
 import {
-  fireExtinguisherRepository,
-  type FireExtinguisherInput,
-} from '../../services/repositories/fire-extinguisher.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
+  fireExtinguishersApi,
+  type FireExtinguisherCreateInput,
+} from '../../shared/api/fire-extinguishers.api'
+import { assetsApi } from '../../shared/api/assets.api'
 import {
   FIRE_EXT_TYPES,
   FIRE_EXT_CAPACITIES,
@@ -45,6 +46,12 @@ interface FormErrors {
 
 export default function FireExtinguisherNewPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const { data: assets = [] } = useQuery({
+    queryKey: ['assets'],
+    queryFn: assetsApi.findAll,
+  })
 
   const [type, setType] = useState('')
   const [capacity, setCapacity] = useState('')
@@ -74,23 +81,28 @@ export default function FireExtinguisherNewPage() {
     return Object.keys(e).length === 0
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
     setSubmitting(true)
 
-    const input: FireExtinguisherInput = {
-      type,
-      capacity,
-      chargeDate,
-      expirationDate,
-      associatedAssetId: associatedAssetId || null,
-      associatedLocationType,
-      observations: observations.trim(),
-    }
+    try {
+      const input: FireExtinguisherCreateInput = {
+        type,
+        capacity,
+        chargeDate,
+        expirationDate,
+        associatedAssetId: associatedAssetId || undefined,
+        associatedLocationType,
+        observations: observations.trim(),
+      }
 
-    fireExtinguisherRepository.create(input)
-    navigate(ROUTES.FIRE_EXTINGUISHERS)
+      await fireExtinguishersApi.create(input)
+      await queryClient.invalidateQueries({ queryKey: ['fire-extinguishers'] })
+      navigate(ROUTES.FIRE_EXTINGUISHERS)
+    } catch {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -189,7 +201,7 @@ export default function FireExtinguisherNewPage() {
                 onChange={(e) => setAssociatedAssetId(e.target.value)}
               >
                 <option value="">— Sin activo específico</option>
-                {assetRepository.findAll()
+                {assets
                   .filter((a) => a.status === 'activo')
                   .map((a) => (
                     <option key={a.id} value={a.id}>

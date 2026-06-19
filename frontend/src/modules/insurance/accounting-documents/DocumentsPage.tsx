@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, FileText, CheckCircle2, Clock, AlertCircle, Eye, Edit2, Trash2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -15,7 +16,7 @@ import {
   formatCurrencyCompact,
   formatDate,
 } from '../../../shared/utils/format'
-import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
+import { documentsApi } from '../../../shared/api/documents.api'
 import { DOCUMENT_TYPE_LABELS, PAYMENT_STATUS_LABELS } from '../../../shared/constants'
 import type { AccountingDocument, TableColumn } from '../../../shared/types'
 
@@ -31,34 +32,35 @@ const PAYMENT_STATUS_OPTIONS = Object.entries(PAYMENT_STATUS_LABELS).map(([value
 
 export default function DocumentsPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-  const [refreshKey, setRefreshKey] = useState(0)
 
-  const allDocuments = accountingDocumentRepository.findAll()
-  const totals = accountingDocumentRepository.getTotalByStatus()
+  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
+
+  const totals = useMemo(() => ({
+    pending: allDocuments.filter((d) => d.paymentStatus === 'pendiente').reduce((s, d) => s + d.totalAmount, 0),
+    paid: allDocuments.filter((d) => d.paymentStatus === 'pagado').reduce((s, d) => s + d.totalAmount, 0),
+  }), [allDocuments])
 
   const partialCount = allDocuments.filter((d) => d.paymentStatus === 'parcial').length
 
   const filtered = useMemo(() => {
     return allDocuments.filter((doc) => {
       const q = search.toLowerCase()
-      const matchSearch =
-        !search ||
-        doc.documentNumber.toLowerCase().includes(q)
+      const matchSearch = !search || doc.documentNumber.toLowerCase().includes(q)
       const matchType = !filterType || doc.documentType === filterType
       const matchStatus = !filterStatus || doc.paymentStatus === filterStatus
       return matchSearch && matchType && matchStatus
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allDocuments, search, filterType, filterStatus, refreshKey])
+  }, [allDocuments, search, filterType, filterStatus])
 
-  function handleDelete(id: string) {
-    accountingDocumentRepository.delete(id)
+  async function handleDelete(id: string) {
+    await documentsApi.softDelete(id)
+    queryClient.invalidateQueries({ queryKey: ['documents'] })
     setConfirmDeleteId(null)
-    setRefreshKey((k) => k + 1)
   }
 
   const columns: TableColumn<AccountingDocument>[] = [

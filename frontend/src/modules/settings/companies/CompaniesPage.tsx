@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
-import { Building2, CheckCircle2, XCircle, Hash, Plus, Edit2, X, Save } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Building2, CheckCircle2, XCircle, Hash, Plus, Edit2, X, Save, Loader2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -14,9 +15,9 @@ import {
   FormSelect,
 } from '../../../shared/components/forms/FormSection'
 import { formatDate } from '../../../shared/utils/format'
-import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
-import { assetRepository } from '../../../services/repositories/asset.repository'
-import { companyRepository, type CompanyInput } from '../../../services/repositories/company.repository'
+import { companiesApi, type CompanyInput } from '../../../shared/api/companies.api'
+import { assetsApi } from '../../../shared/api/assets.api'
+import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import type { Company, TableColumn } from '../../../shared/types'
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
@@ -24,7 +25,7 @@ import type { Company, TableColumn } from '../../../shared/types'
 interface CompanyModalProps {
   company: Company | null
   onClose: () => void
-  onSave: () => void
+  onSave: (input: CompanyInput) => Promise<void>
 }
 
 function CompanyModal({ company, onClose, onSave }: CompanyModalProps) {
@@ -34,6 +35,8 @@ function CompanyModal({ company, onClose, onSave }: CompanyModalProps) {
   const [taxId, setTaxId] = useState(company?.taxId ?? '')
   const [status, setStatus] = useState<'activo' | 'inactivo'>(company?.status ?? 'activo')
   const [errors, setErrors] = useState<{ name?: string; taxId?: string }>({})
+  const [apiError, setApiError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   function validate(): boolean {
     const e: { name?: string; taxId?: string } = {}
@@ -43,16 +46,18 @@ function CompanyModal({ company, onClose, onSave }: CompanyModalProps) {
     return Object.keys(e).length === 0
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
-    const input: CompanyInput = { name, taxId, status }
-    if (isEdit) {
-      companyRepository.update(company!.id, input)
-    } else {
-      companyRepository.create(input)
+    setSubmitting(true)
+    setApiError('')
+    try {
+      await onSave({ name, taxId, status })
+    } catch (err) {
+      setApiError(err instanceof Error ? err.message : 'Error al guardar')
+    } finally {
+      setSubmitting(false)
     }
-    onSave()
   }
 
   return (
@@ -64,7 +69,6 @@ function CompanyModal({ company, onClose, onSave }: CompanyModalProps) {
         className="bg-white rounded-xl shadow-2xl w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-slate-100">
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -87,7 +91,6 @@ function CompanyModal({ company, onClose, onSave }: CompanyModalProps) {
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
           <FormField label="Razón Social" required error={errors.name} fullWidth>
             <FormInput
@@ -114,19 +117,27 @@ function CompanyModal({ company, onClose, onSave }: CompanyModalProps) {
             </FormSelect>
           </FormField>
 
+          {apiError && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+              {apiError}
+            </p>
+          )}
+
           <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
+              disabled={submitting}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              disabled={submitting}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
             >
-              <Save size={14} />
+              {submitting ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               {isEdit ? 'Guardar Cambios' : 'Crear Empresa'}
             </button>
           </div>
@@ -141,9 +152,23 @@ function CompanyModal({ company, onClose, onSave }: CompanyModalProps) {
 export default function CompaniesPage() {
   const [search, setSearch] = useState('')
   const [modalCompany, setModalCompany] = useState<Company | null | undefined>(undefined)
-  const [refreshKey, setRefreshKey] = useState(0)
 
-  const allCompanies = useMemo(() => companyRepository.findAll(), [refreshKey])
+  const queryClient = useQueryClient()
+
+  const { data: allCompanies = [], isLoading: isLoadingCompanies } = useQuery({
+    queryKey: ['companies'],
+    queryFn: companiesApi.findAll,
+  })
+
+  const { data: allCostCenters = [] } = useQuery({
+    queryKey: ['cost-centers'],
+    queryFn: costCentersApi.findAll,
+  })
+
+  const { data: allAssets = [] } = useQuery({
+    queryKey: ['assets'],
+    queryFn: assetsApi.findAll,
+  })
 
   const filtered = useMemo(() => {
     if (!search) return allCompanies
@@ -157,12 +182,17 @@ export default function CompaniesPage() {
 
   const activeCount = allCompanies.filter((c) => c.status === 'activo').length
   const inactiveCount = allCompanies.filter((c) => c.status === 'inactivo').length
-  const totalCostCenters = costCenterRepository.findAll().filter((cc) => cc.status === 'activo').length
-  const totalAssets = assetRepository.findAll().filter((a) => a.status === 'activo').length
+  const totalCostCenters = allCostCenters.filter((cc) => cc.status === 'activo').length
+  const totalAssets = allAssets.filter((a) => a.status === 'activo').length
 
-  function handleSave() {
+  async function handleSave(input: CompanyInput) {
+    if (modalCompany) {
+      await companiesApi.update(modalCompany.id, input)
+    } else {
+      await companiesApi.create(input)
+    }
     setModalCompany(undefined)
-    setRefreshKey((k) => k + 1)
+    queryClient.invalidateQueries({ queryKey: ['companies'] })
   }
 
   const columns: TableColumn<Company>[] = [
@@ -185,7 +215,7 @@ export default function CompaniesPage() {
       key: 'id',
       label: 'Centros de Costo',
       render: (v) => {
-        const ccCount = costCenterRepository.findAll().filter((cc) => cc.companyId === v && cc.status === 'activo').length
+        const ccCount = allCostCenters.filter((cc) => cc.companyId === v && cc.status === 'activo').length
         return (
           <span className="inline-flex items-center gap-1 text-xs text-slate-600">
             <Hash size={12} />
@@ -198,7 +228,7 @@ export default function CompaniesPage() {
       key: 'id',
       label: 'Activos',
       render: (v) => {
-        const assetCount = assetRepository.findAll().filter((a) => a.companyId === v && a.status === 'activo').length
+        const assetCount = allAssets.filter((a) => a.companyId === v && a.status === 'activo').length
         return (
           <span className="text-xs text-slate-600">
             {assetCount} activo{assetCount !== 1 ? 's' : ''}
@@ -250,7 +280,6 @@ export default function CompaniesPage() {
         }
       />
 
-      {/* KPIs */}
       <MetricGrid cols={4} className="mb-6">
         <KpiCard
           label="Empresas Activas"
@@ -282,7 +311,6 @@ export default function CompaniesPage() {
         />
       </MetricGrid>
 
-      {/* Table */}
       <SectionCard noPadding>
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
@@ -292,7 +320,7 @@ export default function CompaniesPage() {
             className="w-full sm:w-72"
           />
           <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-            {filtered.length} de {allCompanies.length} empresas
+            {isLoadingCompanies ? 'Cargando…' : `${filtered.length} de ${allCompanies.length} empresas`}
           </span>
         </div>
         <DataTable
@@ -304,11 +332,10 @@ export default function CompaniesPage() {
         />
       </SectionCard>
 
-      {/* Company cards — visual summary */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {allCompanies.map((company) => {
-          const ccList = costCenterRepository.findAll().filter((cc) => cc.companyId === company.id)
-          const assetList = assetRepository.findAll().filter((a) => a.companyId === company.id && a.status === 'activo')
+          const ccList = allCostCenters.filter((cc) => cc.companyId === company.id)
+          const assetList = allAssets.filter((a) => a.companyId === company.id && a.status === 'activo')
           return (
             <div
               key={company.id}
@@ -339,7 +366,6 @@ export default function CompaniesPage() {
         })}
       </div>
 
-      {/* Modal */}
       {modalCompany !== undefined && (
         <CompanyModal
           company={modalCompany}

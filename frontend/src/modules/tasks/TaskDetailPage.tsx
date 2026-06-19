@@ -10,15 +10,16 @@ import {
   CheckCircle2,
   Clock,
 } from 'lucide-react'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatDate, daysUntil } from '../../shared/utils/format'
-import { producerRepository } from '../../services/repositories/producer.repository'
-import { policyRepository } from '../../services/repositories/policy.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
+import { producersApi } from '../../shared/api/producers.api'
+import { policiesApi } from '../../shared/api/policies.api'
+import { assetsApi } from '../../shared/api/assets.api'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 
@@ -48,8 +49,35 @@ export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const task = producerRepository.findTaskById(id!)
-  const allProducers = producerRepository.findAll()
+  // All hooks must be called unconditionally at the top
+  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+
+  const taskQueries = useQueries({
+    queries: allProducers.map((p) => ({
+      queryKey: ['producers', p.id, 'tasks'],
+      queryFn: () => producersApi.findTasks(p.id),
+      enabled: allProducers.length > 0,
+    })),
+  })
+
+  const allTasks = taskQueries.flatMap((q, i) =>
+    (q.data ?? []).map((t) => ({ ...t, producerId: allProducers[i]?.id ?? null }))
+  )
+
+  const tasksLoading = allProducers.length > 0 && taskQueries.some((q) => q.isLoading)
+  const task = allTasks.find((t) => t.id === id)
+
+  if (tasksLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-20 text-sm text-slate-400">
+          Cargando tarea…
+        </div>
+      </PageContent>
+    )
+  }
 
   if (!task) {
     return (
@@ -63,8 +91,8 @@ export default function TaskDetailPage() {
   }
 
   const producer = allProducers.find((p) => p.id === task.producerId)
-  const policy = task.policyId ? policyRepository.findById(task.policyId) : undefined
-  const asset = task.assetId ? assetRepository.findById(task.assetId) : undefined
+  const policy = task.policyId ? allPolicies.find((p) => p.id === task.policyId) : undefined
+  const asset = task.assetId ? allAssets.find((a) => a.id === task.assetId) : undefined
 
   const days = daysUntil(task.dueDate)
   const isOverdue = days < 0 && task.status !== 'finalizada'

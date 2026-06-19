@@ -6,7 +6,7 @@ import {
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
 import type { FireExtinguisher } from '../../shared/types'
-import type { RechargeData } from '../../services/repositories/fire-extinguisher.repository'
+import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
 
 function todayISO(): string {
   const now = new Date()
@@ -21,7 +21,7 @@ function addOneYear(dateStr: string): string {
 
 interface RechargeModalProps {
   extinguishers: FireExtinguisher[]
-  onConfirm: (data: RechargeData) => void
+  onConfirm: (data: RechargeInput) => void
   onClose: () => void
 }
 

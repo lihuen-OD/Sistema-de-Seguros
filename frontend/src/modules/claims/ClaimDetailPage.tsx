@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ShieldAlert, Clock, CheckCircle2, XCircle, FileSearch,
   ArrowUpRight, Pencil, ArrowLeft, Package, ShieldCheck,
@@ -13,9 +14,9 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
-import { claimRepository } from '../../services/repositories/claim.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
-import { policyRepository as policyRepo } from '../../services/repositories/policy.repository'
+import { claimsApi } from '../../shared/api/claims.api'
+import { assetsApi } from '../../shared/api/assets.api'
+import { policiesApi } from '../../shared/api/policies.api'
 import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS } from '../../shared/constants'
 import { CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS } from '../../shared/constants/claim-status'
 import { ROUTES } from '../../app/routes'
@@ -155,12 +156,49 @@ const EDITABLE_STATUSES: ClaimStatus[] = ['denunciado', 'en_tramite', 'liquidado
 export default function ClaimDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
-  const claim = claimRepository.findById(id ?? '')
-  const [currentStatus, setCurrentStatus] = useState<ClaimStatus>(claim?.status ?? 'denunciado')
+  const { data: claim, isLoading: claimLoading, isError: claimError } = useQuery({
+    queryKey: ['claims', id],
+    queryFn: () => claimsApi.findById(id!),
+    enabled: !!id,
+  })
+
+  const { data: events = [] } = useQuery({
+    queryKey: ['claims', id, 'events'],
+    queryFn: () => claimsApi.findEvents(id!),
+    enabled: !!id,
+  })
+
+  const { data: asset = null } = useQuery({
+    queryKey: ['assets', claim?.assetId],
+    queryFn: () => assetsApi.findById(claim!.assetId),
+    enabled: !!claim?.assetId,
+  })
+
+  const { data: policy = null } = useQuery({
+    queryKey: ['policies', claim?.policyId],
+    queryFn: () => policiesApi.findById(claim!.policyId!),
+    enabled: !!claim?.policyId,
+  })
+
+  const [currentStatus, setCurrentStatus] = useState<ClaimStatus | null>(null)
   const [editingStatus, setEditingStatus] = useState(false)
 
-  if (!claim) {
+  // Derive effective status: local override takes priority once set, otherwise use server value
+  const effectiveStatus: ClaimStatus = currentStatus ?? claim?.status ?? 'denunciado'
+
+  if (claimLoading) {
+    return (
+      <PageContent>
+        <div className="py-16 flex items-center justify-center">
+          <p className="text-sm text-slate-400">Cargando siniestro…</p>
+        </div>
+      </PageContent>
+    )
+  }
+
+  if (claimError || !claim) {
     return (
       <PageContent>
         <ErrorState
@@ -180,13 +218,9 @@ export default function ClaimDetailPage() {
     )
   }
 
-  const asset = claim.assetId ? assetRepository.findById(claim.assetId) ?? null : null
-  const policy = claim.policyId ? policyRepo.findById(claim.policyId) ?? null : null
-  const events = claimRepository.findEventsByClaim(claim.id)
-
-  const isActive = currentStatus === 'denunciado' || currentStatus === 'en_tramite'
-  const isLiquidado = currentStatus === 'liquidado'
-  const isRechazado = currentStatus === 'rechazado'
+  const isActive = effectiveStatus === 'denunciado' || effectiveStatus === 'en_tramite'
+  const isLiquidado = effectiveStatus === 'liquidado'
+  const isRechazado = effectiveStatus === 'rechazado'
 
   const recoveryRate =
     claim.claimedAmountArs > 0 && claim.settledAmountArs != null
@@ -272,21 +306,19 @@ export default function ClaimDetailPage() {
     })
   }
 
-  const handleStatusChange = (newStatus: ClaimStatus) => {
-    claimRepository.update(claim.id, { status: newStatus })
-    // Generate event
-    claimRepository.addEvent({
-      id: `evt-status-${Date.now()}`,
-      claimId: claim.id,
-      date: new Date().toISOString().split('T')[0],
+  const handleStatusChange = async (newStatus: ClaimStatus) => {
+    await claimsApi.update(claim.id, { status: newStatus })
+    await claimsApi.addEvent(claim.id, {
       type: 'estado_cambiado',
-      description: `Estado actualizado: "${CLAIM_STATUS_LABELS[currentStatus]}" → "${CLAIM_STATUS_LABELS[newStatus]}".`,
-      previousStatus: currentStatus,
+      date: new Date().toISOString().split('T')[0],
+      description: `Estado actualizado: "${CLAIM_STATUS_LABELS[effectiveStatus]}" → "${CLAIM_STATUS_LABELS[newStatus]}".`,
+      previousStatus: effectiveStatus,
       newStatus,
-      author: 'Lihuen Segovia',
+      createdBy: 'Lihuen Segovia',
     })
     setCurrentStatus(newStatus)
     setEditingStatus(false)
+    await queryClient.invalidateQueries({ queryKey: ['claims', id] })
   }
 
   return (
@@ -297,7 +329,7 @@ export default function ClaimDetailPage() {
         category="Siniestro"
         backTo={ROUTES.CLAIMS}
         backLabel="Volver a siniestros"
-        badge={<StatusBadge status={currentStatus} />}
+        badge={<StatusBadge status={effectiveStatus} />}
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -311,7 +343,7 @@ export default function ClaimDetailPage() {
             {editingStatus ? (
               <div className="flex items-center gap-2">
                 <select
-                  value={currentStatus}
+                  value={effectiveStatus}
                   onChange={(e) => handleStatusChange(e.target.value as ClaimStatus)}
                   className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   autoFocus
@@ -345,7 +377,7 @@ export default function ClaimDetailPage() {
         <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
           <Clock size={16} className="mt-0.5 flex-shrink-0" />
           <span>
-            Este siniestro está <strong>{CLAIM_STATUS_LABELS[currentStatus].toLowerCase()}</strong>. Realizá el
+            Este siniestro está <strong>{CLAIM_STATUS_LABELS[effectiveStatus].toLowerCase()}</strong>. Realizá el
             seguimiento con la aseguradora hasta la resolución.
           </span>
         </div>
@@ -386,7 +418,7 @@ export default function ClaimDetailPage() {
               <InfoRow label="Fecha del hecho" value={formatDate(claim.occurrenceDate)} />
               <InfoRow label="Fecha de denuncia" value={formatDate(claim.reportDate)} />
               <InfoRow label="Compañía aseguradora" value={claim.insuranceCompany} />
-              <InfoRow label="Estado actual" value={<StatusBadge status={currentStatus} />} />
+              <InfoRow label="Estado actual" value={<StatusBadge status={effectiveStatus} />} />
             </div>
             <div className="mt-5 pt-5 border-t border-slate-100">
               <dt className="text-xs text-slate-500 mb-2">Descripción del hecho</dt>

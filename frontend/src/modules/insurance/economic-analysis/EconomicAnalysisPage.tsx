@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -14,12 +15,12 @@ import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils
 import {
   downloadCSV, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
-import { accountingDocumentRepository } from '../../../services/repositories/accounting-document.repository'
-import { policyRepository } from '../../../services/repositories/policy.repository'
-import { assetRepository } from '../../../services/repositories/asset.repository'
-import { costCenterRepository } from '../../../services/repositories/cost-center.repository'
-import { companyRepository } from '../../../services/repositories/company.repository'
-import type { Currency } from '../../../shared/types'
+import { documentsApi } from '../../../shared/api/documents.api'
+import { policiesApi } from '../../../shared/api/policies.api'
+import { assetsApi } from '../../../shared/api/assets.api'
+import { companiesApi } from '../../../shared/api/companies.api'
+import { costCentersApi } from '../../../shared/api/cost-centers.api'
+import type { Currency, Policy, Asset, Company, CostCenter, AccountingDocument, DocumentPolicyAllocation } from '../../../shared/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -65,16 +66,16 @@ function convertAmount(amount: number, from: Currency, to: Currency): number {
 
 // ─── Policy context builder ───────────────────────────────────────────────────
 
-function buildPolicyContext() {
+function buildPolicyContext(policies: Policy[], assets: Asset[]) {
   const map = new Map<string, {
     companyId: string; costCenterId: string; assetId: string | null; insuranceCompany: string
   }>()
-  policyRepository.findAll().forEach((pol) => {
+  policies.forEach((pol) => {
     let companyId = pol.companyId ?? ''
     let costCenterId = pol.costCenterId ?? ''
     const assetId = pol.assetId
     if (assetId) {
-      const asset = assetRepository.findById(assetId)
+      const asset = assets.find((a) => a.id === assetId)
       if (asset) {
         companyId = companyId || asset.companyId
         costCenterId = costCenterId || asset.costCenterId
@@ -85,9 +86,9 @@ function buildPolicyContext() {
   return map
 }
 
-function buildDocumentAllocMap(): Map<string, Map<string, number>> {
+function buildDocumentAllocMap(allocations: DocumentPolicyAllocation[]): Map<string, Map<string, number>> {
   const map = new Map<string, Map<string, number>>()
-  accountingDocumentRepository.findAllAllocations().forEach((alloc) => {
+  allocations.forEach((alloc) => {
     if (!map.has(alloc.accountingDocumentId)) map.set(alloc.accountingDocumentId, new Map())
     map.get(alloc.accountingDocumentId)!.set(alloc.policyId, alloc.allocationPercentage / 100)
   })
@@ -98,25 +99,31 @@ function buildDocumentAllocMap(): Map<string, Map<string, number>> {
 
 interface MatrixRow { id: string; label: string; sublabel?: string }
 
-function getRows(grouping: RowGrouping): MatrixRow[] {
+function getRows(
+  grouping: RowGrouping,
+  companies: Company[],
+  costCenters: CostCenter[],
+  assets: Asset[],
+  policies: Policy[],
+): MatrixRow[] {
   switch (grouping) {
     case 'empresa':
-      return companyRepository.findActive().map((c) => ({ id: c.id, label: c.name }))
+      return companies.filter((c) => c.status === 'activo').map((c) => ({ id: c.id, label: c.name }))
     case 'centro_costo':
-      return costCenterRepository.findAll().filter((cc) => cc.status === 'activo').map((cc) => {
-        const company = companyRepository.findById(cc.companyId)
+      return costCenters.filter((cc) => cc.status === 'activo').map((cc) => {
+        const company = companies.find((c) => c.id === cc.companyId)
         return { id: cc.id, label: cc.name, sublabel: company?.name }
       })
     case 'aseguradora': {
-      const companies = Array.from(new Set(policyRepository.findAll().map((p) => p.insuranceCompany))).sort()
-      return companies.map((name) => ({ id: name, label: name }))
+      const insurers = Array.from(new Set(policies.map((p) => p.insuranceCompany))).sort()
+      return insurers.map((name) => ({ id: name, label: name }))
     }
     case 'poliza':
-      return policyRepository.findAll().filter((p) => p.status !== 'vencida').map((p) => ({
+      return policies.filter((p) => p.status !== 'vencida').map((p) => ({
         id: p.id, label: p.policyNumber, sublabel: `${p.insuranceType} · ${p.insuranceCompany}`,
       }))
     case 'activo':
-      return assetRepository.findAll().map((a) => ({
+      return assets.map((a) => ({
         id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}`,
       }))
   }
@@ -130,12 +137,16 @@ function buildEconomicMatrix(
   grouping: RowGrouping,
   displayCurrency: Currency,
   granularity: 'week' | 'month',
+  policies: Policy[],
+  assets: Asset[],
+  documents: AccountingDocument[],
+  allocations: DocumentPolicyAllocation[],
 ): EconomicMatrixData {
-  const policyCtx = buildPolicyContext()
-  const allocMap = buildDocumentAllocMap()
+  const policyCtx = buildPolicyContext(policies, assets)
+  const allocMap = buildDocumentAllocMap(allocations)
   const matrix: EconomicMatrixData = new Map()
 
-  accountingDocumentRepository.findAll().forEach((doc) => {
+  documents.forEach((doc) => {
     const key = granularity === 'week'
       ? getISOWeekKey(doc.issueDate)
       : doc.issueDate.substring(0, 7)
@@ -222,6 +233,15 @@ export default function EconomicAnalysisPage() {
   const [dateFrom, setDateFrom] = useState('2025-07')
   const [dateTo, setDateTo] = useState('2026-06')
 
+  // ─── Remote data ─────────────────────────────────────────────────────────────
+
+  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
+  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
+  const allAllocations: DocumentPolicyAllocation[] = []
+
   // ─── Period columns ──────────────────────────────────────────────────────────
 
   const viewMonths = useMemo(() => generateMonthRange(dateFrom, dateTo), [dateFrom, dateTo])
@@ -266,10 +286,13 @@ export default function EconomicAnalysisPage() {
   // Matrix granularity: only 'semana' uses week keys, everything else uses month keys
   const matrixGranularity: 'week' | 'month' = colPeriod === 'semana' ? 'week' : 'month'
   const matrixData = useMemo(
-    () => buildEconomicMatrix(grouping, currency, matrixGranularity),
-    [grouping, currency, matrixGranularity],
+    () => buildEconomicMatrix(grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allAllocations),
+    [grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments],
   )
-  const rows = useMemo(() => getRows(grouping), [grouping])
+  const rows = useMemo(
+    () => getRows(grouping, allCompanies, allCostCenters, allAssets, allPolicies),
+    [grouping, allCompanies, allCostCenters, allAssets, allPolicies],
+  )
 
   // ─── Column definitions ───────────────────────────────────────────────────────
 
@@ -313,10 +336,10 @@ export default function EconomicAnalysisPage() {
     let totalCost = 0
     const byInsurer = new Map<string, number>()
     const allocedPolicies = new Set<string>()
-    const policyCtx = buildPolicyContext()
-    const allocMap = buildDocumentAllocMap()
+    const policyCtx = buildPolicyContext(allPolicies, allAssets)
+    const allocMap = buildDocumentAllocMap(allAllocations)
 
-    accountingDocumentRepository.findAll().forEach((doc) => {
+    allDocuments.forEach((doc) => {
       const monthKey = doc.issueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
       const docAmount = convertAmount(doc.totalAmount, doc.currency, currency)
@@ -339,21 +362,21 @@ export default function EconomicAnalysisPage() {
       .sort((a, b) => b.value - a.value)
 
     return { kpis: { totalCost, topInsurer, policiesWithCost: allocedPolicies.size }, pieChartData: pie }
-  }, [currency, dateFrom, dateTo])
+  }, [allDocuments, allPolicies, allAssets, currency, dateFrom, dateTo])
 
   // ─── Bar chart (always monthly) ───────────────────────────────────────────────
 
   const barChartData = useMemo(() => {
     return viewMonths.map(({ key, label }) => {
       let total = 0
-      accountingDocumentRepository.findAll().forEach((doc) => {
+      allDocuments.forEach((doc) => {
         if (doc.issueDate.substring(0, 7) === key) {
           total += convertAmount(doc.totalAmount, doc.currency, currency)
         }
       })
       return { label, total }
     })
-  }, [viewMonths, currency])
+  }, [viewMonths, allDocuments, currency])
 
   // ─── Formatters ───────────────────────────────────────────────────────────────
 

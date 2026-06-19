@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Save } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -13,8 +14,11 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
-import { fireExtinguisherRepository } from '../../services/repositories/fire-extinguisher.repository'
-import { assetRepository } from '../../services/repositories/asset.repository'
+import {
+  fireExtinguishersApi,
+  type FireExtinguisherCreateInput,
+} from '../../shared/api/fire-extinguishers.api'
+import { assetsApi } from '../../shared/api/assets.api'
 import {
   FIRE_EXT_TYPES,
   FIRE_EXT_CAPACITIES,
@@ -33,23 +37,46 @@ interface FormErrors {
 export default function FireExtinguisherEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
-  const original = fireExtinguisherRepository.findById(id!)
+  const { data: original, isLoading, isError } = useQuery({
+    queryKey: ['fire-extinguishers', id],
+    queryFn: () => fireExtinguishersApi.findById(id!),
+    enabled: !!id,
+  })
 
-  const [type, setType] = useState(original?.type ?? '')
-  const [capacity, setCapacity] = useState(original?.capacity ?? '')
-  const [chargeDate, setChargeDate] = useState(original?.chargeDate ?? '')
-  const [expirationDate, setExpirationDate] = useState(original?.expirationDate ?? '')
-  const [associatedAssetId, setAssociatedAssetId] = useState(original?.associatedAssetId ?? '')
-  const [associatedLocationType, setAssociatedLocationType] = useState<AssociatedLocationType>(
-    original?.associatedLocationType ?? 'vehiculo',
-  )
-  const [observations, setObservations] = useState(original?.observations ?? '')
+  const { data: assets = [] } = useQuery({
+    queryKey: ['assets'],
+    queryFn: assetsApi.findAll,
+  })
+
+  const [type, setType] = useState('')
+  const [capacity, setCapacity] = useState('')
+  const [chargeDate, setChargeDate] = useState('')
+  const [expirationDate, setExpirationDate] = useState('')
+  const [associatedAssetId, setAssociatedAssetId] = useState('')
+  const [associatedLocationType, setAssociatedLocationType] = useState<AssociatedLocationType>('vehiculo')
+  const [observations, setObservations] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
+  const [seeded, setSeeded] = useState(false)
 
   // Keep expiration in sync only if user hasn't manually changed it
   const [manualExpDate, setManualExpDate] = useState(true)
+
+  // Seed form fields once original data arrives
+  useEffect(() => {
+    if (original && !seeded) {
+      setType(original.type)
+      setCapacity(original.capacity)
+      setChargeDate(original.chargeDate ?? '')
+      setExpirationDate(original.expirationDate)
+      setAssociatedAssetId(original.associatedAssetId ?? '')
+      setAssociatedLocationType(original.associatedLocationType)
+      setObservations(original.observations ?? '')
+      setSeeded(true)
+    }
+  }, [original, seeded])
 
   useEffect(() => {
     if (!manualExpDate && chargeDate) {
@@ -60,7 +87,17 @@ export default function FireExtinguisherEditPage() {
     }
   }, [chargeDate, manualExpDate])
 
-  if (!original) {
+  if (isLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
+          Cargando…
+        </div>
+      </PageContent>
+    )
+  }
+
+  if (isError || !original) {
     return (
       <PageContent>
         <EmptyState
@@ -81,22 +118,28 @@ export default function FireExtinguisherEditPage() {
     return Object.keys(e).length === 0
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
     setSubmitting(true)
 
-    fireExtinguisherRepository.update(original!.id, {
-      type,
-      capacity,
-      chargeDate,
-      expirationDate,
-      associatedAssetId: associatedAssetId || null,
-      associatedLocationType,
-      observations: observations.trim(),
-    })
+    try {
+      const input: FireExtinguisherCreateInput = {
+        type,
+        capacity,
+        chargeDate,
+        expirationDate,
+        associatedAssetId: associatedAssetId || undefined,
+        associatedLocationType,
+        observations: observations.trim(),
+      }
 
-    navigate(ROUTES.FIRE_EXTINGUISHERS_DETAIL(original!.id))
+      await fireExtinguishersApi.update(id!, input)
+      await queryClient.invalidateQueries({ queryKey: ['fire-extinguishers'] })
+      navigate(ROUTES.FIRE_EXTINGUISHERS_DETAIL(id!))
+    } catch {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -185,7 +228,7 @@ export default function FireExtinguisherEditPage() {
                 onChange={(e) => setAssociatedAssetId(e.target.value)}
               >
                 <option value="">— Sin activo específico</option>
-                {assetRepository.findAll()
+                {assets
                   .filter((a) => a.status === 'activo')
                   .map((a) => (
                     <option key={a.id} value={a.id}>
