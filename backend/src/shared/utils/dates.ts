@@ -14,31 +14,31 @@ function addDays(date: Date, days: number): Date {
 /**
  * Status para matafuegos y adjuntos con vencimiento.
  * Usa género masculino: vencido / proximo_a_vencer.
+ * Compara strings ISO (YYYY-MM-DD) lexicográficamente — timezone-safe.
  */
 export function computeExpirationStatus(
   expirationDate: string,
   daysWarning = 30,
 ): ExpirationStatus {
-  const exp = new Date(expirationDate)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const today = toISODate()
+  const inNDays = toISODate(addDays(new Date(), daysWarning))
 
-  if (exp < today) return 'vencido'
-  if (exp <= addDays(today, daysWarning)) return 'proximo_a_vencer'
+  if (expirationDate < today) return 'vencido'
+  if (expirationDate <= inNDays) return 'proximo_a_vencer'
   return 'vigente'
 }
 
 /**
  * Status para pólizas.
  * Usa género femenino: vencida / proxima_a_vencer.
+ * Compara strings ISO (YYYY-MM-DD) lexicográficamente — timezone-safe.
  */
 export function computePolicyStatus(endDate: string, daysWarning = 30): PolicyStatus {
-  const exp = new Date(endDate)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const today = toISODate()
+  const inNDays = toISODate(addDays(new Date(), daysWarning))
 
-  if (exp < today) return 'vencida'
-  if (exp <= addDays(today, daysWarning)) return 'proxima_a_vencer'
+  if (endDate < today) return 'vencida'
+  if (endDate <= inNDays) return 'proxima_a_vencer'
   return 'vigente'
 }
 

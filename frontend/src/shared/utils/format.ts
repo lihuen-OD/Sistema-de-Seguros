@@ -33,9 +33,15 @@ export function formatPercent(value: number, decimals = 1): string {
   return `${value.toFixed(decimals).replace('.', ',')}%`
 }
 
+// `new Date('YYYY-MM-DD')` interpreta como UTC midnight.
+// En UTC-3 (Argentina) eso muestra el día anterior. Forzamos hora local agregando T00:00:00.
+function parseDateLocal(value: string): Date {
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value)
+}
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) return '—'
-  const d = new Date(value)
+  const d = parseDateLocal(value)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('es-AR', {
     day: '2-digit',
@@ -46,20 +52,20 @@ export function formatDate(value: string | null | undefined): string {
 
 export function formatDateShort(value: string | null | undefined): string {
   if (!value) return '—'
-  const d = new Date(value)
+  const d = parseDateLocal(value)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
 export function formatMonthYear(value: string): string {
-  const d = new Date(value)
+  const d = parseDateLocal(value)
   return d.toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })
 }
 
 export function daysUntil(dateStr: string): number {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const target = new Date(dateStr)
+  const target = parseDateLocal(dateStr)
   target.setHours(0, 0, 0, 0)
   return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }

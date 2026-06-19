@@ -1,11 +1,17 @@
 import multer from 'multer'
+import { isAllowedMimetype } from '../shared/utils/files'
 
-// Archivos se guardan en memoria (Buffer).
-// Phase 10: se sube a Cloudinary antes de persistir en DB.
 export const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 20 * 1024 * 1024, // 20 MB
     files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (isAllowedMimetype(file.mimetype)) {
+      cb(null, true)
+    } else {
+      cb(new Error('Tipo de archivo no permitido. Usar PDF, imagen (JPG/PNG/WebP) o Excel/CSV'))
+    }
   },
 })

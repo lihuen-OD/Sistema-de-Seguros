@@ -13,6 +13,12 @@ import { insuranceTypesRouter } from './modules/insurance-types/insurance-types.
 import { assetsRouter } from './modules/assets/assets.router'
 import { producersRouter } from './modules/producers/producers.router'
 import { policiesRouter } from './modules/policies/policies.router'
+import { documentsRouter } from './modules/documents/documents.router'
+import { fireExtinguishersRouter } from './modules/fire-extinguishers/fire-extinguishers.router'
+import { claimsRouter } from './modules/claims/claims.router'
+import { dashboardRouter } from './modules/dashboard/dashboard.router'
+import { uploadsRouter } from './modules/uploads/uploads.router'
+import { notificationsRouter } from './modules/notifications/notifications.router'
 
 const app = express()
 
@@ -73,7 +79,17 @@ app.use('/api/v1/assets', assetsRouter)
 app.use('/api/v1/producers', producersRouter)
 // Fase 5 — Pólizas
 app.use('/api/v1/policies', policiesRouter)
-// Fase 6+ se agregan aquí
+// Fase 6 — Documentos Contables
+app.use('/api/v1/documents', documentsRouter)
+// Fase 7 — Matafuegos
+app.use('/api/v1/fire-extinguishers', fireExtinguishersRouter)
+// Fase 8 — Siniestros
+app.use('/api/v1/claims', claimsRouter)
+// Fase 9 — Dashboard y Analytics
+app.use('/api/v1/dashboard', dashboardRouter)
+// Fase 10 — File Storage + Notificaciones
+app.use('/api/v1/uploads', uploadsRouter)
+app.use('/api/v1/notifications', notificationsRouter)
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((req, res) => {

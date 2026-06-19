@@ -90,6 +90,7 @@ model Asset {
   valueHistory      AssetValueHistory[]
   attachments       AssetAttachment[]
   fireExtinguishers FireExtinguisher[]
+  claims            Claim[]
 
   @@map("assets")
 }
@@ -193,6 +194,7 @@ model Policy {
   producer      Producer?                  @relation(fields: [producerId], references: [id])
   attachments   PolicyAttachment[]
   allocations   DocumentPolicyAllocation[]
+  claims        Claim[]
 
   @@map("policies")
 }
@@ -230,8 +232,12 @@ model AccountingDocument {
   exchangeRate     Float    @default(1)
   description      String?
   paymentStatus    String   @default("pendiente")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  insuranceCompany String?
+  paymentMethod    String?
+  linkedDocumentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   installments DocumentInstallment[]
   allocations  DocumentPolicyAllocation[]
@@ -246,6 +252,7 @@ model DocumentInstallment {
   installmentNumber    Int
   dueDate              String
   amount               Float
+  currency             String             @default("ARS")
   paymentStatus        String             @default("pendiente")
   paymentDate          String?
   paymentMethod        String?
@@ -288,15 +295,17 @@ model DocumentAttachment {
 
 model FireExtinguisher {
   id               String   @id @default(uuid())
+  code             String?  @unique
   assetId          String?
   locationType     String
-  location         String
+  location         String?
   type             String
   capacity         String
   brand            String?
   serialNumber     String?
   expirationDate   String
   lastRechargeDate String?
+  observations     String?
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -308,15 +317,16 @@ model FireExtinguisher {
 }
 
 model FireExtinguisherHistory {
-  id                 String           @id @default(uuid())
-  fireExtinguisherId String
-  action             String
-  date               String
-  performedBy        String?
-  notes              String?
-  nextDueDate        String?
-  createdAt          DateTime         @default(now())
-  extinguisher       FireExtinguisher @relation(fields: [fireExtinguisherId], references: [id], onDelete: Cascade)
+  id                     String           @id @default(uuid())
+  fireExtinguisherId     String
+  action                 String
+  date                   String
+  performedBy            String?
+  notes                  String?
+  nextDueDate            String?
+  previousExpirationDate String?
+  createdAt              DateTime         @default(now())
+  extinguisher           FireExtinguisher @relation(fields: [fireExtinguisherId], references: [id], onDelete: Cascade)
 
   @@map("fire_extinguisher_history")
 }
@@ -326,33 +336,48 @@ model FireExtinguisherHistory {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Claim {
-  id          String   @id @default(uuid())
-  policyId    String?
-  title       String
-  description String?
-  claimDate   String
-  status      String   @default("abierto")
-  amount      Float?
-  currency    String   @default("ARS")
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(uuid())
+  claimNumber      String   @unique
+  assetId          String?
+  policyId         String?
+  claimType        String
+  occurrenceDate   String
+  reportDate       String
+  description      String?
+  insuranceCompany String?
+  status           String   @default("denunciado")
+  claimedAmountArs Float    @default(0)
+  realAmountArs    Float?
+  settledAmountArs Float?
+  deductibleArs    Float?
+  currency         String   @default("ARS")
+  exchangeRate     Float    @default(1)
+  observations     String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  events ClaimEvent[]
+  asset   Asset?       @relation(fields: [assetId], references: [id])
+  policy  Policy?      @relation(fields: [policyId], references: [id])
+  events  ClaimEvent[]
 
   @@map("claims")
 }
 
 model ClaimEvent {
-  id          String   @id @default(uuid())
-  claimId     String
-  title       String
-  description String?
-  date        String
-  type        String
-  createdBy   String?
-  createdAt   DateTime @default(now())
-  claim       Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  id             String   @id @default(uuid())
+  claimId        String
+  type           String
+  description    String
+  date           String
+  previousStatus String?
+  newStatus      String?
+  amountLabel    String?
+  previousAmount Float?
+  newAmount      Float?
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  claim          Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
 
   @@map("claim_events")
 }
