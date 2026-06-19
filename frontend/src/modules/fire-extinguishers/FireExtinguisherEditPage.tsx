@@ -19,11 +19,8 @@ import {
   type FireExtinguisherCreateInput,
 } from '../../shared/api/fire-extinguishers.api'
 import { assetsApi } from '../../shared/api/assets.api'
-import {
-  FIRE_EXT_TYPES,
-  FIRE_EXT_CAPACITIES,
-  LOCATION_TYPES,
-} from '../../shared/constants'
+import { catalogsApi } from '../../shared/api/catalogs.api'
+import { LOCATION_TYPES } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { AssociatedLocationType } from '../../shared/types'
 
@@ -48,6 +45,15 @@ export default function FireExtinguisherEditPage() {
   const { data: assets = [] } = useQuery({
     queryKey: ['assets'],
     queryFn: assetsApi.findAll,
+  })
+
+  const { data: extTypes = [] } = useQuery({
+    queryKey: ['catalogs', 'fire_ext_type'],
+    queryFn: () => catalogsApi.findByCategory('fire_ext_type'),
+  })
+  const { data: extCapacities = [] } = useQuery({
+    queryKey: ['catalogs', 'fire_ext_capacity'],
+    queryFn: () => catalogsApi.findByCategory('fire_ext_capacity'),
   })
 
   const [type, setType] = useState('')
@@ -169,8 +175,8 @@ export default function FireExtinguisherEditPage() {
                 onChange={(e) => setType(e.target.value)}
               >
                 <option value="">Seleccionar tipo…</option>
-                {FIRE_EXT_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                {extTypes.map((t) => (
+                  <option key={t.id} value={t.label}>{t.label}</option>
                 ))}
               </FormSelect>
             </FormField>
@@ -180,8 +186,8 @@ export default function FireExtinguisherEditPage() {
                 onChange={(e) => setCapacity(e.target.value)}
               >
                 <option value="">Seleccionar capacidad…</option>
-                {FIRE_EXT_CAPACITIES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                {extCapacities.map((c) => (
+                  <option key={c.id} value={c.label}>{c.label}</option>
                 ))}
               </FormSelect>
             </FormField>

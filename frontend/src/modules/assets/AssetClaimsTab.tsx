@@ -2,20 +2,23 @@ import { useNavigate } from 'react-router-dom'
 import {
   Plus, ArrowUpRight, ShieldAlert,
 } from 'lucide-react'
-import type { Claim, ClaimStatus, ClaimType, Policy } from '../../shared/types'
+import type { Claim, Policy } from '../../shared/types'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
-import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS } from '../../shared/constants'
-import { CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS } from '../../shared/constants/claim-status'
+import {
+  CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
+  CLAIM_STATUS_DEFAULT_STYLE, CLAIM_STATUS_DEFAULT_ICON,
+} from '../../shared/constants/claim-status'
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 
-function ClaimStatusPill({ status }: { status: ClaimStatus }) {
-  const Icon = CLAIM_STATUS_ICONS[status]
+function ClaimStatusPill({ status }: { status: string }) {
+  const Icon = CLAIM_STATUS_ICONS[status] ?? CLAIM_STATUS_DEFAULT_ICON
+  const style = CLAIM_STATUS_STYLES[status] ?? CLAIM_STATUS_DEFAULT_STYLE
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${CLAIM_STATUS_STYLES[status]}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${style}`}>
       <Icon size={10} />
-      {CLAIM_STATUS_LABELS[status]}
+      {status}
     </span>
   )
 }
@@ -105,14 +108,14 @@ export function AssetClaimsTab({ assetId, policies: _policies, claims }: AssetCl
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-sm text-slate-800">
-                      {CLAIM_TYPE_LABELS[claim.claimType as ClaimType] ?? claim.claimType}
+                      {claim.claimType}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-xs text-slate-600">{formatDate(claim.occurrenceDate)}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <ClaimStatusPill status={claim.status} />
+                    <ClaimStatusPill status={String(claim.status)} />
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="text-sm font-semibold text-slate-800">

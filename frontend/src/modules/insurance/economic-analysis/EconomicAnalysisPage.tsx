@@ -57,7 +57,7 @@ function generateMonthRange(
 
 // ─── Currency conversion ──────────────────────────────────────────────────────
 
-function convertAmount(amount: number, from: Currency, to: Currency): number {
+function convertAmount(amount: number, from: string, to: string): number {
   if (from === to) return amount
   if (from === 'ARS' && to === 'USD') return amount / USD_RATE
   if (from === 'USD' && to === 'ARS') return amount * USD_RATE

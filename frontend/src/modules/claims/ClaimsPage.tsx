@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Plus, ShieldAlert, Clock, CheckCircle2, XCircle, FileSearch, Eye, Edit2, Trash2,
+  Plus, ShieldAlert, Clock, CheckCircle2, Eye, Edit2, Trash2,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -18,26 +18,25 @@ import { claimsApi } from '../../shared/api/claims.api'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
-import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS } from '../../shared/constants'
-import { CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS } from '../../shared/constants/claim-status'
-import type { Claim, ClaimStatus, ClaimType, TableColumn } from '../../shared/types'
+import { catalogsApi } from '../../shared/api/catalogs.api'
+import {
+  CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
+  CLAIM_STATUS_DEFAULT_STYLE, CLAIM_STATUS_DEFAULT_ICON,
+} from '../../shared/constants/claim-status'
+import type { Claim, TableColumn } from '../../shared/types'
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 
-function ClaimStatusPill({ status }: { status: ClaimStatus }) {
-  const Icon = CLAIM_STATUS_ICONS[status]
+function ClaimStatusPill({ status }: { status: string }) {
+  const Icon = CLAIM_STATUS_ICONS[status] ?? CLAIM_STATUS_DEFAULT_ICON
+  const style = CLAIM_STATUS_STYLES[status] ?? CLAIM_STATUS_DEFAULT_STYLE
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${CLAIM_STATUS_STYLES[status]}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${style}`}>
       <Icon size={10} />
-      {CLAIM_STATUS_LABELS[status]}
+      {status}
     </span>
   )
 }
-
-// ── Filter options ────────────────────────────────────────────────────────────
-
-const STATUS_OPTIONS = Object.entries(CLAIM_STATUS_LABELS).map(([value, label]) => ({ value, label }))
-const TYPE_OPTIONS = Object.entries(CLAIM_TYPE_LABELS).map(([value, label]) => ({ value, label }))
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -52,6 +51,11 @@ export default function ClaimsPage() {
   const { data: all = [] } = useQuery({ queryKey: ['claims'], queryFn: claimsApi.findAll })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: claimStatuses = [] } = useQuery({ queryKey: ['catalogs', 'claim_status'], queryFn: () => catalogsApi.findByCategory('claim_status') })
+  const { data: claimTypes = [] } = useQuery({ queryKey: ['catalogs', 'claim_type'], queryFn: () => catalogsApi.findByCategory('claim_type') })
+
+  const STATUS_OPTIONS = claimStatuses.map((s) => ({ value: s.label, label: s.label }))
+  const TYPE_OPTIONS = claimTypes.map((t) => ({ value: t.label, label: t.label }))
 
   async function handleDelete(id: string) {
     await claimsApi.softDelete(id)
@@ -60,11 +64,11 @@ export default function ClaimsPage() {
   }
 
   const counts = useMemo(() => ({
-    denunciado: all.filter((c) => c.status === 'denunciado').length,
-    en_tramite: all.filter((c) => c.status === 'en_tramite').length,
-    liquidado: all.filter((c) => c.status === 'liquidado').length,
-    rechazado: all.filter((c) => c.status === 'rechazado').length,
-    cerrado: all.filter((c) => c.status === 'cerrado').length,
+    denunciado: all.filter((c) => c.status === 'Denunciado').length,
+    en_tramite: all.filter((c) => c.status === 'En trámite').length,
+    liquidado: all.filter((c) => c.status === 'Liquidado').length,
+    rechazado: all.filter((c) => c.status === 'Rechazado').length,
+    cerrado: all.filter((c) => c.status === 'Cerrado').length,
   }), [all])
 
   const totals = useMemo(() => ({
@@ -81,7 +85,7 @@ export default function ClaimsPage() {
         c.claimNumber.toLowerCase().includes(q) ||
         c.insuranceCompany.toLowerCase().includes(q) ||
         (asset?.name.toLowerCase().includes(q) ?? false) ||
-        CLAIM_TYPE_LABELS[c.claimType]?.toLowerCase().includes(q)
+        c.claimType.toLowerCase().includes(q)
       const matchStatus = !filterStatus || c.status === filterStatus
       const matchType   = !filterType   || c.claimType === filterType
       return matchSearch && matchStatus && matchType
@@ -101,7 +105,7 @@ export default function ClaimsPage() {
       label: 'Tipo',
       render: (v) => (
         <span className="text-sm text-slate-800 font-medium">
-          {CLAIM_TYPE_LABELS[v as ClaimType] ?? String(v)}
+          {String(v)}
         </span>
       ),
     },
@@ -172,7 +176,7 @@ export default function ClaimsPage() {
     {
       key: 'status',
       label: 'Estado',
-      render: (v) => <ClaimStatusPill status={v as ClaimStatus} />,
+      render: (v) => <ClaimStatusPill status={String(v)} />,
     },
     {
       key: 'id',

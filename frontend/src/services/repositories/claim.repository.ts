@@ -1,6 +1,6 @@
 import { mockClaims } from '../../data/mock-claims'
 import { mockClaimEvents } from '../../data/mock-claim-events'
-import type { Claim, ClaimStatus, ClaimEvent } from '../../shared/types'
+import type { Claim, ClaimEvent } from '../../shared/types'
 
 let claims: Claim[] = [...mockClaims]
 let events: ClaimEvent[] = [...mockClaimEvents]
@@ -22,15 +22,9 @@ export const claimRepository = {
     return claims.find((c) => c.id === id)
   },
 
-  getCountByStatus(): Record<ClaimStatus, number> {
-    const counts: Record<ClaimStatus, number> = {
-      denunciado: 0,
-      en_tramite: 0,
-      liquidado: 0,
-      rechazado: 0,
-      cerrado: 0,
-    }
-    for (const c of claims) counts[c.status]++
+  getCountByStatus(): Record<string, number> {
+    const counts: Record<string, number> = {}
+    for (const c of claims) counts[c.status] = (counts[c.status] ?? 0) + 1
     return counts
   },
 

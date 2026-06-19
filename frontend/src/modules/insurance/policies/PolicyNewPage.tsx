@@ -23,7 +23,7 @@ import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import { producersApi } from '../../../shared/api/producers.api'
 import { assetsApi } from '../../../shared/api/assets.api'
 import { insuranceTypesApi } from '../../../shared/api/insurance-types.api'
-import { INSURANCE_COMPANIES } from '../../../shared/constants'
+import { catalogsApi } from '../../../shared/api/catalogs.api'
 import type { PolicyAttachment } from '../../../shared/types'
 
 type AssociationType = 'activo' | 'sin_activo'
@@ -205,6 +205,11 @@ export default function PolicyNewPage() {
     queryFn: () => insuranceTypesApi.findAll(),
   })
 
+  const { data: insuranceCompanies = [] } = useQuery({
+    queryKey: ['catalogs', 'insurance_company'],
+    queryFn: () => catalogsApi.findByCategory('insurance_company'),
+  })
+
   const createMutation = useMutation({
     mutationFn: (input: Parameters<typeof policiesApi.create>[0]) => policiesApi.create(input),
     onSuccess: (newPolicy) => {
@@ -340,7 +345,7 @@ export default function PolicyNewPage() {
               <FormField label="Compañía Aseguradora" required error={errors.insuranceCompany}>
                 <FormSelect value={form.insuranceCompany} onChange={set('insuranceCompany')} required>
                   <option value="">Seleccionar aseguradora…</option>
-                  {INSURANCE_COMPANIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  {insuranceCompanies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
                 </FormSelect>
               </FormField>
               <FormField label="Productor Asesor" required error={errors.producerId}>

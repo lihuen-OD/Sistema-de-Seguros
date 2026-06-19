@@ -24,7 +24,6 @@ import { producersApi } from '../../../shared/api/producers.api'
 import { companiesApi } from '../../../shared/api/companies.api'
 import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import { assetsApi } from '../../../shared/api/assets.api'
-import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { exportPolicyToPdf } from '../../../shared/utils/policyPdf'
 import { ROUTES } from '../../../app/routes'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
@@ -592,7 +591,7 @@ function FacturaCard({
                         'text-[10px] px-1.5 py-0.5 rounded font-semibold',
                         isNC ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700',
                       )}>
-                        {DOCUMENT_TYPE_LABELS[mod.documentType as keyof typeof DOCUMENT_TYPE_LABELS]}
+                        {mod.documentType}
                       </span>
                       <span className="text-xs text-slate-400">·</span>
                       <p className="text-xs text-slate-500">{formatDate(mod.issueDate)}</p>
@@ -708,7 +707,7 @@ function StandaloneDocCard({
                 'text-[10px] px-1.5 py-0.5 rounded font-semibold',
                 isNC ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700',
               )}>
-                {DOCUMENT_TYPE_LABELS[doc.documentType as keyof typeof DOCUMENT_TYPE_LABELS]}
+                {doc.documentType}
               </span>
               <span className="text-xs text-slate-400">·</span>
               <p className="text-xs text-slate-500">{formatDate(doc.issueDate)}</p>

@@ -17,19 +17,23 @@ import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../sha
 import { claimsApi } from '../../shared/api/claims.api'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
-import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS } from '../../shared/constants'
-import { CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS } from '../../shared/constants/claim-status'
+import { catalogsApi } from '../../shared/api/catalogs.api'
+import {
+  CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
+  CLAIM_STATUS_DEFAULT_STYLE, CLAIM_STATUS_DEFAULT_ICON,
+} from '../../shared/constants/claim-status'
 import { ROUTES } from '../../app/routes'
-import type { ClaimStatus, ClaimType, ClaimEvent, ClaimEventType } from '../../shared/types'
+import type { ClaimEvent, ClaimEventType } from '../../shared/types'
 
-// ── Status pill ───────────────────────────────────────────────────────────────
+// ── Status badge ──────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: ClaimStatus }) {
-  const Icon = CLAIM_STATUS_ICONS[status]
+function StatusBadge({ status }: { status: string }) {
+  const Icon = CLAIM_STATUS_ICONS[status] ?? CLAIM_STATUS_DEFAULT_ICON
+  const style = CLAIM_STATUS_STYLES[status] ?? CLAIM_STATUS_DEFAULT_STYLE
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border ${CLAIM_STATUS_STYLES[status]}`}>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border ${style}`}>
       <Icon size={13} />
-      {CLAIM_STATUS_LABELS[status]}
+      {status}
     </span>
   )
 }
@@ -84,7 +88,7 @@ function EventRow({ event, isLast }: { event: ClaimEvent; isLast: boolean }) {
             </span>
             {event.previousStatus && event.newStatus && (
               <span className="text-[11px] text-slate-400">
-                {CLAIM_STATUS_LABELS[event.previousStatus]} → {CLAIM_STATUS_LABELS[event.newStatus]}
+                {event.previousStatus} → {event.newStatus}
               </span>
             )}
           </div>
@@ -151,8 +155,6 @@ function FinStatCell({ stat }: { stat: FinStat }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-const EDITABLE_STATUSES: ClaimStatus[] = ['denunciado', 'en_tramite', 'liquidado', 'rechazado', 'cerrado']
-
 export default function ClaimDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -162,6 +164,11 @@ export default function ClaimDetailPage() {
     queryKey: ['claims', id],
     queryFn: () => claimsApi.findById(id!),
     enabled: !!id,
+  })
+
+  const { data: claimStatuses = [] } = useQuery({
+    queryKey: ['catalogs', 'claim_status'],
+    queryFn: () => catalogsApi.findByCategory('claim_status'),
   })
 
   const { data: events = [] } = useQuery({
@@ -182,11 +189,11 @@ export default function ClaimDetailPage() {
     enabled: !!claim?.policyId,
   })
 
-  const [currentStatus, setCurrentStatus] = useState<ClaimStatus | null>(null)
+  const [currentStatus, setCurrentStatus] = useState<string | null>(null)
   const [editingStatus, setEditingStatus] = useState(false)
 
   // Derive effective status: local override takes priority once set, otherwise use server value
-  const effectiveStatus: ClaimStatus = currentStatus ?? claim?.status ?? 'denunciado'
+  const effectiveStatus: string = currentStatus ?? claim?.status ?? (claimStatuses[0]?.label ?? 'Denunciado')
 
   if (claimLoading) {
     return (
@@ -218,9 +225,9 @@ export default function ClaimDetailPage() {
     )
   }
 
-  const isActive = effectiveStatus === 'denunciado' || effectiveStatus === 'en_tramite'
-  const isLiquidado = effectiveStatus === 'liquidado'
-  const isRechazado = effectiveStatus === 'rechazado'
+  const isActive = effectiveStatus === 'Denunciado' || effectiveStatus === 'En trámite'
+  const isLiquidado = effectiveStatus === 'Liquidado'
+  const isRechazado = effectiveStatus === 'Rechazado'
 
   const recoveryRate =
     claim.claimedAmountArs > 0 && claim.settledAmountArs != null
@@ -306,12 +313,12 @@ export default function ClaimDetailPage() {
     })
   }
 
-  const handleStatusChange = async (newStatus: ClaimStatus) => {
+  const handleStatusChange = async (newStatus: string) => {
     await claimsApi.update(claim.id, { status: newStatus })
     await claimsApi.addEvent(claim.id, {
       type: 'estado_cambiado',
       date: new Date().toISOString().split('T')[0],
-      description: `Estado actualizado: "${CLAIM_STATUS_LABELS[effectiveStatus]}" → "${CLAIM_STATUS_LABELS[newStatus]}".`,
+      description: `Estado actualizado: "${effectiveStatus}" → "${newStatus}".`,
       previousStatus: effectiveStatus,
       newStatus,
       createdBy: 'Lihuen Segovia',
@@ -325,7 +332,7 @@ export default function ClaimDetailPage() {
     <PageContent>
       <PageHeader
         title={claim.claimNumber}
-        subtitle={`${CLAIM_TYPE_LABELS[claim.claimType as ClaimType] ?? claim.claimType} · ${claim.insuranceCompany}`}
+        subtitle={`${claim.claimType} · ${claim.insuranceCompany}`}
         category="Siniestro"
         backTo={ROUTES.CLAIMS}
         backLabel="Volver a siniestros"
@@ -344,12 +351,12 @@ export default function ClaimDetailPage() {
               <div className="flex items-center gap-2">
                 <select
                   value={effectiveStatus}
-                  onChange={(e) => handleStatusChange(e.target.value as ClaimStatus)}
+                  onChange={(e) => handleStatusChange(e.target.value)}
                   className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   autoFocus
                 >
-                  {EDITABLE_STATUSES.map((s) => (
-                    <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>
+                  {claimStatuses.map((s) => (
+                    <option key={s.id} value={s.label}>{s.label}</option>
                   ))}
                 </select>
                 <button
@@ -377,7 +384,7 @@ export default function ClaimDetailPage() {
         <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
           <Clock size={16} className="mt-0.5 flex-shrink-0" />
           <span>
-            Este siniestro está <strong>{CLAIM_STATUS_LABELS[effectiveStatus].toLowerCase()}</strong>. Realizá el
+            Este siniestro está <strong>{effectiveStatus.toLowerCase()}</strong>. Realizá el
             seguimiento con la aseguradora hasta la resolución.
           </span>
         </div>
@@ -414,7 +421,7 @@ export default function ClaimDetailPage() {
           <SectionCard title="Datos del Siniestro">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
               <InfoRow label="N° Siniestro" value={<span className="font-mono">{claim.claimNumber}</span>} />
-              <InfoRow label="Tipo" value={CLAIM_TYPE_LABELS[claim.claimType as ClaimType] ?? claim.claimType} />
+              <InfoRow label="Tipo" value={claim.claimType} />
               <InfoRow label="Fecha del hecho" value={formatDate(claim.occurrenceDate)} />
               <InfoRow label="Fecha de denuncia" value={formatDate(claim.reportDate)} />
               <InfoRow label="Compañía aseguradora" value={claim.insuranceCompany} />

@@ -1,0 +1,41 @@
+﻿node.exe : npm warn Unknown cli config "--noEmit". This will stop working in the next major version of npm.
+En línea: 1 Carácter: 1
++ & "C:\Program Files\nodejs/node.exe" "C:\Users\lihue\AppData\Roaming\ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm warn Unknow...version of npm.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+src/modules/dashboard/DashboardPage.tsx(176,32): error TS2339: Property 'dueDate' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(176,62): error TS2339: Property 'dueDate' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(177,32): error TS2339: Property 'dueDate' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(177,64): error TS2339: Property 'dueDate' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(483,45): error TS2339: Property 'dueDate' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(485,34): error TS2339: Property 'id' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(488,85): error TS2339: Property 'installmentNumber' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(489,72): error TS2339: Property 'accountingDocumentId' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(493,53): error TS2339: Property 'amount' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(496,42): error TS2339: Property 'dueDate' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(555,34): error TS2339: Property 'id' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(558,88): error TS2339: Property 'title' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(559,86): error TS2339: Property 'dueDate' does not exist on type 'never'.
+src/modules/dashboard/DashboardPage.tsx(561,46): error TS2339: Property 'priority' does not exist on type 'never'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(123,44): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(217,51): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(220,48): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(226,51): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(229,48): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(235,58): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(238,55): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(244,51): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(247,48): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(258,46): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(260,46): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(262,53): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentDetailPage.tsx(264,81): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentsPage.tsx(102,44): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentsPage.tsx(113,44): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/accounting-documents/DocumentsPage.tsx(124,44): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.
+src/modules/insurance/economic-analysis/EconomicAnalysisPage.tsx(153,54): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency'.
+src/modules/insurance/economic-analysis/EconomicAnalysisPage.tsx(345,56): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency'.
+src/modules/insurance/economic-analysis/EconomicAnalysisPage.tsx(374,51): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency'.
+src/shared/utils/policyPdf.ts(76,93): error TS2345: Argument of type 'string' is not assignable to parameter of type 'Currency | undefined'.

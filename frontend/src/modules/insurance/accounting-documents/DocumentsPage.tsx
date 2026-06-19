@@ -17,13 +17,9 @@ import {
   formatDate,
 } from '../../../shared/utils/format'
 import { documentsApi } from '../../../shared/api/documents.api'
-import { DOCUMENT_TYPE_LABELS, PAYMENT_STATUS_LABELS } from '../../../shared/constants'
+import { catalogsApi } from '../../../shared/api/catalogs.api'
+import { PAYMENT_STATUS_LABELS } from '../../../shared/constants'
 import type { AccountingDocument, TableColumn } from '../../../shared/types'
-
-const DOCUMENT_TYPE_OPTIONS = Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => ({
-  value,
-  label,
-}))
 
 const PAYMENT_STATUS_OPTIONS = Object.entries(PAYMENT_STATUS_LABELS).map(([value, label]) => ({
   value,
@@ -39,6 +35,9 @@ export default function DocumentsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
+  const { data: documentTypeItems = [] } = useQuery({ queryKey: ['catalogs', 'document_type'], queryFn: () => catalogsApi.findByCategory('document_type') })
+
+  const DOCUMENT_TYPE_OPTIONS = documentTypeItems.map((t) => ({ value: t.label, label: t.label }))
 
   const totals = useMemo(() => ({
     pending: allDocuments.filter((d) => d.paymentStatus === 'pendiente').reduce((s, d) => s + d.totalAmount, 0),
@@ -74,7 +73,7 @@ export default function DocumentsPage() {
       label: 'Tipo',
       render: (v) => (
         <span className="text-slate-700 font-medium text-xs">
-          {DOCUMENT_TYPE_LABELS[v as string] ?? String(v)}
+          {String(v)}
         </span>
       ),
     },

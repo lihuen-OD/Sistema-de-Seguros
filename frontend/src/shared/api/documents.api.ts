@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { AccountingDocument, DocumentType, Currency, PaymentStatus, PaymentMethod } from '../types'
+import type { AccountingDocument, PaymentStatus } from '../types'
 
 interface BackendDocument {
   id: string; documentNumber: string; documentType: string; issueDate: string
@@ -13,10 +13,10 @@ interface Paginated<T> { data: T[]; pagination: { total: number; page: number; l
 function mapDocument(b: BackendDocument): AccountingDocument {
   return {
     id: b.id,
-    documentType: b.documentType as DocumentType,
+    documentType: b.documentType,
     documentNumber: b.documentNumber,
     issueDate: b.issueDate,
-    currency: b.currency as Currency,
+    currency: b.currency,
     exchangeRate: b.exchangeRate,
     netAmount: b.netAmount,
     vatAmount: b.vatAmount,
@@ -24,7 +24,7 @@ function mapDocument(b: BackendDocument): AccountingDocument {
     totalAmount: b.totalAmount,
     paymentStatus: b.paymentStatus as PaymentStatus,
     insuranceCompany: b.insuranceCompany ?? undefined,
-    paymentMethod: (b.paymentMethod ?? undefined) as PaymentMethod | undefined,
+    paymentMethod: b.paymentMethod ?? undefined,
     linkedDocumentId: b.linkedDocumentId ?? undefined,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,

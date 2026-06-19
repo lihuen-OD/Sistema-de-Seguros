@@ -24,7 +24,6 @@ import {
 } from '../../../shared/utils/format'
 import { documentsApi } from '../../../shared/api/documents.api'
 import { policiesApi } from '../../../shared/api/policies.api'
-import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
 import type { DocumentPolicyAllocation, Installment, InstallmentUpdate, TableColumn } from '../../../shared/types'
@@ -159,7 +158,7 @@ export default function DocumentDetailPage() {
         badge={
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
-              {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType}
+              {doc.documentType}
             </span>
             <StatusPill status={derivedDocStatus} />
           </div>

@@ -42,8 +42,8 @@ export interface ClaimEvent {
   date: string
   type: ClaimEventType
   description: string
-  previousStatus?: ClaimStatus
-  newStatus?: ClaimStatus
+  previousStatus?: string
+  newStatus?: string
   amountLabel?: string
   previousAmount?: number
   newAmount?: number
@@ -210,10 +210,10 @@ export interface Policy {
 
 export interface AccountingDocument {
   id: string
-  documentType: DocumentType
+  documentType: string
   documentNumber: string
   issueDate: string
-  currency: Currency
+  currency: string
   exchangeRate: number
   netAmount: number
   vatAmount: number
@@ -221,7 +221,7 @@ export interface AccountingDocument {
   totalAmount: number
   paymentStatus: PaymentStatus
   insuranceCompany?: string
-  paymentMethod?: PaymentMethod
+  paymentMethod?: string
   linkedDocumentId?: string
   createdAt: string
   updatedAt: string
@@ -307,12 +307,12 @@ export interface Claim {
   assetId: string
   policyId: string | null
   claimNumber: string
-  claimType: ClaimType
+  claimType: string
   occurrenceDate: string
   reportDate: string
   description: string
   insuranceCompany: string
-  status: ClaimStatus
+  status: string
   claimedAmountArs: number
   realAmountArs?: number | null
   settledAmountArs: number | null

@@ -22,7 +22,7 @@ import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
 import { companiesApi } from '../../shared/api/companies.api'
 import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { claimsApi } from '../../shared/api/claims.api'
-import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../shared/constants'
+import { ASSET_STATUS_LABELS } from '../../shared/constants'
 import type { Policy, AccountingDocument, FireExtinguisher, TableColumn, AssetValueEntry } from '../../shared/types'
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
@@ -171,7 +171,7 @@ export default function AssetDetailPage() {
 
   const docColumns: TableColumn<AccountingDocument>[] = [
     { key: 'documentNumber', label: 'N° Documento', className: 'font-mono text-xs text-slate-600' },
-    { key: 'documentType', label: 'Tipo', render: (v) => DOCUMENT_TYPE_LABELS[v as string] ?? String(v) },
+    { key: 'documentType', label: 'Tipo', render: (v) => String(v) },
     { key: 'issueDate', label: 'Emisión', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
     { key: 'totalAmount', label: 'Total', render: (v) => <span className="font-semibold">{formatCurrencyFull(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
     { key: 'paymentStatus', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },

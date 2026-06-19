@@ -48,32 +48,6 @@ export const COVERAGE_TYPES = [
   'Integral',
 ]
 
-export const INSURANCE_COMPANIES = [
-  'La Segunda',
-  'Sancor Seguros',
-  'MAPFRE',
-  'Zurich',
-  'Allianz',
-  'SMG Seguros',
-  'Seguros Rivadavia',
-  'Federación Patronal',
-  'Galeno',
-  'Meridional',
-]
-
-export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
-  factura: 'Factura',
-  endoso: 'Endoso',
-  nota_credito: 'Nota de Crédito',
-}
-
-export const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  echeq: 'E-Cheq',
-  transferencia: 'Transferencia bancaria',
-  efectivo: 'Efectivo',
-  debito_automatico: 'Débito automático',
-  otros: 'Otros',
-}
 
 export const PAYMENT_STATUS_LABELS: Record<string, string> = {
   pendiente: 'Pendiente',
@@ -208,40 +182,16 @@ export const PROVINCES = [
 
 export const EXPIRING_SOON_DAYS = 30
 
-export const CLAIM_TYPE_LABELS: Record<string, string> = {
-  accidente: 'Accidente',
-  robo: 'Robo con violencia',
-  hurto: 'Hurto',
-  incendio: 'Incendio',
-  granizo: 'Granizo',
-  granizo_cosecha: 'Granizo (cosecha)',
-  inundacion: 'Inundación',
-  daños: 'Daños materiales',
-  daños_electricos: 'Daños eléctricos',
-  rotura_mecanica: 'Rotura mecánica',
-  responsabilidad_civil: 'Responsabilidad civil',
-  muerte_accidental: 'Muerte accidental',
-  incapacidad: 'Incapacidad',
-  otro: 'Otro',
-}
-
-export const CLAIM_STATUS_LABELS: Record<string, string> = {
-  denunciado: 'Denunciado',
-  en_tramite: 'En trámite',
-  liquidado: 'Liquidado',
-  rechazado: 'Rechazado',
-  cerrado: 'Cerrado',
-}
 
 export const INSURANCE_TYPE_CLAIM_COVERAGE: Record<string, string[]> = {
-  'Automotor':                  ['accidente', 'robo', 'hurto', 'daños', 'responsabilidad_civil', 'granizo', 'otro'],
-  'Maquinaria agrícola':        ['accidente', 'robo', 'hurto', 'daños', 'rotura_mecanica', 'granizo', 'incendio', 'otro'],
-  'Incendio y robo':            ['incendio', 'robo', 'hurto', 'daños', 'otro'],
-  'Responsabilidad civil':      ['responsabilidad_civil', 'daños', 'accidente', 'otro'],
-  'Accidentes personales':      ['accidente', 'muerte_accidental', 'incapacidad', 'otro'],
-  'Combinado agropecuario':     ['granizo', 'granizo_cosecha', 'inundacion', 'incendio', 'robo', 'hurto', 'daños', 'responsabilidad_civil', 'otro'],
-  'Transporte de mercaderías':  ['robo', 'hurto', 'accidente', 'daños', 'incendio', 'otro'],
-  'Seguro técnico':             ['daños', 'daños_electricos', 'rotura_mecanica', 'incendio', 'robo', 'otro'],
-  'Vida colectivo':             ['muerte_accidental', 'incapacidad', 'otro'],
-  'Riesgos del trabajo':        ['accidente', 'muerte_accidental', 'incapacidad', 'otro'],
+  'Automotor':                  ['Accidente', 'Robo con violencia', 'Hurto', 'Daños materiales', 'Responsabilidad civil', 'Granizo', 'Otro'],
+  'Maquinaria agrícola':        ['Accidente', 'Robo con violencia', 'Hurto', 'Daños materiales', 'Rotura mecánica', 'Granizo', 'Incendio', 'Otro'],
+  'Incendio y robo':            ['Incendio', 'Robo con violencia', 'Hurto', 'Daños materiales', 'Otro'],
+  'Responsabilidad civil':      ['Responsabilidad civil', 'Daños materiales', 'Accidente', 'Otro'],
+  'Accidentes personales':      ['Accidente', 'Muerte accidental', 'Incapacidad', 'Otro'],
+  'Combinado agropecuario':     ['Granizo', 'Granizo (cosecha)', 'Inundación', 'Incendio', 'Robo con violencia', 'Hurto', 'Daños materiales', 'Responsabilidad civil', 'Otro'],
+  'Transporte de mercaderías':  ['Robo con violencia', 'Hurto', 'Accidente', 'Daños materiales', 'Incendio', 'Otro'],
+  'Seguro técnico':             ['Daños materiales', 'Daños eléctricos', 'Rotura mecánica', 'Incendio', 'Robo con violencia', 'Otro'],
+  'Vida colectivo':             ['Muerte accidental', 'Incapacidad', 'Otro'],
+  'Riesgos del trabajo':        ['Accidente', 'Muerte accidental', 'Incapacidad', 'Otro'],
 }

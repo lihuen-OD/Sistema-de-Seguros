@@ -57,6 +57,12 @@ const FireExtinguisherEditPage = lazy(() => import('../modules/fire-extinguisher
 const CompaniesPage = lazy(() => import('../modules/settings/companies/CompaniesPage'))
 const CostCentersPage = lazy(() => import('../modules/settings/cost-centers/CostCentersPage'))
 const InsuranceTypesPage = lazy(() => import('../modules/settings/insurance-types/InsuranceTypesPage'))
+const ModuleConfigPage = lazy(() => import('../modules/settings/module-config/ModuleConfigPage'))
+const AssetsConfigPage = lazy(() => import('../modules/settings/module-config/AssetsConfigPage'))
+const PoliciesConfigPage = lazy(() => import('../modules/settings/module-config/PoliciesConfigPage'))
+const FireExtConfigPage = lazy(() => import('../modules/settings/module-config/FireExtConfigPage'))
+const TasksConfigPage = lazy(() => import('../modules/settings/module-config/TasksConfigPage'))
+const ClaimsConfigPage = lazy(() => import('../modules/settings/module-config/ClaimsConfigPage'))
 
 function PageFallback() {
   return (
@@ -128,6 +134,12 @@ export default function App() {
           <Route path="/settings/companies" element={<CompaniesPage />} />
           <Route path="/settings/cost-centers" element={<CostCentersPage />} />
           <Route path="/settings/insurance-types" element={<InsuranceTypesPage />} />
+          <Route path="/settings/module-config" element={<ModuleConfigPage />} />
+          <Route path="/settings/module-config/assets" element={<AssetsConfigPage />} />
+          <Route path="/settings/module-config/policies" element={<PoliciesConfigPage />} />
+          <Route path="/settings/module-config/fire-extinguishers" element={<FireExtConfigPage />} />
+          <Route path="/settings/module-config/tasks" element={<TasksConfigPage />} />
+          <Route path="/settings/module-config/claims" element={<ClaimsConfigPage />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

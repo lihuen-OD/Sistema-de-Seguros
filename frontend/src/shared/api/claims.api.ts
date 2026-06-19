@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { Claim, ClaimEvent, ClaimStatus, ClaimType, ClaimEventType } from '../types'
+import type { Claim, ClaimEvent, ClaimEventType } from '../types'
 
 interface BackendClaimEvent {
   id: string; claimId: string; type: string; date: string; description: string
@@ -21,8 +21,8 @@ function mapEvent(e: BackendClaimEvent): ClaimEvent {
   return {
     id: e.id, claimId: e.claimId, date: e.date,
     type: e.type as ClaimEventType, description: e.description,
-    previousStatus: (e.previousStatus ?? undefined) as ClaimStatus | undefined,
-    newStatus: (e.newStatus ?? undefined) as ClaimStatus | undefined,
+    previousStatus: e.previousStatus ?? undefined,
+    newStatus: e.newStatus ?? undefined,
     amountLabel: e.amountLabel ?? undefined,
     previousAmount: e.previousAmount ?? undefined,
     newAmount: e.newAmount ?? undefined,
@@ -34,11 +34,11 @@ function mapClaim(b: BackendClaim): Claim {
   return {
     id: b.id, claimNumber: b.claimNumber,
     assetId: b.assetId ?? '', policyId: b.policyId ?? null,
-    claimType: b.claimType as ClaimType,
+    claimType: b.claimType,
     occurrenceDate: b.occurrenceDate, reportDate: b.reportDate,
     description: b.description ?? '',
     insuranceCompany: b.insuranceCompany ?? '',
-    status: b.status as ClaimStatus,
+    status: b.status,
     claimedAmountArs: b.claimedAmountArs,
     realAmountArs: b.realAmountArs ?? null,
     settledAmountArs: b.settledAmountArs ?? null,

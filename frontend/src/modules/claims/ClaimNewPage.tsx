@@ -23,33 +23,28 @@ import { claimsApi } from '../../shared/api/claims.api'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
 import {
-  CLAIM_TYPE_LABELS,
-  CLAIM_STATUS_LABELS,
-  INSURANCE_COMPANIES,
   INSURANCE_TYPE_CLAIM_COVERAGE,
 } from '../../shared/constants'
-import type { ClaimStatus, ClaimType, Currency } from '../../shared/types'
+import { catalogsApi } from '../../shared/api/catalogs.api'
 
-// ─── Claim type card config ───────────────────────────────────────────────────
+// ─── Claim type icon map (label → icon) ───────────────────────────────────────
 
-type ClaimTypeConfig = { key: ClaimType; Icon: LucideIcon }
-
-const CLAIM_TYPE_CONFIG: ClaimTypeConfig[] = [
-  { key: 'accidente',           Icon: Car },
-  { key: 'robo',                Icon: Lock },
-  { key: 'hurto',               Icon: Package },
-  { key: 'incendio',            Icon: Flame },
-  { key: 'granizo',             Icon: CloudRain },
-  { key: 'granizo_cosecha',     Icon: Wheat },
-  { key: 'inundacion',          Icon: Waves },
-  { key: 'daños',               Icon: Wrench },
-  { key: 'daños_electricos',    Icon: Zap },
-  { key: 'rotura_mecanica',     Icon: Settings },
-  { key: 'responsabilidad_civil', Icon: Scale },
-  { key: 'muerte_accidental',   Icon: Heart },
-  { key: 'incapacidad',         Icon: Activity },
-  { key: 'otro',                Icon: HelpCircle },
-]
+const CLAIM_LABEL_ICON_MAP: Record<string, LucideIcon> = {
+  'Accidente':              Car,
+  'Robo con violencia':     Lock,
+  'Hurto':                  Package,
+  'Incendio':               Flame,
+  'Granizo':                CloudRain,
+  'Granizo (cosecha)':      Wheat,
+  'Inundación':             Waves,
+  'Daños materiales':       Wrench,
+  'Daños eléctricos':       Zap,
+  'Rotura mecánica':        Settings,
+  'Responsabilidad civil':  Scale,
+  'Muerte accidental':      Heart,
+  'Incapacidad':            Activity,
+  'Otro':                   HelpCircle,
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +70,10 @@ export default function ClaimNewPage() {
 
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: () => assetsApi.findAll() })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
+  const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
+  const { data: claimTypes = [] } = useQuery({ queryKey: ['catalogs', 'claim_type'], queryFn: () => catalogsApi.findByCategory('claim_type') })
+  const { data: claimStatuses = [] } = useQuery({ queryKey: ['catalogs', 'claim_status'], queryFn: () => catalogsApi.findByCategory('claim_status') })
+  const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
 
   const preselectedAsset = preselectedAssetId
     ? (allAssets.find((a) => a.id === preselectedAssetId) ?? null)
@@ -83,15 +82,15 @@ export default function ClaimNewPage() {
   // Identity
   const [assetId, setAssetId] = useState(preselectedAssetId)
   const [policyId, setPolicyId] = useState(preselectedPolicyId)
-  const [claimType, setClaimType] = useState<ClaimType | ''>('')
-  const [status, setStatus] = useState<ClaimStatus>('denunciado')
+  const [claimType, setClaimType] = useState('')
+  const [status, setStatus] = useState('')
   const [occurrenceDate, setOccurrenceDate] = useState('')
   const [reportDate, setReportDate] = useState('')
   const [description, setDescription] = useState('')
   const [insuranceCompany, setInsuranceCompany] = useState('')
 
   // Amounts + currency
-  const [currency, setCurrency] = useState<Currency>('ARS')
+  const [currency, setCurrency] = useState('ARS')
   const [exchangeRate, setExchangeRate] = useState('')
   const [claimedAmount, setClaimedAmount] = useState('')
   const [realAmount, setRealAmount] = useState('')
@@ -168,12 +167,12 @@ export default function ClaimNewPage() {
       const claimNumber = `SIN-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 90000) + 10000)}`
       const created = await claimsApi.create({
         claimNumber,
-        claimType: claimType as ClaimType,
+        claimType,
         occurrenceDate,
         reportDate,
         description: description.trim(),
         insuranceCompany: insuranceCompany.trim(),
-        status,
+        status: status || claimStatuses[0]?.label || 'Denunciado',
         currency,
         assetId: assetId || undefined,
         policyId: policyId || undefined,
@@ -268,7 +267,7 @@ export default function ClaimNewPage() {
                   {coveredTypes.map((t) => (
                     <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-700">
                       <CheckCircle2 size={9} />
-                      {CLAIM_TYPE_LABELS[t] ?? t}
+                      {t}
                     </span>
                   ))}
                 </div>
@@ -290,17 +289,17 @@ export default function ClaimNewPage() {
             )}
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              {CLAIM_TYPE_CONFIG.map(({ key, Icon }) => {
-                const isCovered = selectedPolicy ? coveredTypes.includes(key) : null
-                const isSelected = claimType === key
-                const label = CLAIM_TYPE_LABELS[key]
+              {claimTypes.map(({ id, label }) => {
+                const Icon = CLAIM_LABEL_ICON_MAP[label] ?? HelpCircle
+                const isCovered = selectedPolicy ? coveredTypes.includes(label) : null
+                const isSelected = claimType === label
 
                 return (
                   <button
-                    key={key}
+                    key={id}
                     type="button"
                     onClick={() => {
-                      setClaimType(key)
+                      setClaimType(label)
                       if (errors.claimType) setErrors((p) => ({ ...p, claimType: undefined }))
                     }}
                     className={clsx(
@@ -345,7 +344,7 @@ export default function ClaimNewPage() {
               <div className="mt-3 flex items-start gap-2.5 px-3.5 py-3 bg-amber-50 border border-amber-200 rounded-xl">
                 <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-amber-800 leading-relaxed">
-                  <strong>{CLAIM_TYPE_LABELS[claimType as ClaimType]}</strong> podría no estar cubierto por{' '}
+                  <strong>{claimType}</strong> podría no estar cubierto por{' '}
                   <strong>{selectedPolicy?.insuranceType}</strong>. Verificá la cobertura con{' '}
                   {selectedPolicy?.insuranceCompany} antes de continuar.
                 </p>
@@ -373,9 +372,12 @@ export default function ClaimNewPage() {
               </FormField>
 
               <FormField label="Estado inicial">
-                <FormSelect value={status} onChange={(e) => setStatus(e.target.value as ClaimStatus)}>
-                  {(Object.entries(CLAIM_STATUS_LABELS) as [ClaimStatus, string][]).map(([val, label]) => (
-                    <option key={val} value={val}>{label}</option>
+                <FormSelect
+                  value={status || claimStatuses[0]?.label || ''}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
+                  {claimStatuses.map((s) => (
+                    <option key={s.id} value={s.label}>{s.label}</option>
                   ))}
                 </FormSelect>
               </FormField>
@@ -402,8 +404,8 @@ export default function ClaimNewPage() {
                   onChange={(e) => { setInsuranceCompany(e.target.value); setErrors((p) => ({ ...p, insuranceCompany: undefined })) }}
                 >
                   <option value="">Seleccioná una aseguradora</option>
-                  {INSURANCE_COMPANIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
+                  {insuranceCompanies.map((c) => (
+                    <option key={c.id} value={c.label}>{c.label}</option>
                   ))}
                 </FormSelect>
               </FormField>
@@ -414,9 +416,14 @@ export default function ClaimNewPage() {
           <SectionCard title="Importes" subtitle="Moneda, tipo de cambio y montos del siniestro">
             <FormSection title="">
               <FormField label="Moneda">
-                <FormSelect value={currency} onChange={(e) => setCurrency(e.target.value as Currency)}>
-                  <option value="ARS">ARS — Pesos Argentinos</option>
-                  <option value="USD">USD — Dólares</option>
+                <FormSelect value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                  {currencies.length > 0
+                    ? currencies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)
+                    : <>
+                        <option value="ARS">ARS</option>
+                        <option value="USD">USD</option>
+                      </>
+                  }
                 </FormSelect>
               </FormField>
 
@@ -541,8 +548,8 @@ export default function ClaimNewPage() {
           {/* Resumen */}
           <SectionCard title="Resumen">
             <div className="space-y-3">
-              <SummaryRow label="Tipo" value={claimType ? (CLAIM_TYPE_LABELS[claimType] ?? claimType) : '—'} />
-              <SummaryRow label="Estado" value={CLAIM_STATUS_LABELS[status]} />
+              <SummaryRow label="Tipo" value={claimType || '—'} />
+              <SummaryRow label="Estado" value={status || claimStatuses[0]?.label || '—'} />
               <SummaryRow label="Activo" value={selectedAsset?.internalCode ?? '—'} />
               <SummaryRow label="Póliza" value={selectedPolicy?.policyNumber ?? '—'} />
               <SummaryRow label="Aseguradora" value={insuranceCompany || '—'} />

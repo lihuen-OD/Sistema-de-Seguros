@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Save, X, Building2, Plus, Trash2, MapPin, Hash, Package, Info,
 } from 'lucide-react'
@@ -12,12 +12,13 @@ import {
 } from '../../shared/components/forms/FormSection'
 import { AttachmentListEditor } from '../../shared/components/file-upload/AttachmentListEditor'
 import { assetsApi } from '../../shared/api/assets.api'
+import { catalogsApi } from '../../shared/api/catalogs.api'
+import type { CatalogItem } from '../../shared/api/catalogs.api'
 import {
-  BUILDING_PURPOSES, FUEL_TYPES, INFRASTRUCTURE_TYPES,
-  PRODUCTIVE_UNITS, AREAS, PROVINCES, SILO_CONTENTS, CARGO_SPECIES,
+  PROVINCES,
 } from '../../shared/constants'
 import {
-  CATEGORY_LABEL, CATEGORY_TO_FINNEGANS, IMPL_TYPES,
+  CATEGORY_LABEL, CATEGORY_TO_FINNEGANS,
 } from '../../shared/constants/asset-categories'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { CategoryPicker } from './components/CategoryPicker'
@@ -164,12 +165,13 @@ interface EstBuilding {
 }
 
 function EstBuildingsSection({
-  buildings, onAdd, onRemove, onChange,
+  buildings, onAdd, onRemove, onChange, buildingPurposes,
 }: {
   buildings: EstBuilding[]
   onAdd: () => void
   onRemove: (id: string) => void
   onChange: (id: string, field: keyof Omit<EstBuilding, 'id'>, value: string) => void
+  buildingPurposes: CatalogItem[]
 }) {
   return (
     <div>
@@ -220,7 +222,7 @@ function EstBuildingsSection({
                   <label className="block text-xs font-medium text-slate-600 mb-1">Uso / Destino</label>
                   <FormSelect value={b.purpose} onChange={(e) => onChange(b.id, 'purpose', e.target.value)}>
                     <option value="">Seleccionar…</option>
-                    {BUILDING_PURPOSES.map((p) => <option key={p} value={p}>{p}</option>)}
+                    {buildingPurposes.map((p) => <option key={p.id} value={p.label}>{p.label}</option>)}
                   </FormSelect>
                 </div>
                 <div>
@@ -254,6 +256,15 @@ export default function AssetNewPage() {
   const [buildings, setBuildings] = useState<EstBuilding[]>([])
   const [silos, setSilos] = useState<Silo[]>([])
   const [attachments, setAttachments] = useState<AssetAttachment[]>([])
+
+  const { data: fuelTypes = [] } = useQuery({ queryKey: ['catalogs', 'asset_fuel_type'], queryFn: () => catalogsApi.findByCategory('asset_fuel_type') })
+  const { data: buildingPurposes = [] } = useQuery({ queryKey: ['catalogs', 'asset_building_purpose'], queryFn: () => catalogsApi.findByCategory('asset_building_purpose') })
+  const { data: infrastructureTypes = [] } = useQuery({ queryKey: ['catalogs', 'asset_infrastructure_type'], queryFn: () => catalogsApi.findByCategory('asset_infrastructure_type') })
+  const { data: siloContents = [] } = useQuery({ queryKey: ['catalogs', 'asset_silo_content'], queryFn: () => catalogsApi.findByCategory('asset_silo_content') })
+  const { data: cargoSpecies = [] } = useQuery({ queryKey: ['catalogs', 'asset_cargo_species'], queryFn: () => catalogsApi.findByCategory('asset_cargo_species') })
+  const { data: implementTypes = [] } = useQuery({ queryKey: ['catalogs', 'asset_implement_type'], queryFn: () => catalogsApi.findByCategory('asset_implement_type') })
+  const { data: productiveUnits = [] } = useQuery({ queryKey: ['catalogs', 'asset_productive_unit'], queryFn: () => catalogsApi.findByCategory('asset_productive_unit') })
+  const { data: areas = [] } = useQuery({ queryKey: ['catalogs', 'asset_area'], queryFn: () => catalogsApi.findByCategory('asset_area') })
 
   function set(field: keyof FormState) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -442,7 +453,7 @@ export default function AssetNewPage() {
                   <FormField label="Combustible">
                     <FormSelect value={form.fuelType} onChange={set('fuelType')}>
                       <option value="">Seleccionar…</option>
-                      {FUEL_TYPES.map((f) => <option key={f} value={f}>{f}</option>)}
+                      {fuelTypes.map((f) => <option key={f.id} value={f.label}>{f.label}</option>)}
                     </FormSelect>
                   </FormField>
                 </FormSection>
@@ -483,7 +494,7 @@ export default function AssetNewPage() {
                   <FormField label="Tipo de implemento">
                     <FormSelect value={form.implementType} onChange={set('implementType')}>
                       <option value="">Seleccionar…</option>
-                      {IMPL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                      {implementTypes.map((t) => <option key={t.id} value={t.label}>{t.label}</option>)}
                     </FormSelect>
                   </FormField>
                   <FormField label="Ancho de trabajo (m)">
@@ -503,7 +514,7 @@ export default function AssetNewPage() {
                     <FormField label="Uso / Destino">
                       <FormSelect value={form.buildingPurpose} onChange={set('buildingPurpose')}>
                         <option value="">Seleccionar…</option>
-                        {BUILDING_PURPOSES.map((p) => <option key={p} value={p}>{p}</option>)}
+                        {buildingPurposes.map((p) => <option key={p.id} value={p.label}>{p.label}</option>)}
                       </FormSelect>
                     </FormField>
                     <FormField label="Tipo de estructura">
@@ -550,10 +561,10 @@ export default function AssetNewPage() {
                     <MapSection mapsUrl={form.mapsUrl} onChange={(v) => setForm((p) => ({ ...p, mapsUrl: v }))} />
                   </div>
                   <div className="border-t border-slate-100 pt-5">
-                    <EstBuildingsSection buildings={buildings} onAdd={addBuilding} onRemove={removeBuilding} onChange={updateBuilding} />
+                    <EstBuildingsSection buildings={buildings} onAdd={addBuilding} onRemove={removeBuilding} onChange={updateBuilding} buildingPurposes={buildingPurposes} />
                   </div>
                   <div className="border-t border-slate-100 pt-5">
-                    <SilosSection silos={silos} onAdd={addSilo} onRemove={removeSilo} onChange={updateSilo} />
+                    <SilosSection silos={silos} siloContents={siloContents} onAdd={addSilo} onRemove={removeSilo} onChange={updateSilo} />
                   </div>
                 </div>
               </SectionCard>
@@ -565,7 +576,7 @@ export default function AssetNewPage() {
                   <FormField label="Tipo de infraestructura" required>
                     <FormSelect value={form.infraType} onChange={set('infraType')}>
                       <option value="">Seleccionar…</option>
-                      {INFRASTRUCTURE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                      {infrastructureTypes.map((t) => <option key={t.id} value={t.label}>{t.label}</option>)}
                     </FormSelect>
                   </FormField>
                   {isSiloInfra ? (
@@ -576,7 +587,7 @@ export default function AssetNewPage() {
                       <FormField label="Contenido">
                         <FormSelect value={form.infraContent} onChange={set('infraContent')}>
                           <option value="">Seleccionar…</option>
-                          {SILO_CONTENTS.map((c) => <option key={c} value={c}>{c}</option>)}
+                          {siloContents.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
                         </FormSelect>
                       </FormField>
                     </>
@@ -598,7 +609,7 @@ export default function AssetNewPage() {
                 </FormSection>
                 {isSiloInfra && (
                   <div className="mt-5 border-t border-slate-100 pt-5">
-                    <SilosSection silos={silos} onAdd={addSilo} onRemove={removeSilo} onChange={updateSilo} />
+                    <SilosSection silos={silos} siloContents={siloContents} onAdd={addSilo} onRemove={removeSilo} onChange={updateSilo} />
                   </div>
                 )}
               </SectionCard>
@@ -620,7 +631,7 @@ export default function AssetNewPage() {
                   <FormField label="Especie">
                     <FormSelect value={form.brand} onChange={set('brand')}>
                       <option value="">Seleccionar especie…</option>
-                      {CARGO_SPECIES.map((s) => <option key={s} value={s}>{s}</option>)}
+                      {cargoSpecies.map((s) => <option key={s.id} value={s.label}>{s.label}</option>)}
                     </FormSelect>
                   </FormField>
                   <FormField label="Categoría / Raza">
@@ -642,13 +653,13 @@ export default function AssetNewPage() {
                     <FormField label="Unidad Productiva">
                       <FormSelect value={form.productiveUnit} onChange={set('productiveUnit')}>
                         <option value="">Seleccionar unidad…</option>
-                        {PRODUCTIVE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                        {productiveUnits.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
                       </FormSelect>
                     </FormField>
                     <FormField label="Área">
                       <FormSelect value={form.area} onChange={set('area')}>
                         <option value="">Seleccionar área…</option>
-                        {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
+                        {areas.map((a) => <option key={a.id} value={a.label}>{a.label}</option>)}
                       </FormSelect>
                     </FormField>
                   </FormSection>

@@ -16,6 +16,7 @@ import { policiesRouter } from './modules/policies/policies.router'
 import { documentsRouter } from './modules/documents/documents.router'
 import { fireExtinguishersRouter } from './modules/fire-extinguishers/fire-extinguishers.router'
 import { claimsRouter } from './modules/claims/claims.router'
+import { catalogsRouter } from './modules/catalogs/catalogs.router'
 import { dashboardRouter } from './modules/dashboard/dashboard.router'
 import { uploadsRouter } from './modules/uploads/uploads.router'
 import { notificationsRouter } from './modules/notifications/notifications.router'
@@ -85,6 +86,8 @@ app.use('/api/v1/documents', documentsRouter)
 app.use('/api/v1/fire-extinguishers', fireExtinguishersRouter)
 // Fase 8 — Siniestros
 app.use('/api/v1/claims', claimsRouter)
+// Fase 11 — Catálogos dinámicos
+app.use('/api/v1/catalogs', catalogsRouter)
 // Fase 9 — Dashboard y Analytics
 app.use('/api/v1/dashboard', dashboardRouter)
 // Fase 10 — File Storage + Notificaciones

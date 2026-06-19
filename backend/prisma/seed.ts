@@ -16,6 +16,7 @@ async function main() {
   console.log('🌱 Limpiando base de datos...')
 
   // Eliminar en orden correcto (hijos antes que padres)
+  await prisma.catalogItem.deleteMany()
   await prisma.claim.deleteMany()                     // cascade → ClaimEvent
   await prisma.fireExtinguisher.deleteMany()          // cascade → FireExtinguisherHistory
   await prisma.documentPolicyAllocation.deleteMany()  // libera FK a Policy
@@ -357,7 +358,7 @@ async function main() {
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00001234',
-        documentType: 'factura',
+        documentType: 'Factura',
         issueDate: isoDate(-60),
         netAmount: 280000,
         vatAmount: 58800,
@@ -376,7 +377,7 @@ async function main() {
                 amount: 112933,
                 paymentStatus: 'pagado',
                 paymentDate: isoDate(-28),
-                paymentMethod: 'transferencia',
+                paymentMethod: 'Transferencia bancaria',
                 notes: 'Pagado en término',
               },
               {
@@ -407,7 +408,7 @@ async function main() {
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00005678',
-        documentType: 'factura',
+        documentType: 'Factura',
         issueDate: isoDate(-30),
         netAmount: 145000,
         vatAmount: 30450,
@@ -443,7 +444,7 @@ async function main() {
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00009012',
-        documentType: 'nota_debito',
+        documentType: 'Nota de Débito',
         issueDate: isoDate(-90),
         netAmount: 95000,
         vatAmount: 19950,
@@ -462,7 +463,7 @@ async function main() {
                 amount: 117800,
                 paymentStatus: 'pagado',
                 paymentDate: isoDate(-58),
-                paymentMethod: 'cheque',
+                paymentMethod: 'E-Cheq',
               },
             ],
           },
@@ -560,12 +561,12 @@ async function main() {
         claimNumber: 'SIN-2026-00001',
         assetId: actCamion.id,
         policyId: polAuto.id,
-        claimType: 'accidente',
+        claimType: 'Accidente',
         occurrenceDate: isoDate(-45),
         reportDate: isoDate(-44),
         description: 'Colisión trasera en Ruta Nacional 9. Daños en paragolpes trasero y sistema de escape.',
         insuranceCompany: 'Federación Patronal Seguros',
-        status: 'en_tramite',
+        status: 'En trámite',
         claimedAmountArs: 380000,
         currency: 'ARS',
         exchangeRate: 1,
@@ -582,8 +583,8 @@ async function main() {
                 type: 'estado_cambiado',
                 description: 'Perito de la aseguradora realizó inspección del vehículo.',
                 date: isoDate(-30),
-                previousStatus: 'denunciado',
-                newStatus: 'en_tramite',
+                previousStatus: 'Denunciado',
+                newStatus: 'En trámite',
                 createdBy: 'Juan Carlos Rodríguez',
               },
               {
@@ -605,12 +606,12 @@ async function main() {
         claimNumber: 'SIN-2026-00002',
         assetId: actCosechadora.id,
         policyId: polIncendio.id,
-        claimType: 'granizo',
+        claimType: 'Granizo',
         occurrenceDate: isoDate(-10),
         reportDate: isoDate(-9),
         description: 'Granizo severo causó daños en capó y sistema de cosecha. Estimación preliminar en proceso.',
         insuranceCompany: 'La Segunda Seguros',
-        status: 'denunciado',
+        status: 'Denunciado',
         claimedAmountArs: 0,
         currency: 'ARS',
         exchangeRate: 1,
@@ -628,12 +629,80 @@ async function main() {
   ])
 
   console.log('  ✔ Claims (2) + Events (4)')
+
+  // ── Catálogos dinámicos ────────────────────────────────────────────────────
+  console.log('📋 Insertando catálogos...')
+
+  function catalogBatch(category: string, labels: string[]) {
+    return prisma.catalogItem.createMany({
+      data: labels.map((label, i) => ({ category, label, sortOrder: i })),
+    })
+  }
+
+  await Promise.all([
+    catalogBatch('insurance_company', [
+      'La Segunda', 'Sancor Seguros', 'MAPFRE', 'Zurich', 'Allianz',
+      'SMG Seguros', 'Seguros Rivadavia', 'Federación Patronal', 'Galeno', 'Meridional',
+    ]),
+    catalogBatch('asset_fuel_type', ['Diésel', 'Nafta', 'GNC', 'Eléctrico', 'Híbrido']),
+    catalogBatch('asset_building_purpose', [
+      'Galpón', 'Depósito', 'Vivienda', 'Oficinas', 'Taller',
+      'Industrial', 'Producción porcina', 'Producción avícola', 'Otro',
+    ]),
+    catalogBatch('asset_infrastructure_type', [
+      'Silo', 'Tanque de agua', 'Tanque de combustible',
+      'Obra civil', 'Alambrado', 'Manga y corral', 'Otro',
+    ]),
+    catalogBatch('asset_silo_content', [
+      'Soja', 'Maíz', 'Trigo', 'Cebada', 'Girasol',
+      'Sorgo', 'Maní', 'Vacío / disponible', 'Otro',
+    ]),
+    catalogBatch('asset_cargo_species', [
+      'Porcino', 'Bovino', 'Ovino', 'Caprino', 'Avícola', 'Equino', 'Otro',
+    ]),
+    catalogBatch('asset_implement_type', [
+      'Sembradora', 'Arado', 'Rastra', 'Fertilizadora',
+      'Cincel', 'Rolo', 'Acoplado', 'Otro',
+    ]),
+    catalogBatch('asset_productive_unit', [
+      'Agrícola Norte', 'Agrícola Sur', 'Ganadería',
+      'Logística', 'Administración', 'Mantenimiento',
+    ]),
+    catalogBatch('asset_area', [
+      'Producción', 'Administración', 'Logística',
+      'Comercial', 'Mantenimiento', 'RRHH',
+    ]),
+    catalogBatch('fire_ext_type', ['Polvo seco ABC', 'CO2', 'Agua', 'Espuma', 'Halón']),
+    catalogBatch('fire_ext_capacity', ['1 kg', '2 kg', '4 kg', '6 kg', '10 kg', '25 kg', '50 kg']),
+    catalogBatch('task_type', [
+      'Solicitar cotización', 'Renovar póliza', 'Enviar documentación',
+      'Gestionar siniestro', 'Solicitar endoso', 'Reclamar documentación', 'Revisar vencimiento',
+    ]),
+    catalogBatch('document_type', ['Factura', 'Nota de Crédito', 'Nota de Débito', 'Endoso']),
+    catalogBatch('document_payment_method', [
+      'Transferencia bancaria', 'E-Cheq', 'Efectivo', 'Débito automático', 'Otros',
+    ]),
+    catalogBatch('document_currency', ['ARS', 'USD']),
+    catalogBatch('claim_type', [
+      'Accidente', 'Robo con violencia', 'Hurto', 'Incendio',
+      'Granizo', 'Granizo (cosecha)', 'Inundación', 'Daños materiales',
+      'Daños eléctricos', 'Rotura mecánica', 'Responsabilidad civil',
+      'Muerte accidental', 'Incapacidad', 'Otro',
+    ]),
+    catalogBatch('claim_status', [
+      'Denunciado', 'En trámite', 'Liquidado', 'Rechazado', 'Cerrado',
+    ]),
+  ])
+
+  console.log('✅ Catálogos insertados.')
+
   console.log('\n🎉 Seed completado exitosamente.')
   console.log('\n📊 Resumen:')
   console.log('   • 3 Aseguradoras  • 3 Centros de Costo  • 4 Tipos de Seguro + 14 Coberturas')
   console.log('   • 4 Activos       • 2 Productores + 3 Tareas')
   console.log('   • 4 Pólizas       • 3 Documentos + 5 Cuotas')
   console.log('   • 4 Matafuegos    • 2 Siniestros + 4 Eventos')
+  console.log('   • 17 Categorías de catálogo con sus ítems')
 }
 
 main()

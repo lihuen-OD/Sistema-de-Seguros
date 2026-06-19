@@ -7,23 +7,8 @@ import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { claimsApi } from '../../shared/api/claims.api'
-import {
-  CLAIM_TYPE_LABELS,
-  CLAIM_STATUS_LABELS,
-  INSURANCE_COMPANIES,
-} from '../../shared/constants'
+import { catalogsApi } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
-import type { ClaimStatus, ClaimType, Currency } from '../../shared/types'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const STATUS_OPTIONS = Object.entries(CLAIM_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))
-const TYPE_OPTIONS = Object.entries(CLAIM_TYPE_LABELS).map(([v, l]) => ({ value: v, label: l }))
-const COMPANY_OPTIONS = INSURANCE_COMPANIES.map((c) => ({ value: c, label: c }))
-const CURRENCY_OPTIONS = [
-  { value: 'ARS', label: 'Pesos argentinos (ARS)' },
-  { value: 'USD', label: 'Dólares estadounidenses (USD)' },
-]
 
 function Field({
   label,
@@ -64,15 +49,20 @@ export default function ClaimEditPage() {
     enabled: !!id,
   })
 
+  const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
+  const { data: claimStatuses = [] } = useQuery({ queryKey: ['catalogs', 'claim_status'], queryFn: () => catalogsApi.findByCategory('claim_status') })
+  const { data: claimTypes = [] } = useQuery({ queryKey: ['catalogs', 'claim_type'], queryFn: () => catalogsApi.findByCategory('claim_type') })
+  const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+
   // ── Form state ──────────────────────────────────────────────────────────────
 
-  const [status, setStatus] = useState<ClaimStatus>('denunciado')
-  const [claimType, setClaimType] = useState<string>('')
+  const [status, setStatus] = useState('')
+  const [claimType, setClaimType] = useState('')
   const [occurrenceDate, setOccurrenceDate] = useState('')
   const [reportDate, setReportDate] = useState('')
   const [insuranceCompany, setInsuranceCompany] = useState('')
   const [description, setDescription] = useState('')
-  const [currency, setCurrency] = useState<Currency>('ARS')
+  const [currency, setCurrency] = useState('ARS')
   const [exchangeRate, setExchangeRate] = useState('')
   const [claimedAmount, setClaimedAmount] = useState('')
   const [realAmount, setRealAmount] = useState('')
@@ -156,7 +146,7 @@ export default function ClaimEditPage() {
     try {
       await claimsApi.update(original.id, {
         status,
-        claimType: claimType as ClaimType,
+        claimType,
         occurrenceDate,
         reportDate,
         insuranceCompany,
@@ -192,11 +182,11 @@ export default function ClaimEditPage() {
               <Field label="Estado del siniestro" required>
                 <select
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as ClaimStatus)}
+                  onChange={(e) => setStatus(e.target.value)}
                   className={selectCls}
                 >
-                  {STATUS_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
+                  {claimStatuses.map((s) => (
+                    <option key={s.id} value={s.label}>{s.label}</option>
                   ))}
                 </select>
               </Field>
@@ -207,8 +197,8 @@ export default function ClaimEditPage() {
                   onChange={(e) => setClaimType(e.target.value)}
                   className={selectCls}
                 >
-                  {TYPE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
+                  {claimTypes.map((t) => (
+                    <option key={t.id} value={t.label}>{t.label}</option>
                   ))}
                 </select>
               </Field>
@@ -219,8 +209,9 @@ export default function ClaimEditPage() {
                   onChange={(e) => setInsuranceCompany(e.target.value)}
                   className={selectCls}
                 >
-                  {COMPANY_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
+                  <option value="">Seleccioná una aseguradora</option>
+                  {insuranceCompanies.map((c) => (
+                    <option key={c.id} value={c.label}>{c.label}</option>
                   ))}
                 </select>
               </Field>
@@ -257,12 +248,16 @@ export default function ClaimEditPage() {
               <Field label="Moneda">
                 <select
                   value={currency}
-                  onChange={(e) => setCurrency(e.target.value as Currency)}
+                  onChange={(e) => setCurrency(e.target.value)}
                   className={selectCls}
                 >
-                  {CURRENCY_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
+                  {currencies.length > 0
+                    ? currencies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)
+                    : <>
+                        <option value="ARS">ARS</option>
+                        <option value="USD">USD</option>
+                      </>
+                  }
                 </select>
               </Field>
 

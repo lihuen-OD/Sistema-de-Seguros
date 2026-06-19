@@ -1,6 +1,4 @@
-import type { Currency } from '../types'
-
-export function formatCurrencyCompact(value: number, currency: Currency = 'ARS'): string {
+export function formatCurrencyCompact(value: number, currency: string = 'ARS'): string {
   const prefix = currency === 'ARS' ? 'AR$' : 'US$'
   const abs = Math.abs(value)
   const sign = value < 0 ? '-' : ''
@@ -17,7 +15,7 @@ export function formatCurrencyCompact(value: number, currency: Currency = 'ARS')
   return `${sign}${prefix} ${abs.toFixed(0)}`
 }
 
-export function formatCurrencyFull(value: number, currency: Currency = 'ARS'): string {
+export function formatCurrencyFull(value: number, currency: string = 'ARS'): string {
   const prefix = currency === 'ARS' ? 'AR$' : 'US$'
   return `${prefix} ${value.toLocaleString('es-AR', {
     minimumFractionDigits: 2,

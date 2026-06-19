@@ -23,13 +23,8 @@ import {
 } from '../../../shared/components/forms/FormSection'
 import { documentsApi } from '../../../shared/api/documents.api'
 import { policiesApi } from '../../../shared/api/policies.api'
+import { catalogsApi } from '../../../shared/api/catalogs.api'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
-import {
-  INSURANCE_COMPANIES,
-  DOCUMENT_TYPE_LABELS,
-  PAYMENT_METHOD_LABELS,
-} from '../../../shared/constants'
-import type { Currency, DocumentType, PaymentMethod } from '../../../shared/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,9 +45,9 @@ interface DocumentForm {
   documentType: string
   documentNumber: string
   issueDate: string
-  currency: Currency | ''
+  currency: string
   exchangeRate: string
-  paymentMethod: PaymentMethod | ''
+  paymentMethod: string
   netAmount: string
   vatAmount: string
   otherTaxesAmount: string
@@ -107,8 +102,13 @@ export default function DocumentNewPage() {
     queryFn: () => documentsApi.findAll(),
   })
 
+  const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
+  const { data: documentTypes = [] } = useQuery({ queryKey: ['catalogs', 'document_type'], queryFn: () => catalogsApi.findByCategory('document_type') })
+  const { data: paymentMethods = [] } = useQuery({ queryKey: ['catalogs', 'document_payment_method'], queryFn: () => catalogsApi.findByCategory('document_payment_method') })
+  const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+
   const existingFacturas = useMemo(
-    () => allDocuments.filter((d) => d.documentType === 'factura'),
+    () => allDocuments.filter((d) => d.documentType === 'Factura'),
     [allDocuments],
   )
 
@@ -145,7 +145,7 @@ export default function DocumentNewPage() {
   }, [allPolicies, form.insuranceCompany])
 
   const isRefDoc =
-    form.documentType === 'nota_credito' || form.documentType === 'endoso'
+    form.documentType === 'Nota de Crédito' || form.documentType === 'Endoso'
 
   // Distribution for email modal
   const distribution = useMemo(
@@ -265,16 +265,16 @@ export default function DocumentNewPage() {
       .filter(Boolean) as string[]
 
     const newDoc = await documentsApi.create({
-      documentType: form.documentType as DocumentType,
+      documentType: form.documentType,
       documentNumber: form.documentNumber.trim(),
       issueDate: form.issueDate,
-      currency: form.currency as Currency,
+      currency: form.currency,
       exchangeRate: tc,
       netAmount: parsedNet,
       vatAmount: parsedVat,
       otherTaxesAmount: parsedOther,
       insuranceCompany: form.insuranceCompany,
-      paymentMethod: form.paymentMethod as PaymentMethod,
+      paymentMethod: form.paymentMethod,
       linkedDocumentId: isRefDoc && form.linkedDocumentId ? form.linkedDocumentId : undefined,
     })
 
@@ -324,8 +324,8 @@ export default function DocumentNewPage() {
                 required
               >
                 <option value="">Seleccionar compañía…</option>
-                {INSURANCE_COMPANIES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                {insuranceCompanies.map((c) => (
+                  <option key={c.id} value={c.label}>{c.label}</option>
                 ))}
               </FormSelect>
             </FormField>
@@ -333,8 +333,8 @@ export default function DocumentNewPage() {
             <FormField label="Tipo de Documento" required error={errors.documentType}>
               <FormSelect value={form.documentType} onChange={set('documentType')} required>
                 <option value="">Seleccionar tipo…</option>
-                {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
+                {documentTypes.map((t) => (
+                  <option key={t.id} value={t.label}>{t.label}</option>
                 ))}
               </FormSelect>
             </FormField>
@@ -373,7 +373,7 @@ export default function DocumentNewPage() {
                   ))}
                 </FormSelect>
                 <p className="text-xs text-slate-400 mt-1">
-                  Una {DOCUMENT_TYPE_LABELS[form.documentType]} siempre está asociada a una factura preexistente. La imputación sobre cuotas se gestiona desde la póliza.
+                  Una {form.documentType} siempre está asociada a una factura preexistente. La imputación sobre cuotas se gestiona desde la póliza.
                 </p>
               </FormField>
             )}
@@ -386,8 +386,9 @@ export default function DocumentNewPage() {
             <FormField label="Moneda" required error={errors.currency}>
               <FormSelect value={form.currency} onChange={set('currency')} required>
                 <option value="">Seleccionar moneda…</option>
-                <option value="ARS">ARS — Pesos Argentinos</option>
-                <option value="USD">USD — Dólares</option>
+                {currencies.map((c) => (
+                  <option key={c.id} value={c.label}>{c.label}</option>
+                ))}
               </FormSelect>
             </FormField>
 
@@ -406,8 +407,8 @@ export default function DocumentNewPage() {
             <FormField label="Forma de Pago" required error={errors.paymentMethod}>
               <FormSelect value={form.paymentMethod} onChange={set('paymentMethod')} required>
                 <option value="">Seleccionar forma…</option>
-                {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
+                {paymentMethods.map((m) => (
+                  <option key={m.id} value={m.label}>{m.label}</option>
                 ))}
               </FormSelect>
             </FormField>
@@ -797,7 +798,7 @@ export default function DocumentNewPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-slate-500">Forma de pago</span>
                       <span className="text-xs font-semibold text-slate-700">
-                        {PAYMENT_METHOD_LABELS[form.paymentMethod] ?? '—'}
+                        {form.paymentMethod || '—'}
                       </span>
                     </div>
 

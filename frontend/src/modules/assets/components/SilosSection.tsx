@@ -1,16 +1,17 @@
 import { Plus, Trash2, Wheat } from 'lucide-react'
 import { FormSelect } from '../../../shared/components/forms/FormSection'
-import { SILO_CONTENTS } from '../../../shared/constants'
+import type { CatalogItem } from '../../../shared/api/catalogs.api'
 import type { Silo } from '../../../shared/types'
 
 interface SilosSectionProps {
   silos: Silo[]
+  siloContents: CatalogItem[]
   onAdd: () => void
   onRemove: (id: string) => void
   onChange: (id: string, field: keyof Omit<Silo, 'id'>, value: string | number) => void
 }
 
-export function SilosSection({ silos, onAdd, onRemove, onChange }: SilosSectionProps) {
+export function SilosSection({ silos, siloContents, onAdd, onRemove, onChange }: SilosSectionProps) {
   const totalTons = silos.reduce((sum, s) => sum + (Number(s.capacityTons) || 0), 0)
 
   return (
@@ -63,7 +64,7 @@ export function SilosSection({ silos, onAdd, onRemove, onChange }: SilosSectionP
                   onChange={(e) => onChange(silo.id, 'content', e.target.value)}
                 >
                   <option value="">Seleccionar…</option>
-                  {SILO_CONTENTS.map((c) => <option key={c} value={c}>{c}</option>)}
+                  {siloContents.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
                 </FormSelect>
               </div>
               <button

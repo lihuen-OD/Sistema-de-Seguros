@@ -15,7 +15,8 @@ import {
 import { producersApi } from '../../shared/api/producers.api'
 import { policiesApi } from '../../shared/api/policies.api'
 import { assetsApi } from '../../shared/api/assets.api'
-import { TASK_PRIORITY_LABELS, TASK_TYPES } from '../../shared/constants'
+import { catalogsApi } from '../../shared/api/catalogs.api'
+import { TASK_PRIORITY_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TaskPriority } from '../../shared/types'
 
@@ -33,6 +34,10 @@ export default function TaskNewPage() {
   const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: taskTypes = [] } = useQuery({
+    queryKey: ['catalogs', 'task_type'],
+    queryFn: () => catalogsApi.findByCategory('task_type'),
+  })
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -114,8 +119,8 @@ export default function TaskNewPage() {
                 }}
               >
                 <option value="">Seleccionar tipo…</option>
-                {TASK_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                {taskTypes.map((t) => (
+                  <option key={t.id} value={t.label}>{t.label}</option>
                 ))}
               </FormSelect>
             </FormField>

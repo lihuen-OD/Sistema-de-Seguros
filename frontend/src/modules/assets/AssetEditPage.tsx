@@ -13,7 +13,8 @@ import {
 import { AttachmentListEditor } from '../../shared/components/file-upload/AttachmentListEditor'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { assetsApi } from '../../shared/api/assets.api'
-import { ASSET_STATUS_LABELS, PRODUCTIVE_UNITS, AREAS, CARGO_SPECIES } from '../../shared/constants'
+import { catalogsApi } from '../../shared/api/catalogs.api'
+import { ASSET_STATUS_LABELS } from '../../shared/constants'
 import { ASSET_TYPE_TO_FINNEGANS } from '../../shared/constants/asset-categories'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { BienDeUsoField } from './components/BienDeUsoField'
@@ -139,6 +140,11 @@ export default function AssetEditPage() {
   const [silos, setSilos] = useState<Silo[]>([])
   const [attachments, setAttachments] = useState<AssetAttachment[]>([])
   const [errors, setErrors] = useState<FormErrors>({})
+
+  const { data: cargoSpecies = [] } = useQuery({ queryKey: ['catalogs', 'asset_cargo_species'], queryFn: () => catalogsApi.findByCategory('asset_cargo_species') })
+  const { data: productiveUnits = [] } = useQuery({ queryKey: ['catalogs', 'asset_productive_unit'], queryFn: () => catalogsApi.findByCategory('asset_productive_unit') })
+  const { data: areas = [] } = useQuery({ queryKey: ['catalogs', 'asset_area'], queryFn: () => catalogsApi.findByCategory('asset_area') })
+  const { data: siloContents = [] } = useQuery({ queryKey: ['catalogs', 'asset_silo_content'], queryFn: () => catalogsApi.findByCategory('asset_silo_content') })
 
   useEffect(() => {
     if (!asset) return
@@ -328,7 +334,7 @@ export default function AssetEditPage() {
                 {asset.assetType === 'Carga' ? (
                   <FormSelect value={form.brand} onChange={set('brand')}>
                     <option value="">Seleccionar especie…</option>
-                    {CARGO_SPECIES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {cargoSpecies.map((s) => <option key={s.id} value={s.label}>{s.label}</option>)}
                   </FormSelect>
                 ) : (
                   <FormInput placeholder="Ej: Toyota, John Deere…" value={form.brand} onChange={set('brand')} />
@@ -406,13 +412,13 @@ export default function AssetEditPage() {
                   <FormField label="Unidad productiva">
                     <FormSelect value={form.productiveUnit} onChange={set('productiveUnit')}>
                       <option value="">Seleccionar…</option>
-                      {PRODUCTIVE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                      {productiveUnits.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
                     </FormSelect>
                   </FormField>
                   <FormField label="Área">
                     <FormSelect value={form.area} onChange={set('area')}>
                       <option value="">Seleccionar…</option>
-                      {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
+                      {areas.map((a) => <option key={a.id} value={a.label}>{a.label}</option>)}
                     </FormSelect>
                   </FormField>
                 </FormSection>
@@ -428,7 +434,7 @@ export default function AssetEditPage() {
             <div className="space-y-5">
               <MapSection mapsUrl={form.mapsUrl} onChange={(v) => setForm((p) => ({ ...p, mapsUrl: v }))} />
               <div className="border-t border-slate-100 pt-5">
-                <SilosSection silos={silos} onAdd={addSilo} onRemove={removeSilo} onChange={updateSilo} />
+                <SilosSection silos={silos} siloContents={siloContents} onAdd={addSilo} onRemove={removeSilo} onChange={updateSilo} />
               </div>
             </div>
           </SectionCard>

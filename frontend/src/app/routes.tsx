@@ -42,4 +42,10 @@ export const ROUTES = {
   SETTINGS_COMPANIES: '/settings/companies',
   SETTINGS_COST_CENTERS: '/settings/cost-centers',
   SETTINGS_INSURANCE_TYPES: '/settings/insurance-types',
+  SETTINGS_MODULE_CONFIG: '/settings/module-config',
+  SETTINGS_MODULE_CONFIG_ASSETS: '/settings/module-config/assets',
+  SETTINGS_MODULE_CONFIG_POLICIES: '/settings/module-config/policies',
+  SETTINGS_MODULE_CONFIG_FIRE_EXT: '/settings/module-config/fire-extinguishers',
+  SETTINGS_MODULE_CONFIG_TASKS: '/settings/module-config/tasks',
+  SETTINGS_MODULE_CONFIG_CLAIMS: '/settings/module-config/claims',
 }
