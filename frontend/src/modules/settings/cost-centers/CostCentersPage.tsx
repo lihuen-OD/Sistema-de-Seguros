@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Hash, Building2, Plus, Edit2, CheckCircle2, XCircle, X, Save, Loader2 } from 'lucide-react'
+import { Hash, Plus, Edit2, CheckCircle2, XCircle, X, Save, Loader2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -15,39 +15,33 @@ import {
   FormField,
   FormInput,
   FormSelect,
+  FormTextarea,
 } from '../../../shared/components/forms/FormSection'
-import { companiesApi } from '../../../shared/api/companies.api'
 import { assetsApi } from '../../../shared/api/assets.api'
 import { costCentersApi, type CostCenterInput } from '../../../shared/api/cost-centers.api'
-import type { Company, CostCenter, TableColumn } from '../../../shared/types'
+import type { CostCenter, TableColumn } from '../../../shared/types'
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
 interface CostCenterModalProps {
   costCenter: CostCenter | null
-  companies: Company[]
   onClose: () => void
   onSave: (input: CostCenterInput) => Promise<void>
 }
 
-function CostCenterModal({ costCenter, companies, onClose, onSave }: CostCenterModalProps) {
+function CostCenterModal({ costCenter, onClose, onSave }: CostCenterModalProps) {
   const isEdit = costCenter !== null
 
   const [name, setName] = useState(costCenter?.name ?? '')
-  const [companyId, setCompanyId] = useState(costCenter?.companyId ?? '')
-  const [area, setArea] = useState(costCenter?.area ?? '')
+  const [description, setDescription] = useState(costCenter?.description ?? '')
   const [status, setStatus] = useState<'activo' | 'inactivo'>(costCenter?.status ?? 'activo')
-  const [errors, setErrors] = useState<{ name?: string; companyId?: string; area?: string }>({})
+  const [errors, setErrors] = useState<{ name?: string }>({})
   const [apiError, setApiError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const activeCompanies = companies.filter((c) => c.status === 'activo')
-
   function validate(): boolean {
-    const e: { name?: string; companyId?: string; area?: string } = {}
+    const e: { name?: string } = {}
     if (!name.trim()) e.name = 'El nombre es obligatorio'
-    if (!companyId) e.companyId = 'Seleccioná una empresa'
-    if (!area.trim()) e.area = 'El área es obligatoria'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -58,7 +52,7 @@ function CostCenterModal({ costCenter, companies, onClose, onSave }: CostCenterM
     setSubmitting(true)
     setApiError('')
     try {
-      await onSave({ name, companyId, area, status })
+      await onSave({ name, description: description || undefined, status })
     } catch (err) {
       setApiError(err instanceof Error ? err.message : 'Error al guardar')
     } finally {
@@ -106,22 +100,12 @@ function CostCenterModal({ costCenter, companies, onClose, onSave }: CostCenterM
               autoFocus
             />
           </FormField>
-          <FormField label="Empresa" required error={errors.companyId} fullWidth>
-            <FormSelect
-              value={companyId}
-              onChange={(e) => setCompanyId(e.target.value)}
-            >
-              <option value="">Seleccionar empresa…</option>
-              {activeCompanies.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </FormSelect>
-          </FormField>
-          <FormField label="Área" required error={errors.area} fullWidth>
-            <FormInput
-              value={area}
-              onChange={(e) => setArea(e.target.value)}
-              placeholder="Ej: Producción, Administración, Logística…"
+          <FormField label="Descripción" fullWidth>
+            <FormTextarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Descripción o detalle del centro de costo (opcional)…"
+              rows={3}
             />
           </FormField>
           <FormField label="Estado" fullWidth>
@@ -168,16 +152,10 @@ function CostCenterModal({ costCenter, companies, onClose, onSave }: CostCenterM
 
 export default function CostCentersPage() {
   const [search, setSearch] = useState('')
-  const [filterCompany, setFilterCompany] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [modalCC, setModalCC] = useState<CostCenter | null | undefined>(undefined)
 
   const queryClient = useQueryClient()
-
-  const { data: allCompanies = [] } = useQuery({
-    queryKey: ['companies'],
-    queryFn: companiesApi.findAll,
-  })
 
   const { data: allCostCenters = [], isLoading } = useQuery({
     queryKey: ['cost-centers'],
@@ -196,19 +174,14 @@ export default function CostCentersPage() {
         !search ||
         cc.name.toLowerCase().includes(q) ||
         cc.code.toLowerCase().includes(q) ||
-        cc.area.toLowerCase().includes(q)
-      const matchCompany = !filterCompany || cc.companyId === filterCompany
+        cc.description.toLowerCase().includes(q)
       const matchStatus = !filterStatus || cc.status === filterStatus
-      return matchSearch && matchCompany && matchStatus
+      return matchSearch && matchStatus
     })
-  }, [search, filterCompany, filterStatus, allCostCenters])
+  }, [search, filterStatus, allCostCenters])
 
   const activeCount = allCostCenters.filter((cc) => cc.status === 'activo').length
   const inactiveCount = allCostCenters.filter((cc) => cc.status === 'inactivo').length
-
-  const COMPANY_OPTIONS = allCompanies
-    .filter((c) => c.status === 'activo')
-    .map((c) => ({ value: c.id, label: c.name }))
 
   const STATUS_OPTIONS = [
     { value: 'activo', label: 'Activo' },
@@ -237,24 +210,12 @@ export default function CostCentersPage() {
       render: (v) => <span className="font-medium text-slate-800 text-sm">{String(v)}</span>,
     },
     {
-      key: 'companyId',
-      label: 'Empresa',
-      render: (v) => {
-        const company = allCompanies.find((c) => c.id === v)
-        return (
-          <div className="max-w-[200px]">
-            <OverflowCell value={company?.name ?? null} lines={1} className="text-xs text-slate-500" />
-          </div>
-        )
-      },
-    },
-    {
-      key: 'area',
-      label: 'Área',
+      key: 'description',
+      label: 'Descripción',
       render: (v) => (
-        <span className="inline-block text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-          {String(v)}
-        </span>
+        <div className="max-w-[260px]">
+          <OverflowCell value={String(v) || null} lines={1} className="text-xs text-slate-500" />
+        </div>
       ),
     },
     {
@@ -290,7 +251,7 @@ export default function CostCentersPage() {
     <PageContent>
       <PageHeader
         title="Centros de Costo"
-        subtitle="Unidades de imputación contable vinculadas a cada empresa"
+        subtitle="Unidades de imputación contable para la asignación de activos"
         actions={
           <button
             onClick={() => setModalCC(null)}
@@ -302,7 +263,7 @@ export default function CostCentersPage() {
         }
       />
 
-      <MetricGrid cols={4} className="mb-6">
+      <MetricGrid cols={3} className="mb-6">
         <KpiCard
           label="Total"
           value={allCostCenters.length}
@@ -324,13 +285,6 @@ export default function CostCentersPage() {
           icon={XCircle}
           variant={inactiveCount > 0 ? 'warning' : 'default'}
         />
-        <KpiCard
-          label="Empresas"
-          value={allCompanies.filter((c) => c.status === 'activo').length}
-          description="Con centros de costo activos"
-          icon={Building2}
-          variant="info"
-        />
       </MetricGrid>
 
       <SectionCard noPadding>
@@ -338,18 +292,11 @@ export default function CostCentersPage() {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder="Buscar por código, nombre o área…"
+            placeholder="Buscar por código, nombre o descripción…"
             className="w-full sm:w-72"
           />
           <FilterBar
             filters={[
-              {
-                key: 'company',
-                label: 'Empresa',
-                options: COMPANY_OPTIONS,
-                value: filterCompany,
-                onChange: setFilterCompany,
-              },
               {
                 key: 'status',
                 label: 'Estado',
@@ -369,51 +316,13 @@ export default function CostCentersPage() {
           rowKey="id"
           emptyTitle="Sin centros de costo"
           emptyDescription="No se encontraron centros con los filtros aplicados."
-          minWidth={780}
+          minWidth={640}
         />
       </SectionCard>
-
-      <div className="mt-5 space-y-4">
-        {allCompanies.filter((c) => c.status === 'activo').map((company) => {
-          const ccs = allCostCenters.filter((cc) => cc.companyId === company.id)
-          if (ccs.length === 0) return null
-          return (
-            <SectionCard key={company.id} title={company.name} subtitle={`CUIT ${company.taxId}`}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {ccs.map((cc) => {
-                  const assetCount = allAssets.filter((a) => a.costCenterId === cc.id && a.status === 'activo').length
-                  return (
-                    <div
-                      key={cc.id}
-                      onClick={() => setModalCC(cc)}
-                      className={`rounded-lg border p-3.5 transition-colors cursor-pointer ${
-                        cc.status === 'activo'
-                          ? 'border-slate-200 bg-white hover:border-blue-200'
-                          : 'border-slate-100 bg-slate-50 opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <span className="text-xs font-mono text-slate-400">{cc.code}</span>
-                        <StatusPill status={cc.status} size="sm" />
-                      </div>
-                      <p className="text-sm font-medium text-slate-800 leading-snug mb-1">{cc.name}</p>
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-                        <span className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{cc.area}</span>
-                        <span className="text-xs text-slate-500">{assetCount} activo{assetCount !== 1 ? 's' : ''}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </SectionCard>
-          )
-        })}
-      </div>
 
       {modalCC !== undefined && (
         <CostCenterModal
           costCenter={modalCC}
-          companies={allCompanies}
           onClose={() => setModalCC(undefined)}
           onSave={handleSave}
         />

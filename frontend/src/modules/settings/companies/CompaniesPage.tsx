@@ -213,13 +213,13 @@ export default function CompaniesPage() {
     },
     {
       key: 'id',
-      label: 'Centros de Costo',
+      label: 'Activos',
       render: (v) => {
-        const ccCount = allCostCenters.filter((cc) => cc.companyId === v && cc.status === 'activo').length
+        const ccCount = allAssets.filter((a) => a.companyId === v && a.status === 'activo').length
         return (
           <span className="inline-flex items-center gap-1 text-xs text-slate-600">
             <Hash size={12} />
-            {ccCount} centro{ccCount !== 1 ? 's' : ''}
+            {ccCount} activo{ccCount !== 1 ? 's' : ''}
           </span>
         )
       },
@@ -334,7 +334,6 @@ export default function CompaniesPage() {
 
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {allCompanies.map((company) => {
-          const ccList = allCostCenters.filter((cc) => cc.companyId === company.id)
           const assetList = allAssets.filter((a) => a.companyId === company.id && a.status === 'activo')
           return (
             <div
@@ -351,11 +350,6 @@ export default function CompaniesPage() {
               <h3 className="font-semibold text-slate-800 text-sm mb-1 leading-snug">{company.name}</h3>
               <p className="text-xs text-slate-400 font-mono mb-4">CUIT {company.taxId}</p>
               <div className="flex items-center gap-4 pt-3 border-t border-slate-100">
-                <div className="text-center">
-                  <span className="block text-lg font-bold text-slate-800">{ccList.length}</span>
-                  <span className="block text-xs text-slate-400">CC</span>
-                </div>
-                <div className="w-px h-8 bg-slate-100" />
                 <div className="text-center">
                   <span className="block text-lg font-bold text-slate-800">{assetList.length}</span>
                   <span className="block text-xs text-slate-400">Activos</span>

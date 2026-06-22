@@ -1,9 +1,9 @@
 import { useState, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, FileText, FileSpreadsheet, Image as ImageIcon, File as FileIcon,
   X, AlertTriangle, CheckCircle2, Clock, Upload, Calendar, Paperclip, Download,
-  Mail, Bell, Send,
+  Mail, Bell, Send, Loader2,
 } from 'lucide-react'
 import type { AssetAttachment } from '../../shared/types'
 import { assetsApi } from '../../shared/api/assets.api'
@@ -101,7 +101,7 @@ function NotificationBadge({
 interface AddModalProps {
   assetId: string
   onClose: () => void
-  onAdd: (attachment: AssetAttachment) => void
+  onSuccess: () => void
 }
 
 function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
@@ -124,22 +124,20 @@ function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: () => voi
   )
 }
 
-function AddAttachmentModal({ assetId, onClose, onAdd }: AddModalProps) {
+function AddAttachmentModal({ assetId, onClose, onSuccess }: AddModalProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [hasExpiration, setHasExpiration] = useState(false)
   const [expirationDate, setExpirationDate] = useState('')
   const [hasNotification, setHasNotification] = useState(false)
   const [notifyEmail, setNotifyEmail] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
-  const applyFile = (file: File) => {
-    setSelectedFile(file)
-    if (!name) setName(file.name.replace(/\.[^/.]+$/, ''))
-  }
+  const applyFile = (file: File) => setSelectedFile(file)
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
@@ -156,7 +154,6 @@ function AddAttachmentModal({ assetId, onClose, onAdd }: AddModalProps) {
   const validate = (): boolean => {
     const e: Record<string, string> = {}
     if (!selectedFile) e.file = 'Seleccioná un archivo.'
-    if (!name.trim()) e.name = 'Ingresá un nombre para el documento.'
     if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
     if (hasNotification && !notifyEmail.trim()) e.email = 'Ingresá el email para la notificación.'
     if (hasNotification && notifyEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notifyEmail.trim())) {
@@ -166,23 +163,24 @@ function AddAttachmentModal({ assetId, onClose, onAdd }: AddModalProps) {
     return Object.keys(e).length === 0
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate() || !selectedFile) return
-    const ext = selectedFile.name.split('.').pop() ?? 'file'
-    const attachment: AssetAttachment = {
-      id: `att-${Date.now()}`,
-      assetId,
-      name: `${name.trim()}.${ext}`,
-      description: description.trim(),
-      fileType: detectFileType(selectedFile.name),
-      fileSize: formatFileSize(selectedFile.size),
-      expirationDate: hasExpiration ? expirationDate : null,
-      notifyEmail: hasNotification && hasExpiration ? notifyEmail.trim() : undefined,
-      uploadedAt: new Date().toISOString().split('T')[0],
-      uploadedBy: 'Usuario actual',
+    setUploading(true)
+    setUploadError(null)
+    try {
+      await assetsApi.addAttachment(assetId, {
+        file: selectedFile,
+        description: description.trim() || undefined,
+        expirationDate: hasExpiration ? expirationDate : undefined,
+        notifyEmail: hasNotification && hasExpiration ? notifyEmail.trim() : undefined,
+      })
+      onSuccess()
+      onClose()
+    } catch {
+      setUploadError('No se pudo subir el archivo. Verificá tu conexión e intentá de nuevo.')
+    } finally {
+      setUploading(false)
     }
-    onAdd(attachment)
-    onClose()
   }
 
   return (
@@ -240,27 +238,12 @@ function AddAttachmentModal({ assetId, onClose, onAdd }: AddModalProps) {
                   <p className="text-sm font-medium text-slate-800 truncate">{selectedFile.name}</p>
                   <p className="text-xs text-slate-500">{formatFileSize(selectedFile.size)}</p>
                 </div>
-                <button type="button" onClick={() => { setSelectedFile(null); setName('') }} className="p-1 text-slate-400 hover:text-red-500 transition-colors">
+                <button type="button" onClick={() => setSelectedFile(null)} className="p-1 text-slate-400 hover:text-red-500 transition-colors">
                   <X size={14} />
                 </button>
               </div>
             )}
             {errors.file && <p className="text-xs text-red-600 mt-1.5">{errors.file}</p>}
-          </div>
-
-          {/* Nombre */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Nombre del documento <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ej: Cédula verde Toyota Hilux"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
-            />
-            {errors.name && <p className="text-xs text-red-600 mt-1.5">{errors.name}</p>}
           </div>
 
           {/* Descripción */}
@@ -367,14 +350,32 @@ function AddAttachmentModal({ assetId, onClose, onAdd }: AddModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors">
+        <div className="border-t border-slate-100 bg-slate-50/50">
+          {uploadError && (
+            <div className="flex items-center gap-2 px-6 pt-3 text-xs text-red-600">
+              <AlertTriangle size={13} />
+              {uploadError}
+            </div>
+          )}
+        <div className="flex items-center justify-end gap-2.5 px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={uploading}
+            className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+          >
             Cancelar
           </button>
-          <button type="button" onClick={handleSubmit} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-            <Upload size={14} />
-            Guardar adjunto
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={uploading}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+          >
+            {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            {uploading ? 'Subiendo...' : 'Guardar adjunto'}
           </button>
+        </div>
         </div>
       </div>
     </div>
@@ -388,29 +389,25 @@ interface AssetAttachmentsTabProps {
 }
 
 export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
-  const { data: fetchedAttachments = [] } = useQuery({
-    queryKey: ['assets', assetId, 'attachments'],
+  const queryClient = useQueryClient()
+  const attachmentsKey = ['assets', assetId, 'attachments'] as const
+
+  const { data: attachments = [] } = useQuery({
+    queryKey: attachmentsKey,
     queryFn: () => assetsApi.findAttachments(assetId),
     enabled: !!assetId,
   })
 
-  const [localAttachments, setLocalAttachments] = useState<AssetAttachment[]>([])
-  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set())
   const [showModal, setShowModal] = useState(false)
 
-  // Merge server data with locally added attachments, excluding locally removed ones
-  const attachments: AssetAttachment[] = [
-    ...fetchedAttachments.filter((a) => !removedIds.has(a.id)),
-    ...localAttachments.filter((a) => !removedIds.has(a.id)),
-  ]
+  const deleteMutation = useMutation({
+    mutationFn: (attachmentId: string) => assetsApi.deleteAttachment(assetId, attachmentId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: attachmentsKey }),
+  })
 
-  const handleAdd = (attachment: AssetAttachment) => {
-    setLocalAttachments((prev) => [...prev, attachment])
-  }
+  const handleSuccess = () => queryClient.invalidateQueries({ queryKey: attachmentsKey })
 
-  const handleRemove = (id: string) => {
-    setRemovedIds((prev) => new Set([...prev, id]))
-  }
+  const handleRemove = (id: string) => deleteMutation.mutate(id)
 
   return (
     <div className="p-5">
@@ -532,7 +529,7 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
         <AddAttachmentModal
           assetId={assetId}
           onClose={() => setShowModal(false)}
-          onAdd={handleAdd}
+          onSuccess={handleSuccess}
         />
       )}
     </div>

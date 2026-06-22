@@ -280,8 +280,8 @@ export default function PolicyDetailPage() {
                   value={costCenter ? `${costCenter.code} — ${costCenter.name}` : '—'}
                 />
                 <InfoRow
-                  label="Área"
-                  value={costCenter?.area ?? '—'}
+                  label="Descripción"
+                  value={costCenter?.description ?? '—'}
                 />
               </div>
             )}

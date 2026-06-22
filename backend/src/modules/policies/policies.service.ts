@@ -1,8 +1,9 @@
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
-import { computePolicyStatus, buildPolicyStatusFilter } from '../../shared/utils/dates'
+import { computePolicyStatus, buildPolicyStatusFilter, toDateStr } from '../../shared/utils/dates'
 import { detectFileType, formatFileSize, isAllowedMimetype } from '../../shared/utils/files'
+import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import type {
   CreatePolicyDTO,
   UpdatePolicyDTO,
@@ -25,9 +26,14 @@ const POLICY_DETAIL_INCLUDE = {
   _count: { select: { allocations: true } },
 }
 
-// Agrega el status computado a cada póliza
-function withStatus<T extends { endDate: string }>(policy: T) {
-  return { ...policy, status: computePolicyStatus(policy.endDate) }
+// Normaliza las fechas a YYYY-MM-DD y agrega el status computado
+function withStatus<T extends { startDate: Date | string; endDate: Date | string }>(policy: T) {
+  return {
+    ...policy,
+    startDate: toDateStr(policy.startDate),
+    endDate: toDateStr(policy.endDate),
+    status: computePolicyStatus(policy.endDate),
+  }
 }
 
 export const policiesService = {
@@ -191,6 +197,15 @@ export const policiesService = {
       throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel', 'UNSUPPORTED_MEDIA_TYPE')
     }
 
+    let fileUrl = `local://${file.originalname}`
+    let cloudinaryPublicId: string | null = null
+
+    if (isCloudinaryConfigured()) {
+      const result = await uploadToCloudinary(file.buffer, 'policies')
+      fileUrl = result.secure_url
+      cloudinaryPublicId = result.public_id
+    }
+
     return prisma.policyAttachment.create({
       data: {
         policyId,
@@ -198,7 +213,8 @@ export const policiesService = {
         description: meta.description ?? null,
         fileType: detectFileType(file.mimetype),
         fileSize: formatFileSize(file.size),
-        fileUrl: `pending://${file.originalname}`, // Phase 10: Cloudinary
+        fileUrl,
+        cloudinaryPublicId,
         expirationDate: meta.expirationDate ?? null,
         notifyEmail: meta.notifyEmail || null,
         uploadedBy,
@@ -211,6 +227,9 @@ export const policiesService = {
       where: { id: attachmentId, policyId },
     })
     if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    if (attachment.cloudinaryPublicId) {
+      await deleteFromCloudinary(attachment.cloudinaryPublicId)
+    }
     await prisma.policyAttachment.delete({ where: { id: attachmentId } })
   },
 }

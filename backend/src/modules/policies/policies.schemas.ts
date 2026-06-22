@@ -4,11 +4,13 @@ import { PaginationSchema, ActiveFilterSchema } from '../../shared/schemas/commo
 const ISODate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido. Usar YYYY-MM-DD')
+  .transform((s) => new Date(s + 'T00:00:00.000Z'))
 
 const PolicyBaseSchema = z.object({
   policyNumber: z.string().min(1, 'El número de póliza es requerido').max(100),
   insuranceTypeId: z.string().uuid('ID de tipo de seguro inválido'),
   companyId: z.string().uuid('ID de empresa inválido'),
+  costCenterId: z.string().uuid('ID de centro de costo inválido').optional().nullable(),
   producerId: z.string().uuid('ID de productor inválido').optional().nullable(),
   insuredName: z.string().min(1, 'El nombre del asegurado es requerido').max(300),
   startDate: ISODate,
@@ -20,7 +22,7 @@ const PolicyBaseSchema = z.object({
 })
 
 export const CreatePolicySchema = PolicyBaseSchema.refine(
-  (data) => data.endDate >= data.startDate,
+  (data) => data.endDate.getTime() >= data.startDate.getTime(),
   { message: 'La fecha de fin debe ser posterior a la fecha de inicio', path: ['endDate'] },
 )
 

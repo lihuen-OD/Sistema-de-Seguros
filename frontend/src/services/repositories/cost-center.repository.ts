@@ -6,8 +6,7 @@ let idSeq = costCenters.length + 1
 
 export interface CostCenterInput {
   name: string
-  companyId: string
-  area: string
+  description?: string
   status: 'activo' | 'inactivo'
 }
 
@@ -20,10 +19,6 @@ export const costCenterRepository = {
     return costCenters.find((cc) => cc.id === id)
   },
 
-  findByCompany(companyId: string): CostCenter[] {
-    return costCenters.filter((cc) => cc.companyId === companyId)
-  },
-
   create(input: CostCenterInput): CostCenter {
     const seq = String(idSeq).padStart(3, '0')
     const code = `CC-${seq}`
@@ -31,8 +26,7 @@ export const costCenterRepository = {
       id: `cc-${idSeq++}`,
       code,
       name: input.name.trim(),
-      companyId: input.companyId,
-      area: input.area.trim(),
+      description: input.description?.trim() ?? '',
       status: input.status,
     }
     costCenters = [...costCenters, cc]
@@ -46,8 +40,7 @@ export const costCenterRepository = {
     const updated: CostCenter = {
       ...existing,
       ...(input.name !== undefined && { name: input.name.trim() }),
-      ...(input.companyId !== undefined && { companyId: input.companyId }),
-      ...(input.area !== undefined && { area: input.area.trim() }),
+      ...(input.description !== undefined && { description: input.description.trim() }),
       ...(input.status !== undefined && { status: input.status }),
     }
     costCenters = costCenters.map((cc) => (cc.id === id ? updated : cc))

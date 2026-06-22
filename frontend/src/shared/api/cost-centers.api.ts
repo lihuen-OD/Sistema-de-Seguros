@@ -5,8 +5,7 @@ interface BackendCostCenter {
   id: string
   name: string
   code: string | null
-  companyId: string | null
-  area: string | null
+  description: string | null
   isActive: boolean
   createdAt: string
 }
@@ -21,16 +20,14 @@ function mapCostCenter(b: BackendCostCenter): CostCenter {
     id: b.id,
     code: b.code ?? '',
     name: b.name,
-    companyId: b.companyId ?? '',
-    area: b.area ?? '',
+    description: b.description ?? '',
     status: b.isActive ? 'activo' : 'inactivo',
   }
 }
 
 export interface CostCenterInput {
   name: string
-  companyId: string
-  area: string
+  description?: string
   status: 'activo' | 'inactivo'
 }
 
@@ -45,8 +42,7 @@ export const costCentersApi = {
   async create(input: CostCenterInput): Promise<CostCenter> {
     const res = await apiClient.post<{ data: BackendCostCenter }>('/cost-centers', {
       name: input.name.trim(),
-      companyId: input.companyId || undefined,
-      area: input.area.trim() || undefined,
+      description: input.description?.trim() || undefined,
       ...(input.status === 'inactivo' && { isActive: false }),
     })
     return mapCostCenter(res.data.data)
@@ -55,8 +51,7 @@ export const costCentersApi = {
   async update(id: string, input: Partial<CostCenterInput>): Promise<CostCenter> {
     const body: Record<string, unknown> = {}
     if (input.name !== undefined) body.name = input.name.trim()
-    if (input.companyId !== undefined) body.companyId = input.companyId || null
-    if (input.area !== undefined) body.area = input.area.trim() || null
+    if (input.description !== undefined) body.description = input.description.trim() || null
     if (input.status !== undefined) body.isActive = input.status === 'activo'
     const res = await apiClient.put<{ data: BackendCostCenter }>(`/cost-centers/${id}`, body)
     return mapCostCenter(res.data.data)

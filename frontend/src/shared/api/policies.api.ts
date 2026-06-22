@@ -1,11 +1,12 @@
 import { apiClient } from './client'
-import type { Policy, PolicyStatus } from '../types'
+import type { Policy, PolicyStatus, PolicyAttachment } from '../types'
 
 interface BackendInsuranceType { id: string; name: string }
 interface BackendCompany { id: string; name: string; cuit: string | null }
 interface BackendProducer { id: string; name: string }
 interface BackendPolicy {
   id: string; policyNumber: string; insuranceTypeId: string; companyId: string
+  costCenterId: string | null
   producerId: string | null; insuredName: string; startDate: string; endDate: string
   premium: number; currency: string; description: string | null; coverageIds: string[]
   isActive: boolean; status: string; createdAt: string; updatedAt: string
@@ -25,7 +26,7 @@ function mapPolicy(b: BackendPolicy): Policy {
   return {
     id: b.id,
     policyNumber: b.policyNumber,
-    insuranceCompany: '',
+    insuranceCompany: b.insuredName,
     producerId: b.producerId ?? '',
     insuranceType: b.insuranceType?.name ?? '',
     coverageType: '',
@@ -34,7 +35,7 @@ function mapPolicy(b: BackendPolicy): Policy {
     endDate: b.endDate,
     assetId: null,
     companyId: b.companyId,
-    costCenterId: null,
+    costCenterId: b.costCenterId ?? null,
     insuredAmountArs: b.premium,
     exchangeRate: 1,
     insuredAmountUsd: b.currency === 'USD' ? b.premium : 0,
@@ -46,8 +47,8 @@ function mapPolicy(b: BackendPolicy): Policy {
 }
 
 export interface PolicyCreateInput {
-  policyNumber: string; insuranceTypeId: string; companyId: string; producerId?: string
-  insuredName: string; startDate: string; endDate: string; premium: number
+  policyNumber: string; insuranceTypeId: string; companyId: string; costCenterId?: string | null
+  producerId?: string; insuredName: string; startDate: string; endDate: string; premium: number
   currency?: string; description?: string; coverageIds?: string[]
 }
 
@@ -74,5 +75,32 @@ export const policiesApi = {
 
   async softDelete(id: string): Promise<void> {
     await apiClient.delete(`/policies/${id}`)
+  },
+
+  async findAttachments(policyId: string): Promise<PolicyAttachment[]> {
+    const res = await apiClient.get<{ data: PolicyAttachment[] }>(`/policies/${policyId}/attachments`)
+    return res.data.data
+  },
+
+  async addAttachment(
+    policyId: string,
+    file: File,
+    meta: { description?: string; expirationDate?: string; notifyEmail?: string },
+  ): Promise<PolicyAttachment> {
+    const form = new FormData()
+    form.append('file', file)
+    if (meta.description) form.append('description', meta.description)
+    if (meta.expirationDate) form.append('expirationDate', meta.expirationDate)
+    if (meta.notifyEmail) form.append('notifyEmail', meta.notifyEmail)
+    const res = await apiClient.post<{ data: PolicyAttachment }>(
+      `/policies/${policyId}/attachments`,
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    return res.data.data
+  },
+
+  async deleteAttachment(policyId: string, attachmentId: string): Promise<void> {
+    await apiClient.delete(`/policies/${policyId}/attachments/${attachmentId}`)
   },
 }

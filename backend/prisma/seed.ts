@@ -31,39 +31,39 @@ async function main() {
 
   console.log('✅ Base limpia. Insertando datos...')
 
-  // ── Companies ──────────────────────────────────────────────────────────────
+  // ── Companies (empresas del grupo — propietarias de activos y pólizas) ────────
 
-  const [laSegunda, federacion, zurich] = await Promise.all([
+  const [compOdwyerSA, compCampoNorte, compLogisticaOD] = await Promise.all([
     prisma.company.create({
       data: {
-        name: 'La Segunda Seguros',
-        cuit: '30-50002306-7',
-        email: 'contacto@lasegunda.com.ar',
-        phone: '0800-444-7273',
-        address: 'Bv. Oroño 1260, Rosario, Santa Fe',
+        name: "Los O'Dwyer S.A.",
+        cuit: '30-71234567-8',
+        email: 'admin@losodwyer.com',
+        phone: '0351-4123456',
+        address: 'Av. Vélez Sársfield 3450, Córdoba',
       },
     }),
     prisma.company.create({
       data: {
-        name: 'Federación Patronal Seguros',
-        cuit: '30-50000029-1',
-        email: 'info@fedpat.com.ar',
-        phone: '0800-222-3327',
-        address: 'Av. Rivadavia 1255, Buenos Aires',
+        name: 'Campo Norte S.R.L.',
+        cuit: '30-71234568-6',
+        email: 'campo@losodwyer.com',
+        phone: '03548-412345',
+        address: 'Ruta 9 km 12, Jesús María, Córdoba',
       },
     }),
     prisma.company.create({
       data: {
-        name: 'Zurich Argentina',
-        cuit: '30-50000022-4',
-        email: 'info@zurich.com.ar',
-        phone: '0800-333-7447',
-        address: 'Av. Leandro N. Alem 855, Buenos Aires',
+        name: 'Logística OD S.A.',
+        cuit: '30-71234569-4',
+        email: 'logistica@losodwyer.com',
+        phone: '0351-4234567',
+        address: 'Parque Industrial Córdoba, Córdoba',
       },
     }),
   ])
 
-  console.log('  ✔ Companies (3)')
+  console.log('  ✔ Companies (3) — empresas del grupo')
 
   // ── Cost Centers ───────────────────────────────────────────────────────────
 
@@ -166,7 +166,7 @@ async function main() {
                 title: 'Auditoría anual de activos asegurados',
                 description: 'Revisar valuación de activos con el cliente.',
                 dueDate: isoDate(15),
-                status: 'en_curso',
+                status: 'en_progreso',
               },
             ],
           },
@@ -204,8 +204,6 @@ async function main() {
       data: {
         name: 'Edificio Principal — Planta Córdoba',
         assetType: 'inmueble',
-        brand: null,
-        model: null,
         location: 'Av. Vélez Sársfield 3450, Córdoba',
         purchaseDate: '2010-03-15',
         purchaseValue: 8000000,
@@ -214,8 +212,8 @@ async function main() {
         allocations: {
           createMany: {
             data: [
-              { costCenterId: ccAdmin.id, percentage: 60 },
-              { costCenterId: ccOps.id, percentage: 40 },
+              { companyId: compOdwyerSA.id, costCenterId: ccAdmin.id, percentage: 60 },
+              { companyId: compOdwyerSA.id, costCenterId: ccOps.id, percentage: 40 },
             ],
           },
         },
@@ -234,7 +232,7 @@ async function main() {
         location: 'Planta Córdoba',
         allocations: {
           createMany: {
-            data: [{ costCenterId: ccLogistica.id, percentage: 100 }],
+            data: [{ companyId: compLogisticaOD.id, costCenterId: ccLogistica.id, percentage: 100 }],
           },
         },
       },
@@ -252,7 +250,7 @@ async function main() {
         description: 'Cosechadora de gran porte para uso agrícola extensivo.',
         allocations: {
           createMany: {
-            data: [{ costCenterId: ccOps.id, percentage: 100 }],
+            data: [{ companyId: compCampoNorte.id, costCenterId: ccOps.id, percentage: 100 }],
           },
         },
       },
@@ -269,8 +267,8 @@ async function main() {
         allocations: {
           createMany: {
             data: [
-              { costCenterId: ccLogistica.id, percentage: 70 },
-              { costCenterId: ccOps.id, percentage: 30 },
+              { companyId: compCampoNorte.id, costCenterId: ccLogistica.id, percentage: 70 },
+              { companyId: compCampoNorte.id, costCenterId: ccOps.id, percentage: 30 },
             ],
           },
         },
@@ -282,15 +280,15 @@ async function main() {
 
   // ── Policies ──────────────────────────────────────────────────────────────
 
-  const [polIncendio, polAuto, polRC, polAP] = await Promise.all([
+  const [polIncendio, polAuto, polRC, _polAP] = await Promise.all([
     // Póliza vigente — Incendio Edificio
     prisma.policy.create({
       data: {
         policyNumber: 'LS-INC-2024-001234',
         insuranceTypeId: tipoIncendio.id,
-        companyId: laSegunda.id,
+        companyId: compOdwyerSA.id,
         producerId: prodJuan.id,
-        insuredName: 'LOS O\'DWYER S.A.',
+        insuredName: "Los O'Dwyer S.A.",
         startDate: isoDate(-180),
         endDate: isoDate(185),
         premium: 280000,
@@ -304,9 +302,9 @@ async function main() {
       data: {
         policyNumber: 'FP-AUT-2025-005678',
         insuranceTypeId: tipoAuto.id,
-        companyId: federacion.id,
+        companyId: compLogisticaOD.id,
         producerId: prodMaria.id,
-        insuredName: 'LOS O\'DWYER S.A.',
+        insuredName: 'Logística OD S.A.',
         startDate: isoDate(-60),
         endDate: isoDate(305),
         premium: 145000,
@@ -320,9 +318,9 @@ async function main() {
       data: {
         policyNumber: 'ZA-RC-2024-009012',
         insuranceTypeId: tipoRC.id,
-        companyId: zurich.id,
+        companyId: compOdwyerSA.id,
         producerId: prodJuan.id,
-        insuredName: 'LOS O\'DWYER S.A.',
+        insuredName: "Los O'Dwyer S.A.",
         startDate: isoDate(-350),
         endDate: isoDate(15),   // vence en 15 días → proxima_a_vencer
         premium: 95000,
@@ -336,9 +334,9 @@ async function main() {
       data: {
         policyNumber: 'LS-AP-2023-003456',
         insuranceTypeId: tipoAP.id,
-        companyId: laSegunda.id,
+        companyId: compCampoNorte.id,
         producerId: prodMaria.id,
-        insuredName: 'LOS O\'DWYER S.A.',
+        insuredName: 'Campo Norte S.R.L.',
         startDate: isoDate(-400),
         endDate: isoDate(-35),  // venció hace 35 días → vencida
         premium: 68000,
@@ -358,7 +356,7 @@ async function main() {
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00001234',
-        documentType: 'Factura',
+        documentType: 'factura',
         issueDate: isoDate(-60),
         netAmount: 280000,
         vatAmount: 58800,
@@ -367,7 +365,7 @@ async function main() {
         exchangeRate: 1,
         description: 'Prima anual — Póliza LS-INC-2024-001234',
         insuranceCompany: 'La Segunda Seguros',
-        paymentStatus: 'pagado_parcial',
+        paymentStatus: 'parcial',
         installments: {
           createMany: {
             data: [
@@ -377,7 +375,7 @@ async function main() {
                 amount: 112933,
                 paymentStatus: 'pagado',
                 paymentDate: isoDate(-28),
-                paymentMethod: 'Transferencia bancaria',
+                paymentMethod: 'transferencia',
                 notes: 'Pagado en término',
               },
               {
@@ -408,7 +406,7 @@ async function main() {
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00005678',
-        documentType: 'Factura',
+        documentType: 'factura',
         issueDate: isoDate(-30),
         netAmount: 145000,
         vatAmount: 30450,
@@ -444,7 +442,7 @@ async function main() {
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00009012',
-        documentType: 'Nota de Débito',
+        documentType: 'nota_debito',
         issueDate: isoDate(-90),
         netAmount: 95000,
         vatAmount: 19950,
@@ -463,7 +461,7 @@ async function main() {
                 amount: 117800,
                 paymentStatus: 'pagado',
                 paymentDate: isoDate(-58),
-                paymentMethod: 'E-Cheq',
+                paymentMethod: 'echeq',
               },
             ],
           },
@@ -561,12 +559,12 @@ async function main() {
         claimNumber: 'SIN-2026-00001',
         assetId: actCamion.id,
         policyId: polAuto.id,
-        claimType: 'Accidente',
+        claimType: 'accidente',
         occurrenceDate: isoDate(-45),
         reportDate: isoDate(-44),
         description: 'Colisión trasera en Ruta Nacional 9. Daños en paragolpes trasero y sistema de escape.',
         insuranceCompany: 'Federación Patronal Seguros',
-        status: 'En trámite',
+        status: 'en_tramite',
         claimedAmountArs: 380000,
         currency: 'ARS',
         exchangeRate: 1,
@@ -583,8 +581,8 @@ async function main() {
                 type: 'estado_cambiado',
                 description: 'Perito de la aseguradora realizó inspección del vehículo.',
                 date: isoDate(-30),
-                previousStatus: 'Denunciado',
-                newStatus: 'En trámite',
+                previousStatus: 'denunciado',
+                newStatus: 'en_tramite',
                 createdBy: 'Juan Carlos Rodríguez',
               },
               {
@@ -606,12 +604,12 @@ async function main() {
         claimNumber: 'SIN-2026-00002',
         assetId: actCosechadora.id,
         policyId: polIncendio.id,
-        claimType: 'Granizo',
+        claimType: 'granizo',
         occurrenceDate: isoDate(-10),
         reportDate: isoDate(-9),
         description: 'Granizo severo causó daños en capó y sistema de cosecha. Estimación preliminar en proceso.',
         insuranceCompany: 'La Segunda Seguros',
-        status: 'Denunciado',
+        status: 'denunciado',
         claimedAmountArs: 0,
         currency: 'ARS',
         exchangeRate: 1,
@@ -674,11 +672,12 @@ async function main() {
     ]),
     catalogBatch('fire_ext_type', ['Polvo seco ABC', 'CO2', 'Agua', 'Espuma', 'Halón']),
     catalogBatch('fire_ext_capacity', ['1 kg', '2 kg', '4 kg', '6 kg', '10 kg', '25 kg', '50 kg']),
+    catalogBatch('fire_ext_location_type', ['Vehículo', 'Maquinaria', 'Establecimiento', 'Edificio', 'Infraestructura']),
     catalogBatch('task_type', [
       'Solicitar cotización', 'Renovar póliza', 'Enviar documentación',
       'Gestionar siniestro', 'Solicitar endoso', 'Reclamar documentación', 'Revisar vencimiento',
     ]),
-    catalogBatch('document_type', ['Factura', 'Nota de Crédito', 'Nota de Débito', 'Endoso']),
+    catalogBatch('document_type', ['Factura', 'Nota de Crédito', 'Nota de Débito', 'Endoso', 'Refacturación']),
     catalogBatch('document_payment_method', [
       'Transferencia bancaria', 'E-Cheq', 'Efectivo', 'Débito automático', 'Otros',
     ]),
@@ -698,10 +697,10 @@ async function main() {
 
   console.log('\n🎉 Seed completado exitosamente.')
   console.log('\n📊 Resumen:')
-  console.log('   • 3 Aseguradoras  • 3 Centros de Costo  • 4 Tipos de Seguro + 14 Coberturas')
-  console.log('   • 4 Activos       • 2 Productores + 3 Tareas')
-  console.log('   • 4 Pólizas       • 3 Documentos + 5 Cuotas')
-  console.log('   • 4 Matafuegos    • 2 Siniestros + 4 Eventos')
+  console.log('   • 3 Empresas del grupo  • 3 Centros de Costo  • 4 Tipos de Seguro + 14 Coberturas')
+  console.log('   • 4 Activos             • 2 Productores + 3 Tareas')
+  console.log('   • 4 Pólizas             • 3 Documentos + 5 Cuotas')
+  console.log('   • 4 Matafuegos          • 2 Siniestros + 4 Eventos')
   console.log('   • 17 Categorías de catálogo con sus ítems')
 }
 

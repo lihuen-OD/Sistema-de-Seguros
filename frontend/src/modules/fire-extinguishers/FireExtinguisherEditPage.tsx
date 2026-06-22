@@ -20,9 +20,7 @@ import {
 } from '../../shared/api/fire-extinguishers.api'
 import { assetsApi } from '../../shared/api/assets.api'
 import { catalogsApi } from '../../shared/api/catalogs.api'
-import { LOCATION_TYPES } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
-import type { AssociatedLocationType } from '../../shared/types'
 
 interface FormErrors {
   type?: string
@@ -55,13 +53,17 @@ export default function FireExtinguisherEditPage() {
     queryKey: ['catalogs', 'fire_ext_capacity'],
     queryFn: () => catalogsApi.findByCategory('fire_ext_capacity'),
   })
+  const { data: locationTypes = [] } = useQuery({
+    queryKey: ['catalogs', 'fire_ext_location_type'],
+    queryFn: () => catalogsApi.findByCategory('fire_ext_location_type'),
+  })
 
   const [type, setType] = useState('')
   const [capacity, setCapacity] = useState('')
   const [chargeDate, setChargeDate] = useState('')
   const [expirationDate, setExpirationDate] = useState('')
   const [associatedAssetId, setAssociatedAssetId] = useState('')
-  const [associatedLocationType, setAssociatedLocationType] = useState<AssociatedLocationType>('vehiculo')
+  const [associatedLocationType, setAssociatedLocationType] = useState('')
   const [observations, setObservations] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
@@ -78,7 +80,7 @@ export default function FireExtinguisherEditPage() {
       setChargeDate(original.chargeDate ?? '')
       setExpirationDate(original.expirationDate)
       setAssociatedAssetId(original.associatedAssetId ?? '')
-      setAssociatedLocationType(original.associatedLocationType)
+      setAssociatedLocationType(original.associatedLocationType as string)
       setObservations(original.observations ?? '')
       setSeeded(true)
     }
@@ -218,13 +220,14 @@ export default function FireExtinguisherEditPage() {
 
         <SectionCard title="Ubicación" className="mb-5">
           <FormSection title="Asignación física">
-            <FormField label="Tipo de ubicación" required>
+            <FormField label="Asignación física" required>
               <FormSelect
                 value={associatedLocationType}
-                onChange={(e) => setAssociatedLocationType(e.target.value as AssociatedLocationType)}
+                onChange={(e) => setAssociatedLocationType(e.target.value)}
               >
-                {Object.entries(LOCATION_TYPES).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
+                <option value="">Seleccionar tipo…</option>
+                {locationTypes.map((lt) => (
+                  <option key={lt.id} value={lt.label}>{lt.label}</option>
                 ))}
               </FormSelect>
             </FormField>

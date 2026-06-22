@@ -285,10 +285,8 @@ export default function PolicyEditPage() {
   }, [form.insuredAmountArs, form.exchangeRate])
 
   const filteredCostCenters = useMemo(
-    () => costCenters.filter(
-      (cc) => cc.status === 'activo' && (!form.companyId || cc.companyId === form.companyId),
-    ),
-    [costCenters, form.companyId],
+    () => costCenters.filter((cc) => cc.status === 'activo'),
+    [costCenters],
   )
 
   const isAP = form.coverageTypes.includes('Accidentes Personales') || form.insuranceType === 'Personal'
@@ -336,9 +334,12 @@ export default function PolicyEditPage() {
       ? form.companyId
       : (selectedAsset?.companyId ?? '')
 
+    const costCenterId = form.association === 'sin_activo' ? form.costCenterId || null : null
+
     updateMutation.mutate({
       insuranceTypeId,
       companyId,
+      costCenterId,
       producerId: form.producerId || undefined,
       insuredName: form.insuranceCompany,
       startDate: form.startDate,

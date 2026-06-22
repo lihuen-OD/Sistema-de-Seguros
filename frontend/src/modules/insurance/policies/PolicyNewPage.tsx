@@ -249,10 +249,8 @@ export default function PolicyNewPage() {
   }, [form.insuredAmountArs, form.exchangeRate])
 
   const filteredCostCenters = useMemo(
-    () => costCenters.filter(
-      (cc) => cc.status === 'activo' && (!form.companyId || cc.companyId === form.companyId),
-    ),
-    [costCenters, form.companyId],
+    () => costCenters.filter((cc) => cc.status === 'activo'),
+    [costCenters],
   )
 
   // "Accidentes Personales" sin activo → pide descripción del asegurado
@@ -301,16 +299,19 @@ export default function PolicyNewPage() {
       ? form.companyId
       : (selectedAsset?.companyId ?? '')
 
+    const costCenterId = form.association === 'sin_activo' ? form.costCenterId || null : null
+
     createMutation.mutate({
       policyNumber: form.policyNumber.trim(),
       insuranceTypeId,
       companyId,
+      costCenterId,
       producerId: form.producerId || undefined,
       insuredName: form.insuranceCompany,
       startDate: form.startDate,
       endDate: form.endDate,
       premium: ars,
-      currency: rate > 0 ? 'ARS' : 'ARS',
+      currency: 'ARS',
       description: form.description.trim() || undefined,
       coverageIds: [],
     })

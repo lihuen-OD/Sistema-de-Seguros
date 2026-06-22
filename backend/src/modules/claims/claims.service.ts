@@ -1,7 +1,7 @@
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
-import { toISODate } from '../../shared/utils/dates'
+import { toDateStr } from '../../shared/utils/dates'
 import type {
   CreateClaimDTO,
   UpdateClaimDTO,
@@ -31,7 +31,7 @@ function mapEvent(e: Record<string, unknown>) {
     claimId: e.claimId,
     type: e.type,
     description: e.description,
-    date: e.date,
+    date: toDateStr(e.date as Date | string),
     previousStatus: e.previousStatus ?? null,
     newStatus: e.newStatus ?? null,
     amountLabel: e.amountLabel ?? null,
@@ -44,8 +44,8 @@ function mapEvent(e: Record<string, unknown>) {
 
 async function generateClaimNumber(): Promise<string> {
   const year = new Date().getFullYear()
-  const count = await prisma.claim.count()
-  const seq = String(count + 1).padStart(5, '0')
+  const result = await prisma.$queryRaw<[{ nextval: bigint }]>`SELECT nextval('claim_number_seq')`
+  const seq = String(Number(result[0].nextval)).padStart(5, '0')
   return `SIN-${year}-${seq}`
 }
 
@@ -136,7 +136,7 @@ export const claimsService = {
           create: {
             type: 'siniestro_creado',
             description: 'Siniestro registrado en el sistema',
-            date: toISODate(),
+            date: new Date(),
             createdBy: createdBy ?? 'Sistema',
           },
         },

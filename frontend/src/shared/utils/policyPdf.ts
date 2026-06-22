@@ -61,7 +61,7 @@ function buildHtml(data: PolicyPdfData): string {
     : `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;">
         ${field('Empresa', company?.name ?? '—')}
         ${field('Centro de Costo', costCenter ? `${costCenter.code} — ${costCenter.name}` : '—')}
-        ${field('Área', costCenter?.area ?? '—')}
+        ${field('Descripción CC', costCenter?.description ?? '—')}
        </div>`
 
   // Documents table rows

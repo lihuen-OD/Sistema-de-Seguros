@@ -358,15 +358,18 @@ export default function AssetDetailPage() {
 
           {/* Imputación contable */}
           <SectionCard title="Imputación Contable">
-            {asset.allocations && asset.allocations.length > 1 ? (
+            {asset.allocations && asset.allocations.length > 0 ? (
               <div className="space-y-2">
                 {asset.allocations.map((alloc) => {
                   const allocCompany = allCompanies.find((c) => c.id === alloc.companyId)
                   const allocCC = allCostCenters.find((cc) => cc.id === alloc.costCenterId)
                   return (
-                    <div key={alloc.id} className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate">{allocCompany?.name ?? '—'}</p>
+                    <div key={alloc.id} className="flex items-center gap-4 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50">
+                      <Building2 size={14} className="text-slate-400 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">
+                          {allocCompany?.name ?? '—'}
+                        </p>
                         <p className="text-xs text-slate-500 truncate mt-0.5">
                           {allocCC ? `${allocCC.code} — ${allocCC.name}` : '—'}
                         </p>

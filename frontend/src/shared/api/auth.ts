@@ -23,8 +23,8 @@ export async function ensureDevToken(): Promise<void> {
     })
     if (!res.ok) return
     const data = await res.json()
-    if (data?.data?.token) {
-      setToken(data.data.token)
+    if (data?.token) {
+      setToken(data.token)
     }
   } catch {
     console.warn('⚠️ No se pudo obtener el dev token. Verificá que el backend esté corriendo en', API_BASE)

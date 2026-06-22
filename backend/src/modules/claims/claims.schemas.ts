@@ -4,6 +4,7 @@ import { PaginationSchema } from '../../shared/schemas/common'
 const ISODate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido. Usar YYYY-MM-DD')
+  .transform((s) => new Date(s + 'T00:00:00.000Z'))
 
 export const CLAIM_TYPES = [
   'accidente', 'robo', 'hurto', 'incendio', 'granizo', 'granizo_cosecha',

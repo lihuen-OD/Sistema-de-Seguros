@@ -1,8 +1,14 @@
 import { apiClient } from './client'
 import type { Asset, AssetAttachment } from '../types'
 
-interface BackendCostCenter { id: string; name: string; code: string | null; companyId: string | null }
-interface BackendAllocation { id: string; assetId: string; costCenterId: string; percentage: number; costCenter: BackendCostCenter }
+interface BackendCompany { id: string; name: string; cuit: string }
+interface BackendCostCenter { id: string; name: string; code: string | null }
+interface BackendAllocation {
+  id: string; assetId: string
+  companyId: string; company: BackendCompany
+  costCenterId: string; costCenter: BackendCostCenter
+  percentage: number
+}
 interface BackendAsset {
   id: string; name: string; assetType: string; brand: string | null; model: string | null
   serialNumber: string | null; purchaseDate: string | null; purchaseValue: number | null
@@ -33,11 +39,11 @@ function mapAsset(b: BackendAsset): Asset {
     patrimonialValueUsd: b.currentValue ?? b.purchaseValue ?? 0,
     valuationDate: b.purchaseDate ?? '',
     observations: b.description ?? '',
-    companyId: primary?.costCenter?.companyId ?? '',
+    companyId: primary?.company?.id ?? '',
     costCenterId: primary?.costCenterId ?? '',
     allocations: b.allocations.map((a) => ({
       id: a.id,
-      companyId: a.costCenter?.companyId ?? '',
+      companyId: a.companyId,
       costCenterId: a.costCenterId,
       percentage: a.percentage,
     })),
@@ -54,16 +60,24 @@ function mapAttachment(a: BackendAttachment): AssetAttachment {
   return {
     id: a.id, assetId: a.assetId, name: a.name,
     description: a.description ?? '', fileType, fileSize: a.fileSize,
+    fileUrl: a.fileUrl,
     expirationDate: a.expirationDate ?? null,
     notifyEmail: a.notifyEmail ?? undefined,
     uploadedAt: a.uploadedAt, uploadedBy: a.uploadedBy,
   }
 }
 
+export interface AddAttachmentInput {
+  file: File
+  description?: string
+  expirationDate?: string
+  notifyEmail?: string
+}
+
 export interface AssetCreateInput {
   name: string; assetType: string; brand?: string; model?: string; serialNumber?: string
   purchaseDate?: string; currentValue?: number; description?: string
-  allocations: { costCenterId: string; percentage: number }[]
+  allocations: { companyId: string; costCenterId: string; percentage: number }[]
 }
 
 export const assetsApi = {
@@ -94,5 +108,23 @@ export const assetsApi = {
   async findAttachments(assetId: string): Promise<AssetAttachment[]> {
     const res = await apiClient.get<{ data: BackendAttachment[] }>(`/assets/${assetId}/attachments`)
     return res.data.data.map(mapAttachment)
+  },
+
+  async addAttachment(assetId: string, input: AddAttachmentInput): Promise<AssetAttachment> {
+    const form = new FormData()
+    form.append('file', input.file)
+    if (input.description) form.append('description', input.description)
+    if (input.expirationDate) form.append('expirationDate', input.expirationDate)
+    if (input.notifyEmail) form.append('notifyEmail', input.notifyEmail)
+    const res = await apiClient.post<{ data: BackendAttachment }>(
+      `/assets/${assetId}/attachments`,
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    return mapAttachment(res.data.data)
+  },
+
+  async deleteAttachment(assetId: string, attachmentId: string): Promise<void> {
+    await apiClient.delete(`/assets/${assetId}/attachments/${attachmentId}`)
   },
 }

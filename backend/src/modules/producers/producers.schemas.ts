@@ -4,6 +4,7 @@ import { PaginationSchema, ActiveFilterSchema } from '../../shared/schemas/commo
 const ISODate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido. Usar YYYY-MM-DD')
+  .transform((s) => new Date(s + 'T00:00:00.000Z'))
 
 export const CreateProducerSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido').max(200),

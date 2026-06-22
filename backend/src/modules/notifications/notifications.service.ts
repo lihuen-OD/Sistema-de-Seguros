@@ -1,18 +1,13 @@
 import { prisma } from '../../config/database'
 import { getTransporter, isMailerConfigured } from '../../config/mailer'
 import { AppError } from '../../shared/errors/AppError'
-import { toISODate } from '../../shared/utils/dates'
+import { toISODate, toDateStr, dateOffset, todayDate } from '../../shared/utils/dates'
 import { env } from '../../config/env'
 
-function isoDateOffset(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  return toISODate(d)
-}
-
-function formatDate(iso: string): string {
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
+function formatDate(d: Date | string): string {
+  const iso = toDateStr(d)
+  const [y, m, day] = iso.split('-')
+  return `${day}/${m}/${y}`
 }
 
 function formatAmount(amount: number, currency = 'ARS'): string {
@@ -97,9 +92,9 @@ export const notificationsService = {
       )
     }
 
-    const today = toISODate()
-    const in30Days = isoDateOffset(30)
-    const in7Days = isoDateOffset(7)
+    const today = todayDate()
+    const in30Days = dateOffset(30)
+    const in7Days = dateOffset(7)
 
     const [expiringPolicies, expiringExtinguishers, overdueInstallments, nearInstallments] =
       await Promise.all([
@@ -148,7 +143,7 @@ export const notificationsService = {
           e.location ?? e.locationType,
           e.type,
           formatDate(e.expirationDate),
-          e.expirationDate < today ? '<span style="color:#ef4444; font-weight:bold;">VENCIDO</span>' : 'Próximo',
+          toDateStr(e.expirationDate) < toISODate() ? '<span style="color:#ef4444; font-weight:bold;">VENCIDO</span>' : 'Próximo',
         ]),
       },
       {
@@ -211,9 +206,9 @@ export const notificationsService = {
   },
 
   async previewExpirations() {
-    const today = toISODate()
-    const in30Days = isoDateOffset(30)
-    const in7Days = isoDateOffset(7)
+    const today = todayDate()
+    const in30Days = dateOffset(30)
+    const in7Days = dateOffset(7)
 
     const [expiringPolicies, expiringExtinguishers, overdueInstallments, nearInstallments] =
       await Promise.all([

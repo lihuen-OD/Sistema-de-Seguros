@@ -1,60 +1,91 @@
 import { useState, useRef } from 'react'
-import { Plus, X, Download, Paperclip, Upload } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  Plus, X, Download, Paperclip, Upload, FileText, FileSpreadsheet,
+  Image as ImageIcon, File as FileIcon, AlertTriangle, Loader2,
+} from 'lucide-react'
 import type { AccountingDocumentAttachment } from '../../../shared/types'
+import { documentsApi } from '../../../shared/api/documents.api'
 import { formatDate } from '../../../shared/utils/format'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
-import {
-  FileTypeIcon,
-  detectFileType,
-  formatFileSize,
-} from '../../../shared/components/file-upload/AttachmentListEditor'
 
-// ── Add modal ─────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function AddDocumentAttachmentModal({
-  onClose,
-  onAdd,
-}: {
+function detectFileType(filename: string): AccountingDocumentAttachment['fileType'] {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'pdf') return 'pdf'
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image'
+  if (['xlsx', 'xls', 'csv'].includes(ext)) return 'excel'
+  return 'other'
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+function FileTypeIcon({ fileType }: { fileType: AccountingDocumentAttachment['fileType'] }) {
+  const base = 'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0'
+  const variants: Record<AccountingDocumentAttachment['fileType'], { bg: string; icon: React.ReactNode }> = {
+    pdf:   { bg: 'bg-red-50',    icon: <FileText size={15} className="text-red-600" /> },
+    image: { bg: 'bg-blue-50',   icon: <ImageIcon size={15} className="text-blue-600" /> },
+    excel: { bg: 'bg-green-50',  icon: <FileSpreadsheet size={15} className="text-green-600" /> },
+    other: { bg: 'bg-slate-100', icon: <FileIcon size={15} className="text-slate-500" /> },
+  }
+  const v = variants[fileType]
+  return <div className={`${base} ${v.bg}`}>{v.icon}</div>
+}
+
+// ── Add Modal ─────────────────────────────────────────────────────────────────
+
+interface AddModalProps {
+  documentId: string
   onClose: () => void
-  onAdd: (att: Omit<AccountingDocumentAttachment, 'id' | 'documentId' | 'uploadedAt'>) => void
-}) {
+  onSuccess: () => void
+}
+
+function AddDocumentAttachmentModal({ documentId, onClose, onSuccess }: AddModalProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
-
-  const applyFile = (file: File) => {
-    setSelectedFile(file)
-    if (!name) setName(file.name.replace(/\.[^/.]+$/, ''))
-  }
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const validate = (): boolean => {
     const e: Record<string, string> = {}
     if (!selectedFile) e.file = 'Seleccioná un archivo.'
-    if (!name.trim()) e.name = 'Ingresá un nombre para el documento.'
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate() || !selectedFile) return
-    const ext = selectedFile.name.split('.').pop() ?? 'file'
-    onAdd({
-      name: `${name.trim()}.${ext}`,
-      description: description.trim(),
-      fileType: detectFileType(selectedFile.name),
-      fileSize: formatFileSize(selectedFile.size),
-      uploadedBy: 'Usuario actual',
-    })
-    onClose()
+    setUploading(true)
+    setUploadError(null)
+    try {
+      await documentsApi.addAttachment(documentId, selectedFile, {
+        description: description.trim() || undefined,
+      })
+      onSuccess()
+      onClose()
+    } catch {
+      setUploadError('No se pudo subir el archivo. Verificá tu conexión e intentá de nuevo.')
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
@@ -71,6 +102,7 @@ function AddDocumentAttachmentModal({
         </div>
 
         <div className="px-6 py-5 space-y-4">
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               Archivo <span className="text-red-500">*</span>
@@ -79,7 +111,7 @@ function AddDocumentAttachmentModal({
               <div
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
                 onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) applyFile(f) }}
+                onDrop={(e) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) setSelectedFile(f) }}
                 onClick={() => inputRef.current?.click()}
                 className={`border-2 border-dashed rounded-xl px-4 py-6 text-center cursor-pointer transition-colors ${
                   isDragging ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-300 bg-slate-50 hover:bg-blue-50/30'
@@ -96,7 +128,7 @@ function AddDocumentAttachmentModal({
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls"
                   className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) applyFile(f) }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) setSelectedFile(f) }}
                 />
               </div>
             ) : (
@@ -106,26 +138,12 @@ function AddDocumentAttachmentModal({
                   <p className="text-sm font-medium text-slate-800 truncate">{selectedFile.name}</p>
                   <p className="text-xs text-slate-500">{formatFileSize(selectedFile.size)}</p>
                 </div>
-                <button type="button" onClick={() => { setSelectedFile(null); setName('') }} className="p-1 text-slate-400 hover:text-red-500 transition-colors">
+                <button type="button" onClick={() => setSelectedFile(null)} className="p-1 text-slate-400 hover:text-red-500 transition-colors">
                   <X size={14} />
                 </button>
               </div>
             )}
             {errors.file && <p className="text-xs text-red-600 mt-1.5">{errors.file}</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Nombre <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ej: Factura N° 0001-00012345"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
-            />
-            {errors.name && <p className="text-xs text-red-600 mt-1.5">{errors.name}</p>}
           </div>
 
           <div>
@@ -142,14 +160,32 @@ function AddDocumentAttachmentModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors">
-            Cancelar
-          </button>
-          <button type="button" onClick={handleSubmit} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-            <Upload size={14} />
-            Guardar adjunto
-          </button>
+        <div className="border-t border-slate-100 bg-slate-50/50">
+          {uploadError && (
+            <div className="flex items-center gap-2 px-6 pt-3 text-xs text-red-600">
+              <AlertTriangle size={13} />
+              {uploadError}
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2.5 px-6 py-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={uploading}
+              className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={uploading}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+            >
+              {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {uploading ? 'Subiendo...' : 'Guardar adjunto'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -162,23 +198,25 @@ interface DocumentAttachmentsSectionProps {
   documentId: string
 }
 
-export function DocumentAttachmentsSection({ documentId: _documentId }: DocumentAttachmentsSectionProps) {
-  const [attachments, setAttachments] = useState<AccountingDocumentAttachment[]>([])
+export function DocumentAttachmentsSection({ documentId }: DocumentAttachmentsSectionProps) {
+  const queryClient = useQueryClient()
+  const attachmentsKey = ['documents', documentId, 'attachments'] as const
+
+  const { data: attachments = [] } = useQuery({
+    queryKey: attachmentsKey,
+    queryFn: () => documentsApi.findAttachments(documentId),
+    enabled: !!documentId,
+  })
+
   const [showModal, setShowModal] = useState(false)
 
-  const handleAdd = (partial: Omit<AccountingDocumentAttachment, 'id' | 'documentId' | 'uploadedAt'>) => {
-    const newAttachment: AccountingDocumentAttachment = {
-      ...partial,
-      id: crypto.randomUUID(),
-      documentId: _documentId,
-      uploadedAt: new Date().toISOString(),
-    }
-    setAttachments((prev) => [...prev, newAttachment])
-  }
+  const deleteMutation = useMutation({
+    mutationFn: (attachmentId: string) => documentsApi.deleteAttachment(documentId, attachmentId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: attachmentsKey }),
+  })
 
-  const handleRemove = (id: string) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id))
-  }
+  const handleSuccess = () => queryClient.invalidateQueries({ queryKey: attachmentsKey })
+  const handleRemove = (id: string) => deleteMutation.mutate(id)
 
   return (
     <div className="p-5">
@@ -235,14 +273,12 @@ export function DocumentAttachmentsSection({ documentId: _documentId }: Document
                       <FileTypeIcon fileType={att.fileType} />
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-slate-800 truncate max-w-[260px]">{att.name}</p>
-                        {att.description && (
-                          <p className="text-xs text-slate-400 truncate max-w-[260px]">
-                            {att.description} <span className="text-slate-300">· {att.fileSize}</span>
-                          </p>
-                        )}
-                        {!att.description && (
-                          <p className="text-xs text-slate-400">{att.fileSize}</p>
-                        )}
+                        <p className="text-xs text-slate-400 truncate max-w-[260px]">
+                          {att.description
+                            ? <>{att.description} <span className="text-slate-300">· {att.fileSize}</span></>
+                            : att.fileSize
+                          }
+                        </p>
                       </div>
                     </div>
                   </td>
@@ -263,7 +299,8 @@ export function DocumentAttachmentsSection({ documentId: _documentId }: Document
                         type="button"
                         title="Eliminar"
                         onClick={() => handleRemove(att.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        disabled={deleteMutation.isPending}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
                       >
                         <X size={14} />
                       </button>
@@ -278,8 +315,9 @@ export function DocumentAttachmentsSection({ documentId: _documentId }: Document
 
       {showModal && (
         <AddDocumentAttachmentModal
+          documentId={documentId}
           onClose={() => setShowModal(false)}
-          onAdd={handleAdd}
+          onSuccess={handleSuccess}
         />
       )}
     </div>

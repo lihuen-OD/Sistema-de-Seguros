@@ -104,10 +104,9 @@ function getRows(
     case 'empresa':
       return companies.filter((c) => c.status === 'activo').map((c) => ({ id: c.id, label: c.name }))
     case 'centro_costo':
-      return costCenters.filter((cc) => cc.status === 'activo').map((cc) => {
-        const company = companies.find((c) => c.id === cc.companyId)
-        return { id: cc.id, label: cc.name, sublabel: company?.name }
-      })
+      return costCenters.filter((cc) => cc.status === 'activo').map((cc) => ({
+        id: cc.id, label: cc.name, sublabel: cc.description || undefined,
+      }))
     case 'activo':
       return assets.map((a) => ({ id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}` }))
     case 'poliza':

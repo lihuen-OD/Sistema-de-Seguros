@@ -5,6 +5,12 @@ const config: Config = {
   testEnvironment: 'node',
   rootDir: './src',
   testMatch: ['**/__tests__/**/*.test.ts'],
+  setupFiles: ['<rootDir>/__tests__/setup.ts'],
+  globals: {
+    'ts-jest': {
+      tsconfig: './tsconfig.test.json',
+    },
+  },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },

@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { AccountingDocument, PaymentStatus } from '../types'
+import type { AccountingDocument, PaymentStatus, AccountingDocumentAttachment } from '../types'
 
 interface BackendDocument {
   id: string; documentNumber: string; documentType: string; issueDate: string
@@ -61,5 +61,30 @@ export const documentsApi = {
 
   async softDelete(id: string): Promise<void> {
     await apiClient.delete(`/documents/${id}`)
+  },
+
+  async findAttachments(documentId: string): Promise<AccountingDocumentAttachment[]> {
+    const res = await apiClient.get<{ data: AccountingDocumentAttachment[] }>(`/documents/${documentId}/attachments`)
+    return res.data.data
+  },
+
+  async addAttachment(
+    documentId: string,
+    file: File,
+    meta: { description?: string },
+  ): Promise<AccountingDocumentAttachment> {
+    const form = new FormData()
+    form.append('file', file)
+    if (meta.description) form.append('description', meta.description)
+    const res = await apiClient.post<{ data: AccountingDocumentAttachment }>(
+      `/documents/${documentId}/attachments`,
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    return res.data.data
+  },
+
+  async deleteAttachment(documentId: string, attachmentId: string): Promise<void> {
+    await apiClient.delete(`/documents/${documentId}/attachments/${attachmentId}`)
   },
 }

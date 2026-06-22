@@ -32,10 +32,11 @@ describe('getPaginationParams', () => {
     expect(getPaginationParams({ limit: -100 }).limit).toBe(1)
   })
 
-  it('enforces maximum limit of 100', () => {
-    expect(getPaginationParams({ limit: 200 }).limit).toBe(100)
-    expect(getPaginationParams({ limit: 101 }).limit).toBe(100)
-    expect(getPaginationParams({ limit: 100 }).limit).toBe(100)
+  it('enforces maximum limit of 500', () => {
+    expect(getPaginationParams({ limit: 600 }).limit).toBe(500)
+    expect(getPaginationParams({ limit: 501 }).limit).toBe(500)
+    expect(getPaginationParams({ limit: 500 }).limit).toBe(500)
+    expect(getPaginationParams({ limit: 200 }).limit).toBe(200)
   })
 
   it('calculates skip correctly', () => {

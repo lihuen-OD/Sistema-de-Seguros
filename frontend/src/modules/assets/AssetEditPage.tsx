@@ -403,7 +403,7 @@ export default function AssetEditPage() {
           {/* 4. Imputación contable */}
           <SectionCard
             title="Imputación contable"
-            subtitle="Empresas, centros de costo y área de imputación."
+            subtitle="Empresa, centro de costo y porcentaje de imputación."
           >
             <div className="space-y-5">
               <AllocationEditor allocations={allocations} onChange={setAllocations} />

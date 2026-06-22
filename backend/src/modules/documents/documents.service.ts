@@ -2,6 +2,8 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { detectFileType, formatFileSize, isAllowedMimetype } from '../../shared/utils/files'
+import { toDateStr } from '../../shared/utils/dates'
+import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import type {
   CreateDocumentDTO,
   UpdateDocumentDTO,
@@ -40,10 +42,14 @@ function withTotalAmount<T extends { netAmount: number; vatAmount: number; other
   }
 }
 
-// Maps paymentDate → paidAt to match the frontend Installment type
+// Maps paymentDate → paidAt y normaliza fechas a YYYY-MM-DD
 function mapInstallment(inst: Record<string, unknown>) {
-  const { paymentDate, ...rest } = inst
-  return { ...rest, paidAt: paymentDate ?? null }
+  const { paymentDate, dueDate, ...rest } = inst
+  return {
+    ...rest,
+    dueDate: toDateStr(dueDate as Date | string),
+    paidAt: paymentDate ? toDateStr(paymentDate as Date | string) : null,
+  }
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -58,7 +64,10 @@ export const documentsService = {
     if (query.currency) where.currency = query.currency
     if (query.year) {
       const y = String(query.year)
-      where.issueDate = { gte: `${y}-01-01`, lte: `${y}-12-31` }
+      where.issueDate = {
+        gte: new Date(`${y}-01-01T00:00:00.000Z`),
+        lte: new Date(`${y}-12-31T00:00:00.000Z`),
+      }
     }
     if (query.search) {
       where.OR = [
@@ -312,6 +321,15 @@ export const documentsService = {
       )
     }
 
+    let fileUrl = `local://${file.originalname}`
+    let cloudinaryPublicId: string | null = null
+
+    if (isCloudinaryConfigured()) {
+      const result = await uploadToCloudinary(file.buffer, 'documents')
+      fileUrl = result.secure_url
+      cloudinaryPublicId = result.public_id
+    }
+
     return prisma.documentAttachment.create({
       data: {
         accountingDocumentId: documentId,
@@ -319,7 +337,8 @@ export const documentsService = {
         description: meta.description ?? null,
         fileType: detectFileType(file.mimetype),
         fileSize: formatFileSize(file.size),
-        fileUrl: `pending://${file.originalname}`, // Phase 10: replaced by Cloudinary URL
+        fileUrl,
+        cloudinaryPublicId,
         uploadedBy,
       },
     })
@@ -330,6 +349,9 @@ export const documentsService = {
       where: { id: attachmentId, accountingDocumentId: documentId },
     })
     if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    if (attachment.cloudinaryPublicId) {
+      await deleteFromCloudinary(attachment.cloudinaryPublicId)
+    }
     await prisma.documentAttachment.delete({ where: { id: attachmentId } })
   },
 

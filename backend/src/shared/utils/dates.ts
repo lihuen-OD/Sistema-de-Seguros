@@ -5,6 +5,37 @@ export function toISODate(date: Date = new Date()): string {
   return date.toISOString().slice(0, 10)
 }
 
+/**
+ * Normalizes a Prisma DateTime (Date object) or a YYYY-MM-DD string to YYYY-MM-DD.
+ * Use this in mappers before including date fields in API responses.
+ */
+export function toDateStr(d: Date | string | null | undefined): string {
+  if (!d) return ''
+  if (typeof d === 'string') return d.slice(0, 10)
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * Returns a Date object at midnight UTC, N days from today.
+ * Use this for Prisma WHERE filter values on DateTime @db.Date fields.
+ */
+export function dateOffset(days: number): Date {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() + days)
+  d.setUTCHours(0, 0, 0, 0)
+  return d
+}
+
+/**
+ * Returns today as a Date at midnight UTC.
+ * Use this for Prisma WHERE filter values on DateTime @db.Date fields.
+ */
+export function todayDate(): Date {
+  const d = new Date()
+  d.setUTCHours(0, 0, 0, 0)
+  return d
+}
+
 function addDays(date: Date, days: number): Date {
   const result = new Date(date)
   result.setDate(result.getDate() + days)
@@ -13,42 +44,42 @@ function addDays(date: Date, days: number): Date {
 
 /**
  * Status para matafuegos y adjuntos con vencimiento.
- * Usa género masculino: vencido / proximo_a_vencer.
- * Compara strings ISO (YYYY-MM-DD) lexicográficamente — timezone-safe.
+ * Acepta Date (de Prisma) o string YYYY-MM-DD.
  */
 export function computeExpirationStatus(
-  expirationDate: string,
+  expirationDate: Date | string,
   daysWarning = 30,
 ): ExpirationStatus {
+  const exp = toDateStr(expirationDate)
   const today = toISODate()
   const inNDays = toISODate(addDays(new Date(), daysWarning))
 
-  if (expirationDate < today) return 'vencido'
-  if (expirationDate <= inNDays) return 'proximo_a_vencer'
+  if (exp < today) return 'vencido'
+  if (exp <= inNDays) return 'proximo_a_vencer'
   return 'vigente'
 }
 
 /**
  * Status para pólizas.
- * Usa género femenino: vencida / proxima_a_vencer.
- * Compara strings ISO (YYYY-MM-DD) lexicográficamente — timezone-safe.
+ * Acepta Date (de Prisma) o string YYYY-MM-DD.
  */
-export function computePolicyStatus(endDate: string, daysWarning = 30): PolicyStatus {
+export function computePolicyStatus(endDate: Date | string, daysWarning = 30): PolicyStatus {
+  const end = toDateStr(endDate)
   const today = toISODate()
   const inNDays = toISODate(addDays(new Date(), daysWarning))
 
-  if (endDate < today) return 'vencida'
-  if (endDate <= inNDays) return 'proxima_a_vencer'
+  if (end < today) return 'vencida'
+  if (end <= inNDays) return 'proxima_a_vencer'
   return 'vigente'
 }
 
 /**
- * Construye el filtro Prisma WHERE para buscar pólizas por status computado.
- * ISO dates se comparan lexicográficamente — funciona correctamente con YYYY-MM-DD.
+ * Filtro Prisma WHERE para pólizas por status.
+ * Usa Date objects (requerido por DateTime @db.Date en Prisma).
  */
 export function buildPolicyStatusFilter(status: string): Record<string, unknown> {
-  const today = toISODate()
-  const in30Days = toISODate(addDays(new Date(), 30))
+  const today = todayDate()
+  const in30Days = dateOffset(30)
 
   if (status === 'vigente') return { endDate: { gt: in30Days } }
   if (status === 'proxima_a_vencer') return { endDate: { gte: today, lte: in30Days } }

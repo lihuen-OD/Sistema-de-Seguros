@@ -4,6 +4,7 @@ import { PaginationSchema } from '../../shared/schemas/common'
 const ISODate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido. Usar YYYY-MM-DD')
+  .transform((s) => new Date(s + 'T00:00:00.000Z'))
 
 const InstallmentInputSchema = z.object({
   installmentNumber: z.number().int().positive(),
@@ -18,7 +19,7 @@ const AllocationInputSchema = z.object({
 })
 
 const DocumentBaseSchema = z.object({
-  documentType: z.enum(['factura', 'endoso', 'nota_credito', 'refacturacion']),
+  documentType: z.enum(['factura', 'endoso', 'nota_credito', 'nota_debito', 'refacturacion']),
   documentNumber: z.string().min(1, 'El número de documento es requerido').max(100),
   issueDate: ISODate,
   netAmount: z.number({ required_error: 'El monto neto es requerido' }),
@@ -44,7 +45,7 @@ export const UpdateDocumentSchema = DocumentBaseSchema.partial().omit({ document
 export const ListDocumentsQuerySchema = PaginationSchema.extend({
   search: z.string().optional(),
   paymentStatus: z.enum(['pendiente', 'parcial', 'pagado']).optional(),
-  documentType: z.enum(['factura', 'endoso', 'nota_credito', 'refacturacion']).optional(),
+  documentType: z.enum(['factura', 'endoso', 'nota_credito', 'nota_debito', 'refacturacion']).optional(),
   currency: z.enum(['ARS', 'USD', 'EUR']).optional(),
   year: z.coerce.number().int().min(2000).max(2100).optional(),
 })

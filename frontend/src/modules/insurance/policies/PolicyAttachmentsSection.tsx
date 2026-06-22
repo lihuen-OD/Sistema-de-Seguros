@@ -1,14 +1,339 @@
-import { useState } from 'react'
-import { Plus, X, Download, Paperclip } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  Plus, X, Download, Paperclip, Upload, FileText, FileSpreadsheet,
+  Image as ImageIcon, File as FileIcon, AlertTriangle, CheckCircle2,
+  Clock, Calendar, Mail, Bell, Send, Loader2,
+} from 'lucide-react'
 import type { PolicyAttachment } from '../../../shared/types'
+import { policiesApi } from '../../../shared/api/policies.api'
 import { formatDate } from '../../../shared/utils/format'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
-import {
-  AddAttachmentModal,
-  FileTypeIcon,
-  ExpirationCell,
-} from '../../../shared/components/file-upload/AttachmentListEditor'
-import type { AssetAttachment } from '../../../shared/types'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getExpirationStatus(date: string | null): 'vencido' | 'proximo_vencer' | 'vigente' | null {
+  if (!date) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const exp = new Date(date + 'T00:00:00')
+  const diffDays = Math.floor((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  if (diffDays < 0) return 'vencido'
+  if (diffDays <= 30) return 'proximo_vencer'
+  return 'vigente'
+}
+
+function detectFileType(filename: string): PolicyAttachment['fileType'] {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'pdf') return 'pdf'
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image'
+  if (['xlsx', 'xls', 'csv'].includes(ext)) return 'excel'
+  return 'other'
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+function FileTypeIcon({ fileType }: { fileType: PolicyAttachment['fileType'] }) {
+  const base = 'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0'
+  const variants: Record<PolicyAttachment['fileType'], { bg: string; icon: React.ReactNode }> = {
+    pdf:   { bg: 'bg-red-50',    icon: <FileText size={15} className="text-red-600" /> },
+    image: { bg: 'bg-blue-50',   icon: <ImageIcon size={15} className="text-blue-600" /> },
+    excel: { bg: 'bg-green-50',  icon: <FileSpreadsheet size={15} className="text-green-600" /> },
+    other: { bg: 'bg-slate-100', icon: <FileIcon size={15} className="text-slate-500" /> },
+  }
+  const v = variants[fileType]
+  return <div className={`${base} ${v.bg}`}>{v.icon}</div>
+}
+
+function ExpirationCell({ date }: { date: string | null }) {
+  if (!date) return <span className="text-xs text-slate-400">Sin vencimiento</span>
+
+  const status = getExpirationStatus(date)
+  const config = {
+    vencido:        { label: 'Vencido',      style: 'bg-red-50 text-red-700 border-red-200',             Icon: AlertTriangle },
+    proximo_vencer: { label: 'Próx. vencer', style: 'bg-amber-50 text-amber-700 border-amber-200',       Icon: Clock },
+    vigente:        { label: 'Vigente',      style: 'bg-emerald-50 text-emerald-700 border-emerald-200', Icon: CheckCircle2 },
+  }[status!]
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border w-fit ${config.style}`}>
+        <config.Icon size={10} />
+        {config.label}
+      </span>
+      <span className="text-xs text-slate-500">{formatDate(date)}</span>
+    </div>
+  )
+}
+
+function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={onToggle}
+      className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+        checked ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white hover:border-blue-400'
+      }`}
+    >
+      {checked && (
+        <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+          <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
+// ── Add Modal ─────────────────────────────────────────────────────────────────
+
+interface AddModalProps {
+  policyId: string
+  onClose: () => void
+  onSuccess: () => void
+}
+
+function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [description, setDescription] = useState('')
+  const [hasExpiration, setHasExpiration] = useState(false)
+  const [expirationDate, setExpirationDate] = useState('')
+  const [hasNotification, setHasNotification] = useState(false)
+  const [notifyEmail, setNotifyEmail] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) setSelectedFile(file)
+  }
+
+  const validate = (): boolean => {
+    const e: Record<string, string> = {}
+    if (!selectedFile) e.file = 'Seleccioná un archivo.'
+    if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
+    if (hasNotification && !notifyEmail.trim()) e.email = 'Ingresá el email para la notificación.'
+    if (hasNotification && notifyEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notifyEmail.trim())) {
+      e.email = 'El formato del email no es válido.'
+    }
+    setErrors(e)
+    return Object.keys(e).length === 0
+  }
+
+  const handleSubmit = async () => {
+    if (!validate() || !selectedFile) return
+    setUploading(true)
+    setUploadError(null)
+    try {
+      await policiesApi.addAttachment(policyId, selectedFile, {
+        description: description.trim() || undefined,
+        expirationDate: hasExpiration ? expirationDate : undefined,
+        notifyEmail: hasNotification && hasExpiration ? notifyEmail.trim() : undefined,
+      })
+      onSuccess()
+      onClose()
+    } catch {
+      setUploadError('No se pudo subir el archivo. Verificá tu conexión e intentá de nuevo.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+              <Paperclip size={16} className="text-blue-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Adjuntar documento</h3>
+              <p className="text-xs text-slate-500">Póliza, certificado u otro archivo</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto">
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Archivo <span className="text-red-500">*</span>
+            </label>
+            {!selectedFile ? (
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => inputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl px-4 py-6 text-center cursor-pointer transition-colors ${
+                  isDragging ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-300 bg-slate-50 hover:bg-blue-50/30'
+                }`}
+              >
+                <Upload size={20} className="mx-auto text-slate-400 mb-2" />
+                <p className="text-sm text-slate-600">
+                  Arrastrá el archivo o{' '}
+                  <span className="text-blue-600 font-medium">hacé clic para seleccionar</span>
+                </p>
+                <p className="text-xs text-slate-400 mt-1">PDF, Excel, imágenes — máx. 20 MB</p>
+                <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setSelectedFile(f) }} />
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <FileTypeIcon fileType={detectFileType(selectedFile.name)} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-800 truncate">{selectedFile.name}</p>
+                  <p className="text-xs text-slate-500">{formatFileSize(selectedFile.size)}</p>
+                </div>
+                <button type="button" onClick={() => setSelectedFile(null)} className="p-1 text-slate-400 hover:text-red-500 transition-colors">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+            {errors.file && <p className="text-xs text-red-600 mt-1.5">{errors.file}</p>}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Descripción <span className="text-slate-400 font-normal">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ej: Póliza original del seguro automotor"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
+            />
+          </div>
+
+          <div className="rounded-xl border border-slate-200 overflow-hidden">
+            <div className="flex items-start gap-3 p-4 bg-slate-50/50">
+              <Checkbox
+                checked={hasExpiration}
+                onToggle={() => {
+                  const next = !hasExpiration
+                  setHasExpiration(next)
+                  if (!next) { setExpirationDate(''); setHasNotification(false); setNotifyEmail('') }
+                }}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-800">Este documento tiene fecha de vencimiento</p>
+                <p className="text-xs text-slate-500 mt-0.5">Registrá cuándo vence para hacer seguimiento</p>
+              </div>
+            </div>
+
+            {hasExpiration && (
+              <>
+                <div className="px-4 pb-4 bg-slate-50/50">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    <Calendar size={11} className="inline mr-1 align-[-1px]" />
+                    Fecha de vencimiento <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={expirationDate}
+                    onChange={(e) => setExpirationDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+                  />
+                  {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
+                </div>
+
+                <div className="border-t border-slate-200" />
+
+                <div className="flex items-start gap-3 p-4">
+                  <Checkbox
+                    checked={hasNotification}
+                    onToggle={() => { setHasNotification((v) => !v); if (hasNotification) setNotifyEmail('') }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-slate-800">Notificar por email al vencer</p>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
+                        Simulado
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Se enviará un aviso 30 días antes del vencimiento y el día que venza
+                    </p>
+                  </div>
+                </div>
+
+                {hasNotification && (
+                  <div className="px-4 pb-4">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      <Mail size={11} className="inline mr-1 align-[-1px]" />
+                      Email destinatario <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={notifyEmail}
+                      onChange={(e) => setNotifyEmail(e.target.value)}
+                      placeholder="Ej: proveedor@empresa.com"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
+                    />
+                    {errors.email && <p className="text-xs text-red-600 mt-1.5">{errors.email}</p>}
+                    {notifyEmail && !errors.email && (
+                      <p className="text-xs text-slate-400 mt-1.5 flex items-center gap-1">
+                        <Bell size={10} />
+                        Se notificará a <span className="font-medium text-slate-600 ml-0.5">{notifyEmail}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 bg-slate-50/50">
+          {uploadError && (
+            <div className="flex items-center gap-2 px-6 pt-3 text-xs text-red-600">
+              <AlertTriangle size={13} />
+              {uploadError}
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2.5 px-6 py-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={uploading}
+              className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={uploading}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+            >
+              {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {uploading ? 'Subiendo...' : 'Guardar adjunto'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
@@ -17,32 +342,27 @@ interface PolicyAttachmentsSectionProps {
 }
 
 export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionProps) {
-  const [attachments, setAttachments] = useState<PolicyAttachment[]>([])
+  const queryClient = useQueryClient()
+  const attachmentsKey = ['policies', policyId, 'attachments'] as const
+
+  const { data: attachments = [] } = useQuery({
+    queryKey: attachmentsKey,
+    queryFn: () => policiesApi.findAttachments(policyId),
+    enabled: !!policyId,
+  })
+
   const [showModal, setShowModal] = useState(false)
 
-  const handleAdd = (partial: Omit<AssetAttachment, 'assetId'>) => {
-    const saved: PolicyAttachment = {
-      id: crypto.randomUUID(),
-      policyId,
-      name: partial.name,
-      description: partial.description ?? '',
-      fileType: partial.fileType,
-      fileSize: partial.fileSize ?? '',
-      expirationDate: partial.expirationDate,
-      notifyEmail: partial.notifyEmail ?? '',
-      uploadedBy: partial.uploadedBy ?? '',
-      uploadedAt: new Date().toISOString(),
-    }
-    setAttachments((prev) => [...prev, saved])
-  }
+  const deleteMutation = useMutation({
+    mutationFn: (attachmentId: string) => policiesApi.deleteAttachment(policyId, attachmentId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: attachmentsKey }),
+  })
 
-  const handleRemove = (id: string) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id))
-  }
+  const handleSuccess = () => queryClient.invalidateQueries({ queryKey: attachmentsKey })
+  const handleRemove = (id: string) => deleteMutation.mutate(id)
 
   return (
     <div className="p-5">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-slate-800">Documentos adjuntos</span>
@@ -62,7 +382,6 @@ export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionP
         </button>
       </div>
 
-      {/* List / Empty */}
       {attachments.length === 0 ? (
         <EmptyState
           title="Sin adjuntos"
@@ -115,6 +434,19 @@ export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionP
                   </td>
                   <td className="px-4 py-3">
                     <ExpirationCell date={att.expirationDate} />
+                    {att.notifyEmail && (
+                      <div className={`mt-1.5 flex items-center gap-1.5 px-2 py-1 rounded-lg w-fit text-[11px] font-medium border ${
+                        getExpirationStatus(att.expirationDate) === 'vencido' || getExpirationStatus(att.expirationDate) === 'proximo_vencer'
+                          ? 'bg-amber-50 border-amber-200 text-amber-700'
+                          : 'bg-slate-50 border-slate-200 text-slate-500'
+                      }`}>
+                        {getExpirationStatus(att.expirationDate) === 'vencido' || getExpirationStatus(att.expirationDate) === 'proximo_vencer'
+                          ? <Send size={10} />
+                          : <Mail size={10} />
+                        }
+                        <span className="truncate max-w-[160px]">{att.notifyEmail}</span>
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <p className="text-xs text-slate-700">{formatDate(att.uploadedAt)}</p>
@@ -133,7 +465,8 @@ export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionP
                         type="button"
                         title="Eliminar"
                         onClick={() => handleRemove(att.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        disabled={deleteMutation.isPending}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
                       >
                         <X size={14} />
                       </button>
@@ -148,8 +481,9 @@ export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionP
 
       {showModal && (
         <AddAttachmentModal
+          policyId={policyId}
           onClose={() => setShowModal(false)}
-          onAdd={handleAdd}
+          onSuccess={handleSuccess}
         />
       )}
     </div>

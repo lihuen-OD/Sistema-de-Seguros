@@ -9,7 +9,7 @@ export type PolicyStatus =
   | 'pendiente_documentacion'
   | 'sin_factura'
 
-export type DocumentType = 'factura' | 'endoso' | 'nota_credito' | 'refacturacion'
+export type DocumentType = 'factura' | 'endoso' | 'nota_credito' | 'nota_debito' | 'refacturacion'
 
 export type PaymentStatus = 'pendiente' | 'parcial' | 'pagado'
 
@@ -120,8 +120,7 @@ export interface CostCenter {
   id: string
   code: string
   name: string
-  companyId: string
-  area: string
+  description: string
   status: 'activo' | 'inactivo'
 }
 
@@ -168,6 +167,7 @@ export interface AccountingDocumentAttachment {
   description: string
   fileType: 'pdf' | 'image' | 'excel' | 'other'
   fileSize: string
+  fileUrl?: string
   uploadedAt: string
   uploadedBy: string
 }
@@ -179,6 +179,7 @@ export interface PolicyAttachment {
   description: string
   fileType: 'pdf' | 'image' | 'excel' | 'other'
   fileSize: string
+  fileUrl?: string
   expirationDate: string | null
   notifyEmail?: string
   uploadedAt: string
@@ -296,6 +297,7 @@ export interface AssetAttachment {
   description: string
   fileType: 'pdf' | 'image' | 'excel' | 'other'
   fileSize: string
+  fileUrl?: string
   expirationDate: string | null
   notifyEmail?: string
   uploadedAt: string

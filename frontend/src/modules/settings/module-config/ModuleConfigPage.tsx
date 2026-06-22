@@ -85,7 +85,7 @@ const modules: ModuleCardProps[] = [
     iconColor: 'text-orange-600',
     iconBg: 'bg-orange-50',
     title: 'Matafuegos',
-    catalogs: ['Tipo de matafuego', 'Capacidad'],
+    catalogs: ['Tipo de matafuego', 'Capacidad', 'Asignación física'],
     to: '/settings/module-config/fire-extinguishers',
   },
   {

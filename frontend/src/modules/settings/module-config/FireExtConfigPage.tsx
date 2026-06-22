@@ -27,6 +27,14 @@ export default function FireExtConfigPage() {
             addPlaceholder="Ej: 1 kg"
           />
         </SectionCard>
+
+        <SectionCard title="Asignación física" noPadding>
+          <CatalogManager
+            category="fire_ext_location_type"
+            title="Asignación física"
+            addPlaceholder="Ej: Establecimiento"
+          />
+        </SectionCard>
       </div>
     </PageContent>
   )

@@ -23,7 +23,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-1',
     allocations: [
-      { id: 'alloc-1-1', companyId: 'comp-1', costCenterId: 'cc-1', percentage: 100 },
+      { id: 'alloc-1-1', costCenterId: 'cc-1', percentage: 100 },
     ],
     productiveUnit: 'Agrícola Norte',
     area: 'Producción',
@@ -56,7 +56,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-2',
     allocations: [
-      { id: 'alloc-2-1', companyId: 'comp-1', costCenterId: 'cc-2', percentage: 100 },
+      { id: 'alloc-2-1', costCenterId: 'cc-2', percentage: 100 },
     ],
     productiveUnit: 'Agrícola Sur',
     area: 'Producción',
@@ -85,7 +85,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-1',
     allocations: [
-      { id: 'alloc-3-1', companyId: 'comp-1', costCenterId: 'cc-1', percentage: 100 },
+      { id: 'alloc-3-1', costCenterId: 'cc-1', percentage: 100 },
     ],
     productiveUnit: 'Agrícola Norte',
     area: 'Producción',
@@ -117,7 +117,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-1',
     allocations: [
-      { id: 'alloc-4-1', companyId: 'comp-1', costCenterId: 'cc-1', percentage: 100 },
+      { id: 'alloc-4-1', costCenterId: 'cc-1', percentage: 100 },
     ],
     productiveUnit: 'Agrícola Norte',
     area: 'Producción',
@@ -145,8 +145,8 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-2',
     allocations: [
-      { id: 'alloc-5-1', companyId: 'comp-1', costCenterId: 'cc-1', percentage: 60 },
-      { id: 'alloc-5-2', companyId: 'comp-1', costCenterId: 'cc-2', percentage: 40 },
+      { id: 'alloc-5-1', costCenterId: 'cc-1', percentage: 60 },
+      { id: 'alloc-5-2', costCenterId: 'cc-2', percentage: 40 },
     ],
     productiveUnit: 'Agrícola Sur',
     area: 'Producción',
@@ -175,7 +175,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-2',
     costCenterId: 'cc-5',
     allocations: [
-      { id: 'alloc-6-1', companyId: 'comp-2', costCenterId: 'cc-5', percentage: 100 },
+      { id: 'alloc-6-1', costCenterId: 'cc-5', percentage: 100 },
     ],
     productiveUnit: 'Agrícola Norte',
     area: 'Logística',
@@ -204,8 +204,8 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-2',
     costCenterId: 'cc-5',
     allocations: [
-      { id: 'alloc-7-1', companyId: 'comp-2', costCenterId: 'cc-5', percentage: 60 },
-      { id: 'alloc-7-2', companyId: 'comp-3', costCenterId: 'cc-5', percentage: 40 },
+      { id: 'alloc-7-1', costCenterId: 'cc-5', percentage: 60 },
+      { id: 'alloc-7-2', costCenterId: 'cc-5', percentage: 40 },
     ],
     productiveUnit: 'Agrícola Norte',
     area: 'Logística',
@@ -233,7 +233,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-3',
     allocations: [
-      { id: 'alloc-8-1', companyId: 'comp-1', costCenterId: 'cc-3', percentage: 100 },
+      { id: 'alloc-8-1', costCenterId: 'cc-3', percentage: 100 },
     ],
     coordinates: { lat: -33.1245, lng: -63.3521 },
     mapsUrl: 'https://www.google.com/maps/@-33.1245,-63.3521,14z',
@@ -268,7 +268,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-1',
     allocations: [
-      { id: 'alloc-9-1', companyId: 'comp-1', costCenterId: 'cc-1', percentage: 100 },
+      { id: 'alloc-9-1', costCenterId: 'cc-1', percentage: 100 },
     ],
     coordinates: { lat: -32.9468, lng: -60.6393 },
     mapsUrl: 'https://www.google.com/maps/@-32.9468,-60.6393,15z',
@@ -304,7 +304,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-4',
     costCenterId: 'cc-4',
     allocations: [
-      { id: 'alloc-10-1', companyId: 'comp-4', costCenterId: 'cc-4', percentage: 100 },
+      { id: 'alloc-10-1', costCenterId: 'cc-4', percentage: 100 },
     ],
     coordinates: { lat: -34.6037, lng: -58.3816 },
     mapsUrl: 'https://www.google.com/maps/@-34.6037,-58.3816,17z',
@@ -335,7 +335,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-4',
     allocations: [
-      { id: 'alloc-11-1', companyId: 'comp-1', costCenterId: 'cc-4', percentage: 100 },
+      { id: 'alloc-11-1', costCenterId: 'cc-4', percentage: 100 },
     ],
     productiveUnit: 'Administración',
     area: 'Administración',
@@ -363,7 +363,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-2',
     allocations: [
-      { id: 'alloc-12-1', companyId: 'comp-1', costCenterId: 'cc-2', percentage: 100 },
+      { id: 'alloc-12-1', costCenterId: 'cc-2', percentage: 100 },
     ],
     productiveUnit: 'Agrícola Sur',
     area: 'Producción',
@@ -391,7 +391,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-1',
     allocations: [
-      { id: 'alloc-13-1', companyId: 'comp-1', costCenterId: 'cc-1', percentage: 100 },
+      { id: 'alloc-13-1', costCenterId: 'cc-1', percentage: 100 },
     ],
     productiveUnit: 'Agrícola Norte',
     area: 'Producción',
@@ -420,7 +420,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-1',
     allocations: [
-      { id: 'alloc-14-1', companyId: 'comp-1', costCenterId: 'cc-1', percentage: 100 },
+      { id: 'alloc-14-1', costCenterId: 'cc-1', percentage: 100 },
     ],
     productiveUnit: 'Agrícola Norte',
     area: 'Producción',
@@ -448,7 +448,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-1',
     costCenterId: 'cc-3',
     allocations: [
-      { id: 'alloc-15-1', companyId: 'comp-1', costCenterId: 'cc-3', percentage: 100 },
+      { id: 'alloc-15-1', costCenterId: 'cc-3', percentage: 100 },
     ],
     coordinates: { lat: -33.1250, lng: -63.3515 },
     mapsUrl: 'https://www.google.com/maps/@-33.1250,-63.3515,15z',
@@ -487,7 +487,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-2',
     costCenterId: 'cc-5',
     allocations: [
-      { id: 'alloc-16-1', companyId: 'comp-2', costCenterId: 'cc-5', percentage: 100 },
+      { id: 'alloc-16-1', costCenterId: 'cc-5', percentage: 100 },
     ],
     productiveUnit: 'Agrícola Norte',
     area: 'Logística',
@@ -516,7 +516,7 @@ export const mockAssets: Asset[] = [
     companyId: 'comp-4',
     costCenterId: 'cc-10',
     allocations: [
-      { id: 'alloc-17-1', companyId: 'comp-4', costCenterId: 'cc-10', percentage: 100 },
+      { id: 'alloc-17-1', costCenterId: 'cc-10', percentage: 100 },
     ],
     productiveUnit: 'Administración',
     area: 'Mantenimiento',

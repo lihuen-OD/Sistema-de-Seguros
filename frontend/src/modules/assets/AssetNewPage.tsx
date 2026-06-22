@@ -322,8 +322,8 @@ export default function AssetNewPage() {
       currentValue: form.patrimonialValueUsd ? parseFloat(form.patrimonialValueUsd) : undefined,
       description: form.observations.trim() || undefined,
       allocations: allocations
-        .filter((a) => a.costCenterId)
-        .map((a) => ({ costCenterId: a.costCenterId, percentage: a.percentage })),
+        .filter((a) => a.companyId && a.costCenterId)
+        .map((a) => ({ companyId: a.companyId, costCenterId: a.costCenterId, percentage: a.percentage })),
     })
 
     await queryClient.invalidateQueries({ queryKey: ['assets'] })
@@ -644,7 +644,7 @@ export default function AssetNewPage() {
             {/* Imputación Contable */}
             <SectionCard
               title="Imputación Contable"
-              subtitle="Asignación a empresas y centros de costo con porcentaje."
+              subtitle="Empresa, centro de costo y porcentaje de imputación."
             >
               <div className="space-y-5">
                 <AllocationEditor allocations={allocations} onChange={setAllocations} />

@@ -2,6 +2,7 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { detectFileType, formatFileSize, isAllowedMimetype } from '../../shared/utils/files'
+import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import type {
   CreateAssetDTO,
   UpdateAssetDTO,
@@ -14,7 +15,10 @@ import type {
 // Relaciones incluidas en detalle y lista
 const ASSET_INCLUDE = {
   allocations: {
-    include: { costCenter: { select: { id: true, name: true, code: true, companyId: true } } },
+    include: {
+      company: { select: { id: true, name: true, cuit: true } },
+      costCenter: { select: { id: true, name: true, code: true } },
+    },
     orderBy: { percentage: 'desc' as const },
   },
   _count: { select: { attachments: true, fireExtinguishers: true } },
@@ -89,6 +93,7 @@ export const assetsService = {
       await tx.assetAllocation.createMany({
         data: allocations.map((a) => ({
           assetId: asset.id,
+          companyId: a.companyId,
           costCenterId: a.costCenterId,
           percentage: a.percentage,
         })),
@@ -138,6 +143,7 @@ export const assetsService = {
       await tx.assetAllocation.createMany({
         data: allocations.map((a) => ({
           assetId,
+          companyId: a.companyId,
           costCenterId: a.costCenterId,
           percentage: a.percentage,
         })),
@@ -193,6 +199,15 @@ export const assetsService = {
       throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel', 'UNSUPPORTED_MEDIA_TYPE')
     }
 
+    let fileUrl = `local://${file.originalname}`
+    let cloudinaryPublicId: string | null = null
+
+    if (isCloudinaryConfigured()) {
+      const result = await uploadToCloudinary(file.buffer, 'assets')
+      fileUrl = result.secure_url
+      cloudinaryPublicId = result.public_id
+    }
+
     return prisma.assetAttachment.create({
       data: {
         assetId,
@@ -200,7 +215,8 @@ export const assetsService = {
         description: meta.description ?? null,
         fileType: detectFileType(file.mimetype),
         fileSize: formatFileSize(file.size),
-        fileUrl: `pending://${file.originalname}`, // Phase 10: reemplazar con URL de Cloudinary
+        fileUrl,
+        cloudinaryPublicId,
         expirationDate: meta.expirationDate ?? null,
         notifyEmail: meta.notifyEmail || null,
         uploadedBy,
@@ -213,6 +229,9 @@ export const assetsService = {
       where: { id: attachmentId, assetId },
     })
     if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    if (attachment.cloudinaryPublicId) {
+      await deleteFromCloudinary(attachment.cloudinaryPublicId)
+    }
     await prisma.assetAttachment.delete({ where: { id: attachmentId } })
   },
 }

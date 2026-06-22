@@ -1,7 +1,7 @@
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
-import { toISODate } from '../../shared/utils/dates'
+import { toISODate, toDateStr, dateOffset, todayDate } from '../../shared/utils/dates'
 import type {
   CreateFireExtinguisherDTO,
   UpdateFireExtinguisherDTO,
@@ -14,23 +14,18 @@ import type {
 
 type FireExtStatus = 'vigente' | 'proximo_vencer' | 'vencido'
 
-function addDays(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  return toISODate(d)
-}
-
-function computeStatus(expirationDate: string): FireExtStatus {
+function computeStatus(expirationDate: Date | string): FireExtStatus {
+  const exp = toDateStr(expirationDate)
   const today = toISODate()
-  const in30Days = addDays(30)
-  if (expirationDate < today) return 'vencido'
-  if (expirationDate <= in30Days) return 'proximo_vencer'
+  const in30Days = toISODate(new Date(Date.now() + 30 * 86400000))
+  if (exp < today) return 'vencido'
+  if (exp <= in30Days) return 'proximo_vencer'
   return 'vigente'
 }
 
 function buildStatusFilter(status: string): Record<string, unknown> {
-  const today = toISODate()
-  const in30Days = addDays(30)
+  const today = todayDate()
+  const in30Days = dateOffset(30)
   if (status === 'vigente') return { expirationDate: { gt: in30Days } }
   if (status === 'proximo_vencer') return { expirationDate: { gte: today, lte: in30Days } }
   if (status === 'vencido') return { expirationDate: { lt: today } }
@@ -45,11 +40,11 @@ function mapFireExt(fe: Record<string, unknown>) {
     code: fe.code,
     type: fe.type,
     capacity: fe.capacity,
-    chargeDate: fe.lastRechargeDate ?? null,
-    expirationDate: fe.expirationDate,
+    chargeDate: fe.lastRechargeDate ? toDateStr(fe.lastRechargeDate as Date | string) : null,
+    expirationDate: toDateStr(fe.expirationDate as Date | string),
     associatedAssetId: fe.assetId ?? null,
     associatedLocationType: fe.locationType,
-    status: computeStatus(fe.expirationDate as string),
+    status: computeStatus(fe.expirationDate as Date | string),
     observations: fe.observations ?? '',
     brand: fe.brand ?? null,
     serialNumber: fe.serialNumber ?? null,
@@ -64,9 +59,9 @@ function mapHistory(h: Record<string, unknown>) {
     id: h.id,
     fireExtinguisherId: h.fireExtinguisherId,
     eventType: h.action,
-    eventDate: h.date,
-    previousValue: (h.previousExpirationDate as string) ?? '',
-    newValue: (h.nextDueDate as string) ?? '',
+    eventDate: toDateStr(h.date as Date | string),
+    previousValue: h.previousExpirationDate ? toDateStr(h.previousExpirationDate as Date | string) : '',
+    newValue: h.nextDueDate ? toDateStr(h.nextDueDate as Date | string) : '',
     observations: (h.notes as string) ?? '',
     createdBy: (h.performedBy as string) ?? 'Sistema',
     createdAt: h.createdAt,
@@ -85,8 +80,8 @@ const PREFIX_MAP: Record<string, string> = {
 
 async function generateCode(locationType: string): Promise<string> {
   const prefix = PREFIX_MAP[locationType] ?? 'GEN'
-  const total = await prisma.fireExtinguisher.count()
-  const seq = String(total + 1).padStart(3, '0')
+  const result = await prisma.$queryRaw<[{ nextval: bigint }]>`SELECT nextval('fire_ext_code_seq')`
+  const seq = String(Number(result[0].nextval)).padStart(3, '0')
   return `MAT-${prefix}${seq}-A`
 }
 

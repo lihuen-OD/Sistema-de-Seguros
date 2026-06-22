@@ -1,18 +1,12 @@
 import { prisma } from '../../config/database'
-import { toISODate } from '../../shared/utils/dates'
-
-function isoDateOffset(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  return toISODate(d)
-}
+import { toISODate, toDateStr, dateOffset, todayDate } from '../../shared/utils/dates'
 
 export const dashboardService = {
   // ── KPIs ──────────────────────────────────────────────────────────────────────
 
   async getKpis() {
-    const today = toISODate()
-    const in30Days = isoDateOffset(30)
+    const today = todayDate()
+    const in30Days = dateOffset(30)
 
     const [
       totalAssets,
@@ -116,8 +110,8 @@ export const dashboardService = {
   // ── Expiring tables ───────────────────────────────────────────────────────────
 
   async getExpiringPolicies(days = 90) {
-    const today = toISODate()
-    const limit = isoDateOffset(days)
+    const today = todayDate()
+    const limit = dateOffset(days)
 
     const policies = await prisma.policy.findMany({
       where: { isActive: true, endDate: { gte: today, lte: limit } },
@@ -133,7 +127,7 @@ export const dashboardService = {
       id: p.id,
       policyNumber: p.policyNumber,
       insuredName: p.insuredName,
-      endDate: p.endDate,
+      endDate: toDateStr(p.endDate),
       premium: p.premium,
       currency: p.currency,
       company: p.company,
@@ -142,8 +136,8 @@ export const dashboardService = {
   },
 
   async getExpiringInstallments(days = 60) {
-    const today = toISODate()
-    const limit = isoDateOffset(days)
+    const today = todayDate()
+    const limit = dateOffset(days)
 
     const installments = await prisma.documentInstallment.findMany({
       where: {
@@ -167,7 +161,7 @@ export const dashboardService = {
     return installments.map((i) => ({
       id: i.id,
       installmentNumber: i.installmentNumber,
-      dueDate: i.dueDate,
+      dueDate: toDateStr(i.dueDate),
       amount: i.amount,
       currency: i.currency,
       paymentStatus: i.paymentStatus,
@@ -178,15 +172,17 @@ export const dashboardService = {
   // ── Chart data ────────────────────────────────────────────────────────────────
 
   async getCharts(year?: number) {
-    const today = toISODate()
-    const in30Days = isoDateOffset(30)
+    const today = todayDate()
+    const in30Days = dateOffset(30)
     const targetYear = year ?? new Date().getFullYear()
     const y = String(targetYear)
+    const yearStart = new Date(`${y}-01-01T00:00:00.000Z`)
+    const yearEnd = new Date(`${y}-12-31T00:00:00.000Z`)
 
     const [installments, allPolicies, extTotal, extVencido, extProximo, policiesVigente, policiesProxima, policiesVencida] =
       await Promise.all([
         prisma.documentInstallment.findMany({
-          where: { dueDate: { gte: `${y}-01-01`, lte: `${y}-12-31` } },
+          where: { dueDate: { gte: yearStart, lte: yearEnd } },
           select: { dueDate: true, amount: true },
         }),
         prisma.policy.findMany({
@@ -206,7 +202,7 @@ export const dashboardService = {
     // Monthly cost evolution (12 months of the requested year)
     const monthlyMap = new Map<string, number>()
     for (const inst of installments) {
-      const month = inst.dueDate.substring(0, 7)
+      const month = toDateStr(inst.dueDate).substring(0, 7)
       monthlyMap.set(month, (monthlyMap.get(month) ?? 0) + inst.amount)
     }
     const costEvolution = Array.from({ length: 12 }, (_, i) => {

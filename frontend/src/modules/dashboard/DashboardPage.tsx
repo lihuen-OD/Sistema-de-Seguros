@@ -64,8 +64,8 @@ export default function DashboardPage() {
 
   // ── Cascading cost center options ─────────────────────────────────
   const costCenterOptions = useMemo(
-    () => allCostCenters.filter((cc) => !filterCompany || cc.companyId === filterCompany),
-    [allCostCenters, filterCompany],
+    () => allCostCenters.filter((cc) => cc.status === 'activo'),
+    [allCostCenters],
   )
 
   // ── Filtered datasets ─────────────────────────────────────────────
