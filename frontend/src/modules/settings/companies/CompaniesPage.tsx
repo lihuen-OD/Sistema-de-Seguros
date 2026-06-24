@@ -225,18 +225,6 @@ export default function CompaniesPage() {
       },
     },
     {
-      key: 'id',
-      label: 'Activos',
-      render: (v) => {
-        const assetCount = allAssets.filter((a) => a.companyId === v && a.status === 'activo').length
-        return (
-          <span className="text-xs text-slate-600">
-            {assetCount} activo{assetCount !== 1 ? 's' : ''}
-          </span>
-        )
-      },
-    },
-    {
       key: 'createdAt',
       label: 'Alta',
       render: (v) => (

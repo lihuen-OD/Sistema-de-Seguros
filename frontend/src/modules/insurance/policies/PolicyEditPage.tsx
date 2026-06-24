@@ -101,16 +101,18 @@ function CoverageSelector({
     )
   }
 
-  const toggle = (coverage: string) => {
+  const coverageItems = config.coverageObjects ?? config.coverages.map((c) => ({ id: c, name: c }))
+
+  const toggle = (id: string) => {
     onChange(
-      selected.includes(coverage)
-        ? selected.filter((c) => c !== coverage)
-        : [...selected, coverage],
+      selected.includes(id)
+        ? selected.filter((c) => c !== id)
+        : [...selected, id],
     )
   }
 
-  const allSelected = config.coverages.every((c) => selected.includes(c))
-  const toggleAll = () => onChange(allSelected ? [] : [...config.coverages])
+  const allSelected = coverageItems.every((c) => selected.includes(c.id))
+  const toggleAll = () => onChange(allSelected ? [] : coverageItems.map((c) => c.id))
 
   return (
     <div>
@@ -119,7 +121,7 @@ function CoverageSelector({
         <p className="text-xs text-slate-500">
           {selected.length === 0
             ? 'Ninguna seleccionada'
-            : `${selected.length} de ${config.coverages.length} seleccionada${selected.length !== 1 ? 's' : ''}`}
+            : `${selected.length} de ${coverageItems.length} seleccionada${selected.length !== 1 ? 's' : ''}`}
         </p>
         <button type="button" onClick={toggleAll} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
           {allSelected ? 'Deseleccionar todas' : 'Seleccionar todas'}
@@ -128,16 +130,16 @@ function CoverageSelector({
 
       <div className="rounded-xl border border-slate-200 overflow-hidden">
         <div className="grid grid-cols-1 sm:grid-cols-2">
-          {config.coverages.map((coverage, idx) => {
-            const checked = selected.includes(coverage)
-            const isLastRow = idx >= config.coverages.length - (config.coverages.length % 2 === 0 ? 2 : 1)
+          {coverageItems.map((coverage, idx) => {
+            const checked = selected.includes(coverage.id)
+            const isLastRow = idx >= coverageItems.length - (coverageItems.length % 2 === 0 ? 2 : 1)
             return (
               <label
-                key={coverage}
+                key={coverage.id}
                 className={[
                   'relative flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors select-none',
                   checked ? 'bg-blue-50' : 'bg-white hover:bg-slate-50',
-                  idx % 2 === 0 && idx < config.coverages.length - 1 ? 'sm:border-r border-slate-100' : '',
+                  idx % 2 === 0 && idx < coverageItems.length - 1 ? 'sm:border-r border-slate-100' : '',
                   !isLastRow ? 'border-b border-slate-100' : '',
                 ].join(' ')}
               >
@@ -152,9 +154,9 @@ function CoverageSelector({
                     </svg>
                   )}
                 </div>
-                <input type="checkbox" checked={checked} onChange={() => toggle(coverage)} className="sr-only" />
+                <input type="checkbox" checked={checked} onChange={() => toggle(coverage.id)} className="sr-only" />
                 <span className={`text-sm leading-snug ${checked ? 'text-blue-800 font-medium' : 'text-slate-700'}`}>
-                  {coverage}
+                  {coverage.name}
                 </span>
               </label>
             )
@@ -342,12 +344,14 @@ export default function PolicyEditPage() {
       costCenterId,
       producerId: form.producerId || undefined,
       insuredName: form.insuranceCompany,
+      assetId: form.association === 'activo' ? (form.assetId || null) : null,
+      beneficiaryDescription: form.beneficiaryDescription.trim() || null,
       startDate: form.startDate,
       endDate: form.endDate,
       premium: ars,
       currency: 'ARS',
       description: form.description.trim() || undefined,
-      coverageIds: [],
+      coverageIds: form.coverageTypes,
     })
   }
 

@@ -156,6 +156,8 @@ export interface Asset {
   /** Silos asociados (Establecimientos e Infraestructura tipo Silo) */
   silos?: Silo[]
   photos?: string[]
+  /** Datos tipo-específicos persistidos en JSONB (patente, HP, superficie, etc.) */
+  metadata?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }
@@ -194,6 +196,7 @@ export interface Policy {
   insuranceType: string
   coverageType: string
   coverageTypes?: string[]
+  coverageNames?: string[]
   beneficiaryDescription?: string
   startDate: string
   endDate: string
@@ -224,6 +227,7 @@ export interface AccountingDocument {
   insuranceCompany?: string
   paymentMethod?: string
   linkedDocumentId?: string
+  policyIds: string[]
   createdAt: string
   updatedAt: string
 }
@@ -302,11 +306,13 @@ export interface AssetAttachment {
   notifyEmail?: string
   uploadedAt: string
   uploadedBy: string
+  /** Solo en memoria durante creación — nunca persistido ni enviado al backend */
+  pendingFile?: File
 }
 
 export interface Claim {
   id: string
-  assetId: string
+  assetId: string | null
   policyId: string | null
   claimNumber: string
   claimType: string
@@ -324,6 +330,18 @@ export interface Claim {
   observations: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface ClaimAttachment {
+  id: string
+  claimId: string
+  name: string
+  description: string | null
+  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileSize: string
+  fileUrl?: string
+  uploadedAt: string
+  uploadedBy: string
 }
 
 export interface FireExtinguisherHistory {

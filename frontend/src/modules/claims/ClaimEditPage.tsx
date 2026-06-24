@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Save, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Save, AlertTriangle, FileText, ImageIcon, Trash2, Download } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
+import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
 import { claimsApi } from '../../shared/api/claims.api'
 import { catalogsApi } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
+import type { ClaimAttachment } from '../../shared/types'
 
 function Field({
   label,
@@ -53,9 +55,23 @@ export default function ClaimEditPage() {
   const { data: claimStatuses = [] } = useQuery({ queryKey: ['catalogs', 'claim_status'], queryFn: () => catalogsApi.findByCategory('claim_status') })
   const { data: claimTypes = [] } = useQuery({ queryKey: ['catalogs', 'claim_type'], queryFn: () => catalogsApi.findByCategory('claim_type') })
   const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+  const { data: attachments = [] } = useQuery({
+    queryKey: ['claims', id, 'attachments'],
+    queryFn: () => claimsApi.findAttachments(id!),
+    enabled: !!id,
+  })
+
+  const docs = attachments.filter((a) => a.fileType !== 'image')
+  const photos = attachments.filter((a) => a.fileType === 'image')
+
+  const handleDeleteAttachment = async (attachmentId: string) => {
+    await claimsApi.deleteAttachment(id!, attachmentId)
+    queryClient.invalidateQueries({ queryKey: ['claims', id, 'attachments'] })
+  }
 
   // ── Form state ──────────────────────────────────────────────────────────────
 
+  const [claimNumber, setClaimNumber] = useState('')
   const [status, setStatus] = useState('')
   const [claimType, setClaimType] = useState('')
   const [occurrenceDate, setOccurrenceDate] = useState('')
@@ -76,6 +92,7 @@ export default function ClaimEditPage() {
   // Seed form once data loads
   useEffect(() => {
     if (!original) return
+    setClaimNumber(original.claimNumber ?? '')
     setStatus(original.status)
     setClaimType(original.claimType)
     setOccurrenceDate(original.occurrenceDate)
@@ -145,6 +162,7 @@ export default function ClaimEditPage() {
 
     try {
       await claimsApi.update(original.id, {
+        claimNumber: claimNumber.trim() || undefined,
         status,
         claimType,
         occurrenceDate,
@@ -153,6 +171,11 @@ export default function ClaimEditPage() {
         description,
         currency,
         claimedAmountArs: parseFloat(claimedAmount),
+        realAmountArs: realAmount ? parseFloat(realAmount) : undefined,
+        settledAmountArs: settledAmount ? parseFloat(settledAmount) : undefined,
+        deductibleArs: deductible ? parseFloat(deductible) : undefined,
+        observations: observations.trim() || undefined,
+        exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
       })
       queryClient.invalidateQueries({ queryKey: ['claims'] })
       navigate(ROUTES.CLAIMS_DETAIL(original.id))
@@ -179,6 +202,16 @@ export default function ClaimEditPage() {
           {/* Estado y tipo */}
           <SectionCard title="Estado y clasificación">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="N° de siniestro (aseguradora)">
+                <input
+                  type="text"
+                  value={claimNumber}
+                  onChange={(e) => setClaimNumber(e.target.value)}
+                  placeholder="Ej: SIN-2024-00123"
+                  className={inputCls}
+                />
+              </Field>
+
               <Field label="Estado del siniestro" required>
                 <select
                   value={status}
@@ -390,6 +423,56 @@ export default function ClaimEditPage() {
             </div>
           </SectionCard>
 
+          {/* Documentación adjunta */}
+          <SectionCard
+            title="Documentación Adjunta"
+            subtitle={docs.length > 0 ? `${docs.length} ${docs.length === 1 ? 'archivo' : 'archivos'}` : 'Denuncias, peritajes, presupuestos'}
+          >
+            {docs.length > 0 && (
+              <div className="divide-y divide-slate-100 mb-4">
+                {docs.map((att) => (
+                  <EditAttachmentRow key={att.id} attachment={att} onDelete={handleDeleteAttachment} />
+                ))}
+              </div>
+            )}
+            <FileDropzone
+              label="Agregar documentos (PDF, Word, Excel)"
+              accept=".pdf,.doc,.docx,.xls,.xlsx"
+              maxFiles={10}
+              onFilesSelected={async (files) => {
+                for (const file of files) {
+                  await claimsApi.addAttachment(original.id, file, {})
+                }
+                queryClient.invalidateQueries({ queryKey: ['claims', original.id, 'attachments'] })
+              }}
+            />
+          </SectionCard>
+
+          {/* Fotos y Videos */}
+          <SectionCard
+            title="Fotos y Videos"
+            subtitle={photos.length > 0 ? `${photos.length} ${photos.length === 1 ? 'archivo' : 'archivos'}` : 'Evidencia fotográfica del daño'}
+          >
+            {photos.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-4">
+                {photos.map((att) => (
+                  <EditPhotoCard key={att.id} attachment={att} onDelete={handleDeleteAttachment} />
+                ))}
+              </div>
+            )}
+            <FileDropzone
+              label="Agregar fotos y videos (JPG, PNG, MP4)"
+              accept=".jpg,.jpeg,.png,.gif,.mp4,.mov,.avi,.webm"
+              maxFiles={20}
+              onFilesSelected={async (files) => {
+                for (const file of files) {
+                  await claimsApi.addAttachment(original.id, file, {})
+                }
+                queryClient.invalidateQueries({ queryKey: ['claims', original.id, 'attachments'] })
+              }}
+            />
+          </SectionCard>
+
           {/* Notice */}
           <div className="flex items-start gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
             <AlertTriangle size={15} className="text-blue-500 mt-0.5 flex-shrink-0" />
@@ -420,5 +503,84 @@ export default function ClaimEditPage() {
         </div>
       </form>
     </PageContent>
+  )
+}
+
+function EditAttachmentRow({
+  attachment,
+  onDelete,
+}: {
+  attachment: ClaimAttachment
+  onDelete: (id: string) => void
+}) {
+  return (
+    <div className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+        <FileText size={14} className="text-slate-500" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-slate-800 truncate">{attachment.name}</p>
+        <p className="text-xs text-slate-400">{attachment.fileSize}</p>
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        {attachment.fileUrl && !attachment.fileUrl.startsWith('local://') && (
+          <a
+            href={attachment.fileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
+            title="Descargar"
+          >
+            <Download size={14} />
+          </a>
+        )}
+        <button
+          type="button"
+          onClick={() => onDelete(attachment.id)}
+          className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
+          title="Eliminar"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function EditPhotoCard({
+  attachment,
+  onDelete,
+}: {
+  attachment: ClaimAttachment
+  onDelete: (id: string) => void
+}) {
+  const hasUrl = attachment.fileUrl && !attachment.fileUrl.startsWith('local://')
+  return (
+    <div className="relative group rounded-xl border border-slate-200 overflow-hidden">
+      {hasUrl ? (
+        <div className="aspect-square bg-slate-100 overflow-hidden">
+          <img
+            src={attachment.fileUrl}
+            alt={attachment.name}
+            className="w-full h-full object-cover"
+          />
+        </div>
+      ) : (
+        <div className="aspect-square bg-slate-100 flex items-center justify-center">
+          <ImageIcon size={24} className="text-slate-400" />
+        </div>
+      )}
+      <div className="px-2 py-1.5 flex items-center justify-between gap-1">
+        <p className="text-[11px] text-slate-500 truncate flex-1">{attachment.name}</p>
+        <button
+          type="button"
+          onClick={() => onDelete(attachment.id)}
+          className="p-0.5 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"
+          title="Eliminar"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
   )
 }

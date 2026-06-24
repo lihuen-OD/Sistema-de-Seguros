@@ -181,17 +181,3 @@ export const PROVINCES = [
 ]
 
 export const EXPIRING_SOON_DAYS = 30
-
-
-export const INSURANCE_TYPE_CLAIM_COVERAGE: Record<string, string[]> = {
-  'Automotor':                  ['Accidente', 'Robo con violencia', 'Hurto', 'Daños materiales', 'Responsabilidad civil', 'Granizo', 'Otro'],
-  'Maquinaria agrícola':        ['Accidente', 'Robo con violencia', 'Hurto', 'Daños materiales', 'Rotura mecánica', 'Granizo', 'Incendio', 'Otro'],
-  'Incendio y robo':            ['Incendio', 'Robo con violencia', 'Hurto', 'Daños materiales', 'Otro'],
-  'Responsabilidad civil':      ['Responsabilidad civil', 'Daños materiales', 'Accidente', 'Otro'],
-  'Accidentes personales':      ['Accidente', 'Muerte accidental', 'Incapacidad', 'Otro'],
-  'Combinado agropecuario':     ['Granizo', 'Granizo (cosecha)', 'Inundación', 'Incendio', 'Robo con violencia', 'Hurto', 'Daños materiales', 'Responsabilidad civil', 'Otro'],
-  'Transporte de mercaderías':  ['Robo con violencia', 'Hurto', 'Accidente', 'Daños materiales', 'Incendio', 'Otro'],
-  'Seguro técnico':             ['Daños materiales', 'Daños eléctricos', 'Rotura mecánica', 'Incendio', 'Robo con violencia', 'Otro'],
-  'Vida colectivo':             ['Muerte accidental', 'Incapacidad', 'Otro'],
-  'Riesgos del trabajo':        ['Accidente', 'Muerte accidental', 'Incapacidad', 'Otro'],
-}

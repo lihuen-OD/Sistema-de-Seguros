@@ -78,6 +78,10 @@ export default function TaskNewPage() {
         title: title.trim(),
         description: description.trim() || undefined,
         dueDate: dueDate || undefined,
+        priority,
+        assignedTo: assignedTo.trim() || undefined,
+        policyId: policyId || undefined,
+        assetId: assetId || undefined,
       })
       queryClient.invalidateQueries({ queryKey: ['producers'] })
       navigate(ROUTES.TASKS)

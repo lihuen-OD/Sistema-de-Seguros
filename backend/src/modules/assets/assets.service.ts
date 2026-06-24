@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
@@ -73,22 +74,33 @@ export const assetsService = {
   async create(data: CreateAssetDTO) {
     const { allocations, ...assetData } = data
 
-    // Verificar que los centros de costo existen y están activos
-    const costCenterIds = allocations.map((a) => a.costCenterId)
-    const existingCenters = await prisma.costCenter.findMany({
-      where: { id: { in: costCenterIds }, isActive: true },
-      select: { id: true },
-    })
+    // Verificar que las empresas y centros de costo existen y están activos
+    const companyIds = [...new Set(allocations.map((a) => a.companyId))]
+    const costCenterIds = [...new Set(allocations.map((a) => a.costCenterId))]
+
+    const [existingCompanies, existingCenters] = await Promise.all([
+      prisma.company.findMany({ where: { id: { in: companyIds }, isActive: true }, select: { id: true } }),
+      prisma.costCenter.findMany({ where: { id: { in: costCenterIds }, isActive: true }, select: { id: true } }),
+    ])
+    if (existingCompanies.length !== companyIds.length) {
+      throw new AppError(400, 'Una o más empresas no existen o están inactivas', 'INVALID_REFERENCE')
+    }
     if (existingCenters.length !== costCenterIds.length) {
-      throw new AppError(
-        400,
-        'Uno o más centros de costo no existen o están inactivos',
-        'INVALID_REFERENCE',
-      )
+      throw new AppError(400, 'Uno o más centros de costo no existen o están inactivos', 'INVALID_REFERENCE')
     }
 
+    // Generar código secuencial ACT-00001, ACT-00002, …
+    const count = await prisma.asset.count()
+    const code = `ACT-${String(count + 1).padStart(5, '0')}`
+
     return prisma.$transaction(async (tx) => {
-      const asset = await tx.asset.create({ data: assetData })
+      const asset = await tx.asset.create({
+        data: {
+          ...assetData,
+          code,
+          metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
+        },
+      })
 
       await tx.assetAllocation.createMany({
         data: allocations.map((a) => ({
@@ -110,14 +122,17 @@ export const assetsService = {
     await assetsService.findById(id)
     return prisma.asset.update({
       where: { id },
-      data,
+      data: {
+        ...data,
+        metadata: data.metadata ? (data.metadata as Prisma.InputJsonValue) : undefined,
+      },
       include: ASSET_DETAIL_INCLUDE,
     })
   },
 
   async softDelete(id: string) {
     await assetsService.findById(id)
-    return prisma.asset.update({ where: { id }, data: { isActive: false } })
+    return prisma.asset.update({ where: { id }, data: { isActive: false, status: 'baja' } })
   },
 
   // ── Allocations ─────────────────────────────────────────────────────────────
@@ -125,17 +140,18 @@ export const assetsService = {
   async replaceAllocations(assetId: string, { allocations }: ReplaceAllocationsDTO) {
     await assetsService.findById(assetId)
 
-    const costCenterIds = allocations.map((a) => a.costCenterId)
-    const existingCenters = await prisma.costCenter.findMany({
-      where: { id: { in: costCenterIds }, isActive: true },
-      select: { id: true },
-    })
+    const companyIds = [...new Set(allocations.map((a) => a.companyId))]
+    const costCenterIds = [...new Set(allocations.map((a) => a.costCenterId))]
+
+    const [existingCompanies, existingCenters] = await Promise.all([
+      prisma.company.findMany({ where: { id: { in: companyIds }, isActive: true }, select: { id: true } }),
+      prisma.costCenter.findMany({ where: { id: { in: costCenterIds }, isActive: true }, select: { id: true } }),
+    ])
+    if (existingCompanies.length !== companyIds.length) {
+      throw new AppError(400, 'Una o más empresas no existen o están inactivas', 'INVALID_REFERENCE')
+    }
     if (existingCenters.length !== costCenterIds.length) {
-      throw new AppError(
-        400,
-        'Uno o más centros de costo no existen o están inactivos',
-        'INVALID_REFERENCE',
-      )
+      throw new AppError(400, 'Uno o más centros de costo no existen o están inactivos', 'INVALID_REFERENCE')
     }
 
     return prisma.$transaction(async (tx) => {

@@ -1,6 +1,6 @@
-﻿import { useState } from 'react'
+﻿import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Building2, User, Tag, Calendar, Hash, Link2,
@@ -24,6 +24,7 @@ import { producersApi } from '../../../shared/api/producers.api'
 import { companiesApi } from '../../../shared/api/companies.api'
 import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import { assetsApi } from '../../../shared/api/assets.api'
+import { documentsApi } from '../../../shared/api/documents.api'
 import { exportPolicyToPdf } from '../../../shared/utils/policyPdf'
 import { ROUTES } from '../../../app/routes'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
@@ -33,6 +34,7 @@ import type { AccountingDocument, Installment, InstallmentUpdate, ProducerTask, 
 export default function PolicyDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const { data: policy, isLoading: loadingPolicy } = useQuery({
     queryKey: ['policy', id],
@@ -58,6 +60,23 @@ export default function PolicyDetailPage() {
   const { data: assets = [] } = useQuery({
     queryKey: ['assets'],
     queryFn: () => assetsApi.findAll(),
+  })
+
+  const { data: allDocuments = [] } = useQuery({
+    queryKey: ['documents'],
+    queryFn: () => documentsApi.findAll(),
+  })
+
+  const policyDocIds = useMemo(
+    () => allDocuments.filter((d) => d.policyIds.includes(id ?? '')).map((d) => d.id),
+    [allDocuments, id],
+  )
+
+  const docInstallmentQueries = useQueries({
+    queries: policyDocIds.map((docId) => ({
+      queryKey: ['documents', docId, 'installments'],
+      queryFn: () => documentsApi.findInstallments(docId),
+    })),
   })
 
   const [activeDocTab, setActiveDocTab] = useState<'documentos' | 'tareas' | 'adjuntos'>('documentos')
@@ -93,25 +112,56 @@ export default function PolicyDetailPage() {
   const costCenter = policy.costCenterId ? costCenters.find((cc) => cc.id === policy.costCenterId) ?? null : null
   const asset = policy.assetId ? assets.find((a) => a.id === policy.assetId) ?? null : null
 
-  // Documents: not linked to policy in current API — shown as empty
-  const documents: AccountingDocument[] = []
+  const documents = allDocuments.filter((d) => d.policyIds.includes(id!))
+
+  // Build server installments map from useQueries results
+  const serverInstallments = new Map<string, Installment[]>()
+  policyDocIds.forEach((docId, idx) => {
+    const data = docInstallmentQueries[idx]?.data ?? []
+    serverInstallments.set(docId, data.map((i) => ({
+      id: i.id,
+      accountingDocumentId: i.accountingDocumentId,
+      installmentNumber: i.installmentNumber,
+      dueDate: i.dueDate,
+      amount: i.amount,
+      currency: i.currency as Installment['currency'],
+      paymentStatus: i.paymentStatus as Installment['paymentStatus'],
+      paidAt: i.paidAt,
+    })))
+  })
+  // Merge: localInstallments overrides server data for optimistic updates
+  const effectiveInstallments = new Map<string, Installment[]>(serverInstallments)
+  localInstallments.forEach((insts, docId) => {
+    if (insts.length > 0) effectiveInstallments.set(docId, insts)
+  })
 
   // Tasks: not linked to policy in current API — shown as empty
   const tasks: ProducerTask[] = []
 
   const attachmentCount = 0
 
-  const handleInstallmentUpdate = (
+  const handleInstallmentUpdate = async (
     docId: string,
     instId: string,
     updates: Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate'>>,
   ) => {
     setLocalInstallments((prev) => {
       const next = new Map(prev)
-      const updated = (prev.get(docId) ?? []).map((i) => (i.id === instId ? { ...i, ...updates } : i))
-      next.set(docId, updated)
+      const current = effectiveInstallments.get(docId) ?? []
+      next.set(docId, current.map((i) => (i.id === instId ? { ...i, ...updates } : i)))
       return next
     })
+    try {
+      await documentsApi.updateInstallment(docId, instId, updates)
+      queryClient.invalidateQueries({ queryKey: ['documents', docId, 'installments'] })
+      setLocalInstallments((prev) => {
+        const next = new Map(prev)
+        next.delete(docId)
+        return next
+      })
+    } catch {
+      queryClient.invalidateQueries({ queryKey: ['documents', docId, 'installments'] })
+    }
   }
 
   // Separate facturas from modifications (NC / Endoso)
@@ -201,12 +251,12 @@ export default function PolicyDetailPage() {
               <InfoRow label="Estado" value={policy.status} isStatus />
             </div>
             {/* Coberturas — can span full width */}
-            {(policy.coverageTypes?.length || policy.coverageType) && (
+            {(policy.coverageNames?.length || policy.coverageTypes?.length || policy.coverageType) && (
               <div className="mt-4 pt-4 border-t border-slate-100">
                 <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Coberturas</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {(policy.coverageTypes?.length
-                    ? policy.coverageTypes
+                  {(policy.coverageNames?.length
+                    ? policy.coverageNames
                     : policy.coverageType ? [policy.coverageType] : []
                   ).map((cov) => (
                     <span
@@ -392,9 +442,9 @@ export default function PolicyDetailPage() {
               <>
                 {facturas.map((factura) => {
                   const linked = docModifications.filter((m) => m.linkedDocumentId === factura.id)
-                  const installments = localInstallments.get(factura.id) ?? []
+                  const installments = effectiveInstallments.get(factura.id) ?? []
                   const modInst = new Map(
-                    linked.map((m) => [m.id, localInstallments.get(m.id) ?? []]),
+                    linked.map((m) => [m.id, effectiveInstallments.get(m.id) ?? []]),
                   )
                   return (
                     <FacturaCard
@@ -414,7 +464,7 @@ export default function PolicyDetailPage() {
                     <StandaloneDocCard
                       key={mod.id}
                       doc={mod}
-                      installments={localInstallments.get(mod.id) ?? []}
+                      installments={effectiveInstallments.get(mod.id) ?? []}
                       onInstallmentUpdate={handleInstallmentUpdate}
                     />
                   ))}

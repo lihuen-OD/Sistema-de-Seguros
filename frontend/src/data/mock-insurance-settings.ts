@@ -1,7 +1,13 @@
+export interface CoverageObject {
+  id: string
+  name: string
+}
+
 export interface InsuranceTypeConfig {
   id: string
   label: string
   coverages: string[]
+  coverageObjects?: CoverageObject[]
 }
 
 export const mockInsuranceTypes: InsuranceTypeConfig[] = [

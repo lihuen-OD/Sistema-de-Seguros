@@ -6,7 +6,7 @@ import {
   ArrowUpRight, Pencil, ArrowLeft, Package, ShieldCheck,
   Calendar, DollarSign, AlertTriangle, ArrowLeftRight,
   PlusCircle, ArrowRight, MessageSquare, Paperclip, Edit2,
-  TrendingDown, Percent,
+  TrendingDown, Percent, FileText, ImageIcon, Download, Trash2,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -15,6 +15,7 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { claimsApi } from '../../shared/api/claims.api'
+import type { ClaimAttachment } from '../../shared/types'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
 import { catalogsApi } from '../../shared/api/catalogs.api'
@@ -46,6 +47,66 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
       <dt className="text-xs text-slate-500 mb-0.5">{label}</dt>
       <dd className="text-sm text-slate-800 font-medium">{value}</dd>
     </div>
+  )
+}
+
+function AttachmentRow({ attachment }: { attachment: ClaimAttachment }) {
+  const Icon = attachment.fileType === 'pdf' ? FileText
+    : attachment.fileType === 'excel' ? FileText
+    : FileText
+  return (
+    <div className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+        <Icon size={14} className="text-slate-500" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-slate-800 truncate">{attachment.name}</p>
+        <p className="text-xs text-slate-400">
+          {attachment.fileSize}
+          {attachment.description && ` · ${attachment.description}`}
+        </p>
+      </div>
+      {attachment.fileUrl && !attachment.fileUrl.startsWith('local://') && (
+        <a
+          href={attachment.fileUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0"
+        >
+          <Download size={12} />
+          Descargar
+        </a>
+      )}
+    </div>
+  )
+}
+
+function PhotoCard({ attachment }: { attachment: ClaimAttachment }) {
+  const isImage = attachment.fileUrl && !attachment.fileUrl.startsWith('local://')
+  return (
+    <a
+      href={isImage ? attachment.fileUrl : undefined}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group block rounded-xl border border-slate-200 overflow-hidden hover:border-slate-300 transition-colors"
+    >
+      {isImage ? (
+        <div className="aspect-square bg-slate-100 overflow-hidden">
+          <img
+            src={attachment.fileUrl}
+            alt={attachment.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+          />
+        </div>
+      ) : (
+        <div className="aspect-square bg-slate-100 flex items-center justify-center">
+          <ImageIcon size={24} className="text-slate-400" />
+        </div>
+      )}
+      <div className="px-2 py-1.5">
+        <p className="text-[11px] text-slate-500 truncate">{attachment.name}</p>
+      </div>
+    </a>
   )
 }
 
@@ -179,7 +240,7 @@ export default function ClaimDetailPage() {
 
   const { data: asset = null } = useQuery({
     queryKey: ['assets', claim?.assetId],
-    queryFn: () => assetsApi.findById(claim!.assetId),
+    queryFn: () => assetsApi.findById(claim!.assetId!),
     enabled: !!claim?.assetId,
   })
 
@@ -188,6 +249,15 @@ export default function ClaimDetailPage() {
     queryFn: () => policiesApi.findById(claim!.policyId!),
     enabled: !!claim?.policyId,
   })
+
+  const { data: attachments = [] } = useQuery({
+    queryKey: ['claims', id, 'attachments'],
+    queryFn: () => claimsApi.findAttachments(id!),
+    enabled: !!id,
+  })
+
+  const docs = attachments.filter((a) => a.fileType !== 'image')
+  const photos = attachments.filter((a) => a.fileType === 'image')
 
   const [currentStatus, setCurrentStatus] = useState<string | null>(null)
   const [editingStatus, setEditingStatus] = useState(false)
@@ -321,7 +391,6 @@ export default function ClaimDetailPage() {
       description: `Estado actualizado: "${effectiveStatus}" → "${newStatus}".`,
       previousStatus: effectiveStatus,
       newStatus,
-      createdBy: 'Lihuen Segovia',
     })
     setCurrentStatus(newStatus)
     setEditingStatus(false)
@@ -621,6 +690,34 @@ export default function ClaimDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Documentación adjunta */}
+      {docs.length > 0 && (
+        <SectionCard
+          title="Documentación Adjunta"
+          subtitle={`${docs.length} ${docs.length === 1 ? 'archivo' : 'archivos'}`}
+        >
+          <div className="divide-y divide-slate-100">
+            {docs.map((att) => (
+              <AttachmentRow key={att.id} attachment={att} />
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* Fotos */}
+      {photos.length > 0 && (
+        <SectionCard
+          title="Fotos y Videos"
+          subtitle={`${photos.length} ${photos.length === 1 ? 'archivo' : 'archivos'}`}
+        >
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {photos.map((att) => (
+              <PhotoCard key={att.id} attachment={att} />
+            ))}
+          </div>
+        </SectionCard>
+      )}
 
       {/* Timeline */}
       <SectionCard

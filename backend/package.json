@@ -32,6 +32,9 @@
     "uuid": "^11.0.3",
     "zod": "^3.23.8"
   },
+  "prisma": {
+    "seed": "ts-node -r dotenv/config prisma/seed.ts"
+  },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
@@ -45,6 +48,7 @@
     "prisma": "^5.22.0",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.7.2"
   }

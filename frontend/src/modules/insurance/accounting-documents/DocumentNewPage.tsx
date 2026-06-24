@@ -276,6 +276,20 @@ export default function DocumentNewPage() {
       insuranceCompany: form.insuranceCompany,
       paymentMethod: form.paymentMethod,
       linkedDocumentId: isRefDoc && form.linkedDocumentId ? form.linkedDocumentId : undefined,
+      allocations: policyRows
+        .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
+        .map((r) => ({
+          policyId: r.policyId,
+          allocatedAmount: parseFloat(r.allocatedAmount),
+          allocationPercentage: totalAllocated > 0 ? (parseFloat(r.allocatedAmount) / totalAllocated) * 100 : 0,
+        })),
+      installments: installmentRows
+        .filter((r) => r.dueDate && parseFloat(r.amount) > 0)
+        .map((r) => ({
+          installmentNumber: r.installmentNumber,
+          dueDate: r.dueDate,
+          amount: parseFloat(r.amount),
+        })),
     })
 
     queryClient.invalidateQueries({ queryKey: ['documents'] })

@@ -13,12 +13,14 @@ const PolicyBaseSchema = z.object({
   costCenterId: z.string().uuid('ID de centro de costo inválido').optional().nullable(),
   producerId: z.string().uuid('ID de productor inválido').optional().nullable(),
   insuredName: z.string().min(1, 'El nombre del asegurado es requerido').max(300),
+  assetId: z.string().uuid('ID de activo inválido').optional().nullable(),
+  beneficiaryDescription: z.string().max(2000).optional().nullable(),
   startDate: ISODate,
   endDate: ISODate,
   premium: z.number().positive('La prima debe ser un valor positivo'),
-  currency: z.enum(['ARS', 'USD', 'EUR']).default('ARS'),
+  currency: z.string().min(1).max(10).default('ARS'),
   description: z.string().max(1000).optional(),
-  coverageIds: z.array(z.string().uuid()).default([]),
+  coverageIds: z.array(z.string()).default([]),
 })
 
 export const CreatePolicySchema = PolicyBaseSchema.refine(

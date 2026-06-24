@@ -151,6 +151,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
       notifyEmail: hasNotification && hasExpiration ? notifyEmail.trim() : undefined,
       uploadedAt: new Date().toISOString().split('T')[0],
       uploadedBy: 'Usuario actual',
+      pendingFile: selectedFile,
     })
     onClose()
   }

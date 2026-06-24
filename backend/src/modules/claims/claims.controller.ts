@@ -1,10 +1,11 @@
 import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { claimsService } from './claims.service'
-import type { ListClaimsQueryDTO, AddEventDTO } from './claims.schemas'
+import type { ListClaimsQueryDTO, AddEventDTO, AddClaimAttachmentDTO } from './claims.schemas'
 
 type IdParam = { id: string }
 type EventParam = { id: string; eventId: string }
+type AttachmentParam = { id: string; attachmentId: string }
 
 export const claimsController = {
   list: asyncHandler(async (req: Request, res: Response) => {
@@ -47,5 +48,29 @@ export const claimsController = {
   deleteEvent: asyncHandler(async (req: Request<EventParam>, res: Response) => {
     await claimsService.deleteEvent(req.params.id, req.params.eventId)
     res.json({ data: { message: 'Evento eliminado correctamente' } })
+  }),
+
+  // ── Attachments ───────────────────────────────────────────────────────────────
+
+  getAttachments: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const attachments = await claimsService.findAttachments(req.params.id)
+    res.json({ data: attachments })
+  }),
+
+  addAttachment: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    if (!req.file) throw new Error('No se recibió ningún archivo')
+    const meta = req.body as AddClaimAttachmentDTO
+    const attachment = await claimsService.addAttachment(
+      req.params.id,
+      req.file,
+      meta,
+      req.user?.email ?? 'sistema',
+    )
+    res.status(201).json({ data: attachment })
+  }),
+
+  deleteAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
+    await claimsService.deleteAttachment(req.params.id, req.params.attachmentId)
+    res.json({ data: { message: 'Adjunto eliminado correctamente' } })
   }),
 }

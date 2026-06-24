@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { Asset, AssetAttachment } from '../types'
+import type { Asset, AssetAttachment, AssetStatus } from '../types'
 
 interface BackendCompany { id: string; name: string; cuit: string }
 interface BackendCostCenter { id: string; name: string; code: string | null }
@@ -9,12 +9,21 @@ interface BackendAllocation {
   costCenterId: string; costCenter: BackendCostCenter
   percentage: number
 }
+interface BackendValueHistory {
+  id: string; assetId: string; date: string; valueUsd: number; notes: string | null
+}
 interface BackendAsset {
-  id: string; name: string; assetType: string; brand: string | null; model: string | null
-  serialNumber: string | null; purchaseDate: string | null; purchaseValue: number | null
-  currentValue: number | null; location: string | null; description: string | null
+  id: string; code: string | null; name: string; assetType: string
+  status: string | null; fixedAssetCode: string | null
+  brand: string | null; model: string | null
+  year: number | null; serialNumber: string | null
+  purchaseDate: string | null; purchaseValue: number | null
+  currentValue: number | null; location: string | null; mapsUrl: string | null
+  productiveUnit: string | null; area: string | null
+  description: string | null; metadata: Record<string, unknown> | null
   isActive: boolean; createdAt: string; updatedAt: string
   allocations: BackendAllocation[]
+  valueHistory?: BackendValueHistory[]
   _count?: { attachments: number; fireExtinguishers: number }
 }
 interface BackendAttachment {
@@ -25,20 +34,23 @@ interface Paginated<T> { data: T[]; pagination: { total: number; page: number; l
 
 function mapAsset(b: BackendAsset): Asset {
   const primary = b.allocations[0]
+  const meta = (b.metadata ?? {}) as Record<string, unknown>
   return {
     id: b.id,
-    internalCode: '',
-    fixedAssetCode: '',
+    internalCode: b.code ?? `ACT-${b.id.slice(0, 8).toUpperCase()}`,
+    fixedAssetCode: b.fixedAssetCode ?? '',
     name: b.name,
     assetType: b.assetType,
     brand: b.brand ?? '',
     model: b.model ?? '',
-    year: b.purchaseDate ? parseInt(b.purchaseDate.slice(0, 4)) : 0,
+    year: b.year ?? (b.purchaseDate ? parseInt(b.purchaseDate.slice(0, 4)) : 0),
     serialNumber: b.serialNumber ?? '',
-    status: b.isActive ? 'activo' : 'baja',
+    chassisNumber: (meta.chassisNumber as string) ?? '',
+    status: (b.status ?? (b.isActive ? 'activo' : 'baja')) as AssetStatus,
     patrimonialValueUsd: b.currentValue ?? b.purchaseValue ?? 0,
-    valuationDate: b.purchaseDate ?? '',
+    valuationDate: b.purchaseDate ? b.purchaseDate.slice(0, 10) : '',
     observations: b.description ?? '',
+    mapsUrl: b.mapsUrl ?? '',
     companyId: primary?.company?.id ?? '',
     costCenterId: primary?.costCenterId ?? '',
     allocations: b.allocations.map((a) => ({
@@ -47,9 +59,18 @@ function mapAsset(b: BackendAsset): Asset {
       costCenterId: a.costCenterId,
       percentage: a.percentage,
     })),
-    productiveUnit: '',
-    area: '',
+    metadata: meta,
+    productiveUnit: b.productiveUnit ?? '',
+    area: b.area ?? '',
     photos: [],
+    valueHistory: b.valueHistory
+      ? b.valueHistory.map((v) => ({ id: v.id, date: v.date, valueUsd: v.valueUsd, notes: v.notes ?? undefined }))
+      : undefined,
+    silos: (() => {
+      const metaSilos = meta.silos as Array<{ capacityTons: number; content: string }> | undefined
+      if (!metaSilos || metaSilos.length === 0) return undefined
+      return metaSilos.map((s, i) => ({ id: `silo-${i}`, capacityTons: s.capacityTons, content: s.content }))
+    })(),
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   }
@@ -75,8 +96,21 @@ export interface AddAttachmentInput {
 }
 
 export interface AssetCreateInput {
-  name: string; assetType: string; brand?: string; model?: string; serialNumber?: string
-  purchaseDate?: string; currentValue?: number; description?: string
+  name: string
+  assetType: string
+  status?: string
+  fixedAssetCode?: string
+  brand?: string
+  model?: string
+  year?: number
+  serialNumber?: string
+  purchaseDate?: string
+  currentValue?: number
+  mapsUrl?: string
+  productiveUnit?: string
+  area?: string
+  description?: string
+  metadata?: Record<string, unknown>
   allocations: { companyId: string; costCenterId: string; percentage: number }[]
 }
 
@@ -99,6 +133,10 @@ export const assetsApi = {
   async update(id: string, input: Partial<Omit<AssetCreateInput, 'allocations'>>): Promise<Asset> {
     const res = await apiClient.put<{ data: BackendAsset }>(`/assets/${id}`, input)
     return mapAsset(res.data.data)
+  },
+
+  async replaceAllocations(id: string, allocations: { companyId: string; costCenterId: string; percentage: number }[]): Promise<void> {
+    await apiClient.put(`/assets/${id}/allocations`, { allocations })
   },
 
   async softDelete(id: string): Promise<void> {

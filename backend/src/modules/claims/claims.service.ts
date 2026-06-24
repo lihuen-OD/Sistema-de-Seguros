@@ -2,11 +2,14 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { toDateStr } from '../../shared/utils/dates'
+import { detectFileType, formatFileSize, isAllowedMimetype } from '../../shared/utils/files'
+import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import type {
   CreateClaimDTO,
   UpdateClaimDTO,
   ListClaimsQueryDTO,
   AddEventDTO,
+  AddClaimAttachmentDTO,
 } from './claims.schemas'
 
 // ── Includes ──────────────────────────────────────────────────────────────────
@@ -166,6 +169,7 @@ export const claimsService = {
     const updated = await prisma.claim.update({
       where: { id },
       data: {
+        ...(data.claimNumber && { claimNumber: data.claimNumber }),
         ...(data.claimType && { claimType: data.claimType }),
         ...(data.occurrenceDate && { occurrenceDate: data.occurrenceDate }),
         ...(data.reportDate && { reportDate: data.reportDate }),
@@ -232,6 +236,62 @@ export const claimsService = {
     const event = await prisma.claimEvent.findFirst({ where: { id: eventId, claimId } })
     if (!event) throw new AppError(404, 'Evento no encontrado', 'NOT_FOUND')
     await prisma.claimEvent.delete({ where: { id: eventId } })
+  },
+
+  // ── Attachments ───────────────────────────────────────────────────────────────
+
+  async findAttachments(claimId: string) {
+    await this.assertExists(claimId)
+    return prisma.claimAttachment.findMany({
+      where: { claimId },
+      orderBy: { uploadedAt: 'desc' },
+    })
+  },
+
+  async addAttachment(
+    claimId: string,
+    file: Express.Multer.File,
+    meta: AddClaimAttachmentDTO,
+    uploadedBy: string,
+  ) {
+    await this.assertExists(claimId)
+
+    if (!isAllowedMimetype(file.mimetype)) {
+      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word', 'UNSUPPORTED_MEDIA_TYPE')
+    }
+
+    let fileUrl = `local://${file.originalname}`
+    let cloudinaryPublicId: string | null = null
+
+    if (isCloudinaryConfigured()) {
+      const result = await uploadToCloudinary(file.buffer, 'claims')
+      fileUrl = result.secure_url
+      cloudinaryPublicId = result.public_id
+    }
+
+    return prisma.claimAttachment.create({
+      data: {
+        claimId,
+        name: file.originalname,
+        description: meta.description ?? null,
+        fileType: detectFileType(file.mimetype),
+        fileSize: formatFileSize(file.size),
+        fileUrl,
+        cloudinaryPublicId,
+        uploadedBy,
+      },
+    })
+  },
+
+  async deleteAttachment(claimId: string, attachmentId: string) {
+    const attachment = await prisma.claimAttachment.findFirst({
+      where: { id: attachmentId, claimId },
+    })
+    if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    if (attachment.cloudinaryPublicId) {
+      await deleteFromCloudinary(attachment.cloudinaryPublicId)
+    }
+    await prisma.claimAttachment.delete({ where: { id: attachmentId } })
   },
 
   // ── Private ───────────────────────────────────────────────────────────────────

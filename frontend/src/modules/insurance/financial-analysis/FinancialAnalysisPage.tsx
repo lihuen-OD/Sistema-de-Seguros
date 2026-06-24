@@ -212,11 +212,32 @@ export default function FinancialAnalysisPage() {
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
-  const allInstallments: Installment[] = []
-  const allAllocations: DocumentPolicyAllocation[] = []
 
-  // suppress unused warning — allDocuments kept for future installments endpoint
-  void allDocuments
+  const docIds = allDocuments.map((d) => d.id)
+
+  const { data: allInstallments = [] } = useQuery({
+    queryKey: ['documents', 'all-installments', docIds],
+    queryFn: async () => {
+      const raw = await documentsApi.findInstallmentsBulk(docIds)
+      return raw.map((inst) => ({
+        id: inst.id,
+        accountingDocumentId: inst.accountingDocumentId,
+        installmentNumber: inst.installmentNumber,
+        dueDate: inst.dueDate,
+        amount: inst.amount,
+        currency: inst.currency as Installment['currency'],
+        paymentStatus: inst.paymentStatus as Installment['paymentStatus'],
+        paidAt: inst.paidAt,
+      }))
+    },
+    enabled: docIds.length > 0,
+  })
+
+  const { data: allAllocations = [] } = useQuery({
+    queryKey: ['documents', 'all-allocations', docIds],
+    queryFn: () => documentsApi.findAllocationsBulk(docIds) as Promise<DocumentPolicyAllocation[]>,
+    enabled: docIds.length > 0,
+  })
 
   // ─── Period columns ──────────────────────────────────────────────────────────
 

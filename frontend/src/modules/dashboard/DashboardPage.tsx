@@ -25,6 +25,7 @@ import { documentsApi } from '../../shared/api/documents.api'
 import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
 import { companiesApi } from '../../shared/api/companies.api'
 import { costCentersApi } from '../../shared/api/cost-centers.api'
+import type { Installment, ProducerTask } from '../../shared/types'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
 
@@ -124,8 +125,8 @@ export default function DashboardPage() {
   const expiredFe = filteredFireExtinguishers.filter((f) => f.status === 'vencido')
   const expiringFe = filteredFireExtinguishers.filter((f) => f.status === 'proximo_vencer')
 
-  const overdueTasks: never[] = []
-  const pendingInstallments: never[] = []
+  const overdueTasks: ProducerTask[] = []
+  const pendingInstallments: Installment[] = []
   const pendingInstallmentsTotal = 0
 
   // ── Chart data ────────────────────────────────────────────────────

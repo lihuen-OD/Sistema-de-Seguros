@@ -52,6 +52,8 @@ export default function ProducerNewPage() {
         matricula: registrationNumber.trim(),
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
+        address: address.trim() || undefined,
+        isActive: status === 'activo',
       })
       navigate(ROUTES.PRODUCERS_DETAIL(newProducer.id))
     } catch {

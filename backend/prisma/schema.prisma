@@ -74,16 +74,24 @@ model InsuranceCoverage {
 
 model Asset {
   id            String    @id @default(uuid())
-  name          String
-  assetType     String
-  brand         String?
-  model         String?
-  serialNumber  String?
+  code           String?  @unique
+  name           String
+  assetType      String
+  status         String   @default("activo")
+  fixedAssetCode String?
+  brand          String?
+  model          String?
+  year           Int?
+  serialNumber   String?
   purchaseDate  DateTime? @db.Date
   purchaseValue Float?
   currentValue  Float?
-  location      String?
-  description   String?
+  location       String?
+  mapsUrl        String?
+  productiveUnit String?
+  area           String?
+  description    String?
+  metadata       Json?
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -149,6 +157,7 @@ model Producer {
   email     String?
   phone     String?
   matricula String?  @unique
+  address   String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -166,6 +175,10 @@ model ProducerTask {
   description String?
   dueDate     DateTime? @db.Date
   status      String    @default("pendiente")
+  priority    String    @default("media")
+  assignedTo  String?
+  policyId    String?
+  assetId     String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   producer    Producer  @relation(fields: [producerId], references: [id], onDelete: Cascade)
@@ -178,20 +191,22 @@ model ProducerTask {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Policy {
-  id              String   @id @default(uuid())
-  policyNumber    String   @unique
-  insuranceTypeId String
-  companyId       String
-  costCenterId    String?
-  producerId      String?
-  insuredName     String
-  startDate       DateTime @db.Date
-  endDate         DateTime @db.Date
-  premium         Float
-  currency        String   @default("ARS")
-  description     String?
-  coverageIds     String[]
-  isActive        Boolean  @default(true)
+  id                     String   @id @default(uuid())
+  policyNumber           String   @unique
+  insuranceTypeId        String
+  companyId              String
+  costCenterId           String?
+  producerId             String?
+  insuredName            String
+  assetId                String?
+  beneficiaryDescription String?
+  startDate              DateTime @db.Date
+  endDate                DateTime @db.Date
+  premium                Float
+  currency               String   @default("ARS")
+  description            String?
+  coverageIds            String[]
+  isActive               Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -369,11 +384,28 @@ model Claim {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  asset   Asset?       @relation(fields: [assetId], references: [id])
-  policy  Policy?      @relation(fields: [policyId], references: [id])
-  events  ClaimEvent[]
+  asset       Asset?            @relation(fields: [assetId], references: [id])
+  policy      Policy?           @relation(fields: [policyId], references: [id])
+  events      ClaimEvent[]
+  attachments ClaimAttachment[]
 
   @@map("claims")
+}
+
+model ClaimAttachment {
+  id                 String    @id @default(uuid())
+  claimId            String
+  name               String
+  description        String?
+  fileType           String
+  fileSize           String
+  fileUrl            String
+  cloudinaryPublicId String?
+  uploadedAt         DateTime  @default(now())
+  uploadedBy         String
+  claim              Claim     @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@map("claim_attachments")
 }
 
 model ClaimEvent {

@@ -18,6 +18,7 @@ import type {
 
 const DOCUMENT_LIST_INCLUDE = {
   _count: { select: { installments: true, allocations: true, attachments: true } },
+  allocations: { select: { policyId: true } },
 }
 
 const DOCUMENT_DETAIL_INCLUDE = {
@@ -193,6 +194,14 @@ export const documentsService = {
     return installments.map((i) => mapInstallment(i as Record<string, unknown>))
   },
 
+  async findInstallmentsBulk(documentIds: string[]) {
+    const installments = await prisma.documentInstallment.findMany({
+      where: { accountingDocumentId: { in: documentIds } },
+      orderBy: { installmentNumber: 'asc' },
+    })
+    return installments.map((i) => mapInstallment(i as Record<string, unknown>))
+  },
+
   async replaceInstallments(documentId: string, data: ReplaceInstallmentsDTO) {
     const doc = await this.assertDocumentExists(documentId)
 
@@ -262,6 +271,16 @@ export const documentsService = {
     await this.assertDocumentExists(documentId)
     return prisma.documentPolicyAllocation.findMany({
       where: { accountingDocumentId: documentId },
+      include: {
+        policy: { select: { id: true, policyNumber: true, insuredName: true } },
+      },
+      orderBy: { allocationPercentage: 'desc' },
+    })
+  },
+
+  async findAllocationsBulk(documentIds: string[]) {
+    return prisma.documentPolicyAllocation.findMany({
+      where: { accountingDocumentId: { in: documentIds } },
       include: {
         policy: { select: { id: true, policyNumber: true, insuredName: true } },
       },

@@ -307,24 +307,122 @@ export default function AssetNewPage() {
     setSilos((prev) => prev.map((s) => s.id === id ? { ...s, [field]: value } : s))
   }
 
+  function buildMetadata(): Record<string, unknown> {
+    const opt = (v: string) => v.trim() || undefined
+    const num = (v: string) => v ? parseFloat(v) : undefined
+    const int = (v: string) => v ? parseInt(v, 10) : undefined
+
+    if (['vehiculo', 'camioneta', 'camion', 'moto'].includes(category)) {
+      return {
+        ...(opt(form.chassisNumber) && { chassisNumber: form.chassisNumber.trim() }),
+        ...(opt(form.plate) && { plate: form.plate.trim() }),
+        ...(opt(form.engineNumber) && { engineNumber: form.engineNumber.trim() }),
+        ...(opt(form.color) && { color: form.color.trim() }),
+        ...(opt(form.fuelType) && { fuelType: form.fuelType }),
+      }
+    }
+    if (['tractor', 'cosechadora', 'pulverizadora'].includes(category)) {
+      return {
+        ...(opt(form.engineNumber) && { engineNumber: form.engineNumber.trim() }),
+        ...(num(form.powerHp) !== undefined && { powerHp: num(form.powerHp) }),
+        ...(num(form.cutWidth) !== undefined && { cutWidth: num(form.cutWidth) }),
+        ...(num(form.tankCapacity) !== undefined && { tankCapacity: num(form.tankCapacity) }),
+        ...(num(form.workWidth) !== undefined && { workWidth: num(form.workWidth) }),
+      }
+    }
+    if (category === 'implemento') {
+      return {
+        ...(opt(form.implementType) && { implementType: form.implementType }),
+        ...(num(form.workWidth) !== undefined && { workWidth: num(form.workWidth) }),
+      }
+    }
+    if (category === 'edificio') {
+      return {
+        ...(num(form.surfaceM2) !== undefined && { surfaceM2: num(form.surfaceM2) }),
+        ...(opt(form.buildingPurpose) && { buildingPurpose: form.buildingPurpose }),
+        ...(opt(form.constructionType) && { constructionType: form.constructionType.trim() }),
+        ...(int(form.floors) !== undefined && { floors: int(form.floors) }),
+        ...(int(form.constructionYear) !== undefined && { constructionYear: int(form.constructionYear) }),
+        ...(opt(form.address) && { address: form.address.trim() }),
+      }
+    }
+    if (category === 'establecimiento') {
+      return {
+        ...(num(form.surfaceHa) !== undefined && { surfaceHa: num(form.surfaceHa) }),
+        ...(opt(form.province) && { province: form.province }),
+        ...(opt(form.locality) && { locality: form.locality.trim() }),
+        ...(opt(form.address) && { address: form.address.trim() }),
+        ...(buildings.length > 0 && {
+          buildings: buildings.map((b) => ({
+            name: b.name,
+            ...(b.surfaceM2 && { surfaceM2: parseFloat(b.surfaceM2) }),
+            ...(b.purpose && { purpose: b.purpose }),
+            ...(b.constructionType && { constructionType: b.constructionType }),
+            ...(b.constructionYear && { constructionYear: parseInt(b.constructionYear, 10) }),
+          })),
+        }),
+        ...(silos.length > 0 && {
+          silos: silos.map((s) => ({ capacityTons: s.capacityTons, content: s.content })),
+        }),
+      }
+    }
+    if (category === 'infraestructura') {
+      return {
+        ...(opt(form.infraType) && { infraType: form.infraType }),
+        ...(num(form.infraCapacityTons) !== undefined && { infraCapacityTons: num(form.infraCapacityTons) }),
+        ...(opt(form.infraContent) && { infraContent: form.infraContent }),
+        ...(opt(form.technicalSpec) && { technicalSpec: form.technicalSpec.trim() }),
+        ...(silos.length > 0 && {
+          silos: silos.map((s) => ({ capacityTons: s.capacityTons, content: s.content })),
+        }),
+      }
+    }
+    if (['equipo', 'maquinaria'].includes(category)) {
+      return {
+        ...(opt(form.technicalSpec) && { technicalSpec: form.technicalSpec.trim() }),
+      }
+    }
+    return {}
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!category) return
     if (!validate()) return
 
+    const metadata = buildMetadata()
+
     const newAsset = await assetsApi.create({
       name: form.name.trim(),
       assetType: CATEGORY_LABEL[category],
+      status: form.status,
+      fixedAssetCode: form.bienDeUsoId || undefined,
       brand: form.brand.trim() || undefined,
       model: form.model.trim() || undefined,
+      year: form.year ? parseInt(form.year, 10) : undefined,
       serialNumber: form.serialNumber.trim() || undefined,
       purchaseDate: form.valuationDate || undefined,
       currentValue: form.patrimonialValueUsd ? parseFloat(form.patrimonialValueUsd) : undefined,
+      mapsUrl: form.mapsUrl.trim() || undefined,
+      productiveUnit: form.productiveUnit || undefined,
+      area: form.area || undefined,
       description: form.observations.trim() || undefined,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       allocations: allocations
         .filter((a) => a.companyId && a.costCenterId)
         .map((a) => ({ companyId: a.companyId, costCenterId: a.costCenterId, percentage: a.percentage })),
     })
+
+    // Subir adjuntos pendientes (archivo real en memoria)
+    const pendingUploads = attachments.filter((a) => a.pendingFile)
+    for (const att of pendingUploads) {
+      await assetsApi.addAttachment(newAsset.id, {
+        file: att.pendingFile!,
+        description: att.description || undefined,
+        expirationDate: att.expirationDate ?? undefined,
+        notifyEmail: att.notifyEmail || undefined,
+      })
+    }
 
     await queryClient.invalidateQueries({ queryKey: ['assets'] })
     navigate(`/assets/${newAsset.id}`)

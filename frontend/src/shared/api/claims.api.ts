@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { Claim, ClaimEvent, ClaimEventType } from '../types'
+import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment } from '../types'
 
 interface BackendClaimEvent {
   id: string; claimId: string; type: string; date: string; description: string
@@ -33,9 +33,10 @@ function mapEvent(e: BackendClaimEvent): ClaimEvent {
 function mapClaim(b: BackendClaim): Claim {
   return {
     id: b.id, claimNumber: b.claimNumber,
-    assetId: b.assetId ?? '', policyId: b.policyId ?? null,
+    assetId: b.assetId ?? null, policyId: b.policyId ?? null,
     claimType: b.claimType,
-    occurrenceDate: b.occurrenceDate, reportDate: b.reportDate,
+    occurrenceDate: b.occurrenceDate?.slice(0, 10) ?? '',
+    reportDate: b.reportDate?.slice(0, 10) ?? '',
     description: b.description ?? '',
     insuranceCompany: b.insuranceCompany ?? '',
     status: b.status,
@@ -54,6 +55,8 @@ export interface ClaimCreateInput {
   claimNumber: string; claimType: string; occurrenceDate: string; reportDate: string
   description: string; assetId?: string; policyId?: string; insuranceCompany?: string
   status?: string; claimedAmountArs?: number; currency?: string
+  realAmountArs?: number; settledAmountArs?: number; deductibleArs?: number
+  observations?: string; exchangeRate?: number
 }
 
 export const claimsApi = {
@@ -93,5 +96,26 @@ export const claimsApi = {
 
   async softDelete(id: string): Promise<void> {
     await apiClient.delete(`/claims/${id}`)
+  },
+
+  async findAttachments(claimId: string): Promise<ClaimAttachment[]> {
+    const res = await apiClient.get<{ data: ClaimAttachment[] }>(`/claims/${claimId}/attachments`)
+    return res.data.data
+  },
+
+  async addAttachment(claimId: string, file: File, meta: { description?: string }): Promise<ClaimAttachment> {
+    const form = new FormData()
+    form.append('file', file)
+    if (meta.description) form.append('description', meta.description)
+    const res = await apiClient.post<{ data: ClaimAttachment }>(
+      `/claims/${claimId}/attachments`,
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    return res.data.data
+  },
+
+  async deleteAttachment(claimId: string, attachmentId: string): Promise<void> {
+    await apiClient.delete(`/claims/${claimId}/attachments/${attachmentId}`)
   },
 }

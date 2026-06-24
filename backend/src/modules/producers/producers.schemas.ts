@@ -11,6 +11,8 @@ export const CreateProducerSchema = z.object({
   email: z.string().email('Email inválido').optional().or(z.literal('')),
   phone: z.string().max(50).optional(),
   matricula: z.string().max(100).optional(),
+  address: z.string().max(500).optional(),
+  isActive: z.boolean().optional(),
 })
 
 export const UpdateProducerSchema = CreateProducerSchema.partial()
@@ -24,6 +26,10 @@ export const CreateTaskSchema = z.object({
   description: z.string().max(1000).optional(),
   dueDate: ISODate.optional(),
   status: z.enum(['pendiente', 'en_progreso', 'completada', 'cancelada']).default('pendiente'),
+  priority: z.string().max(50).default('media'),
+  assignedTo: z.string().max(200).optional().nullable(),
+  policyId: z.string().uuid().optional().nullable(),
+  assetId: z.string().uuid().optional().nullable(),
 })
 
 export const UpdateTaskSchema = CreateTaskSchema.partial()

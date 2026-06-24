@@ -122,6 +122,10 @@ export default function TaskEditPage() {
         description: description.trim() || undefined,
         dueDate: dueDate || undefined,
         status,
+        priority,
+        assignedTo: assignedTo.trim() || undefined,
+        policyId: policyId || undefined,
+        assetId: assetId || undefined,
       })
       queryClient.invalidateQueries({ queryKey: ['producers'] })
       navigate(ROUTES.TASKS)

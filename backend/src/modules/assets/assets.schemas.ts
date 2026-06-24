@@ -18,14 +18,21 @@ const allocationsRefinement = (allocs: Array<{ percentage: number }>) =>
 export const CreateAssetSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido').max(300),
   assetType: z.string().min(1, 'El tipo de activo es requerido').max(100),
+  status: z.string().max(50).default('activo'),
+  fixedAssetCode: z.string().max(100).optional(),
   brand: z.string().max(100).optional(),
   model: z.string().max(100).optional(),
+  year: z.coerce.number().int().min(1900).max(2030).optional().nullable(),
   serialNumber: z.string().max(100).optional(),
   purchaseDate: ISODate.optional(),
   purchaseValue: z.number().positive().optional(),
-  currentValue: z.number().positive().optional(),
+  currentValue: z.number().nonnegative().optional(),
   location: z.string().max(300).optional(),
-  description: z.string().max(1000).optional(),
+  mapsUrl: z.string().max(2000).optional(),
+  productiveUnit: z.string().max(150).optional(),
+  area: z.string().max(150).optional(),
+  description: z.string().max(2000).optional(),
+  metadata: z.record(z.unknown()).optional(),
   allocations: z
     .array(AllocationInputSchema)
     .min(1, 'Se requiere al menos un centro de costo')

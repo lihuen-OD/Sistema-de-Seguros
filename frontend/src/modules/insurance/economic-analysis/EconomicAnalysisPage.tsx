@@ -239,7 +239,14 @@ export default function EconomicAnalysisPage() {
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
-  const allAllocations: DocumentPolicyAllocation[] = []
+
+  const docIds = allDocuments.map((d) => d.id)
+
+  const { data: allAllocations = [] } = useQuery({
+    queryKey: ['documents', 'all-allocations', docIds],
+    queryFn: () => documentsApi.findAllocationsBulk(docIds) as Promise<DocumentPolicyAllocation[]>,
+    enabled: docIds.length > 0,
+  })
 
   // ─── Period columns ──────────────────────────────────────────────────────────
 

@@ -43,7 +43,7 @@ export const costCentersApi = {
     const res = await apiClient.post<{ data: BackendCostCenter }>('/cost-centers', {
       name: input.name.trim(),
       description: input.description?.trim() || undefined,
-      ...(input.status === 'inactivo' && { isActive: false }),
+      isActive: input.status === 'activo',
     })
     return mapCostCenter(res.data.data)
   },

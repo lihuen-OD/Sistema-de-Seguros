@@ -12,6 +12,7 @@ import {
   ReplaceInstallmentsSchema,
   ReplaceAllocationsSchema,
   AddDocumentAttachmentSchema,
+  BulkIdsQuerySchema,
 } from './documents.schemas'
 
 export const documentsRouter = Router()
@@ -26,6 +27,11 @@ documentsRouter.post(
   validate(CreateDocumentSchema),
   documentsController.create,
 )
+
+// ── Bulk (deben ir antes de /:id para evitar conflicto de ruta) ───────────────
+documentsRouter.get('/bulk/installments', validateQuery(BulkIdsQuerySchema), documentsController.getBulkInstallments)
+documentsRouter.get('/bulk/allocations', validateQuery(BulkIdsQuerySchema), documentsController.getBulkAllocations)
+
 documentsRouter.get('/:id', documentsController.getById)
 documentsRouter.put(
   '/:id',

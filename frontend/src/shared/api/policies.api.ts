@@ -4,15 +4,18 @@ import type { Policy, PolicyStatus, PolicyAttachment } from '../types'
 interface BackendInsuranceType { id: string; name: string }
 interface BackendCompany { id: string; name: string; cuit: string | null }
 interface BackendProducer { id: string; name: string }
+interface BackendCoverage { id: string; name: string; description: string | null }
 interface BackendPolicy {
   id: string; policyNumber: string; insuranceTypeId: string; companyId: string
-  costCenterId: string | null
-  producerId: string | null; insuredName: string; startDate: string; endDate: string
+  costCenterId: string | null; producerId: string | null
+  insuredName: string; assetId: string | null; beneficiaryDescription: string | null
+  startDate: string; endDate: string
   premium: number; currency: string; description: string | null; coverageIds: string[]
   isActive: boolean; status: string; createdAt: string; updatedAt: string
   insuranceType?: BackendInsuranceType
   company?: BackendCompany
   producer?: BackendProducer
+  selectedCoverages?: BackendCoverage[]
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
 
@@ -29,11 +32,13 @@ function mapPolicy(b: BackendPolicy): Policy {
     insuranceCompany: b.insuredName,
     producerId: b.producerId ?? '',
     insuranceType: b.insuranceType?.name ?? '',
-    coverageType: '',
-    coverageTypes: [],
-    startDate: b.startDate,
-    endDate: b.endDate,
-    assetId: null,
+    coverageType: b.selectedCoverages?.[0]?.name ?? b.coverageIds[0] ?? '',
+    coverageTypes: b.coverageIds,
+    coverageNames: b.selectedCoverages?.map((c) => c.name) ?? [],
+    beneficiaryDescription: b.beneficiaryDescription ?? '',
+    startDate: b.startDate?.slice(0, 10) ?? '',
+    endDate: b.endDate?.slice(0, 10) ?? '',
+    assetId: b.assetId ?? null,
     companyId: b.companyId,
     costCenterId: b.costCenterId ?? null,
     insuredAmountArs: b.premium,
@@ -50,6 +55,7 @@ export interface PolicyCreateInput {
   policyNumber: string; insuranceTypeId: string; companyId: string; costCenterId?: string | null
   producerId?: string; insuredName: string; startDate: string; endDate: string; premium: number
   currency?: string; description?: string; coverageIds?: string[]
+  assetId?: string | null; beneficiaryDescription?: string | null
 }
 
 export const policiesApi = {

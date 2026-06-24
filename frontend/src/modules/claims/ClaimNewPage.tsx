@@ -5,7 +5,7 @@ import {
   ShieldAlert, TriangleAlert, ArrowLeftRight,
   Car, Lock, Package, Flame, CloudRain, Wheat, Waves, Wrench,
   Zap, Settings, Scale, Heart, Activity, HelpCircle,
-  CheckCircle2, AlertTriangle, type LucideIcon,
+  CheckCircle2, type LucideIcon,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -22,9 +22,6 @@ import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
 import { claimsApi } from '../../shared/api/claims.api'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
-import {
-  INSURANCE_TYPE_CLAIM_COVERAGE,
-} from '../../shared/constants'
 import { catalogsApi } from '../../shared/api/catalogs.api'
 
 // ─── Claim type icon map (label → icon) ───────────────────────────────────────
@@ -101,6 +98,10 @@ export default function ClaimNewPage() {
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
 
+  // Archivos seleccionados en el form — se suben después de crear el siniestro
+  const [pendingDocs, setPendingDocs] = useState<File[]>([])
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
+
   // Derived
   const selectedAsset = assetId ? (allAssets.find((a) => a.id === assetId) ?? null) : null
   const availablePolicies = assetId ? allPolicies.filter((p) => p.assetId === assetId) : allPolicies
@@ -123,13 +124,6 @@ export default function ClaimNewPage() {
   const mainPrefix = currency === 'USD' ? 'US$' : 'AR$'
   const altPrefix = currency === 'USD' ? 'AR$' : 'US$'
   const altAmount = currency === 'USD' ? claimedAmountArs : equivalentClaimedAmount
-
-  // Coverage logic
-  const coveredTypes: string[] = selectedPolicy
-    ? (INSURANCE_TYPE_CLAIM_COVERAGE[selectedPolicy.insuranceType] ?? [])
-    : []
-  const selectedTypeCovered = claimType ? coveredTypes.includes(claimType) : null
-  const noCoverageWarning = claimType && selectedPolicy && selectedTypeCovered === false
 
   const handleAssetChange = (id: string) => {
     setAssetId(id)
@@ -177,7 +171,21 @@ export default function ClaimNewPage() {
         assetId: assetId || undefined,
         policyId: policyId || undefined,
         claimedAmountArs: toArs(claimedAmount),
+        realAmountArs: realAmount ? toArs(realAmount) : undefined,
+        settledAmountArs: settledAmount ? toArs(settledAmount) : undefined,
+        deductibleArs: deductible ? toArs(deductible) : undefined,
+        observations: observations.trim() || undefined,
+        exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
       })
+      // Subir archivos adjuntos seleccionados en el form
+      const allFiles = [
+        ...pendingDocs.map((f) => ({ file: f })),
+        ...pendingPhotos.map((f) => ({ file: f })),
+      ]
+      await Promise.all(
+        allFiles.map(({ file }) => claimsApi.addAttachment(created.id, file, {})),
+      )
+
       queryClient.invalidateQueries({ queryKey: ['claims'] })
       navigate(`/claims/${created.id}`)
     } finally {
@@ -257,17 +265,17 @@ export default function ClaimNewPage() {
               </FormField>
             </FormSection>
 
-            {/* Coverage chips when policy selected */}
-            {selectedPolicy && coveredTypes.length > 0 && (
+            {/* Coverage chips — actual coverage names from the selected policy */}
+            {selectedPolicy && (selectedPolicy.coverageNames?.length ?? 0) > 0 && (
               <div className="mt-4 pt-4 border-t border-slate-100">
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">
-                  Coberturas de {selectedPolicy.insuranceType}
+                  Coberturas incluidas en esta póliza
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {coveredTypes.map((t) => (
-                    <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-700">
+                  {selectedPolicy.coverageNames!.map((name) => (
+                    <span key={name} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-700">
                       <CheckCircle2 size={9} />
-                      {t}
+                      {name}
                     </span>
                   ))}
                 </div>
@@ -278,11 +286,7 @@ export default function ClaimNewPage() {
           {/* Sección 2: Tipo de siniestro */}
           <SectionCard
             title="Tipo de Siniestro"
-            subtitle={
-              selectedPolicy
-                ? `Tipos cubiertos por ${selectedPolicy.insuranceType} marcados en verde`
-                : 'Seleccioná la naturaleza del siniestro'
-            }
+            subtitle="Seleccioná la naturaleza del siniestro para clasificarlo"
           >
             {errors.claimType && (
               <p className="text-xs text-red-500 mb-3">{errors.claimType}</p>
@@ -291,7 +295,6 @@ export default function ClaimNewPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
               {claimTypes.map(({ id, label }) => {
                 const Icon = CLAIM_LABEL_ICON_MAP[label] ?? HelpCircle
-                const isCovered = selectedPolicy ? coveredTypes.includes(label) : null
                 const isSelected = claimType === label
 
                 return (
@@ -303,22 +306,17 @@ export default function ClaimNewPage() {
                       if (errors.claimType) setErrors((p) => ({ ...p, claimType: undefined }))
                     }}
                     className={clsx(
-                      'relative flex flex-col items-start gap-2 p-3 rounded-xl border text-left transition-all',
+                      'flex flex-col items-start gap-2 p-3 rounded-xl border text-left transition-all',
                       isSelected
                         ? 'bg-blue-50 border-blue-400 ring-1 ring-blue-300 shadow-sm'
-                        : isCovered === false
-                          ? 'bg-white border-slate-200 hover:border-slate-300 opacity-60 hover:opacity-80'
-                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50',
                     )}
                   >
                     <div className={clsx(
                       'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
-                      isSelected ? 'bg-blue-100' : isCovered ? 'bg-emerald-50' : 'bg-slate-100',
+                      isSelected ? 'bg-blue-100' : 'bg-slate-100',
                     )}>
-                      <Icon
-                        size={14}
-                        className={isSelected ? 'text-blue-600' : isCovered ? 'text-emerald-600' : 'text-slate-500'}
-                      />
+                      <Icon size={14} className={isSelected ? 'text-blue-600' : 'text-slate-500'} />
                     </div>
                     <span className={clsx(
                       'text-xs font-medium leading-tight',
@@ -326,30 +324,10 @@ export default function ClaimNewPage() {
                     )}>
                       {label}
                     </span>
-                    {isCovered !== null && (
-                      <span className={clsx(
-                        'text-[10px] font-semibold leading-none',
-                        isCovered ? 'text-emerald-600' : 'text-slate-400',
-                      )}>
-                        {isCovered ? '✓ Cubierto' : '✗ Sin cobertura'}
-                      </span>
-                    )}
                   </button>
                 )
               })}
             </div>
-
-            {/* No-coverage warning */}
-            {noCoverageWarning && (
-              <div className="mt-3 flex items-start gap-2.5 px-3.5 py-3 bg-amber-50 border border-amber-200 rounded-xl">
-                <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-amber-800 leading-relaxed">
-                  <strong>{claimType}</strong> podría no estar cubierto por{' '}
-                  <strong>{selectedPolicy?.insuranceType}</strong>. Verificá la cobertura con{' '}
-                  {selectedPolicy?.insuranceCompany} antes de continuar.
-                </p>
-              </div>
-            )}
           </SectionCard>
 
           {/* Sección 3: Datos del hecho */}
@@ -519,6 +497,7 @@ export default function ClaimNewPage() {
               label="Adjuntá documentos del siniestro (denuncia policial, peritaje, presupuestos)"
               accept=".pdf,.doc,.docx,.xls,.xlsx"
               maxFiles={10}
+              onFilesPicked={(files) => setPendingDocs((prev) => [...prev, ...files])}
             />
           </SectionCard>
 
@@ -528,6 +507,7 @@ export default function ClaimNewPage() {
               label="Adjuntá fotos y videos del siniestro (JPG, PNG, MP4, MOV)"
               accept=".jpg,.jpeg,.png,.gif,.mp4,.mov,.avi,.webm"
               maxFiles={20}
+              onFilesPicked={(files) => setPendingPhotos((prev) => [...prev, ...files])}
             />
           </SectionCard>
 
@@ -572,44 +552,21 @@ export default function ClaimNewPage() {
             </div>
           </SectionCard>
 
-          {/* Coverage banner */}
-          {selectedPolicy && (
-            <div className={clsx(
-              'flex items-start gap-3 px-4 py-3.5 rounded-xl border',
-              noCoverageWarning
-                ? 'bg-amber-50 border-amber-200'
-                : selectedTypeCovered
-                  ? 'bg-emerald-50 border-emerald-200'
-                  : 'bg-slate-50 border-slate-200',
-            )}>
-              {noCoverageWarning ? (
-                <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
-              ) : selectedTypeCovered ? (
-                <CheckCircle2 size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
-              ) : (
-                <ShieldAlert size={14} className="text-slate-500 mt-0.5 flex-shrink-0" />
-              )}
+          {/* Coberturas de la póliza seleccionada — solo informativo */}
+          {selectedPolicy && (selectedPolicy.coverageNames?.length ?? 0) > 0 && (
+            <div className="flex items-start gap-3 px-4 py-3.5 rounded-xl border bg-slate-50 border-slate-200">
+              <ShieldAlert size={14} className="text-slate-400 mt-0.5 flex-shrink-0" />
               <div>
-                <p className={clsx(
-                  'text-xs font-semibold mb-0.5',
-                  noCoverageWarning ? 'text-amber-800' : selectedTypeCovered ? 'text-emerald-800' : 'text-slate-700',
-                )}>
-                  {noCoverageWarning
-                    ? 'Posible falta de cobertura'
-                    : selectedTypeCovered
-                      ? 'Tipo cubierto por la póliza'
-                      : `Cobertura: ${selectedPolicy.insuranceType}`}
+                <p className="text-xs font-semibold text-slate-600 mb-1.5">
+                  Coberturas de la póliza
                 </p>
-                <p className={clsx(
-                  'text-xs leading-relaxed',
-                  noCoverageWarning ? 'text-amber-700' : 'text-slate-500',
-                )}>
-                  {noCoverageWarning
-                    ? `Verificá la cobertura antes de continuar el trámite.`
-                    : selectedTypeCovered
-                      ? `Este tipo está incluido en ${selectedPolicy.insuranceType}.`
-                      : 'Seleccioná un tipo de siniestro para ver la cobertura.'}
-                </p>
+                <div className="flex flex-wrap gap-1">
+                  {selectedPolicy.coverageNames!.map((name) => (
+                    <span key={name} className="text-[10px] text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">
+                      {name}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
           )}

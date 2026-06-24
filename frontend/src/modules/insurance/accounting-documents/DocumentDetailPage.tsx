@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -45,7 +45,36 @@ export default function DocumentDetailPage() {
     queryFn: () => policiesApi.findAll(),
   })
 
+  const { data: allocations = [] } = useQuery({
+    queryKey: ['documents', id, 'allocations'],
+    queryFn: () => documentsApi.findAllocations(id!),
+    enabled: !!id,
+  })
+
+  const { data: fetchedInstallments = [] } = useQuery({
+    queryKey: ['documents', id, 'installments'],
+    queryFn: () => documentsApi.findInstallments(id!),
+    enabled: !!id,
+  })
+
   const [installments, setInstallments] = useState<Installment[]>([])
+
+  useEffect(() => {
+    if (fetchedInstallments.length > 0) {
+      setInstallments(
+        fetchedInstallments.map((i) => ({
+          id: i.id,
+          accountingDocumentId: i.accountingDocumentId,
+          installmentNumber: i.installmentNumber,
+          dueDate: i.dueDate,
+          amount: i.amount,
+          currency: i.currency as Installment['currency'],
+          paymentStatus: i.paymentStatus as Installment['paymentStatus'],
+          paidAt: i.paidAt,
+        })),
+      )
+    }
+  }, [fetchedInstallments])
 
   if (docLoading) {
     return (
@@ -69,8 +98,6 @@ export default function DocumentDetailPage() {
   }
 
   const today = new Date().toISOString().slice(0, 10)
-  // Allocations are not available from backend yet — show empty
-  const allocations: DocumentPolicyAllocation[] = []
   const computedTotal = doc.netAmount + doc.vatAmount + doc.otherTaxesAmount
 
   const paidCount = installments.filter((i) => i.paymentStatus === 'pagado').length
@@ -88,10 +115,16 @@ export default function DocumentDetailPage() {
         ? 'parcial'
         : doc.paymentStatus
 
-  function handleInstallmentUpdate(instId: string, updates: InstallmentUpdate) {
+  async function handleInstallmentUpdate(instId: string, updates: InstallmentUpdate) {
     setInstallments((prev) =>
       prev.map((i) => (i.id === instId ? { ...i, ...updates } : i))
     )
+    try {
+      await documentsApi.updateInstallment(doc!.id, instId, updates)
+      queryClient.invalidateQueries({ queryKey: ['documents', id, 'installments'] })
+    } catch {
+      queryClient.invalidateQueries({ queryKey: ['documents', id, 'installments'] })
+    }
   }
 
   const allocationColumns: TableColumn<DocumentPolicyAllocation>[] = [

@@ -27,7 +27,7 @@ import { catalogsApi } from '../../../shared/api/catalogs.api'
 import type { PolicyAttachment } from '../../../shared/types'
 
 type AssociationType = 'activo' | 'sin_activo'
-type PolicyAttachmentDraft = Omit<PolicyAttachment, 'id' | 'policyId'>
+type PolicyAttachmentDraft = Omit<PolicyAttachment, 'id' | 'policyId'> & { pendingFile?: File }
 
 interface PolicyForm {
   policyNumber: string
@@ -104,16 +104,18 @@ function CoverageSelector({
     )
   }
 
-  const toggle = (coverage: string) => {
+  const coverageItems = config.coverageObjects ?? config.coverages.map((c) => ({ id: c, name: c }))
+
+  const toggle = (id: string) => {
     onChange(
-      selected.includes(coverage)
-        ? selected.filter((c) => c !== coverage)
-        : [...selected, coverage],
+      selected.includes(id)
+        ? selected.filter((c) => c !== id)
+        : [...selected, id],
     )
   }
 
-  const allSelected = config.coverages.every((c) => selected.includes(c))
-  const toggleAll = () => onChange(allSelected ? [] : [...config.coverages])
+  const allSelected = coverageItems.every((c) => selected.includes(c.id))
+  const toggleAll = () => onChange(allSelected ? [] : coverageItems.map((c) => c.id))
 
   return (
     <div>
@@ -122,7 +124,7 @@ function CoverageSelector({
         <p className="text-xs text-slate-500">
           {selected.length === 0
             ? 'Ninguna seleccionada'
-            : `${selected.length} de ${config.coverages.length} seleccionada${selected.length !== 1 ? 's' : ''}`}
+            : `${selected.length} de ${coverageItems.length} seleccionada${selected.length !== 1 ? 's' : ''}`}
         </p>
         <button type="button" onClick={toggleAll} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
           {allSelected ? 'Deseleccionar todas' : 'Seleccionar todas'}
@@ -131,16 +133,16 @@ function CoverageSelector({
 
       <div className="rounded-xl border border-slate-200 overflow-hidden">
         <div className="grid grid-cols-1 sm:grid-cols-2">
-          {config.coverages.map((coverage, idx) => {
-            const checked = selected.includes(coverage)
-            const isLastRow = idx >= config.coverages.length - (config.coverages.length % 2 === 0 ? 2 : 1)
+          {coverageItems.map((coverage, idx) => {
+            const checked = selected.includes(coverage.id)
+            const isLastRow = idx >= coverageItems.length - (coverageItems.length % 2 === 0 ? 2 : 1)
             return (
               <label
-                key={coverage}
+                key={coverage.id}
                 className={[
                   'relative flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors select-none',
                   checked ? 'bg-blue-50' : 'bg-white hover:bg-slate-50',
-                  idx % 2 === 0 && idx < config.coverages.length - 1 ? 'sm:border-r border-slate-100' : '',
+                  idx % 2 === 0 && idx < coverageItems.length - 1 ? 'sm:border-r border-slate-100' : '',
                   !isLastRow ? 'border-b border-slate-100' : '',
                 ].join(' ')}
               >
@@ -155,9 +157,9 @@ function CoverageSelector({
                     </svg>
                   )}
                 </div>
-                <input type="checkbox" checked={checked} onChange={() => toggle(coverage)} className="sr-only" />
+                <input type="checkbox" checked={checked} onChange={() => toggle(coverage.id)} className="sr-only" />
                 <span className={`text-sm leading-snug ${checked ? 'text-blue-800 font-medium' : 'text-slate-700'}`}>
-                  {coverage}
+                  {coverage.name}
                 </span>
               </label>
             )
@@ -212,10 +214,6 @@ export default function PolicyNewPage() {
 
   const createMutation = useMutation({
     mutationFn: (input: Parameters<typeof policiesApi.create>[0]) => policiesApi.create(input),
-    onSuccess: (newPolicy) => {
-      queryClient.invalidateQueries({ queryKey: ['policies'] })
-      navigate(`/insurance/policies/${newPolicy.id}`)
-    },
   })
 
   const set =
@@ -280,41 +278,56 @@ export default function PolicyNewPage() {
     return Object.keys(next).length === 0
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
 
     const ars = parseFloat(form.insuredAmountArs)
-    const rate = parseFloat(form.exchangeRate)
 
-    // Resolve insuranceTypeId from the loaded list
     const insuranceTypeObj = insuranceTypes.find((t) => t.label === form.insuranceType)
     const insuranceTypeId = insuranceTypeObj?.id ?? ''
 
-    // Resolve companyId: use form.companyId for sin_activo, or asset's companyId for activo
     const selectedAsset = form.association === 'activo'
       ? allAssets.find((a) => a.id === form.assetId)
       : undefined
     const companyId = form.association === 'sin_activo'
       ? form.companyId
       : (selectedAsset?.companyId ?? '')
-
     const costCenterId = form.association === 'sin_activo' ? form.costCenterId || null : null
 
-    createMutation.mutate({
-      policyNumber: form.policyNumber.trim(),
-      insuranceTypeId,
-      companyId,
-      costCenterId,
-      producerId: form.producerId || undefined,
-      insuredName: form.insuranceCompany,
-      startDate: form.startDate,
-      endDate: form.endDate,
-      premium: ars,
-      currency: 'ARS',
-      description: form.description.trim() || undefined,
-      coverageIds: [],
-    })
+    try {
+      const newPolicy = await createMutation.mutateAsync({
+        policyNumber: form.policyNumber.trim(),
+        insuranceTypeId,
+        companyId,
+        costCenterId,
+        producerId: form.producerId || undefined,
+        insuredName: form.insuranceCompany,
+        assetId: form.association === 'activo' ? (form.assetId || null) : null,
+        beneficiaryDescription: form.beneficiaryDescription.trim() || null,
+        startDate: form.startDate,
+        endDate: form.endDate,
+        premium: ars,
+        currency: 'ARS',
+        description: form.description.trim() || undefined,
+        coverageIds: form.coverageTypes,
+      })
+
+      // Upload pending attachments after policy is created
+      const pending = attachmentDrafts.filter((a) => a.pendingFile)
+      for (const att of pending) {
+        await policiesApi.addAttachment(newPolicy.id, att.pendingFile!, {
+          description: att.description || undefined,
+          expirationDate: att.expirationDate ?? undefined,
+          notifyEmail: att.notifyEmail ?? undefined,
+        })
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['policies'] })
+      navigate(`/insurance/policies/${newPolicy.id}`)
+    } catch {
+      // mutation error handled by createMutation.isError
+    }
   }
 
   return (
@@ -630,6 +643,7 @@ export default function PolicyNewPage() {
                   notifyEmail: partial.notifyEmail,
                   uploadedAt: partial.uploadedAt,
                   uploadedBy: partial.uploadedBy,
+                  pendingFile: partial.pendingFile,
                 }])
                 setShowAttachModal(false)
               }}

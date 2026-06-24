@@ -18,6 +18,7 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatDate, daysUntil } from '../../shared/utils/format'
+import { ROUTES } from '../../app/routes'
 import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
 import { assetsApi } from '../../shared/api/assets.api'
@@ -136,7 +137,7 @@ export default function FireExtinguisherDetailPage() {
           description="El matafuego que buscás no existe o fue eliminado."
           action={
             <button
-              onClick={() => navigate('/fire-extinguishers')}
+              onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS)}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
             >
               <ArrowLeft size={15} />
@@ -163,7 +164,7 @@ export default function FireExtinguisherDetailPage() {
         title={`Matafuego ${fe.code}`}
         subtitle={`${fe.type} · ${fe.capacity}`}
         category="Matafuego"
-        backTo="/fire-extinguishers"
+        backTo={ROUTES.FIRE_EXTINGUISHERS}
         backLabel="Volver a matafuegos"
         badge={<StatusPill status={fe.status} />}
         actions={
@@ -176,7 +177,7 @@ export default function FireExtinguisherDetailPage() {
               Registrar Recarga
             </button>
             <button
-              onClick={() => navigate(`/fire-extinguishers/${fe.id}/edit`)}
+              onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_EDIT(fe.id))}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
             >
               <Pencil size={15} />

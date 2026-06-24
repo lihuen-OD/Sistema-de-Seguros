@@ -6,8 +6,13 @@ const prisma = new PrismaClient()
 
 function isoDate(offsetDays = 0): string {
   const d = new Date()
+  d.setUTCHours(0, 0, 0, 0)
   d.setDate(d.getDate() + offsetDays)
-  return d.toISOString().slice(0, 10)
+  return d.toISOString()
+}
+
+function staticDate(dateStr: string): string {
+  return new Date(dateStr + 'T00:00:00.000Z').toISOString()
 }
 
 // ── Seed ──────────────────────────────────────────────────────────────────────
@@ -17,21 +22,34 @@ async function main() {
 
   // Eliminar en orden correcto (hijos antes que padres)
   await prisma.catalogItem.deleteMany()
-  await prisma.claim.deleteMany()                     // cascade → ClaimEvent
-  await prisma.fireExtinguisher.deleteMany()          // cascade → FireExtinguisherHistory
-  await prisma.documentPolicyAllocation.deleteMany()  // libera FK a Policy
-  await prisma.accountingDocument.deleteMany()        // cascade → DocumentInstallment, DocumentAttachment
-  await prisma.policy.deleteMany()                    // cascade → PolicyAttachment
-  await prisma.assetAllocation.deleteMany()           // libera FK a CostCenter
-  await prisma.asset.deleteMany()                     // cascade → AssetValueHistory, AssetAttachment
-  await prisma.producer.deleteMany()                  // cascade → ProducerTask
+  await prisma.claimEvent.deleteMany()
+  await prisma.claim.deleteMany()
+  await prisma.fireExtinguisherHistory.deleteMany()
+  await prisma.fireExtinguisher.deleteMany()
+  await prisma.documentAttachment.deleteMany()
+  await prisma.documentPolicyAllocation.deleteMany()
+  await prisma.documentInstallment.deleteMany()
+  await prisma.accountingDocument.deleteMany()
+  await prisma.policyAttachment.deleteMany()
+  await prisma.policy.deleteMany()
+  await prisma.producerTask.deleteMany()
+  await prisma.producer.deleteMany()
+  await prisma.assetAttachment.deleteMany()
+  await prisma.assetValueHistory.deleteMany()
+  await prisma.assetAllocation.deleteMany()
+  await prisma.asset.deleteMany()
   await prisma.costCenter.deleteMany()
-  await prisma.insuranceType.deleteMany()             // cascade → InsuranceCoverage
+  await prisma.insuranceCoverage.deleteMany()
+  await prisma.insuranceType.deleteMany()
   await prisma.company.deleteMany()
 
   console.log('✅ Base limpia. Insertando datos...')
 
-  // ── Companies (empresas del grupo — propietarias de activos y pólizas) ────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 1 — Entidades base (sin dependencias entre sí)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── Empresas ──────────────────────────────────────────────────────────────
 
   const [compOdwyerSA, compCampoNorte, compLogisticaOD] = await Promise.all([
     prisma.company.create({
@@ -63,21 +81,30 @@ async function main() {
     }),
   ])
 
-  console.log('  ✔ Companies (3) — empresas del grupo')
+  console.log('  ✔ Empresas (3)')
 
-  // ── Cost Centers ───────────────────────────────────────────────────────────
+  // ── Centros de Costo ──────────────────────────────────────────────────────
 
-  const [ccAdmin, ccOps, ccLogistica] = await Promise.all([
-    prisma.costCenter.create({ data: { name: 'Administración Central', code: 'ADM-001' } }),
-    prisma.costCenter.create({ data: { name: 'Operaciones Campo', code: 'OPS-001' } }),
-    prisma.costCenter.create({ data: { name: 'Logística y Transporte', code: 'LOG-001' } }),
+  const [ccAdmin, ccOps, ccLogistica, ccAgro] = await Promise.all([
+    prisma.costCenter.create({
+      data: { name: 'Administración Central', code: 'ADM-001', description: 'Gastos administrativos y de gestión corporativa' },
+    }),
+    prisma.costCenter.create({
+      data: { name: 'Operaciones Campo', code: 'OPS-001', description: 'Producción agrícola y actividades de campo' },
+    }),
+    prisma.costCenter.create({
+      data: { name: 'Logística y Transporte', code: 'LOG-001', description: 'Flota de vehículos y operaciones de transporte' },
+    }),
+    prisma.costCenter.create({
+      data: { name: 'Agroindústria', code: 'AGR-001', description: 'Procesamiento y almacenamiento de granos' },
+    }),
   ])
 
-  console.log('  ✔ Cost Centers (3)')
+  console.log('  ✔ Centros de Costo (4)')
 
-  // ── Insurance Types + coverages ────────────────────────────────────────────
+  // ── Tipos de Seguro + Coberturas ──────────────────────────────────────────
 
-  const [tipoIncendio, tipoAuto, tipoRC, tipoAP] = await Promise.all([
+  const [tipoIncendio, tipoAuto, tipoRC, tipoAP, tipoMultiRiesgo, tipoTransporte] = await Promise.all([
     prisma.insuranceType.create({
       data: {
         name: 'Incendio y Riesgo Afines',
@@ -89,6 +116,7 @@ async function main() {
               { name: 'Rayo', description: 'Daños por descarga eléctrica atmosférica' },
               { name: 'Explosión', description: 'Daños por explosión de cualquier origen' },
               { name: 'Robo de Contenido', description: 'Robo o hurto de bienes asegurados' },
+              { name: 'Daños por Agua', description: 'Daños ocasionados por agua de cañerías' },
             ],
           },
         },
@@ -105,6 +133,7 @@ async function main() {
               { name: 'Daños Propios', description: 'Daños al propio vehículo por accidente' },
               { name: 'Robo / Hurto Total', description: 'Robo o hurto total del vehículo' },
               { name: 'Granizo', description: 'Daños por granizo sobre la carrocería' },
+              { name: 'Incendio Vehículo', description: 'Incendio total o parcial del rodado' },
             ],
           },
         },
@@ -120,6 +149,7 @@ async function main() {
               { name: 'RC General', description: 'RC por actividades generales de la empresa' },
               { name: 'RC Productos', description: 'RC por productos elaborados o vendidos' },
               { name: 'RC Empleadores', description: 'RC frente a empleados en el trabajo' },
+              { name: 'RC Cruzada', description: 'RC recíproca entre empresas del grupo' },
             ],
           },
         },
@@ -135,6 +165,38 @@ async function main() {
               { name: 'Muerte Accidental', description: 'Capital por muerte por accidente' },
               { name: 'Incapacidad Total y Permanente', description: 'Capital por ITP' },
               { name: 'Gastos Médicos', description: 'Reembolso de gastos médicos por accidente' },
+              { name: 'Sepelio', description: 'Gastos de sepelio por muerte accidental' },
+            ],
+          },
+        },
+      },
+    }),
+    prisma.insuranceType.create({
+      data: {
+        name: 'Multiriesgo Agropecuario',
+        description: 'Cobertura integral para maquinaria agrícola y riesgos del campo.',
+        coverages: {
+          createMany: {
+            data: [
+              { name: 'Granizo sobre Cosecha', description: 'Daños por granizo en cultivos asegurados' },
+              { name: 'Incendio de Pasturas', description: 'Pérdida de forraje por incendio' },
+              { name: 'Rotura de Maquinaria', description: 'Rotura accidental de maquinaria agrícola' },
+              { name: 'Viento / Tornado', description: 'Daños estructurales por viento' },
+            ],
+          },
+        },
+      },
+    }),
+    prisma.insuranceType.create({
+      data: {
+        name: 'Transporte de Mercaderías',
+        description: 'Cubre mercaderías en tránsito por vía terrestre.',
+        coverages: {
+          createMany: {
+            data: [
+              { name: 'Todo Riesgo en Tránsito', description: 'Cobertura total durante el transporte' },
+              { name: 'Robo en Tránsito', description: 'Robo de carga durante el traslado' },
+              { name: 'Daños por Vuelco', description: 'Daños a la mercadería por accidente del vehículo' },
             ],
           },
         },
@@ -142,35 +204,21 @@ async function main() {
     }),
   ])
 
-  console.log('  ✔ Insurance Types (4) + Coverages (14)')
+  console.log('  ✔ Tipos de Seguro (6) + Coberturas (25)')
 
-  // ── Producers ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 2 — Productores y Activos (dependen de empresas/centros de costo)
+  // ─────────────────────────────────────────────────────────────────────────
 
-  const [prodJuan, prodMaria] = await Promise.all([
+  // ── Productores ───────────────────────────────────────────────────────────
+
+  const [prodJuan, prodMaria, prodCarlos] = await Promise.all([
     prisma.producer.create({
       data: {
         name: 'Juan Carlos Rodríguez',
         email: 'jrodriguez@seguroslo.com.ar',
         phone: '0351-155-123456',
         matricula: 'MAT-12345',
-        tasks: {
-          createMany: {
-            data: [
-              {
-                title: 'Renovar póliza RC vencida',
-                description: 'Gestionar la renovación antes del cierre de mes.',
-                dueDate: isoDate(-3),
-                status: 'pendiente',
-              },
-              {
-                title: 'Auditoría anual de activos asegurados',
-                description: 'Revisar valuación de activos con el cliente.',
-                dueDate: isoDate(15),
-                status: 'en_progreso',
-              },
-            ],
-          },
-        },
       },
     }),
     prisma.producer.create({
@@ -179,33 +227,33 @@ async function main() {
         email: 'mperez@seguroslo.com.ar',
         phone: '0351-155-654321',
         matricula: 'MAT-67890',
-        tasks: {
-          createMany: {
-            data: [
-              {
-                title: 'Cotizar ampliación cobertura automotores',
-                description: 'El cliente agregó 2 vehículos nuevos.',
-                dueDate: isoDate(7),
-                status: 'pendiente',
-              },
-            ],
-          },
-        },
+      },
+    }),
+    prisma.producer.create({
+      data: {
+        name: 'Carlos Alberto Méndez',
+        email: 'cmendez@productorods.com.ar',
+        phone: '03548-155-987654',
+        matricula: 'MAT-24680',
       },
     }),
   ])
 
-  console.log('  ✔ Producers (2) + Tasks (3)')
+  console.log('  ✔ Productores (3)')
 
-  // ── Assets ────────────────────────────────────────────────────────────────
+  // ── Activos ───────────────────────────────────────────────────────────────
 
-  const [actEdificio, actCamion, actCosechadora, actGalpon] = await Promise.all([
+  const [actEdificio, actCamion, actCosechadora, actGalpon, actTractor, actSilo] = await Promise.all([
     prisma.asset.create({
       data: {
+        code: 'INM-001',
         name: 'Edificio Principal — Planta Córdoba',
         assetType: 'inmueble',
+        status: 'activo',
         location: 'Av. Vélez Sársfield 3450, Córdoba',
-        purchaseDate: '2010-03-15',
+        area: 'Administración',
+        productiveUnit: 'Administración',
+        purchaseDate: staticDate('2010-03-15'),
         purchaseValue: 8000000,
         currentValue: 15000000,
         description: 'Edificio de oficinas y planta de procesamiento. 1200 m² cubiertos.',
@@ -221,15 +269,20 @@ async function main() {
     }),
     prisma.asset.create({
       data: {
+        code: 'VEH-001',
         name: 'Camión Scania R450 — Patente AB 123 CD',
         assetType: 'vehiculo',
+        status: 'activo',
         brand: 'Scania',
         model: 'R450',
+        year: 2021,
         serialNumber: '9BSR6X4006B412345',
-        purchaseDate: '2021-08-01',
+        purchaseDate: staticDate('2021-08-01'),
         purchaseValue: 7000000,
         currentValue: 8500000,
         location: 'Planta Córdoba',
+        area: 'Logística',
+        productiveUnit: 'Logística',
         allocations: {
           createMany: {
             data: [{ companyId: compLogisticaOD.id, costCenterId: ccLogistica.id, percentage: 100 }],
@@ -239,14 +292,19 @@ async function main() {
     }),
     prisma.asset.create({
       data: {
+        code: 'MAQ-001',
         name: 'Cosechadora John Deere S770',
         assetType: 'maquinaria_agricola',
+        status: 'activo',
         brand: 'John Deere',
         model: 'S770',
+        year: 2022,
         serialNumber: '1H0S770SRLN123456',
-        purchaseDate: '2022-04-10',
+        purchaseDate: staticDate('2022-04-10'),
         purchaseValue: 38000000,
         currentValue: 45000000,
+        area: 'Producción',
+        productiveUnit: 'Agrícola Norte',
         description: 'Cosechadora de gran porte para uso agrícola extensivo.',
         allocations: {
           createMany: {
@@ -257,10 +315,14 @@ async function main() {
     }),
     prisma.asset.create({
       data: {
+        code: 'INM-002',
         name: 'Galpón de Almacenamiento — Depósito Norte',
         assetType: 'inmueble',
+        status: 'activo',
         location: 'Ruta 9 km 12, Jesús María, Córdoba',
-        purchaseDate: '2015-06-20',
+        area: 'Logística',
+        productiveUnit: 'Agrícola Norte',
+        purchaseDate: staticDate('2015-06-20'),
         purchaseValue: 2500000,
         currentValue: 3500000,
         description: 'Galpón metálico 800 m² con cámara de frío. Uso logístico.',
@@ -274,21 +336,67 @@ async function main() {
         },
       },
     }),
+    prisma.asset.create({
+      data: {
+        code: 'MAQ-002',
+        name: 'Tractor John Deere 6135B',
+        assetType: 'vehiculo',
+        status: 'activo',
+        brand: 'John Deere',
+        model: '6135B',
+        year: 2020,
+        serialNumber: 'PY6135B654321',
+        purchaseDate: staticDate('2020-11-05'),
+        purchaseValue: 12000000,
+        currentValue: 14000000,
+        area: 'Producción',
+        productiveUnit: 'Agrícola Sur',
+        allocations: {
+          createMany: {
+            data: [{ companyId: compCampoNorte.id, costCenterId: ccOps.id, percentage: 100 }],
+          },
+        },
+      },
+    }),
+    prisma.asset.create({
+      data: {
+        code: 'INF-001',
+        name: 'Silo Metálico 1500 tn — Jesús María',
+        assetType: 'silo',
+        status: 'activo',
+        location: 'Ruta 9 km 12, Jesús María, Córdoba',
+        area: 'Producción',
+        productiveUnit: 'Agrícola Norte',
+        purchaseDate: staticDate('2018-03-01'),
+        purchaseValue: 4200000,
+        currentValue: 5000000,
+        description: 'Silo metálico capacidad 1500 tn. Contenido actual: soja.',
+        metadata: { siloContent: 'Soja', siloCapacity: 1500 },
+        allocations: {
+          createMany: {
+            data: [{ companyId: compCampoNorte.id, costCenterId: ccAgro.id, percentage: 100 }],
+          },
+        },
+      },
+    }),
   ])
 
-  console.log('  ✔ Assets (4) + Allocations')
+  console.log('  ✔ Activos (6) + Imputaciones')
 
-  // ── Policies ──────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 3 — Pólizas (dependen de todo lo anterior)
+  // ─────────────────────────────────────────────────────────────────────────
 
-  const [polIncendio, polAuto, polRC, _polAP] = await Promise.all([
-    // Póliza vigente — Incendio Edificio
+  const [polIncendio, polAuto, polRC, polAP, polMultiRiesgo] = await Promise.all([
     prisma.policy.create({
       data: {
         policyNumber: 'LS-INC-2024-001234',
         insuranceTypeId: tipoIncendio.id,
         companyId: compOdwyerSA.id,
+        costCenterId: ccAdmin.id,
         producerId: prodJuan.id,
         insuredName: "Los O'Dwyer S.A.",
+        assetId: actEdificio.id,
         startDate: isoDate(-180),
         endDate: isoDate(185),
         premium: 280000,
@@ -297,14 +405,15 @@ async function main() {
         coverageIds: [],
       },
     }),
-    // Póliza vigente — Automotores Camión
     prisma.policy.create({
       data: {
         policyNumber: 'FP-AUT-2025-005678',
         insuranceTypeId: tipoAuto.id,
         companyId: compLogisticaOD.id,
+        costCenterId: ccLogistica.id,
         producerId: prodMaria.id,
         insuredName: 'Logística OD S.A.',
+        assetId: actCamion.id,
         startDate: isoDate(-60),
         endDate: isoDate(305),
         premium: 145000,
@@ -313,46 +422,171 @@ async function main() {
         coverageIds: [],
       },
     }),
-    // Póliza próxima a vencer — RC General
     prisma.policy.create({
       data: {
         policyNumber: 'ZA-RC-2024-009012',
         insuranceTypeId: tipoRC.id,
         companyId: compOdwyerSA.id,
+        costCenterId: ccAdmin.id,
         producerId: prodJuan.id,
         insuredName: "Los O'Dwyer S.A.",
         startDate: isoDate(-350),
-        endDate: isoDate(15),   // vence en 15 días → proxima_a_vencer
+        endDate: isoDate(15),
         premium: 95000,
         currency: 'ARS',
         description: 'RC General para actividades industriales y logísticas.',
         coverageIds: [],
       },
     }),
-    // Póliza vencida — Accidentes Personales
     prisma.policy.create({
       data: {
         policyNumber: 'LS-AP-2023-003456',
         insuranceTypeId: tipoAP.id,
         companyId: compCampoNorte.id,
+        costCenterId: ccOps.id,
         producerId: prodMaria.id,
         insuredName: 'Campo Norte S.R.L.',
+        beneficiaryDescription: '12 empleados del área operativa',
         startDate: isoDate(-400),
-        endDate: isoDate(-35),  // venció hace 35 días → vencida
+        endDate: isoDate(-35),
         premium: 68000,
         currency: 'ARS',
         description: 'AP para 12 empleados — requiere renovación urgente.',
         coverageIds: [],
       },
     }),
+    prisma.policy.create({
+      data: {
+        policyNumber: 'SB-MAG-2025-007890',
+        insuranceTypeId: tipoMultiRiesgo.id,
+        companyId: compCampoNorte.id,
+        costCenterId: ccOps.id,
+        producerId: prodCarlos.id,
+        insuredName: 'Campo Norte S.R.L.',
+        assetId: actCosechadora.id,
+        startDate: isoDate(-30),
+        endDate: isoDate(335),
+        premium: 520000,
+        currency: 'ARS',
+        description: 'Multiriesgo agropecuario — maquinaria e instalaciones campaña 2025/26.',
+        coverageIds: [],
+      },
+    }),
   ])
 
-  console.log('  ✔ Policies (4) — vigente×2, proxima×1, vencida×1')
+  console.log('  ✔ Pólizas (5) — vigente×3, proxima×1, vencida×1')
 
-  // ── Accounting Documents + Installments ───────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 4 — Tareas (ahora pueden referenciar pólizas y activos)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  await prisma.producerTask.createMany({
+    data: [
+      // Tareas de Juan Rodríguez
+      {
+        producerId: prodJuan.id,
+        title: 'Renovar póliza RC antes del vencimiento',
+        description: 'La póliza ZA-RC-2024-009012 vence en menos de 15 días. Gestionar renovación y enviar propuesta al cliente.',
+        dueDate: isoDate(10),
+        status: 'pendiente',
+        priority: 'alta',
+        policyId: polRC.id,
+        assignedTo: 'Juan Carlos Rodríguez',
+      },
+      {
+        producerId: prodJuan.id,
+        title: 'Auditoría anual de activos asegurados',
+        description: 'Revisar valuación de activos con el área contable. Verificar que los valores asegurados estén actualizados.',
+        dueDate: isoDate(20),
+        status: 'en_progreso',
+        priority: 'media',
+        assignedTo: 'Juan Carlos Rodríguez',
+      },
+      {
+        producerId: prodJuan.id,
+        title: 'Solicitar endoso por ampliación de cobertura — Edificio',
+        description: 'El cliente incorporó nueva maquinaria en planta. Solicitar endoso para ampliar suma asegurada.',
+        dueDate: isoDate(35),
+        status: 'pendiente',
+        priority: 'media',
+        policyId: polIncendio.id,
+        assetId: actEdificio.id,
+        assignedTo: 'Juan Carlos Rodríguez',
+      },
+      // Tareas de María Pérez
+      {
+        producerId: prodMaria.id,
+        title: 'Cotizar ampliación cobertura automotores',
+        description: 'El cliente agregó 2 vehículos nuevos a la flota. Solicitar cotización a 3 aseguradoras.',
+        dueDate: isoDate(7),
+        status: 'pendiente',
+        priority: 'alta',
+        policyId: polAuto.id,
+        assignedTo: 'María Elena Pérez',
+      },
+      {
+        producerId: prodMaria.id,
+        title: 'Renovación urgente — Accidentes Personales',
+        description: 'La póliza AP venció hace 35 días. Gestionar renovación retroactiva o emisión de nueva póliza.',
+        dueDate: isoDate(-2),
+        status: 'pendiente',
+        priority: 'alta',
+        policyId: polAP.id,
+        assignedTo: 'María Elena Pérez',
+      },
+      {
+        producerId: prodMaria.id,
+        title: 'Enviar documentación para siniestro en trámite',
+        description: 'Completar dossier del siniestro SIN-2026-00001. Faltan fotos del daño y presupuesto del taller.',
+        dueDate: isoDate(3),
+        status: 'en_progreso',
+        priority: 'alta',
+        assetId: actCamion.id,
+        assignedTo: 'María Elena Pérez',
+      },
+      // Tareas de Carlos Méndez
+      {
+        producerId: prodCarlos.id,
+        title: 'Verificar condiciones de cosecha — póliza multiriesgo',
+        description: 'Confirmar con el cliente los cultivos declarados para la campaña 2025/26 y actualizar la suma asegurada.',
+        dueDate: isoDate(45),
+        status: 'pendiente',
+        priority: 'media',
+        policyId: polMultiRiesgo.id,
+        assetId: actCosechadora.id,
+        assignedTo: 'Carlos Alberto Méndez',
+      },
+      {
+        producerId: prodCarlos.id,
+        title: 'Revisión técnica del silo — informe de riesgo',
+        description: 'Coordinar visita de técnico de la aseguradora para inspección del silo. Adjuntar planos al expediente.',
+        dueDate: isoDate(60),
+        status: 'pendiente',
+        priority: 'baja',
+        assetId: actSilo.id,
+        assignedTo: 'Carlos Alberto Méndez',
+      },
+      {
+        producerId: prodCarlos.id,
+        title: 'Propuesta de seguro para tractor nuevo',
+        description: 'Cliente consultó por incorporar el Tractor 6135B a la cobertura multiriesgo. Preparar propuesta.',
+        dueDate: isoDate(14),
+        status: 'completada',
+        priority: 'media',
+        assetId: actTractor.id,
+        assignedTo: 'Carlos Alberto Méndez',
+      },
+    ],
+  })
+
+  console.log('  ✔ Tareas (9) — vinculadas a productores, pólizas y activos')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 5 — Documentos Contables + Cuotas + Imputaciones
+  // ─────────────────────────────────────────────────────────────────────────
 
   await Promise.all([
-    // Doc 1 — Factura emitida hace 60 días, 3 cuotas
+    // Doc 1 — Factura incendio, pago parcial
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00001234',
@@ -402,7 +636,7 @@ async function main() {
         },
       },
     }),
-    // Doc 2 — Factura con cuota vencida sin pagar
+    // Doc 2 — Cuota vencida sin pagar
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00005678',
@@ -421,7 +655,7 @@ async function main() {
             data: [
               {
                 installmentNumber: 1,
-                dueDate: isoDate(-10),  // vencida, sin pagar
+                dueDate: isoDate(-10),
                 amount: 175450,
                 paymentStatus: 'pendiente',
                 notes: 'VENCIDA — gestionar pago urgente',
@@ -438,7 +672,7 @@ async function main() {
         },
       },
     }),
-    // Doc 3 — Nota de débito RC, pagada completamente
+    // Doc 3 — Nota de débito RC pagada
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00009012',
@@ -475,14 +709,56 @@ async function main() {
         },
       },
     }),
+    // Doc 4 — Multiriesgo, 2 cuotas pendientes
+    prisma.accountingDocument.create({
+      data: {
+        documentNumber: '0001-00012345',
+        documentType: 'factura',
+        issueDate: isoDate(-30),
+        netAmount: 520000,
+        vatAmount: 109200,
+        otherTaxesAmount: 0,
+        currency: 'ARS',
+        exchangeRate: 1,
+        description: 'Prima semestral — Póliza SB-MAG-2025-007890',
+        insuranceCompany: 'Sancor Seguros',
+        paymentStatus: 'pendiente',
+        installments: {
+          createMany: {
+            data: [
+              {
+                installmentNumber: 1,
+                dueDate: isoDate(15),
+                amount: 314600,
+                paymentStatus: 'pendiente',
+              },
+              {
+                installmentNumber: 2,
+                dueDate: isoDate(45),
+                amount: 314600,
+                paymentStatus: 'pendiente',
+              },
+            ],
+          },
+        },
+        allocations: {
+          create: {
+            policyId: polMultiRiesgo.id,
+            allocatedAmount: 629200,
+            allocationPercentage: 100,
+          },
+        },
+      },
+    }),
   ])
 
-  console.log('  ✔ Documents (3) + Installments (5) + Allocations (3)')
+  console.log('  ✔ Documentos (4) + Cuotas (7) + Imputaciones (4)')
 
-  // ── Fire Extinguishers ────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 6 — Matafuegos
+  // ─────────────────────────────────────────────────────────────────────────
 
   await Promise.all([
-    // Vigente — Edificio
     prisma.fireExtinguisher.create({
       data: {
         code: 'MAT-INC001-A',
@@ -505,7 +781,6 @@ async function main() {
         },
       },
     }),
-    // Próximo a vencer — Edificio piso 1
     prisma.fireExtinguisher.create({
       data: {
         code: 'MAT-INC002-A',
@@ -515,11 +790,10 @@ async function main() {
         type: 'co2',
         capacity: '5kg',
         brand: 'Amerex',
-        expirationDate: isoDate(20),  // vence en 20 días → proximo_vencer
+        expirationDate: isoDate(20),
         lastRechargeDate: isoDate(-345),
       },
     }),
-    // Vencido — Galpón
     prisma.fireExtinguisher.create({
       data: {
         code: 'MAT-GAL001-A',
@@ -529,12 +803,11 @@ async function main() {
         type: 'polvo_abc',
         capacity: '6kg',
         brand: 'Kidde',
-        expirationDate: isoDate(-15),  // venció hace 15 días → vencido
+        expirationDate: isoDate(-15),
         lastRechargeDate: isoDate(-380),
         observations: 'VENCIDO — programar recarga con urgencia.',
       },
     }),
-    // Vigente — Camión
     prisma.fireExtinguisher.create({
       data: {
         code: 'MAT-LOG001-A',
@@ -549,9 +822,11 @@ async function main() {
     }),
   ])
 
-  console.log('  ✔ Fire Extinguishers (4) — vigente×2, proximo×1, vencido×1')
+  console.log('  ✔ Matafuegos (4) — vigente×2, próximo×1, vencido×1')
 
-  // ── Claims ────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 7 — Siniestros + Eventos
+  // ─────────────────────────────────────────────────────────────────────────
 
   await Promise.all([
     prisma.claim.create({
@@ -603,12 +878,12 @@ async function main() {
       data: {
         claimNumber: 'SIN-2026-00002',
         assetId: actCosechadora.id,
-        policyId: polIncendio.id,
+        policyId: polMultiRiesgo.id,
         claimType: 'granizo',
         occurrenceDate: isoDate(-10),
         reportDate: isoDate(-9),
         description: 'Granizo severo causó daños en capó y sistema de cosecha. Estimación preliminar en proceso.',
-        insuranceCompany: 'La Segunda Seguros',
+        insuranceCompany: 'Sancor Seguros',
         status: 'denunciado',
         claimedAmountArs: 0,
         currency: 'ARS',
@@ -626,10 +901,13 @@ async function main() {
     }),
   ])
 
-  console.log('  ✔ Claims (2) + Events (4)')
+  console.log('  ✔ Siniestros (2) + Eventos (4)')
 
-  // ── Catálogos dinámicos ────────────────────────────────────────────────────
-  console.log('📋 Insertando catálogos...')
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 8 — Configuración de Módulos (catálogos dinámicos)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  console.log('  📋 Insertando catálogos de configuración...')
 
   function catalogBatch(category: string, labels: string[]) {
     return prisma.catalogItem.createMany({
@@ -638,30 +916,38 @@ async function main() {
   }
 
   await Promise.all([
+    // Aseguradoras
     catalogBatch('insurance_company', [
       'La Segunda', 'Sancor Seguros', 'MAPFRE', 'Zurich', 'Allianz',
       'SMG Seguros', 'Seguros Rivadavia', 'Federación Patronal', 'Galeno', 'Meridional',
     ]),
+    // Activos — vehículos
     catalogBatch('asset_fuel_type', ['Diésel', 'Nafta', 'GNC', 'Eléctrico', 'Híbrido']),
+    // Activos — inmuebles
     catalogBatch('asset_building_purpose', [
       'Galpón', 'Depósito', 'Vivienda', 'Oficinas', 'Taller',
       'Industrial', 'Producción porcina', 'Producción avícola', 'Otro',
     ]),
+    // Activos — infraestructura
     catalogBatch('asset_infrastructure_type', [
       'Silo', 'Tanque de agua', 'Tanque de combustible',
       'Obra civil', 'Alambrado', 'Manga y corral', 'Otro',
     ]),
+    // Activos — silos
     catalogBatch('asset_silo_content', [
       'Soja', 'Maíz', 'Trigo', 'Cebada', 'Girasol',
       'Sorgo', 'Maní', 'Vacío / disponible', 'Otro',
     ]),
+    // Activos — ganadería
     catalogBatch('asset_cargo_species', [
       'Porcino', 'Bovino', 'Ovino', 'Caprino', 'Avícola', 'Equino', 'Otro',
     ]),
+    // Activos — implementos
     catalogBatch('asset_implement_type', [
       'Sembradora', 'Arado', 'Rastra', 'Fertilizadora',
       'Cincel', 'Rolo', 'Acoplado', 'Otro',
     ]),
+    // Activos — unidades productivas y áreas
     catalogBatch('asset_productive_unit', [
       'Agrícola Norte', 'Agrícola Sur', 'Ganadería',
       'Logística', 'Administración', 'Mantenimiento',
@@ -670,18 +956,22 @@ async function main() {
       'Producción', 'Administración', 'Logística',
       'Comercial', 'Mantenimiento', 'RRHH',
     ]),
+    // Matafuegos
     catalogBatch('fire_ext_type', ['Polvo seco ABC', 'CO2', 'Agua', 'Espuma', 'Halón']),
     catalogBatch('fire_ext_capacity', ['1 kg', '2 kg', '4 kg', '6 kg', '10 kg', '25 kg', '50 kg']),
     catalogBatch('fire_ext_location_type', ['Vehículo', 'Maquinaria', 'Establecimiento', 'Edificio', 'Infraestructura']),
+    // Tareas
     catalogBatch('task_type', [
       'Solicitar cotización', 'Renovar póliza', 'Enviar documentación',
       'Gestionar siniestro', 'Solicitar endoso', 'Reclamar documentación', 'Revisar vencimiento',
     ]),
+    // Documentos
     catalogBatch('document_type', ['Factura', 'Nota de Crédito', 'Nota de Débito', 'Endoso', 'Refacturación']),
     catalogBatch('document_payment_method', [
       'Transferencia bancaria', 'E-Cheq', 'Efectivo', 'Débito automático', 'Otros',
     ]),
     catalogBatch('document_currency', ['ARS', 'USD']),
+    // Siniestros
     catalogBatch('claim_type', [
       'Accidente', 'Robo con violencia', 'Hurto', 'Incendio',
       'Granizo', 'Granizo (cosecha)', 'Inundación', 'Daños materiales',
@@ -693,15 +983,25 @@ async function main() {
     ]),
   ])
 
-  console.log('✅ Catálogos insertados.')
+  console.log('  ✔ Catálogos de configuración (17 categorías)')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Resumen final
+  // ─────────────────────────────────────────────────────────────────────────
 
   console.log('\n🎉 Seed completado exitosamente.')
-  console.log('\n📊 Resumen:')
-  console.log('   • 3 Empresas del grupo  • 3 Centros de Costo  • 4 Tipos de Seguro + 14 Coberturas')
-  console.log('   • 4 Activos             • 2 Productores + 3 Tareas')
-  console.log('   • 4 Pólizas             • 3 Documentos + 5 Cuotas')
-  console.log('   • 4 Matafuegos          • 2 Siniestros + 4 Eventos')
-  console.log('   • 17 Categorías de catálogo con sus ítems')
+  console.log('\n📊 Resumen por módulo:')
+  console.log('   🏢 Empresas            → 3 (Los O\'Dwyer SA, Campo Norte SRL, Logística OD SA)')
+  console.log('   💰 Centros de Costo    → 4 (Administración, Operaciones, Logística, Agroindustria)')
+  console.log('   🛡️  Tipos de Seguro     → 6 + 25 coberturas')
+  console.log('   👤 Productores         → 3 (Juan Rodríguez, María Pérez, Carlos Méndez)')
+  console.log('   ✅ Tareas              → 9 vinculadas a productores, pólizas y activos')
+  console.log('   📦 Activos             → 6 (inmuebles, vehículos, maquinaria, silo)')
+  console.log('   📋 Pólizas             → 5 (vigente×3, próxima×1, vencida×1)')
+  console.log('   📄 Documentos          → 4 + 7 cuotas + 4 imputaciones')
+  console.log('   🔥 Matafuegos          → 4 (vigente×2, próximo×1, vencido×1)')
+  console.log('   ⚠️  Siniestros          → 2 + 4 eventos')
+  console.log('   ⚙️  Config. de módulos  → 17 categorías de catálogos')
 }
 
 main()

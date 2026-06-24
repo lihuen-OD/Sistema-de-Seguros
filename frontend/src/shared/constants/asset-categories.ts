@@ -87,6 +87,11 @@ export const CATEGORY_TO_FINNEGANS: Partial<Record<AssetCategory, string[]>> = {
   infraestructura: ['Infraestructura y Mejoras'],
 }
 
+/** Reverse map: stored assetType label → AssetCategory key (used in edit form) */
+export const LABEL_TO_CATEGORY: Record<string, AssetCategory> = Object.fromEntries(
+  Object.entries(CATEGORY_LABEL).map(([key, label]) => [label, key as AssetCategory]),
+)
+
 /** Maps stored assetType string → Finnegans accounting categories (used in edit form) */
 export const ASSET_TYPE_TO_FINNEGANS: Record<string, string[]> = {
   'Vehículo':        ['Rodados'],

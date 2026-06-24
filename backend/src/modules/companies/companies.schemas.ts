@@ -3,10 +3,7 @@ import { PaginationSchema, ActiveFilterSchema } from '../../shared/schemas/commo
 
 export const CreateCompanySchema = z.object({
   name: z.string().min(1, 'El nombre es requerido').max(200),
-  cuit: z
-    .string()
-    .regex(/^\d{2}-\d{8}-\d$/, 'CUIT inválido. Formato esperado: 30-12345678-9')
-    .optional(),
+  cuit: z.string().max(20).optional(),
   email: z.string().email('Email inválido').optional().or(z.literal('')),
   phone: z.string().max(50).optional(),
   address: z.string().max(300).optional(),

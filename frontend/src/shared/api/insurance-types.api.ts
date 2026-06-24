@@ -27,6 +27,7 @@ function mapInsuranceType(b: BackendInsuranceType): InsuranceTypeConfig {
     id: b.id,
     label: b.name,
     coverages: b.coverages.map((c) => c.name),
+    coverageObjects: b.coverages.map((c) => ({ id: c.id, name: c.name })),
   }
 }
 

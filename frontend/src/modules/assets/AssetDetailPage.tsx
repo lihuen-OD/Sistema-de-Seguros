@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  FileDown, Edit2, ShieldCheck, FileText, Flame, Paperclip,
+  FileDown, Edit2, ShieldCheck, Flame, Paperclip,
   MapPin, Building2, Download, ShieldAlert, TrendingUp,
-  Calendar, ExternalLink, Box,
+  Calendar, ExternalLink, Box, FileText,
 } from 'lucide-react'
 import { AssetPhotoGallery } from '../../shared/components/photos/AssetPhotoGallery'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -17,13 +17,13 @@ import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
-import { documentsApi } from '../../shared/api/documents.api'
 import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
 import { companiesApi } from '../../shared/api/companies.api'
 import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { claimsApi } from '../../shared/api/claims.api'
+import { documentsApi } from '../../shared/api/documents.api'
 import { ASSET_STATUS_LABELS } from '../../shared/constants'
-import type { Policy, AccountingDocument, FireExtinguisher, TableColumn, AssetValueEntry } from '../../shared/types'
+import type { Policy, FireExtinguisher, TableColumn, AssetValueEntry, AccountingDocument } from '../../shared/types'
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
 
@@ -51,12 +51,6 @@ export default function AssetDetailPage() {
     enabled: !!asset,
   })
 
-  const { data: allDocuments = [] } = useQuery({
-    queryKey: ['documents'],
-    queryFn: () => documentsApi.findAll(),
-    enabled: !!asset,
-  })
-
   const { data: allFireExtinguishers = [] } = useQuery({
     queryKey: ['fire-extinguishers'],
     queryFn: () => fireExtinguishersApi.findAll(),
@@ -78,6 +72,12 @@ export default function AssetDetailPage() {
   const { data: allCostCenters = [] } = useQuery({
     queryKey: ['cost-centers'],
     queryFn: () => costCentersApi.findAll(),
+    enabled: !!asset,
+  })
+
+  const { data: allDocuments = [] } = useQuery({
+    queryKey: ['documents'],
+    queryFn: () => documentsApi.findAll(),
     enabled: !!asset,
   })
 
@@ -124,8 +124,11 @@ export default function AssetDetailPage() {
   const claims = allClaims.filter((cl) => cl.assetId === asset.id)
   const claimsCount = claims.length
 
-  // Documents: load all; filter client-side by assetId if field exists, otherwise show all
-  const documents: AccountingDocument[] = allDocuments
+  // Documents linked to this asset via its policies
+  const assetPolicyIds = new Set(policies.map((p) => p.id))
+  const documents = allDocuments.filter((doc) =>
+    doc.policyIds.some((pid) => assetPolicyIds.has(pid)),
+  )
 
   // ── Download photo ────────────────────────────────────────────────────────────
 
@@ -169,13 +172,6 @@ export default function AssetDetailPage() {
     { key: 'status', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },
   ]
 
-  const docColumns: TableColumn<AccountingDocument>[] = [
-    { key: 'documentNumber', label: 'N° Documento', className: 'font-mono text-xs text-slate-600' },
-    { key: 'documentType', label: 'Tipo', render: (v) => String(v) },
-    { key: 'issueDate', label: 'Emisión', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
-    { key: 'totalAmount', label: 'Total', render: (v) => <span className="font-semibold">{formatCurrencyFull(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
-    { key: 'paymentStatus', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },
-  ]
 
   const feColumns: TableColumn<FireExtinguisher>[] = [
     { key: 'code', label: 'Código', className: 'font-mono text-xs text-slate-600' },
@@ -184,6 +180,15 @@ export default function AssetDetailPage() {
     { key: 'chargeDate', label: 'Carga', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
     { key: 'expirationDate', label: 'Vencimiento', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
     { key: 'status', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },
+  ]
+
+  const docColumns: TableColumn<AccountingDocument>[] = [
+    { key: 'documentNumber', label: 'N° Documento', className: 'font-mono text-xs text-slate-600' },
+    { key: 'documentType', label: 'Tipo' },
+    { key: 'issueDate', label: 'Fecha', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
+    { key: 'insuranceCompany', label: 'Aseguradora', render: (v) => <span className="text-sm">{(v as string) || '—'}</span> },
+    { key: 'totalAmount', label: 'Total', render: (v) => <span className="font-semibold tabular-nums">{formatCurrencyCompact(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
+    { key: 'paymentStatus', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },
   ]
 
   const assetSubtitle = [
@@ -430,7 +435,7 @@ export default function AssetDetailPage() {
             <div className="space-y-3">
               <SummaryRow label="Pólizas asociadas" value={String(policies.length)} />
               <SummaryRow label="Pólizas vigentes" value={String(policies.filter((p) => p.status === 'vigente').length)} />
-              <SummaryRow label="Doc. Contables contables" value={String(documents.length)} />
+              <SummaryRow label="Doc. Contables" value={String(documents.length)} />
               <SummaryRow label="Matafuegos" value={String(fireExtinguishers.length)} />
               <SummaryRow label="Mat. vencidos" value={String(fireExtinguishers.filter((f) => f.status === 'vencido').length)} color="text-red-600" />
               <SummaryRow label="Siniestros" value={String(claimsCount)} color={claimsCount > 0 ? 'text-orange-600' : 'text-slate-800'} />
@@ -581,8 +586,8 @@ export default function AssetDetailPage() {
               data={documents}
               rowKey="id"
               onRowClick={(row) => navigate(`/insurance/documents/${row.id}`)}
-              emptyTitle="Sin documentos"
-              emptyDescription="No hay documentos contables asociados a este activo."
+              emptyTitle="Sin documentos contables"
+              emptyDescription="Este activo no tiene documentos contables asociados a través de sus pólizas."
             />
           )}
           {activeTab === 'Matafuegos' && (

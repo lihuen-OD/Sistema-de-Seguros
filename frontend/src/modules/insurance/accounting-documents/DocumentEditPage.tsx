@@ -84,6 +84,16 @@ export default function DocumentEditPage() {
   const { data: documentTypes = [] } = useQuery({ queryKey: ['catalogs', 'document_type'], queryFn: () => catalogsApi.findByCategory('document_type') })
   const { data: paymentMethods = [] } = useQuery({ queryKey: ['catalogs', 'document_payment_method'], queryFn: () => catalogsApi.findByCategory('document_payment_method') })
   const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+  const { data: existingAllocations = [], isSuccess: allocationsLoaded } = useQuery({
+    queryKey: ['documents', id, 'allocations'],
+    queryFn: () => documentsApi.findAllocations(id!),
+    enabled: !!id,
+  })
+  const { data: existingInstallments = [], isSuccess: installmentsLoaded } = useQuery({
+    queryKey: ['documents', id, 'installments'],
+    queryFn: () => documentsApi.findInstallments(id!),
+    enabled: !!id,
+  })
 
   const existingFacturas = useMemo(
     () => allDocuments.filter((f) => f.documentType === 'Factura' && f.id !== id),
@@ -117,6 +127,8 @@ export default function DocumentEditPage() {
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [emailTo, setEmailTo] = useState('')
   const [emailSent, setEmailSent] = useState(false)
+  const [allocationsInitialized, setAllocationsInitialized] = useState(false)
+  const [installmentsInitialized, setInstallmentsInitialized] = useState(false)
 
   // Initialize form once doc loads
   if (doc && !formInitialized) {
@@ -134,6 +146,30 @@ export default function DocumentEditPage() {
       otherTaxesAmount: String(doc.otherTaxesAmount),
       linkedDocumentId: doc.linkedDocumentId ?? '',
     })
+  }
+  if (allocationsLoaded && !allocationsInitialized) {
+    setAllocationsInitialized(true)
+    if (existingAllocations.length > 0) {
+      setPolicyRows(
+        existingAllocations.map((a) => ({
+          id: crypto.randomUUID(),
+          policyId: a.policyId,
+          allocatedAmount: String(a.allocatedAmount),
+        })),
+      )
+    }
+  }
+  if (installmentsLoaded && !installmentsInitialized) {
+    setInstallmentsInitialized(true)
+    if (existingInstallments.length > 0) {
+      const rows = existingInstallments.map((i) => ({
+        installmentNumber: i.installmentNumber,
+        dueDate: i.dueDate,
+        amount: String(i.amount),
+      }))
+      setInstallmentRows(rows)
+      setInstallmentCount(rows.length)
+    }
   }
 
   if (docLoading) {
@@ -278,7 +314,6 @@ export default function DocumentEditPage() {
     const next: FormErrors = {}
     if (!form.insuranceCompany) next.insuranceCompany = 'Requerido'
     if (!form.documentType) next.documentType = 'Requerido'
-    if (!form.documentNumber.trim()) next.documentNumber = 'Requerido'
     if (!form.issueDate) next.issueDate = 'Requerido'
     if (!form.currency) next.currency = 'Requerido'
     if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0) next.exchangeRate = 'Requerido'
@@ -310,6 +345,27 @@ export default function DocumentEditPage() {
       paymentMethod: form.paymentMethod,
       linkedDocumentId: isRefDoc && form.linkedDocumentId ? form.linkedDocumentId : undefined,
     })
+
+    const validAllocRows = policyRows.filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
+    const totalAlloc = validAllocRows.reduce((s, r) => s + parseFloat(r.allocatedAmount), 0)
+    await documentsApi.replaceAllocations(
+      doc.id,
+      validAllocRows.map((r) => ({
+        policyId: r.policyId,
+        allocatedAmount: parseFloat(r.allocatedAmount),
+        allocationPercentage: totalAlloc > 0 ? (parseFloat(r.allocatedAmount) / totalAlloc) * 100 : 0,
+      })),
+    )
+
+    const validInstRows = installmentRows.filter((r) => r.dueDate && parseFloat(r.amount) > 0)
+    await documentsApi.replaceInstallments(
+      doc.id,
+      validInstRows.map((r) => ({
+        installmentNumber: r.installmentNumber,
+        dueDate: r.dueDate,
+        amount: parseFloat(r.amount),
+      })),
+    )
 
     queryClient.invalidateQueries({ queryKey: ['documents'] })
     setIsSaved(true)
@@ -363,13 +419,14 @@ export default function DocumentEditPage() {
               </FormSelect>
             </FormField>
 
-            <FormField label="N° de Documento" required error={errors.documentNumber}>
+            <FormField label="N° de Documento">
               <FormInput
-                placeholder="Ej: A-0001-00012345"
                 value={form.documentNumber}
-                onChange={set('documentNumber')}
-                required
+                readOnly
+                disabled
+                className="bg-slate-50 text-slate-500 cursor-not-allowed"
               />
+              <p className="text-xs text-slate-400 mt-1">El número de documento no puede modificarse.</p>
             </FormField>
 
             <FormField label="Fecha de Emisión" required error={errors.issueDate}>

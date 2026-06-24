@@ -7,6 +7,7 @@ import type {
   UpdateInstallmentDTO,
   ReplaceInstallmentsDTO,
   ReplaceAllocationsDTO,
+  BulkIdsQueryDTO,
 } from './documents.schemas'
 
 type IdParam = { id: string }
@@ -37,6 +38,20 @@ export const documentsController = {
   remove: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     await documentsService.delete(req.params.id)
     res.json({ data: { message: 'Documento eliminado correctamente' } })
+  }),
+
+  // ── Bulk ──────────────────────────────────────────────────────────────────────
+
+  getBulkInstallments: asyncHandler(async (req: Request, res: Response) => {
+    const { ids } = req.query as unknown as BulkIdsQueryDTO
+    const installments = await documentsService.findInstallmentsBulk(ids)
+    res.json({ data: installments })
+  }),
+
+  getBulkAllocations: asyncHandler(async (req: Request, res: Response) => {
+    const { ids } = req.query as unknown as BulkIdsQueryDTO
+    const allocations = await documentsService.findAllocationsBulk(ids)
+    res.json({ data: allocations })
   }),
 
   // ── Installments ──────────────────────────────────────────────────────────────
