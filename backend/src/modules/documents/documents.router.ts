@@ -28,6 +28,9 @@ documentsRouter.post(
   documentsController.create,
 )
 
+// ── Análisis financiero (debe ir antes de /:id para evitar conflicto de ruta) ─
+documentsRouter.get('/financial', documentsController.getFinancial)
+
 // ── Bulk (deben ir antes de /:id para evitar conflicto de ruta) ───────────────
 documentsRouter.get('/bulk/installments', validateQuery(BulkIdsQuerySchema), documentsController.getBulkInstallments)
 documentsRouter.get('/bulk/allocations', validateQuery(BulkIdsQuerySchema), documentsController.getBulkAllocations)

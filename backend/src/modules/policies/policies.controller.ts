@@ -33,6 +33,12 @@ export const policiesController = {
     res.json({ data: { message: 'Póliza desactivada correctamente' } })
   }),
 
+  // Tasks
+  getTasks: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const tasks = await policiesService.findTasks(req.params.id)
+    res.json({ data: tasks })
+  }),
+
   // Attachments
   getAttachments: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     const attachments = await policiesService.findAttachments(req.params.id)

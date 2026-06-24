@@ -23,7 +23,7 @@ const POLICY_DETAIL_INCLUDE = {
   company: true,
   producer: true,
   attachments: { orderBy: { uploadedAt: 'desc' as const } },
-  _count: { select: { allocations: true } },
+  _count: { select: { allocations: true, attachments: true } },
 }
 
 // Normaliza las fechas a YYYY-MM-DD y agrega el status computado
@@ -46,6 +46,7 @@ export const policiesService = {
       ...(query.insuranceTypeId && { insuranceTypeId: query.insuranceTypeId }),
       ...(query.companyId && { companyId: query.companyId }),
       ...(query.producerId && { producerId: query.producerId }),
+      ...(query.assetId && { assetId: query.assetId }),
       ...(query.search && {
         OR: [
           { policyNumber: { contains: query.search, mode: 'insensitive' as const } },
@@ -84,26 +85,23 @@ export const policiesService = {
   },
 
   async create(data: CreatePolicyDTO) {
-    // Verificar unicidad del número de póliza
-    const exists = await prisma.policy.findUnique({ where: { policyNumber: data.policyNumber } })
+    // Verificar unicidad + referencias en paralelo
+    const [exists, insuranceType, company, producer] = await Promise.all([
+      prisma.policy.findUnique({ where: { policyNumber: data.policyNumber }, select: { id: true } }),
+      prisma.insuranceType.findFirst({
+        where: { id: data.insuranceTypeId, isActive: true },
+        include: { coverages: true },
+      }),
+      prisma.company.findFirst({ where: { id: data.companyId, isActive: true }, select: { id: true } }),
+      data.producerId
+        ? prisma.producer.findFirst({ where: { id: data.producerId, isActive: true }, select: { id: true } })
+        : Promise.resolve(null),
+    ])
+
     if (exists) throw new AppError(409, 'Ya existe una póliza con ese número', 'CONFLICT')
-
-    // Verificar referencias
-    const insuranceType = await prisma.insuranceType.findFirst({
-      where: { id: data.insuranceTypeId, isActive: true },
-      include: { coverages: true },
-    })
     if (!insuranceType) throw new AppError(400, 'Tipo de seguro no encontrado o inactivo', 'INVALID_REFERENCE')
-
-    const company = await prisma.company.findFirst({ where: { id: data.companyId, isActive: true } })
     if (!company) throw new AppError(400, 'Empresa no encontrada o inactiva', 'INVALID_REFERENCE')
-
-    if (data.producerId) {
-      const producer = await prisma.producer.findFirst({
-        where: { id: data.producerId, isActive: true },
-      })
-      if (!producer) throw new AppError(400, 'Productor no encontrado o inactivo', 'INVALID_REFERENCE')
-    }
+    if (data.producerId && !producer) throw new AppError(400, 'Productor no encontrado o inactivo', 'INVALID_REFERENCE')
 
     // Verificar que las coverageIds pertenecen al tipo de seguro
     if (data.coverageIds.length > 0) {
@@ -131,28 +129,25 @@ export const policiesService = {
   },
 
   async update(id: string, data: UpdatePolicyDTO) {
-    const policy = await prisma.policy.findUnique({ where: { id } })
+    const policy = await prisma.policy.findUnique({ where: { id }, select: { id: true, insuranceTypeId: true, companyId: true } })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
 
-    // Re-validar referencias si cambian
-    if (data.insuranceTypeId && data.insuranceTypeId !== policy.insuranceTypeId) {
-      const insuranceType = await prisma.insuranceType.findFirst({
-        where: { id: data.insuranceTypeId, isActive: true },
-      })
-      if (!insuranceType) throw new AppError(400, 'Tipo de seguro no encontrado o inactivo', 'INVALID_REFERENCE')
-    }
+    // Re-validar referencias que cambian — en paralelo
+    const [insuranceTypeCheck, companyCheck, producerCheck] = await Promise.all([
+      data.insuranceTypeId && data.insuranceTypeId !== policy.insuranceTypeId
+        ? prisma.insuranceType.findFirst({ where: { id: data.insuranceTypeId, isActive: true }, select: { id: true } })
+        : Promise.resolve(true),
+      data.companyId && data.companyId !== policy.companyId
+        ? prisma.company.findFirst({ where: { id: data.companyId, isActive: true }, select: { id: true } })
+        : Promise.resolve(true),
+      data.producerId
+        ? prisma.producer.findFirst({ where: { id: data.producerId, isActive: true }, select: { id: true } })
+        : Promise.resolve(true),
+    ])
 
-    if (data.companyId && data.companyId !== policy.companyId) {
-      const company = await prisma.company.findFirst({ where: { id: data.companyId, isActive: true } })
-      if (!company) throw new AppError(400, 'Empresa no encontrada o inactiva', 'INVALID_REFERENCE')
-    }
-
-    if (data.producerId) {
-      const producer = await prisma.producer.findFirst({
-        where: { id: data.producerId, isActive: true },
-      })
-      if (!producer) throw new AppError(400, 'Productor no encontrado o inactivo', 'INVALID_REFERENCE')
-    }
+    if (!insuranceTypeCheck) throw new AppError(400, 'Tipo de seguro no encontrado o inactivo', 'INVALID_REFERENCE')
+    if (!companyCheck) throw new AppError(400, 'Empresa no encontrada o inactiva', 'INVALID_REFERENCE')
+    if (!producerCheck) throw new AppError(400, 'Productor no encontrado o inactivo', 'INVALID_REFERENCE')
 
     const updated = await prisma.policy.update({
       where: { id },
@@ -231,5 +226,19 @@ export const policiesService = {
       await deleteFromCloudinary(attachment.cloudinaryPublicId)
     }
     await prisma.policyAttachment.delete({ where: { id: attachmentId } })
+  },
+
+  // ── Tasks ────────────────────────────────────────────────────────────────────
+
+  async findTasks(policyId: string) {
+    const policy = await prisma.policy.findUnique({ where: { id: policyId }, select: { id: true } })
+    if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
+    return prisma.producerTask.findMany({
+      where: { policyId },
+      include: {
+        producer: { select: { id: true, name: true } },
+      },
+      orderBy: { dueDate: 'asc' },
+    })
   },
 }

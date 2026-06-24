@@ -46,21 +46,21 @@ export default function AssetDetailPage() {
   })
 
   const { data: allPolicies = [] } = useQuery({
-    queryKey: ['policies'],
-    queryFn: () => policiesApi.findAll(),
-    enabled: !!asset,
+    queryKey: ['policies', { assetId: id }],
+    queryFn: () => policiesApi.findAll({ assetId: id }),
+    enabled: !!id,
   })
 
   const { data: allFireExtinguishers = [] } = useQuery({
-    queryKey: ['fire-extinguishers'],
-    queryFn: () => fireExtinguishersApi.findAll(),
-    enabled: !!asset,
+    queryKey: ['fire-extinguishers', { assetId: id }],
+    queryFn: () => fireExtinguishersApi.findAll({ assetId: id }),
+    enabled: !!id,
   })
 
   const { data: allClaims = [] } = useQuery({
-    queryKey: ['claims'],
-    queryFn: () => claimsApi.findAll(),
-    enabled: !!asset,
+    queryKey: ['claims', { assetId: id }],
+    queryFn: () => claimsApi.findAll({ assetId: id }),
+    enabled: !!id,
   })
 
   const { data: allCompanies = [] } = useQuery({
@@ -119,9 +119,9 @@ export default function AssetDetailPage() {
 
   const company = allCompanies.find((c) => c.id === asset.companyId)
   const costCenter = allCostCenters.find((cc) => cc.id === asset.costCenterId)
-  const policies = allPolicies.filter((p) => p.assetId === asset.id)
-  const fireExtinguishers = allFireExtinguishers.filter((f) => f.associatedAssetId === asset.id)
-  const claims = allClaims.filter((cl) => cl.assetId === asset.id)
+  const policies = allPolicies
+  const fireExtinguishers = allFireExtinguishers
+  const claims = allClaims
   const claimsCount = claims.length
 
   // Documents linked to this asset via its policies
@@ -538,6 +538,7 @@ export default function AssetDetailPage() {
               : tab === 'Doc. Contables' ? documents.length
               : tab === 'Matafuegos' ? fireExtinguishers.length
               : tab === 'Siniestros' ? claimsCount
+              : tab === 'Adjuntos' ? (asset.attachmentsCount ?? 0)
               : 0
             const isActive = activeTab === tab
             return (

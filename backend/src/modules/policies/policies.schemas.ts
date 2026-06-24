@@ -37,6 +37,7 @@ export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema
   insuranceTypeId: z.string().uuid().optional(),
   companyId: z.string().uuid().optional(),
   producerId: z.string().uuid().optional(),
+  assetId: z.string().uuid().optional(),
 })
 
 export const AddPolicyAttachmentSchema = z.object({

@@ -158,6 +158,7 @@ export interface Asset {
   photos?: string[]
   /** Datos tipo-específicos persistidos en JSONB (patente, HP, superficie, etc.) */
   metadata?: Record<string, unknown>
+  attachmentsCount?: number
   createdAt: string
   updatedAt: string
 }
@@ -208,6 +209,7 @@ export interface Policy {
   insuredAmountUsd: number
   description: string
   status: PolicyStatus
+  attachmentsCount?: number
   createdAt: string
   updatedAt: string
 }
@@ -228,6 +230,7 @@ export interface AccountingDocument {
   paymentMethod?: string
   linkedDocumentId?: string
   policyIds: string[]
+  attachmentsCount?: number
   createdAt: string
   updatedAt: string
 }

@@ -4,9 +4,9 @@ import type { Asset, AssetAttachment, AssetStatus } from '../types'
 interface BackendCompany { id: string; name: string; cuit: string }
 interface BackendCostCenter { id: string; name: string; code: string | null }
 interface BackendAllocation {
-  id: string; assetId: string
-  companyId: string; company: BackendCompany
-  costCenterId: string; costCenter: BackendCostCenter
+  id: string; assetId?: string
+  companyId: string; company?: BackendCompany
+  costCenterId: string; costCenter?: BackendCostCenter
   percentage: number
 }
 interface BackendValueHistory {
@@ -71,6 +71,7 @@ function mapAsset(b: BackendAsset): Asset {
       if (!metaSilos || metaSilos.length === 0) return undefined
       return metaSilos.map((s, i) => ({ id: `silo-${i}`, capacityTons: s.capacityTons, content: s.content }))
     })(),
+    attachmentsCount: b._count?.attachments ?? 0,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   }

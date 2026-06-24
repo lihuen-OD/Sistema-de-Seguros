@@ -28,7 +28,7 @@ export default function ProducersPage() {
   const [filterStatus, setFilterStatus] = useState<'' | 'activo' | 'inactivo'>('')
 
   const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
 
   const producerStats: ProducerCardStats[] = useMemo(() => {
     return allProducers.map((p) => {

@@ -65,7 +65,7 @@ export default function FireExtinguishersPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: all = [] } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: fireExtinguishersApi.findAll })
+  const { data: all = [] } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: () => fireExtinguishersApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
 
   const counts = useMemo(() => ({

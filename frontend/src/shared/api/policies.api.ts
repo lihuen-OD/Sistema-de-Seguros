@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { Policy, PolicyStatus, PolicyAttachment } from '../types'
+import type { Policy, PolicyStatus, PolicyAttachment, ProducerTask, TaskPriority } from '../types'
 
 interface BackendInsuranceType { id: string; name: string }
 interface BackendCompany { id: string; name: string; cuit: string | null }
@@ -16,8 +16,38 @@ interface BackendPolicy {
   company?: BackendCompany
   producer?: BackendProducer
   selectedCoverages?: BackendCoverage[]
+  _count?: { attachments: number; allocations: number }
+}
+interface BackendTask {
+  id: string; producerId: string; title: string; description: string | null
+  dueDate: string | null; status: string; createdAt: string; updatedAt: string
+  completedAt: string | null; priority: string; assignedTo: string | null
+  policyId: string | null; assetId: string | null
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
+
+const today = () => new Date().toISOString().slice(0, 10)
+
+function mapTaskStatus(s: string, dueDate?: string | null): ProducerTask['status'] {
+  if (s === 'completada' || s === 'cancelada') return 'finalizada'
+  if (s === 'en_progreso') return 'en_curso'
+  if (s === 'pendiente' && dueDate && dueDate < today()) return 'vencida'
+  return 'pendiente'
+}
+
+function mapTask(t: BackendTask): ProducerTask {
+  return {
+    id: t.id, title: t.title, description: t.description ?? '',
+    producerId: t.producerId,
+    policyId: t.policyId ?? null,
+    assetId: t.assetId ?? null,
+    assignedTo: t.assignedTo ?? null,
+    dueDate: t.dueDate ? t.dueDate.slice(0, 10) : '',
+    priority: (t.priority ?? 'media') as TaskPriority,
+    status: mapTaskStatus(t.status, t.dueDate),
+    createdAt: t.createdAt, completedAt: t.completedAt ?? null,
+  }
+}
 
 function mapStatus(s: string): PolicyStatus {
   if (s === 'proxima_a_vencer') return 'proximo_vencer'
@@ -46,6 +76,7 @@ function mapPolicy(b: BackendPolicy): Policy {
     insuredAmountUsd: b.currency === 'USD' ? b.premium : 0,
     description: b.description ?? '',
     status: mapStatus(b.status),
+    attachmentsCount: b._count?.attachments ?? 0,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   }
@@ -59,8 +90,8 @@ export interface PolicyCreateInput {
 }
 
 export const policiesApi = {
-  async findAll(): Promise<Policy[]> {
-    const res = await apiClient.get<Paginated<BackendPolicy>>('/policies', { params: { limit: 200 } })
+  async findAll(filters?: { assetId?: string; companyId?: string; producerId?: string }): Promise<Policy[]> {
+    const res = await apiClient.get<Paginated<BackendPolicy>>('/policies', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapPolicy)
   },
 
@@ -108,5 +139,10 @@ export const policiesApi = {
 
   async deleteAttachment(policyId: string, attachmentId: string): Promise<void> {
     await apiClient.delete(`/policies/${policyId}/attachments/${attachmentId}`)
+  },
+
+  async findTasks(policyId: string): Promise<ProducerTask[]> {
+    const res = await apiClient.get<{ data: BackendTask[] }>(`/policies/${policyId}/tasks`)
+    return res.data.data.map(mapTask)
   },
 }

@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { AppShell } from '../shared/components/layout/AppShell'
 import { LoadingState } from '../shared/components/empty-states/LoadingState'
 
@@ -75,6 +76,7 @@ function PageFallback() {
 export default function App() {
   return (
     <AppShell>
+      <Toaster position="top-right" richColors closeButton duration={4000} />
       <Suspense fallback={<PageFallback />}>
         <Routes>
           {/* Root */}

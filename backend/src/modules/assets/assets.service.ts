@@ -13,8 +13,22 @@ import type {
   ListAssetsQueryDTO,
 } from './assets.schemas'
 
-// Relaciones incluidas en detalle y lista
-const ASSET_INCLUDE = {
+// Lista: solo IDs de empresa/centro de costo — sin datos anidados pesados
+const ASSET_LIST_INCLUDE = {
+  allocations: {
+    select: {
+      id: true,
+      companyId: true,
+      costCenterId: true,
+      percentage: true,
+    },
+    orderBy: { percentage: 'desc' as const },
+  },
+  _count: { select: { attachments: true, fireExtinguishers: true } },
+}
+
+// Detalle: incluye datos completos de empresa/centro de costo + historial + adjuntos
+const ASSET_DETAIL_INCLUDE = {
   allocations: {
     include: {
       company: { select: { id: true, name: true, cuit: true } },
@@ -23,12 +37,20 @@ const ASSET_INCLUDE = {
     orderBy: { percentage: 'desc' as const },
   },
   _count: { select: { attachments: true, fireExtinguishers: true } },
-}
-
-const ASSET_DETAIL_INCLUDE = {
-  ...ASSET_INCLUDE,
   valueHistory: { orderBy: { date: 'desc' as const } },
   attachments: { orderBy: { uploadedAt: 'desc' as const } },
+}
+
+async function assertAssetExists(id: string) {
+  const exists = await prisma.asset.findUnique({ where: { id }, select: { id: true } })
+  if (!exists) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
+}
+
+function handleUpdateNotFound(e: unknown) {
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+    throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
+  }
+  throw e
 }
 
 export const assetsService = {
@@ -54,7 +76,7 @@ export const assetsService = {
         skip,
         take: limit,
         orderBy: { name: 'asc' },
-        include: ASSET_INCLUDE,
+        include: ASSET_LIST_INCLUDE,
       }),
       prisma.asset.count({ where }),
     ])
@@ -74,7 +96,6 @@ export const assetsService = {
   async create(data: CreateAssetDTO) {
     const { allocations, ...assetData } = data
 
-    // Verificar que las empresas y centros de costo existen y están activos
     const companyIds = [...new Set(allocations.map((a) => a.companyId))]
     const costCenterIds = [...new Set(allocations.map((a) => a.costCenterId))]
 
@@ -89,7 +110,6 @@ export const assetsService = {
       throw new AppError(400, 'Uno o más centros de costo no existen o están inactivos', 'INVALID_REFERENCE')
     }
 
-    // Generar código secuencial ACT-00001, ACT-00002, …
     const count = await prisma.asset.count()
     const code = `ACT-${String(count + 1).padStart(5, '0')}`
 
@@ -119,7 +139,6 @@ export const assetsService = {
   },
 
   async update(id: string, data: UpdateAssetDTO) {
-    await assetsService.findById(id)
     return prisma.asset.update({
       where: { id },
       data: {
@@ -127,18 +146,20 @@ export const assetsService = {
         metadata: data.metadata ? (data.metadata as Prisma.InputJsonValue) : undefined,
       },
       include: ASSET_DETAIL_INCLUDE,
-    })
+    }).catch(handleUpdateNotFound)
   },
 
   async softDelete(id: string) {
-    await assetsService.findById(id)
-    return prisma.asset.update({ where: { id }, data: { isActive: false, status: 'baja' } })
+    return prisma.asset.update({
+      where: { id },
+      data: { isActive: false, status: 'baja' },
+    }).catch(handleUpdateNotFound)
   },
 
   // ── Allocations ─────────────────────────────────────────────────────────────
 
   async replaceAllocations(assetId: string, { allocations }: ReplaceAllocationsDTO) {
-    await assetsService.findById(assetId)
+    await assertAssetExists(assetId)
 
     const companyIds = [...new Set(allocations.map((a) => a.companyId))]
     const costCenterIds = [...new Set(allocations.map((a) => a.costCenterId))]
@@ -175,7 +196,7 @@ export const assetsService = {
   // ── Value History ────────────────────────────────────────────────────────────
 
   async findValueHistory(assetId: string) {
-    await assetsService.findById(assetId)
+    await assertAssetExists(assetId)
     return prisma.assetValueHistory.findMany({
       where: { assetId },
       orderBy: { date: 'desc' },
@@ -183,11 +204,10 @@ export const assetsService = {
   },
 
   async addValueHistory(assetId: string, data: AddValueHistoryDTO) {
-    await assetsService.findById(assetId)
+    await assertAssetExists(assetId)
 
     return prisma.$transaction(async (tx) => {
       const entry = await tx.assetValueHistory.create({ data: { ...data, assetId } })
-      // Actualiza el currentValue del activo automáticamente
       await tx.asset.update({ where: { id: assetId }, data: { currentValue: data.value } })
       return entry
     })
@@ -196,7 +216,7 @@ export const assetsService = {
   // ── Attachments ──────────────────────────────────────────────────────────────
 
   async findAttachments(assetId: string) {
-    await assetsService.findById(assetId)
+    await assertAssetExists(assetId)
     return prisma.assetAttachment.findMany({
       where: { assetId },
       orderBy: { uploadedAt: 'desc' },
@@ -209,7 +229,7 @@ export const assetsService = {
     meta: AddAttachmentDTO,
     uploadedBy: string,
   ) {
-    await assetsService.findById(assetId)
+    await assertAssetExists(assetId)
 
     if (!isAllowedMimetype(file.mimetype)) {
       throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel', 'UNSUPPORTED_MEDIA_TYPE')

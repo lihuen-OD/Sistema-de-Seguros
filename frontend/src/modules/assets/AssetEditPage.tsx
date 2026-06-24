@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Save, X, MapPin, Hash, Info, Tag } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -378,61 +379,69 @@ export default function AssetEditPage() {
     return {}
   }
 
+  const [submitting, setSubmitting] = useState(false)
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!asset) return
     if (!validate()) return
 
-    const metadata = buildMetadata()
+    setSubmitting(true)
+    try {
+      const metadata = buildMetadata()
 
-    await assetsApi.update(asset.id, {
-      name: form.name.trim(),
-      assetType: form.assetType.trim(),
-      status: form.status,
-      fixedAssetCode: form.fixedAssetCode?.trim() || undefined,
-      brand: form.brand.trim() || undefined,
-      model: form.model.trim() || undefined,
-      year: form.year ? parseInt(form.year, 10) : undefined,
-      serialNumber: form.serialNumber.trim() || undefined,
-      purchaseDate: valuationDate || undefined,
-      currentValue: patrimonialValueUsd ? parseFloat(patrimonialValueUsd) : undefined,
-      mapsUrl: form.mapsUrl.trim() || undefined,
-      productiveUnit: form.productiveUnit || undefined,
-      area: form.area || undefined,
-      description: form.observations.trim() || undefined,
-      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-    })
+      await assetsApi.update(asset.id, {
+        name: form.name.trim(),
+        assetType: form.assetType.trim(),
+        status: form.status,
+        fixedAssetCode: form.fixedAssetCode?.trim() || undefined,
+        brand: form.brand.trim() || undefined,
+        model: form.model.trim() || undefined,
+        year: form.year ? parseInt(form.year, 10) : undefined,
+        serialNumber: form.serialNumber.trim() || undefined,
+        purchaseDate: valuationDate || undefined,
+        currentValue: patrimonialValueUsd ? parseFloat(patrimonialValueUsd) : undefined,
+        mapsUrl: form.mapsUrl.trim() || undefined,
+        productiveUnit: form.productiveUnit || undefined,
+        area: form.area || undefined,
+        description: form.observations.trim() || undefined,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+      })
 
-    // Sync allocations
-    const validAllocations = allocations.filter((a) => a.companyId && a.costCenterId)
-    if (validAllocations.length > 0) {
-      await assetsApi.replaceAllocations(
-        asset.id,
-        validAllocations.map(({ companyId, costCenterId, percentage }) => ({ companyId, costCenterId, percentage })),
-      )
-    }
-
-    // Sync attachments: delete removed, upload new
-    const existingIds = new Set(existingAttachments.map((a) => a.id))
-    const currentIds = new Set(attachments.filter((a) => !a.pendingFile).map((a) => a.id))
-    const toDelete = [...existingIds].filter((eid) => !currentIds.has(eid))
-    const toUpload = attachments.filter((a) => a.pendingFile)
-
-    await Promise.all(toDelete.map((attId) => assetsApi.deleteAttachment(asset.id, attId)))
-    for (const att of toUpload) {
-      if (att.pendingFile) {
-        await assetsApi.addAttachment(asset.id, {
-          file: att.pendingFile,
-          description: att.description || undefined,
-          expirationDate: att.expirationDate ?? undefined,
-          notifyEmail: att.notifyEmail,
-        })
+      // Sync allocations
+      const validAllocations = allocations.filter((a) => a.companyId && a.costCenterId)
+      if (validAllocations.length > 0) {
+        await assetsApi.replaceAllocations(
+          asset.id,
+          validAllocations.map(({ companyId, costCenterId, percentage }) => ({ companyId, costCenterId, percentage })),
+        )
       }
-    }
 
-    await queryClient.invalidateQueries({ queryKey: ['assets', id] })
-    await queryClient.invalidateQueries({ queryKey: ['assets'] })
-    navigate(`/assets/${asset.id}`)
+      // Sync attachments: delete removed, upload new
+      const existingIds = new Set(existingAttachments.map((a) => a.id))
+      const currentIds = new Set(attachments.filter((a) => !a.pendingFile).map((a) => a.id))
+      const toDelete = [...existingIds].filter((eid) => !currentIds.has(eid))
+      const toUpload = attachments.filter((a) => a.pendingFile)
+
+      await Promise.all(toDelete.map((attId) => assetsApi.deleteAttachment(asset.id, attId)))
+      for (const att of toUpload) {
+        if (att.pendingFile) {
+          await assetsApi.addAttachment(asset.id, {
+            file: att.pendingFile,
+            description: att.description || undefined,
+            expirationDate: att.expirationDate ?? undefined,
+            notifyEmail: att.notifyEmail,
+          })
+        }
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['assets', id] })
+      await queryClient.invalidateQueries({ queryKey: ['assets'] })
+      toast.success('Activo actualizado correctamente')
+      navigate(`/assets/${asset.id}`)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -456,9 +465,10 @@ export default function AssetEditPage() {
               </button>
               <button
                 type="submit"
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                disabled={submitting}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
               >
-                <Save size={15} /> Guardar cambios
+                <Save size={15} /> {submitting ? 'Guardando…' : 'Guardar cambios'}
               </button>
             </div>
           }

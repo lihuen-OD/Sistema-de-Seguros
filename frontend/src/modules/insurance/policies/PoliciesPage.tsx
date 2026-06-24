@@ -36,7 +36,7 @@ export default function PoliciesPage() {
   const [filterType, setFilterType] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
 
   async function handleDelete(id: string) {

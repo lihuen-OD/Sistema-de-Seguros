@@ -207,37 +207,20 @@ export default function FinancialAnalysisPage() {
 
   // ─── Remote data ─────────────────────────────────────────────────────────────
 
-  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  // Una sola request que devuelve documentos + installments + allocations embebidos
+  const { data: financialDocs = [] } = useQuery({
+    queryKey: ['documents', 'financial'],
+    queryFn: () => documentsApi.findAllForFinancial(),
+  })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
 
-  const docIds = allDocuments.map((d) => d.id)
-
-  const { data: allInstallments = [] } = useQuery({
-    queryKey: ['documents', 'all-installments', docIds],
-    queryFn: async () => {
-      const raw = await documentsApi.findInstallmentsBulk(docIds)
-      return raw.map((inst) => ({
-        id: inst.id,
-        accountingDocumentId: inst.accountingDocumentId,
-        installmentNumber: inst.installmentNumber,
-        dueDate: inst.dueDate,
-        amount: inst.amount,
-        currency: inst.currency as Installment['currency'],
-        paymentStatus: inst.paymentStatus as Installment['paymentStatus'],
-        paidAt: inst.paidAt,
-      }))
-    },
-    enabled: docIds.length > 0,
-  })
-
-  const { data: allAllocations = [] } = useQuery({
-    queryKey: ['documents', 'all-allocations', docIds],
-    queryFn: () => documentsApi.findAllocationsBulk(docIds) as Promise<DocumentPolicyAllocation[]>,
-    enabled: docIds.length > 0,
-  })
+  // Derivados de la misma fuente — sin waterfall
+  const allDocuments = financialDocs
+  const allInstallments = financialDocs.flatMap((d) => d.installments)
+  const allAllocations: DocumentPolicyAllocation[] = financialDocs.flatMap((d) => d.allocations)
 
   // ─── Period columns ──────────────────────────────────────────────────────────
 

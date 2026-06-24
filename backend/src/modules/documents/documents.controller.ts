@@ -20,6 +20,11 @@ export const documentsController = {
     res.json(result)
   }),
 
+  getFinancial: asyncHandler(async (_req: Request, res: Response) => {
+    const docs = await documentsService.findAllForFinancial()
+    res.json({ data: docs })
+  }),
+
   getById: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     const doc = await documentsService.findById(req.params.id)
     res.json({ data: doc })

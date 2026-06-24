@@ -7,6 +7,7 @@ interface PendingFile {
   file: File
   name: string
   size: string
+  picked?: boolean
   uploading?: boolean
   done?: boolean
   error?: string
@@ -47,8 +48,9 @@ export function FileDropzone({
     const next = buildPending(files.slice(0, maxFiles))
 
     if (onFilesPicked) {
-      // Modo captura: notifica al padre con los File[] sin subir
-      setPending((prev) => [...prev, ...next].slice(0, maxFiles))
+      // Modo captura: notifica al padre con los File[] sin subir aún
+      const withPicked = next.map((p) => ({ ...p, picked: true }))
+      setPending((prev) => [...prev, ...withPicked].slice(0, maxFiles))
       onFilesPicked(next.map((p) => p.file))
       return
     }
@@ -71,9 +73,10 @@ export function FileDropzone({
       setTimeout(() => {
         setPending((prev) => prev.filter((p) => !ids.includes(p.id)))
       }, 1500)
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error al subir'
       setPending((prev) =>
-        prev.map((p) => ids.includes(p.id) ? { ...p, uploading: false, error: 'Error al subir' } : p),
+        prev.map((p) => ids.includes(p.id) ? { ...p, uploading: false, error: message } : p),
       )
     }
   }
@@ -129,23 +132,26 @@ export function FileDropzone({
       {pending.length > 0 && (
         <ul className="mt-3 space-y-2">
           {pending.map((f) => (
-            <li key={f.id} className="flex items-center gap-2.5 p-2.5 bg-white rounded-lg border border-slate-200">
+            <li key={f.id} className={clsx(
+              'flex items-center gap-2.5 p-2.5 rounded-lg border',
+              f.picked ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200',
+            )}>
               <div className={clsx(
                 'w-7 h-7 rounded flex items-center justify-center flex-shrink-0',
-                f.done ? 'bg-emerald-50' : f.error ? 'bg-red-50' : 'bg-blue-50',
+                f.done ? 'bg-emerald-50' : f.error ? 'bg-red-50' : f.picked ? 'bg-amber-100' : 'bg-blue-50',
               )}>
                 {f.uploading ? (
                   <Loader2 size={14} className="text-blue-500 animate-spin" />
                 ) : f.done ? (
                   <CheckCircle2 size={14} className="text-emerald-600" />
                 ) : (
-                  <FileText size={14} className={f.error ? 'text-red-500' : 'text-blue-600'} />
+                  <FileText size={14} className={f.error ? 'text-red-500' : f.picked ? 'text-amber-600' : 'text-blue-600'} />
                 )}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-slate-700 truncate">{f.name}</p>
-                <p className={clsx('text-xs', f.error ? 'text-red-500' : 'text-slate-400')}>
-                  {f.error ?? (f.uploading ? 'Subiendo…' : f.done ? 'Subido' : f.size)}
+                <p className={clsx('text-xs', f.error ? 'text-red-500' : f.picked ? 'text-amber-600 font-medium' : 'text-slate-400')}>
+                  {f.error ?? (f.uploading ? 'Subiendo…' : f.done ? 'Subido' : f.picked ? `Pendiente de subir · ${f.size}` : f.size)}
                 </p>
               </div>
               {!f.uploading && !f.done && (

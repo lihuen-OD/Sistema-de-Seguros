@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { UserPlus } from 'lucide-react'
+import { toast } from 'sonner'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -55,6 +56,7 @@ export default function ProducerNewPage() {
         address: address.trim() || undefined,
         isActive: status === 'activo',
       })
+      toast.success('Productor creado correctamente')
       navigate(ROUTES.PRODUCERS_DETAIL(newProducer.id))
     } catch {
       setSubmitting(false)

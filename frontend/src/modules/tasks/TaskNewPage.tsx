@@ -32,7 +32,7 @@ export default function TaskNewPage() {
   const prefilledProducerId = searchParams.get('producerId') ?? ''
 
   const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: policiesApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: taskTypes = [] } = useQuery({
     queryKey: ['catalogs', 'task_type'],

@@ -60,8 +60,8 @@ export interface ClaimCreateInput {
 }
 
 export const claimsApi = {
-  async findAll(): Promise<Claim[]> {
-    const res = await apiClient.get<Paginated<BackendClaim>>('/claims', { params: { limit: 200 } })
+  async findAll(filters?: { assetId?: string; policyId?: string; status?: string }): Promise<Claim[]> {
+    const res = await apiClient.get<Paginated<BackendClaim>>('/claims', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapClaim)
   },
 

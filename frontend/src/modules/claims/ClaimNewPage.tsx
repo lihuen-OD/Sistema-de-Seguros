@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   ShieldAlert, TriangleAlert, ArrowLeftRight,
   Car, Lock, Package, Flame, CloudRain, Wheat, Waves, Wrench,
@@ -187,6 +188,7 @@ export default function ClaimNewPage() {
       )
 
       queryClient.invalidateQueries({ queryKey: ['claims'] })
+      toast.success('Siniestro registrado correctamente')
       navigate(`/claims/${created.id}`)
     } finally {
       setSubmitting(false)
@@ -587,7 +589,7 @@ export default function ClaimNewPage() {
               disabled={submitting}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg transition-colors"
             >
-              Registrar siniestro
+              {submitting ? 'Guardando…' : 'Registrar siniestro'}
             </button>
             <button
               type="button"

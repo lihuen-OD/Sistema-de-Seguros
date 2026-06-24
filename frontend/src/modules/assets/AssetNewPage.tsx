@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   Save, X, Building2, Plus, Trash2, MapPin, Hash, Package, Info,
 } from 'lucide-react'
@@ -250,6 +251,7 @@ export default function AssetNewPage() {
   const [category, setCategory] = useState<AssetCategory | ''>('')
   const [form, setForm] = useState<FormState>(EMPTY)
   const [errors, setErrors] = useState<FormErrors>({})
+  const [submitting, setSubmitting] = useState(false)
   const [allocations, setAllocations] = useState<AssetAllocation[]>([
     { id: 'alloc-init', companyId: '', costCenterId: '', percentage: 100 },
   ])
@@ -390,42 +392,48 @@ export default function AssetNewPage() {
     if (!category) return
     if (!validate()) return
 
-    const metadata = buildMetadata()
+    setSubmitting(true)
+    try {
+      const metadata = buildMetadata()
 
-    const newAsset = await assetsApi.create({
-      name: form.name.trim(),
-      assetType: CATEGORY_LABEL[category],
-      status: form.status,
-      fixedAssetCode: form.bienDeUsoId || undefined,
-      brand: form.brand.trim() || undefined,
-      model: form.model.trim() || undefined,
-      year: form.year ? parseInt(form.year, 10) : undefined,
-      serialNumber: form.serialNumber.trim() || undefined,
-      purchaseDate: form.valuationDate || undefined,
-      currentValue: form.patrimonialValueUsd ? parseFloat(form.patrimonialValueUsd) : undefined,
-      mapsUrl: form.mapsUrl.trim() || undefined,
-      productiveUnit: form.productiveUnit || undefined,
-      area: form.area || undefined,
-      description: form.observations.trim() || undefined,
-      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-      allocations: allocations
-        .filter((a) => a.companyId && a.costCenterId)
-        .map((a) => ({ companyId: a.companyId, costCenterId: a.costCenterId, percentage: a.percentage })),
-    })
-
-    // Subir adjuntos pendientes (archivo real en memoria)
-    const pendingUploads = attachments.filter((a) => a.pendingFile)
-    for (const att of pendingUploads) {
-      await assetsApi.addAttachment(newAsset.id, {
-        file: att.pendingFile!,
-        description: att.description || undefined,
-        expirationDate: att.expirationDate ?? undefined,
-        notifyEmail: att.notifyEmail || undefined,
+      const newAsset = await assetsApi.create({
+        name: form.name.trim(),
+        assetType: CATEGORY_LABEL[category],
+        status: form.status,
+        fixedAssetCode: form.bienDeUsoId || undefined,
+        brand: form.brand.trim() || undefined,
+        model: form.model.trim() || undefined,
+        year: form.year ? parseInt(form.year, 10) : undefined,
+        serialNumber: form.serialNumber.trim() || undefined,
+        purchaseDate: form.valuationDate || undefined,
+        currentValue: form.patrimonialValueUsd ? parseFloat(form.patrimonialValueUsd) : undefined,
+        mapsUrl: form.mapsUrl.trim() || undefined,
+        productiveUnit: form.productiveUnit || undefined,
+        area: form.area || undefined,
+        description: form.observations.trim() || undefined,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        allocations: allocations
+          .filter((a) => a.companyId && a.costCenterId)
+          .map((a) => ({ companyId: a.companyId, costCenterId: a.costCenterId, percentage: a.percentage })),
       })
-    }
 
-    await queryClient.invalidateQueries({ queryKey: ['assets'] })
-    navigate(`/assets/${newAsset.id}`)
+      // Subir adjuntos pendientes (archivo real en memoria)
+      const pendingUploads = attachments.filter((a) => a.pendingFile)
+      for (const att of pendingUploads) {
+        await assetsApi.addAttachment(newAsset.id, {
+          file: att.pendingFile!,
+          description: att.description || undefined,
+          expirationDate: att.expirationDate ?? undefined,
+          notifyEmail: att.notifyEmail || undefined,
+        })
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['assets'] })
+      toast.success('Activo registrado correctamente')
+      navigate(`/assets/${newAsset.id}`)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const hasCategory = category !== ''
@@ -779,10 +787,11 @@ export default function AssetNewPage() {
             <div className="flex items-center gap-3 pt-2 pb-4">
               <button
                 type="submit"
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                disabled={submitting}
+                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 <Save size={16} />
-                Guardar Activo
+                {submitting ? 'Guardando…' : 'Guardar Activo'}
               </button>
               <button
                 type="button"

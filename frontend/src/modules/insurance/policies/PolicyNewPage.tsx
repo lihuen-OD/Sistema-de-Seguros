@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Save, X, Settings, CheckSquare, Plus, Paperclip } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -324,9 +325,10 @@ export default function PolicyNewPage() {
       }
 
       queryClient.invalidateQueries({ queryKey: ['policies'] })
+      toast.success('Póliza creada correctamente')
       navigate(`/insurance/policies/${newPolicy.id}`)
     } catch {
-      // mutation error handled by createMutation.isError
+      // errors are shown via the global axios interceptor toast
     }
   }
 

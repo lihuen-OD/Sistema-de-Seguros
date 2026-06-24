@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Save } from 'lucide-react'
+import { toast } from 'sonner'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -95,6 +96,7 @@ export default function ProducerEditPage() {
         address: address.trim() || undefined,
         isActive: status === 'activo',
       })
+      toast.success('Productor actualizado correctamente')
       navigate(ROUTES.PRODUCERS_DETAIL(original!.id))
     } catch {
       setSubmitting(false)

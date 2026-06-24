@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { ArrowLeft, Save, AlertTriangle, FileText, ImageIcon, Trash2, Download } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -178,6 +179,7 @@ export default function ClaimEditPage() {
         exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
       })
       queryClient.invalidateQueries({ queryKey: ['claims'] })
+      toast.success('Siniestro actualizado correctamente')
       navigate(ROUTES.CLAIMS_DETAIL(original.id))
     } finally {
       setSaving(false)

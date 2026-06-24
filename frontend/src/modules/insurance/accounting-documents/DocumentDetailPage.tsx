@@ -384,7 +384,7 @@ export default function DocumentDetailPage() {
       {/* Adjuntos */}
       <SectionCard
         title="Archivos Adjuntos"
-        subtitle="0 archivos adjuntos"
+        subtitle={`${doc.attachmentsCount ?? 0} ${(doc.attachmentsCount ?? 0) === 1 ? 'archivo adjunto' : 'archivos adjuntos'}`}
         noPadding
       >
         <DocumentAttachmentsSection documentId={doc.id} />

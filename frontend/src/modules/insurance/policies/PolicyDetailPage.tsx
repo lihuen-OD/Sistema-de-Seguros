@@ -67,6 +67,12 @@ export default function PolicyDetailPage() {
     queryFn: () => documentsApi.findAll(),
   })
 
+  const { data: policyTasks = [] } = useQuery({
+    queryKey: ['policies', id, 'tasks'],
+    queryFn: () => policiesApi.findTasks(id!),
+    enabled: !!id,
+  })
+
   const policyDocIds = useMemo(
     () => allDocuments.filter((d) => d.policyIds.includes(id ?? '')).map((d) => d.id),
     [allDocuments, id],
@@ -135,10 +141,9 @@ export default function PolicyDetailPage() {
     if (insts.length > 0) effectiveInstallments.set(docId, insts)
   })
 
-  // Tasks: not linked to policy in current API — shown as empty
-  const tasks: ProducerTask[] = []
+  const tasks = policyTasks
 
-  const attachmentCount = 0
+  const attachmentCount = policy.attachmentsCount ?? 0
 
   const handleInstallmentUpdate = async (
     docId: string,

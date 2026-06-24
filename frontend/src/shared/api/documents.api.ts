@@ -1,5 +1,10 @@
 import { apiClient } from './client'
-import type { AccountingDocument, PaymentStatus, AccountingDocumentAttachment } from '../types'
+import type { AccountingDocument, PaymentStatus, AccountingDocumentAttachment, Installment, DocumentPolicyAllocation } from '../types'
+
+export interface DocumentForFinancial extends AccountingDocument {
+  installments: Installment[]
+  allocations: Pick<DocumentPolicyAllocation, 'id' | 'accountingDocumentId' | 'policyId' | 'allocatedAmount' | 'allocationPercentage'>[]
+}
 
 interface BackendDocument {
   id: string; documentNumber: string; documentType: string; issueDate: string
@@ -8,6 +13,7 @@ interface BackendDocument {
   paymentStatus: string; insuranceCompany: string | null; paymentMethod: string | null
   linkedDocumentId: string | null; createdAt: string; updatedAt: string
   allocations?: { policyId: string }[]
+  _count?: { attachments: number }
 }
 
 interface BackendAllocation {
@@ -51,6 +57,7 @@ function mapDocument(b: BackendDocument): AccountingDocument {
     paymentMethod: b.paymentMethod ?? undefined,
     linkedDocumentId: b.linkedDocumentId ?? undefined,
     policyIds: b.allocations?.map((a) => a.policyId) ?? [],
+    attachmentsCount: b._count?.attachments ?? 0,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   }
@@ -81,6 +88,33 @@ export const documentsApi = {
   async findAll(): Promise<AccountingDocument[]> {
     const res = await apiClient.get<Paginated<BackendDocument>>('/documents', { params: { limit: 200 } })
     return res.data.data.map(mapDocument)
+  },
+
+  async findAllForFinancial(): Promise<DocumentForFinancial[]> {
+    const res = await apiClient.get<{ data: (Omit<BackendDocument, 'allocations'> & {
+      installments: BackendInstallment[]
+      allocations: BackendAllocation[]
+    })[] }>('/documents/financial')
+    return res.data.data.map((b) => ({
+      ...mapDocument(b),
+      installments: b.installments.map((i) => ({
+        id: i.id,
+        accountingDocumentId: i.accountingDocumentId,
+        installmentNumber: i.installmentNumber,
+        dueDate: i.dueDate?.slice(0, 10) ?? '',
+        amount: i.amount,
+        currency: i.currency as Installment['currency'],
+        paymentStatus: i.paymentStatus as Installment['paymentStatus'],
+        paidAt: i.paidAt,
+      })),
+      allocations: b.allocations.map((a) => ({
+        id: a.id,
+        accountingDocumentId: a.accountingDocumentId,
+        policyId: a.policyId,
+        allocatedAmount: a.allocatedAmount,
+        allocationPercentage: a.allocationPercentage,
+      })),
+    }))
   },
 
   async findById(id: string): Promise<AccountingDocument> {

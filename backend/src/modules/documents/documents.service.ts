@@ -32,6 +32,23 @@ const DOCUMENT_DETAIL_INCLUDE = {
   attachments: { orderBy: { uploadedAt: 'desc' as const } },
 }
 
+// Include para análisis financiero: incluye installments y allocations en lista
+const DOCUMENT_FINANCIAL_INCLUDE = {
+  installments: {
+    select: {
+      id: true, accountingDocumentId: true, installmentNumber: true,
+      dueDate: true, amount: true, currency: true, paymentStatus: true, paymentDate: true,
+    },
+    orderBy: { installmentNumber: 'asc' as const },
+  },
+  allocations: {
+    select: {
+      id: true, accountingDocumentId: true, policyId: true,
+      allocatedAmount: true, allocationPercentage: true,
+    },
+  },
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function withTotalAmount<T extends { netAmount: number; vatAmount: number; otherTaxesAmount: number }>(
@@ -90,6 +107,17 @@ export const documentsService = {
     ])
 
     return buildPaginatedResponse(rawData.map(withTotalAmount), total, { page, limit })
+  },
+
+  async findAllForFinancial() {
+    const docs = await prisma.accountingDocument.findMany({
+      orderBy: { issueDate: 'asc' },
+      include: DOCUMENT_FINANCIAL_INCLUDE,
+    })
+    return docs.map((doc) => ({
+      ...withTotalAmount(doc),
+      installments: doc.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
+    }))
   },
 
   async findById(id: string) {
@@ -228,7 +256,11 @@ export const documentsService = {
       data: { paymentStatus: 'pendiente' },
     })
 
-    return this.findInstallments(documentId)
+    const installments = await prisma.documentInstallment.findMany({
+      where: { accountingDocumentId: documentId },
+      orderBy: { installmentNumber: 'asc' },
+    })
+    return installments.map((i) => mapInstallment(i as Record<string, unknown>))
   },
 
   async updateInstallment(documentId: string, installmentId: string, data: UpdateInstallmentDTO) {
@@ -311,7 +343,13 @@ export const documentsService = {
         : []),
     ])
 
-    return this.findAllocations(documentId)
+    return prisma.documentPolicyAllocation.findMany({
+      where: { accountingDocumentId: documentId },
+      include: {
+        policy: { select: { id: true, policyNumber: true, insuredName: true } },
+      },
+      orderBy: { allocationPercentage: 'desc' },
+    })
   },
 
   // ── Attachments ───────────────────────────────────────────────────────────────

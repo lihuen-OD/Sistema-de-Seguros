@@ -52,8 +52,8 @@ export interface RechargeInput {
 }
 
 export const fireExtinguishersApi = {
-  async findAll(): Promise<FireExtinguisher[]> {
-    const res = await apiClient.get<Paginated<BackendExtinguisher>>('/fire-extinguishers', { params: { limit: 200 } })
+  async findAll(filters?: { assetId?: string }): Promise<FireExtinguisher[]> {
+    const res = await apiClient.get<Paginated<BackendExtinguisher>>('/fire-extinguishers', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapExtinguisher)
   },
 

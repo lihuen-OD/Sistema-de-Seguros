@@ -32,6 +32,9 @@ policiesRouter.put(
 )
 policiesRouter.delete('/:id', requireRole('ADMIN'), policiesController.remove)
 
+// Tasks
+policiesRouter.get('/:id/tasks', policiesController.getTasks)
+
 // Attachments
 policiesRouter.get('/:id/attachments', policiesController.getAttachments)
 policiesRouter.post(
