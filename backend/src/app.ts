@@ -31,9 +31,23 @@ app.use(helmet())
 app.use(compression())
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
+const allowedOrigins = env.FRONTEND_URL.split(',').map((o) => o.trim())
+
 app.use(
   cors({
-    origin: env.FRONTEND_URL,
+    origin: (origin, callback) => {
+      // Requests sin origin (curl, Postman, server-to-server)
+      if (!origin) return callback(null, true)
+      // Orígenes configurados explícitamente
+      if (allowedOrigins.includes(origin)) return callback(null, true)
+      if (env.NODE_ENV === 'development') {
+        // Cualquier puerto de localhost (5173, 5174, etc.)
+        if (origin.startsWith('http://localhost:')) return callback(null, true)
+        // Dev tunnels de VS Code
+        if (origin.endsWith('.devtunnels.ms')) return callback(null, true)
+      }
+      callback(new Error(`Origin ${origin} not allowed by CORS`))
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
