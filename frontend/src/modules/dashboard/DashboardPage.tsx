@@ -166,7 +166,8 @@ export default function DashboardPage() {
   )
 
   // ── Chart data ────────────────────────────────────────────────────
-  const costByInsurer = vigentePolicies.reduce<Record<string, number>>((acc, p) => {
+  const activePolicies = filteredPolicies.filter((p) => p.status !== 'vencida')
+  const costByInsurer = activePolicies.reduce<Record<string, number>>((acc, p) => {
     acc[p.insuranceCompany] = (acc[p.insuranceCompany] || 0) + p.insuredAmountArs
     return acc
   }, {})
@@ -390,7 +391,7 @@ export default function DashboardPage() {
         {/* Insurer distribution */}
         <ChartCard
           title="Prima por Aseguradora"
-          subtitle="Suma asegurada vigente"
+          subtitle="Pólizas activas"
           className="lg:col-span-2"
           height={240}
         >
