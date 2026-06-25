@@ -19,6 +19,7 @@ import {
 } from '../../../shared/utils/format'
 import { documentsApi } from '../../../shared/api/documents.api'
 import { catalogsApi } from '../../../shared/api/catalogs.api'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PAYMENT_STATUS_LABELS } from '../../../shared/constants'
 import type { AccountingDocument, TableColumn } from '../../../shared/types'
 
@@ -35,7 +36,7 @@ export default function DocumentsPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
-  const { data: allDocuments = [], isLoading } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
+  const { data: allDocuments = [], isLoading, isError } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
   const { data: documentTypeItems = [] } = useQuery({ queryKey: ['catalogs', 'document_type'], queryFn: () => catalogsApi.findByCategory('document_type') })
 
   const DOCUMENT_TYPE_OPTIONS = documentTypeItems.map((t) => ({ value: t.label, label: t.label }))
@@ -184,6 +185,8 @@ export default function DocumentsPage() {
       className: 'w-36',
     },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

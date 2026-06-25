@@ -1,17 +1,8 @@
-import type { BienDeUso } from '../shared/types'
+import type { BienDeUso } from '../../../shared/types'
 
-/**
- * Simulated Finnegans API response — fixed asset ledger entries.
- *
- * IMPORTANT: A "Bien de Uso" is an ACCOUNTING record in Finnegans, not a
- * physical asset. Our system's assets link to these entries via fixedAssetCode.
- * Some entries here are already linked to an activo; others are available for
- * assignment (exist in Finnegans but have not yet been registered in this system).
- *
- * In production this data will be fetched from:
- *   GET /api/finnegans/bienes-de-uso
- */
-export const mockBienesDeUso: BienDeUso[] = [
+// Catálogo estático de Bienes de Uso (Finnegans).
+// En producción se reemplaza por: GET /api/finnegans/bienes-de-uso
+export const BIENES_DE_USO: BienDeUso[] = [
 
   // ── Rodados ────────────────────────────────────────────────────────────────
   {
@@ -102,7 +93,6 @@ export const mockBienesDeUso: BienDeUso[] = [
     originalValueArs: 18_200_000,
     bookValueArs: 15_470_000,
   },
-  // Disponibles — no asignados a ningún activo en el sistema
   {
     id: 'fin-rod-009',
     code: 'ROD-009',
@@ -171,7 +161,6 @@ export const mockBienesDeUso: BienDeUso[] = [
     originalValueArs: 40_000_000,
     bookValueArs: 20_000_000,
   },
-  // Disponibles
   {
     id: 'fin-maq-005',
     code: 'MAQ-005',
@@ -207,7 +196,6 @@ export const mockBienesDeUso: BienDeUso[] = [
     originalValueArs: 18_500_000,
     bookValueArs: 9_250_000,
   },
-  // Disponible
   {
     id: 'fin-imp-002',
     code: 'IMP-002',
@@ -243,7 +231,6 @@ export const mockBienesDeUso: BienDeUso[] = [
     originalValueArs: 95_000_000,
     bookValueArs: 66_500_000,
   },
-  // Disponible
   {
     id: 'fin-inm-003',
     code: 'INM-003',
@@ -279,7 +266,6 @@ export const mockBienesDeUso: BienDeUso[] = [
     originalValueArs: 42_000_000,
     bookValueArs: 21_000_000,
   },
-  // Disponible
   {
     id: 'fin-inf-003',
     code: 'INF-003',

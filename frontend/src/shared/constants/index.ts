@@ -15,40 +15,6 @@ export const ASSET_TYPES = [
   'Carga',
 ]
 
-export const CARGO_SPECIES = [
-  'Porcino',
-  'Bovino',
-  'Ovino',
-  'Caprino',
-  'Avícola',
-  'Equino',
-  'Otro',
-]
-
-export const INSURANCE_TYPES = [
-  'Automotor',
-  'Maquinaria agrícola',
-  'Incendio y robo',
-  'Responsabilidad civil',
-  'Accidentes personales',
-  'Combinado agropecuario',
-  'Transporte de mercaderías',
-  'Seguro técnico',
-  'Vida colectivo',
-  'Riesgos del trabajo',
-]
-
-export const COVERAGE_TYPES = [
-  'Terceros completos',
-  'Todo riesgo',
-  'Parcial',
-  'Responsabilidad civil',
-  'Cobertura básica',
-  'Ampliada',
-  'Integral',
-]
-
-
 export const PAYMENT_STATUS_LABELS: Record<string, string> = {
   pendiente: 'Pendiente',
   parcial: 'Pago Parcial',
@@ -98,16 +64,6 @@ export const TASK_TYPES = [
   'Revisar vencimiento',
 ]
 
-export const FIRE_EXT_TYPES = [
-  'Polvo seco ABC',
-  'CO2',
-  'Agua',
-  'Espuma',
-  'Halón',
-]
-
-export const FIRE_EXT_CAPACITIES = ['1 kg', '2 kg', '4 kg', '6 kg', '10 kg', '25 kg', '50 kg']
-
 export const LOCATION_TYPES: Record<string, string> = {
   vehiculo: 'Vehículo',
   maquinaria: 'Maquinaria',
@@ -133,45 +89,6 @@ export const AREAS = [
   'Mantenimiento',
   'RRHH',
 ]
-
-/** Uso / Destino de edificios y construcciones */
-export const BUILDING_PURPOSES = [
-  'Galpón',
-  'Depósito',
-  'Vivienda',
-  'Oficinas',
-  'Taller',
-  'Industrial',
-  'Producción porcina',
-  'Producción avícola',
-  'Otro',
-]
-
-/** Tipos de infraestructura */
-export const INFRASTRUCTURE_TYPES = [
-  'Silo',
-  'Tanque de agua',
-  'Tanque de combustible',
-  'Obra civil',
-  'Alambrado',
-  'Manga y corral',
-  'Otro',
-]
-
-/** Contenido de silos */
-export const SILO_CONTENTS = [
-  'Soja',
-  'Maíz',
-  'Trigo',
-  'Cebada',
-  'Girasol',
-  'Sorgo',
-  'Maní',
-  'Vacío / disponible',
-  'Otro',
-]
-
-export const FUEL_TYPES = ['Diésel', 'Nafta', 'GNC', 'Eléctrico', 'Híbrido']
 
 export const PROVINCES = [
   'Buenos Aires', 'Córdoba', 'Santa Fe', 'Entre Ríos', 'La Pampa', 'Mendoza', 'San Luis',

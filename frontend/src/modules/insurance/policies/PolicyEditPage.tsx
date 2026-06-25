@@ -23,7 +23,7 @@ import { assetsApi } from '../../../shared/api/assets.api'
 import { insuranceTypesApi } from '../../../shared/api/insurance-types.api'
 import { catalogsApi } from '../../../shared/api/catalogs.api'
 import type { Policy } from '../../../shared/types'
-import type { InsuranceTypeConfig } from '../../../data/mock-insurance-settings'
+import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
 
 type AssociationType = 'activo' | 'sin_activo'
 

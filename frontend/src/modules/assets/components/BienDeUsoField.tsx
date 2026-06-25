@@ -1,9 +1,8 @@
 import { useState, useMemo } from 'react'
 import { X, Search } from 'lucide-react'
-import { bienDeUsoRepository } from '../../../services/repositories/bien-de-uso.repository'
+import { BIENES_DE_USO } from '../data/bienes-de-uso'
 
-// Catálogo estático — se inicializa una sola vez al cargar el módulo, no en cada render
-const ALL_BIENES_DE_USO = bienDeUsoRepository.findAll()
+const ALL_BIENES_DE_USO = BIENES_DE_USO
 
 interface BienDeUsoFieldProps {
   value: string

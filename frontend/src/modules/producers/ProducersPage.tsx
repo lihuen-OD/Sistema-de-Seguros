@@ -13,6 +13,7 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { producersApi } from '../../shared/api/producers.api'
 import { policiesApi } from '../../shared/api/policies.api'
+import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import type { Producer } from '../../shared/types'
 
 interface ProducerCardStats {
@@ -27,7 +28,7 @@ export default function ProducersPage() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<'' | 'activo' | 'inactivo'>('')
 
-  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+  const { data: allProducers = [], isError } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
 
   const producerStats: ProducerCardStats[] = useMemo(() => {
@@ -54,6 +55,8 @@ export default function ProducersPage() {
   const totalPoliciesManaged = allPolicies.length
   const totalOverdueTasks = 0
   const compliancePct = 0
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

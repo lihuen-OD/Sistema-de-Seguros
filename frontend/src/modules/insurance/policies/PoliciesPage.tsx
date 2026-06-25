@@ -21,6 +21,7 @@ import {
 import { policiesApi } from '../../../shared/api/policies.api'
 import { producersApi } from '../../../shared/api/producers.api'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { POLICY_STATUS_LABELS } from '../../../shared/constants'
 import type { Policy, TableColumn } from '../../../shared/types'
 
@@ -37,7 +38,7 @@ export default function PoliciesPage() {
   const [filterType, setFilterType] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const { data: allPolicies = [], isLoading } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
+  const { data: allPolicies = [], isLoading, isError } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
 
   async function handleDelete(id: string) {
@@ -158,6 +159,8 @@ export default function PoliciesPage() {
       className: 'w-20',
     },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

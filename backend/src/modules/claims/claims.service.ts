@@ -23,7 +23,7 @@ const CLAIM_LIST_INCLUDE = {
 const CLAIM_DETAIL_INCLUDE = {
   asset: { select: { id: true, name: true, assetType: true } },
   policy: { select: { id: true, policyNumber: true, insuredName: true } },
-  events: { orderBy: { date: 'desc' as const } },
+  events: { orderBy: { date: 'desc' as const }, take: 100 },
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -269,18 +269,23 @@ export const claimsService = {
       cloudinaryPublicId = result.public_id
     }
 
-    return prisma.claimAttachment.create({
-      data: {
-        claimId,
-        name: file.originalname,
-        description: meta.description ?? null,
-        fileType: detectFileType(file.mimetype),
-        fileSize: formatFileSize(file.size),
-        fileUrl,
-        cloudinaryPublicId,
-        uploadedBy,
-      },
-    })
+    try {
+      return await prisma.claimAttachment.create({
+        data: {
+          claimId,
+          name: file.originalname,
+          description: meta.description ?? null,
+          fileType: detectFileType(file.mimetype),
+          fileSize: formatFileSize(file.size),
+          fileUrl,
+          cloudinaryPublicId,
+          uploadedBy,
+        },
+      })
+    } catch (err) {
+      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
+      throw err
+    }
   },
 
   async deleteAttachment(claimId: string, attachmentId: string) {

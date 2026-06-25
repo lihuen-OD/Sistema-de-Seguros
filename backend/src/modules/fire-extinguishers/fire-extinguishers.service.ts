@@ -128,7 +128,7 @@ export const fireExtinguishersService = {
       where: { id },
       include: {
         asset: { select: { id: true, name: true } },
-        history: { orderBy: { date: 'desc' } },
+        history: { orderBy: { date: 'desc' }, take: 100 },
       },
     })
     if (!fe) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')

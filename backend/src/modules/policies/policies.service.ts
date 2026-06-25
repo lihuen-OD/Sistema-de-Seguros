@@ -22,7 +22,7 @@ const POLICY_DETAIL_INCLUDE = {
   insuranceType: { include: { coverages: true } },
   company: true,
   producer: true,
-  attachments: { orderBy: { uploadedAt: 'desc' as const } },
+  attachments: { orderBy: { uploadedAt: 'desc' as const }, take: 50 },
   _count: { select: { allocations: true, attachments: true } },
 }
 
@@ -201,20 +201,25 @@ export const policiesService = {
       cloudinaryPublicId = result.public_id
     }
 
-    return prisma.policyAttachment.create({
-      data: {
-        policyId,
-        name: file.originalname,
-        description: meta.description ?? null,
-        fileType: detectFileType(file.mimetype),
-        fileSize: formatFileSize(file.size),
-        fileUrl,
-        cloudinaryPublicId,
-        expirationDate: meta.expirationDate ?? null,
-        notifyEmail: meta.notifyEmail || null,
-        uploadedBy,
-      },
-    })
+    try {
+      return await prisma.policyAttachment.create({
+        data: {
+          policyId,
+          name: file.originalname,
+          description: meta.description ?? null,
+          fileType: detectFileType(file.mimetype),
+          fileSize: formatFileSize(file.size),
+          fileUrl,
+          cloudinaryPublicId,
+          expirationDate: meta.expirationDate ?? null,
+          notifyEmail: meta.notifyEmail || null,
+          uploadedBy,
+        },
+      })
+    } catch (err) {
+      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
+      throw err
+    }
   },
 
   async deleteAttachment(policyId: string, attachmentId: string) {

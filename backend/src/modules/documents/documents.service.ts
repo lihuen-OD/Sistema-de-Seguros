@@ -109,10 +109,19 @@ export const documentsService = {
     return buildPaginatedResponse(rawData.map(withTotalAmount), total, { page, limit })
   },
 
-  async findAllForFinancial() {
+  async findAllForFinancial(params?: { from?: string; to?: string }) {
+    const where: Record<string, unknown> = {}
+    if (params?.from || params?.to) {
+      where.issueDate = {
+        ...(params.from && { gte: new Date(`${params.from}-01T00:00:00.000Z`) }),
+        ...(params.to && { lte: new Date(`${params.to}-31T23:59:59.999Z`) }),
+      }
+    }
     const docs = await prisma.accountingDocument.findMany({
+      where,
       orderBy: { issueDate: 'asc' },
       include: DOCUMENT_FINANCIAL_INCLUDE,
+      take: 2000,
     })
     return docs.map((doc) => ({
       ...withTotalAmount(doc),
@@ -387,18 +396,23 @@ export const documentsService = {
       cloudinaryPublicId = result.public_id
     }
 
-    return prisma.documentAttachment.create({
-      data: {
-        accountingDocumentId: documentId,
-        name: file.originalname,
-        description: meta.description ?? null,
-        fileType: detectFileType(file.mimetype),
-        fileSize: formatFileSize(file.size),
-        fileUrl,
-        cloudinaryPublicId,
-        uploadedBy,
-      },
-    })
+    try {
+      return await prisma.documentAttachment.create({
+        data: {
+          accountingDocumentId: documentId,
+          name: file.originalname,
+          description: meta.description ?? null,
+          fileType: detectFileType(file.mimetype),
+          fileSize: formatFileSize(file.size),
+          fileUrl,
+          cloudinaryPublicId,
+          uploadedBy,
+        },
+      })
+    } catch (err) {
+      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
+      throw err
+    }
   },
 
   async deleteAttachment(documentId: string, attachmentId: string) {

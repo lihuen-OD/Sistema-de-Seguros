@@ -12,6 +12,7 @@ import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
+import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { TableShell } from '../../shared/components/data-table/TableShell'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
@@ -30,7 +31,7 @@ export default function ProducerTasksPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
 
-  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+  const { data: allProducers = [], isError } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
 
   const taskQueries = useQueries({
     queries: allProducers.map((p) => ({
@@ -167,6 +168,8 @@ export default function ProducerTasksPage() {
       ),
     },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

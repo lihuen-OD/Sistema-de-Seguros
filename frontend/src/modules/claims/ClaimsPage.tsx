@@ -19,6 +19,7 @@ import { claimsApi } from '../../shared/api/claims.api'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
+import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { catalogsApi } from '../../shared/api/catalogs.api'
 import {
   CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
@@ -49,7 +50,7 @@ export default function ClaimsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: all = [], isLoading } = useQuery({ queryKey: ['claims'], queryFn: () => claimsApi.findAll() })
+  const { data: all = [], isLoading, isError } = useQuery({ queryKey: ['claims'], queryFn: () => claimsApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: claimStatuses = [] } = useQuery({ queryKey: ['catalogs', 'claim_status'], queryFn: () => catalogsApi.findByCategory('claim_status') })
@@ -210,6 +211,8 @@ export default function ClaimsPage() {
       ),
     },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

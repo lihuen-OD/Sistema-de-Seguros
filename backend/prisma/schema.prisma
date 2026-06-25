@@ -105,6 +105,8 @@ model Asset {
 
   @@index([isActive, status])
   @@index([isActive, assetType])
+  @@index([name])
+  @@index([brand])
   @@map("assets")
 }
 
@@ -119,6 +121,7 @@ model AssetAllocation {
   costCenter   CostCenter @relation(fields: [costCenterId], references: [id])
 
   @@index([assetId])
+  @@index([companyId])
   @@index([costCenterId])
   @@map("asset_allocations")
 }
@@ -230,6 +233,8 @@ model Policy {
   claims        Claim[]
 
   @@index([isActive, endDate])
+  @@index([companyId, isActive])
+  @@index([insuranceTypeId, isActive])
   @@index([companyId])
   @@index([insuranceTypeId])
   @@index([producerId])
@@ -415,6 +420,7 @@ model Claim {
   attachments ClaimAttachment[]
 
   @@index([isActive, status])
+  @@index([isActive, occurrenceDate])
   @@index([policyId])
   @@index([assetId])
   @@index([occurrenceDate])

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { claimsService } from './claims.service'
+import { AppError } from '../../shared/errors/AppError'
 import type { ListClaimsQueryDTO, AddEventDTO, AddClaimAttachmentDTO } from './claims.schemas'
 
 type IdParam = { id: string }
@@ -58,7 +59,7 @@ export const claimsController = {
   }),
 
   addAttachment: asyncHandler(async (req: Request<IdParam>, res: Response) => {
-    if (!req.file) throw new Error('No se recibió ningún archivo')
+    if (!req.file) throw new AppError(400, 'No se recibió ningún archivo', 'FILE_MISSING')
     const meta = req.body as AddClaimAttachmentDTO
     const attachment = await claimsService.addAttachment(
       req.params.id,

@@ -12,6 +12,7 @@ import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
+import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { TableShell } from '../../shared/components/data-table/TableShell'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
@@ -65,7 +66,7 @@ export default function FireExtinguishersPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: all = [] } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: () => fireExtinguishersApi.findAll() })
+  const { data: all = [], isError } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: () => fireExtinguishersApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
 
   const counts = useMemo(() => ({
@@ -128,6 +129,8 @@ export default function FireExtinguishersPage() {
     () => all.filter((fe) => selectedIds.has(fe.id)),
     [all, selectedIds],
   )
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

@@ -68,7 +68,7 @@ const INITIAL: PolicyForm = {
 
 // ── CoverageSelector ──────────────────────────────────────────────────────────
 
-import type { InsuranceTypeConfig } from '../../../data/mock-insurance-settings'
+import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
 
 function CoverageSelector({
   insuranceType,

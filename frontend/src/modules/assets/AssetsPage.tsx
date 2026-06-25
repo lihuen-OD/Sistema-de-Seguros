@@ -18,6 +18,7 @@ import { assetsApi } from '../../shared/api/assets.api'
 import { companiesApi } from '../../shared/api/companies.api'
 import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
+import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { ASSET_TYPES, ASSET_STATUS_LABELS } from '../../shared/constants'
 import type { Asset, TableColumn } from '../../shared/types'
 
@@ -33,7 +34,7 @@ export default function AssetsPage() {
   const [filterCompany, setFilterCompany] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const { data: allAssets = [], isLoading } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: allAssets = [], isLoading, isError } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
 
@@ -151,6 +152,8 @@ export default function AssetsPage() {
       className: 'w-20',
     },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

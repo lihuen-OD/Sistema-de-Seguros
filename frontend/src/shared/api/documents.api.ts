@@ -90,11 +90,11 @@ export const documentsApi = {
     return res.data.data.map(mapDocument)
   },
 
-  async findAllForFinancial(): Promise<DocumentForFinancial[]> {
+  async findAllForFinancial(params?: { from?: string; to?: string }): Promise<DocumentForFinancial[]> {
     const res = await apiClient.get<{ data: (Omit<BackendDocument, 'allocations'> & {
       installments: BackendInstallment[]
       allocations: BackendAllocation[]
-    })[] }>('/documents/financial')
+    })[] }>('/documents/financial', { params })
     return res.data.data.map((b) => ({
       ...mapDocument(b),
       installments: b.installments.map((i) => ({

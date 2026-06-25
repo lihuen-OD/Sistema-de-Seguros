@@ -1,6 +1,11 @@
 import { apiClient } from './client'
-import type { InsuranceTypeConfig } from '../../data/mock-insurance-settings'
-import { insuranceTypeRepository } from '../../services/repositories/insurance-type.repository'
+
+export interface InsuranceTypeConfig {
+  id: string
+  label: string
+  coverages: string[]
+  coverageObjects: { id: string; name: string }[]
+}
 
 interface BackendCoverage {
   id: string
@@ -37,8 +42,6 @@ export const insuranceTypesApi = {
       params: { limit: 200 },
     })
     const mapped = res.data.data.map(mapInsuranceType)
-    // Keep mock repository in sync for modules not yet integrated (e.g. policy forms)
-    insuranceTypeRepository.replaceAll(mapped)
     return mapped
   },
 

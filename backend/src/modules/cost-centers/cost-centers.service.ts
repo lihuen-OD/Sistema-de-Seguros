@@ -40,17 +40,8 @@ export const costCentersService = {
     let code = data.code
 
     if (!code) {
-      const last = await prisma.costCenter.findFirst({
-        where: { code: { startsWith: 'CC-' } },
-        orderBy: { code: 'desc' },
-      })
-      const lastNum = last?.code ? parseInt(last.code.replace('CC-', ''), 10) || 0 : 0
-      let seq = lastNum + 1
-      code = `CC-${String(seq).padStart(3, '0')}`
-      while (await prisma.costCenter.findUnique({ where: { code } })) {
-        seq++
-        code = `CC-${String(seq).padStart(3, '0')}`
-      }
+      const seqResult = await prisma.$queryRaw<[{ nextval: bigint }]>`SELECT nextval('cost_center_code_seq')`
+      code = `CC-${String(Number(seqResult[0].nextval)).padStart(3, '0')}`
     } else {
       const exists = await prisma.costCenter.findUnique({ where: { code } })
       if (exists) throw new AppError(409, 'Ya existe un centro de costo con ese código', 'CONFLICT')

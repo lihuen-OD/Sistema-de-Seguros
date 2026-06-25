@@ -207,10 +207,11 @@ export default function FinancialAnalysisPage() {
 
   // ─── Remote data ─────────────────────────────────────────────────────────────
 
-  // Una sola request que devuelve documentos + installments + allocations embebidos
+  // Filtra en el backend por el rango seleccionado — evita cargar todos los documentos en memoria
   const { data: financialDocs = [] } = useQuery({
-    queryKey: ['documents', 'financial'],
-    queryFn: () => documentsApi.findAllForFinancial(),
+    queryKey: ['documents', 'financial', dateFrom, dateTo],
+    queryFn: () => documentsApi.findAllForFinancial({ from: dateFrom, to: dateTo }),
+    staleTime: 2 * 60 * 1000,
   })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })

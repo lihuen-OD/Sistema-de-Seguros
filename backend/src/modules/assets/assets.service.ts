@@ -37,8 +37,8 @@ const ASSET_DETAIL_INCLUDE = {
     orderBy: { percentage: 'desc' as const },
   },
   _count: { select: { attachments: true, fireExtinguishers: true } },
-  valueHistory: { orderBy: { date: 'desc' as const } },
-  attachments: { orderBy: { uploadedAt: 'desc' as const } },
+  valueHistory: { orderBy: { date: 'desc' as const }, take: 100 },
+  attachments: { orderBy: { uploadedAt: 'desc' as const }, take: 50 },
 }
 
 async function assertAssetExists(id: string) {
@@ -110,8 +110,8 @@ export const assetsService = {
       throw new AppError(400, 'Uno o más centros de costo no existen o están inactivos', 'INVALID_REFERENCE')
     }
 
-    const count = await prisma.asset.count()
-    const code = `ACT-${String(count + 1).padStart(5, '0')}`
+    const seqResult = await prisma.$queryRaw<[{ nextval: bigint }]>`SELECT nextval('asset_code_seq')`
+    const code = `ACT-${String(Number(seqResult[0].nextval)).padStart(5, '0')}`
 
     return prisma.$transaction(async (tx) => {
       const asset = await tx.asset.create({
@@ -244,20 +244,25 @@ export const assetsService = {
       cloudinaryPublicId = result.public_id
     }
 
-    return prisma.assetAttachment.create({
-      data: {
-        assetId,
-        name: file.originalname,
-        description: meta.description ?? null,
-        fileType: detectFileType(file.mimetype),
-        fileSize: formatFileSize(file.size),
-        fileUrl,
-        cloudinaryPublicId,
-        expirationDate: meta.expirationDate ?? null,
-        notifyEmail: meta.notifyEmail || null,
-        uploadedBy,
-      },
-    })
+    try {
+      return await prisma.assetAttachment.create({
+        data: {
+          assetId,
+          name: file.originalname,
+          description: meta.description ?? null,
+          fileType: detectFileType(file.mimetype),
+          fileSize: formatFileSize(file.size),
+          fileUrl,
+          cloudinaryPublicId,
+          expirationDate: meta.expirationDate ?? null,
+          notifyEmail: meta.notifyEmail || null,
+          uploadedBy,
+        },
+      })
+    } catch (err) {
+      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
+      throw err
+    }
   },
 
   async deleteAttachment(assetId: string, attachmentId: string) {

@@ -26,7 +26,8 @@ import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
 import { companiesApi } from '../../shared/api/companies.api'
 import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { producersApi } from '../../shared/api/producers.api'
-import type { ProducerTask } from '../../shared/types'
+import { dashboardApi } from '../../shared/api/dashboard.api'
+import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
 
@@ -52,7 +53,7 @@ export default function DashboardPage() {
   }
 
   // ── Data queries ──────────────────────────────────────────────────
-  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: allAssets = [], isError: assetsError } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allFireExtinguishers = [] } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: () => fireExtinguishersApi.findAll() })
   const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
@@ -64,6 +65,11 @@ export default function DashboardPage() {
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
   const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+  const { data: charts } = useQuery({
+    queryKey: ['dashboard', 'charts', new Date().getFullYear()],
+    queryFn: () => dashboardApi.getCharts(new Date().getFullYear()),
+    staleTime: 5 * 60 * 1000,
+  })
 
   const taskQueries = useQueries({
     queries: allProducers.map((p) => ({
@@ -167,7 +173,7 @@ export default function DashboardPage() {
   const insurerChartData = Object.entries(costByInsurer)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-    .map(([name, value]) => ({ name: name.split(' ')[0], value }))
+    .map(([name, value]) => ({ name, value }))
 
   const policyStatusData = [
     { name: 'Vigentes', value: vigentePolicies.length, color: '#10b981' },
@@ -182,16 +188,7 @@ export default function DashboardPage() {
   ]
 
   // ── Monthly cost trend ────────────────────────────────────────────
-  const monthlyData = [
-    { mes: 'Ago', costo: 3100000 },
-    { mes: 'Sep', costo: 4200000 },
-    { mes: 'Oct', costo: 6800000 },
-    { mes: 'Nov', costo: 4900000 },
-    { mes: 'Dic', costo: 7100000 },
-    { mes: 'Ene', costo: 5400000 },
-    { mes: 'Feb', costo: 3900000 },
-    { mes: 'Mar', costo: 4100000 },
-  ]
+  const monthlyData = charts?.costEvolution ?? []
 
   // ── Upcoming policy expirations ───────────────────────────────────
   const upcomingPolicies = filteredPolicies
@@ -212,6 +209,8 @@ export default function DashboardPage() {
     [pendingInstallments],
   )
 
+  if (assetsError) return <PageContent><ErrorState title="Error al cargar el dashboard" description="No se pudieron cargar los datos. Verificá la conexión e intentá nuevamente." /></PageContent>
+
   return (
     <PageContent>
       <PageHeader
@@ -220,7 +219,7 @@ export default function DashboardPage() {
         actions={
           <div className="hidden sm:flex items-center gap-2 text-xs">
             <span className="text-slate-400">Datos al</span>
-            <span className="font-semibold text-slate-600">10/06/2026</span>
+            <span className="font-semibold text-slate-600">{new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
           </div>
         }
       />
@@ -401,16 +400,16 @@ export default function DashboardPage() {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={insurerChartData} layout="vertical" margin={{ top: 4, right: 40, left: 40, bottom: 0 }}>
+              <BarChart data={insurerChartData} layout="vertical" margin={{ top: 4, right: 40, left: 10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11, fill: '#94a3b8' }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v) => `${(v / 1_000_000_000).toFixed(2)}B`}
+                  tickFormatter={(v) => `${(v / 1_000_000).toFixed(1)}M`}
                 />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={70} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={120} />
                 <Tooltip
                   formatter={(v: number) => [formatCurrencyCompact(v, 'ARS'), 'Suma Asegurada']}
                   contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}
