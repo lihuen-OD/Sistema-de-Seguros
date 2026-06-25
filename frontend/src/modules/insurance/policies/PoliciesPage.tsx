@@ -1,7 +1,8 @@
 ﻿import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2 } from 'lucide-react'
+import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2, Download } from 'lucide-react'
+import { downloadCSV } from '../../../shared/utils/export'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -36,7 +37,7 @@ export default function PoliciesPage() {
   const [filterType, setFilterType] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
+  const { data: allPolicies = [], isLoading } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
 
   async function handleDelete(id: string) {
@@ -164,13 +165,38 @@ export default function PoliciesPage() {
         title="Pólizas de Seguros"
         subtitle="Administración de pólizas vigentes, vencidas y próximas a vencer"
         actions={
-          <button
-            onClick={() => navigate('/insurance/policies/new')}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus size={16} />
-            Nueva Póliza
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const rows = [
+                  ['N° Póliza', 'Aseguradora', 'Productor', 'Tipo de Seguro', 'Cobertura', 'Inicio', 'Vencimiento', 'Suma Asegurada ARS', 'Estado'],
+                  ...filtered.map((p) => [
+                    p.policyNumber,
+                    p.insuranceCompany,
+                    allProducers.find((pr) => pr.id === p.producerId)?.name ?? '',
+                    p.insuranceType,
+                    p.coverageType ?? '',
+                    p.startDate,
+                    p.endDate,
+                    String(p.insuredAmountArs),
+                    p.status,
+                  ]),
+                ]
+                downloadCSV(rows, `polizas-${new Date().toISOString().slice(0, 10)}.csv`)
+              }}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+            >
+              <Download size={15} />
+              Exportar CSV
+            </button>
+            <button
+              onClick={() => navigate('/insurance/policies/new')}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus size={16} />
+              Nueva Póliza
+            </button>
+          </div>
         }
       />
 
@@ -240,6 +266,7 @@ export default function PoliciesPage() {
         <DataTable
           columns={columns}
           data={filtered}
+          loading={isLoading}
           rowKey="id"
           onRowClick={(row) => navigate(`/insurance/policies/${row.id}`)}
           emptyTitle="Sin pólizas"

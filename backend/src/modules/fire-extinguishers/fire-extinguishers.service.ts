@@ -275,7 +275,7 @@ export const fireExtinguishersService = {
   // ── Private ───────────────────────────────────────────────────────────────────
 
   async assertExists(id: string) {
-    const fe = await prisma.fireExtinguisher.findUnique({ where: { id } })
+    const fe = await prisma.fireExtinguisher.findUnique({ where: { id }, select: { id: true, expirationDate: true } })
     if (!fe) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
     return fe
   },

@@ -297,8 +297,7 @@ export const claimsService = {
   // ── Private ───────────────────────────────────────────────────────────────────
 
   async assertExists(id: string) {
-    const claim = await prisma.claim.findUnique({ where: { id } })
+    const claim = await prisma.claim.findUnique({ where: { id }, select: { id: true } })
     if (!claim) throw new AppError(404, 'Siniestro no encontrado', 'NOT_FOUND')
-    return claim
   },
 }

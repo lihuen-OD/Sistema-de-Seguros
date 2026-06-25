@@ -2,6 +2,9 @@ import { useState, useMemo } from 'react'
 import { X, Search } from 'lucide-react'
 import { bienDeUsoRepository } from '../../../services/repositories/bien-de-uso.repository'
 
+// Catálogo estático — se inicializa una sola vez al cargar el módulo, no en cada render
+const ALL_BIENES_DE_USO = bienDeUsoRepository.findAll()
+
 interface BienDeUsoFieldProps {
   value: string
   onChange: (id: string) => void
@@ -11,7 +14,7 @@ interface BienDeUsoFieldProps {
 export function BienDeUsoField({ value, onChange, categoryFilter }: BienDeUsoFieldProps) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
-  const allBienesDeUso = bienDeUsoRepository.findAll()
+  const allBienesDeUso = ALL_BIENES_DE_USO
 
   const filteredCatalog = useMemo(() => {
     if (!categoryFilter?.length) return allBienesDeUso

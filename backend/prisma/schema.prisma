@@ -65,6 +65,7 @@ model InsuranceCoverage {
   insuranceTypeId String
   insuranceType   InsuranceType @relation(fields: [insuranceTypeId], references: [id], onDelete: Cascade)
 
+  @@index([insuranceTypeId])
   @@map("insurance_coverages")
 }
 
@@ -102,6 +103,8 @@ model Asset {
   fireExtinguishers FireExtinguisher[]
   claims            Claim[]
 
+  @@index([isActive, status])
+  @@index([isActive, assetType])
   @@map("assets")
 }
 
@@ -115,6 +118,8 @@ model AssetAllocation {
   company      Company    @relation(fields: [companyId], references: [id])
   costCenter   CostCenter @relation(fields: [costCenterId], references: [id])
 
+  @@index([assetId])
+  @@index([costCenterId])
   @@map("asset_allocations")
 }
 
@@ -126,6 +131,7 @@ model AssetValueHistory {
   note    String?
   asset   Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
+  @@index([assetId])
   @@map("asset_value_history")
 }
 
@@ -144,6 +150,7 @@ model AssetAttachment {
   uploadedBy          String
   asset               Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
+  @@index([assetId])
   @@map("asset_attachments")
 }
 
@@ -183,6 +190,10 @@ model ProducerTask {
   updatedAt   DateTime  @updatedAt
   producer    Producer  @relation(fields: [producerId], references: [id], onDelete: Cascade)
 
+  @@index([producerId, status])
+  @@index([dueDate, status])
+  @@index([policyId])
+  @@index([assetId])
   @@map("producer_tasks")
 }
 
@@ -219,6 +230,10 @@ model Policy {
   claims        Claim[]
 
   @@index([isActive, endDate])
+  @@index([companyId])
+  @@index([insuranceTypeId])
+  @@index([producerId])
+  @@index([assetId])
   @@map("policies")
 }
 
@@ -237,6 +252,7 @@ model PolicyAttachment {
   uploadedBy          String
   policy              Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
 
+  @@index([policyId])
   @@map("policy_attachments")
 }
 
@@ -267,6 +283,9 @@ model AccountingDocument {
   allocations  DocumentPolicyAllocation[]
   attachments  DocumentAttachment[]
 
+  @@index([paymentStatus])
+  @@index([issueDate])
+  @@index([documentType])
   @@map("accounting_documents")
 }
 
@@ -283,6 +302,7 @@ model DocumentInstallment {
   notes                String?
   document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
 
+  @@index([accountingDocumentId])
   @@index([paymentStatus, dueDate])
   @@map("document_installments")
 }
@@ -296,6 +316,8 @@ model DocumentPolicyAllocation {
   document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
   policy               Policy             @relation(fields: [policyId], references: [id])
 
+  @@index([accountingDocumentId])
+  @@index([policyId])
   @@map("document_policy_allocations")
 }
 
@@ -312,6 +334,7 @@ model DocumentAttachment {
   uploadedBy           String
   document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
 
+  @@index([accountingDocumentId])
   @@map("document_attachments")
 }
 
@@ -340,6 +363,7 @@ model FireExtinguisher {
   history FireExtinguisherHistory[]
 
   @@index([isActive, expirationDate])
+  @@index([assetId])
   @@map("fire_extinguishers")
 }
 
@@ -355,6 +379,7 @@ model FireExtinguisherHistory {
   createdAt              DateTime         @default(now())
   extinguisher           FireExtinguisher @relation(fields: [fireExtinguisherId], references: [id], onDelete: Cascade)
 
+  @@index([fireExtinguisherId])
   @@map("fire_extinguisher_history")
 }
 
@@ -389,6 +414,10 @@ model Claim {
   events      ClaimEvent[]
   attachments ClaimAttachment[]
 
+  @@index([isActive, status])
+  @@index([policyId])
+  @@index([assetId])
+  @@index([occurrenceDate])
   @@map("claims")
 }
 
@@ -398,13 +427,14 @@ model ClaimAttachment {
   name               String
   description        String?
   fileType           String
-  fileSize           String
+  fileSize            String
   fileUrl            String
   cloudinaryPublicId String?
   uploadedAt         DateTime  @default(now())
   uploadedBy         String
   claim              Claim     @relation(fields: [claimId], references: [id], onDelete: Cascade)
 
+  @@index([claimId])
   @@map("claim_attachments")
 }
 
@@ -423,6 +453,7 @@ model ClaimEvent {
   createdAt      DateTime @default(now())
   claim          Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
 
+  @@index([claimId])
   @@map("claim_events")
 }
 

@@ -51,7 +51,7 @@ function mapAsset(b: BackendAsset): Asset {
     valuationDate: b.purchaseDate ? b.purchaseDate.slice(0, 10) : '',
     observations: b.description ?? '',
     mapsUrl: b.mapsUrl ?? '',
-    companyId: primary?.company?.id ?? '',
+    companyId: primary?.company?.id ?? primary?.companyId ?? '',
     costCenterId: primary?.costCenterId ?? '',
     allocations: b.allocations.map((a) => ({
       id: a.id,

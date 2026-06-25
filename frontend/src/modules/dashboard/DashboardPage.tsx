@@ -8,7 +8,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
@@ -25,7 +25,8 @@ import { documentsApi } from '../../shared/api/documents.api'
 import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
 import { companiesApi } from '../../shared/api/companies.api'
 import { costCentersApi } from '../../shared/api/cost-centers.api'
-import type { Installment, ProducerTask } from '../../shared/types'
+import { producersApi } from '../../shared/api/producers.api'
+import type { ProducerTask } from '../../shared/types'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
 
@@ -55,8 +56,23 @@ export default function DashboardPage() {
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allFireExtinguishers = [] } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: () => fireExtinguishersApi.findAll() })
   const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
+  const { data: financialDocs = [] } = useQuery({
+    queryKey: ['documents', 'financial'],
+    queryFn: () => documentsApi.findAllForFinancial(),
+    staleTime: 5 * 60 * 1000,
+  })
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
+  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+
+  const taskQueries = useQueries({
+    queries: allProducers.map((p) => ({
+      queryKey: ['producers', p.id, 'tasks'],
+      queryFn: () => producersApi.findTasks(p.id),
+      enabled: allProducers.length > 0,
+      staleTime: 2 * 60 * 1000,
+    })),
+  })
 
   const assetById = useMemo(
     () => new Map(allAssets.map((a) => [a.id, a])),
@@ -125,9 +141,23 @@ export default function DashboardPage() {
   const expiredFe = filteredFireExtinguishers.filter((f) => f.status === 'vencido')
   const expiringFe = filteredFireExtinguishers.filter((f) => f.status === 'proximo_vencer')
 
-  const overdueTasks: ProducerTask[] = []
-  const pendingInstallments: Installment[] = []
-  const pendingInstallmentsTotal = 0
+  const overdueTasks = useMemo(
+    () => taskQueries.flatMap((q) => q.data ?? []).filter((t) => t.status === 'vencida'),
+    [taskQueries],
+  )
+
+  const allInstallments = useMemo(
+    () => financialDocs.flatMap((d) => d.installments),
+    [financialDocs],
+  )
+  const pendingInstallments = useMemo(
+    () => allInstallments.filter((i) => i.paymentStatus !== 'pagado'),
+    [allInstallments],
+  )
+  const pendingInstallmentsTotal = useMemo(
+    () => pendingInstallments.reduce((s, i) => s + i.amount, 0),
+    [pendingInstallments],
+  )
 
   // ── Chart data ────────────────────────────────────────────────────
   const costByInsurer = vigentePolicies.reduce<Record<string, number>>((acc, p) => {
@@ -173,10 +203,14 @@ export default function DashboardPage() {
     .slice(0, 6)
 
   // ── Upcoming installments ─────────────────────────────────────────
-  const upcomingInstallments = pendingInstallments
-    .filter((i) => daysUntil(i.dueDate) <= 60 && daysUntil(i.dueDate) >= 0)
-    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-    .slice(0, 5)
+  const upcomingInstallments = useMemo(
+    () =>
+      pendingInstallments
+        .filter((i) => { const d = daysUntil(i.dueDate); return d >= 0 && d <= 60 })
+        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+        .slice(0, 5),
+    [pendingInstallments],
+  )
 
   return (
     <PageContent>
@@ -296,7 +330,7 @@ export default function DashboardPage() {
           description="Requieren atención inmediata"
           icon={CheckCircle2}
           variant={overdueTasks.length > 0 ? 'danger' : 'success'}
-          onClick={() => navigate('/producers/tasks')}
+          onClick={() => navigate('/tasks')}
         />
         <KpiCard
           label="Pólizas Total"
@@ -544,7 +578,7 @@ export default function DashboardPage() {
               noPadding
               actions={
                 <button
-                  onClick={() => navigate('/producers/tasks')}
+                  onClick={() => navigate('/tasks')}
                   className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
                 >
                   Ver todas <ArrowRight size={12} />

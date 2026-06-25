@@ -4,7 +4,7 @@ import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Building2, User, Tag, Calendar, Hash, Link2,
-  Receipt, TrendingUp, TrendingDown, CheckCircle2, Plus, ChevronDown, ChevronUp,
+  Receipt, TrendingUp, TrendingDown, CheckCircle2, Plus, ChevronDown, ChevronUp, ArrowUpRight,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -251,6 +251,7 @@ export default function PolicyDetailPage() {
                 label="Productor"
                 value={producer?.name ?? '—'}
                 icon={User}
+                link={producer ? `/producers/${producer.id}` : undefined}
               />
               <InfoRow label="Tipo de Seguro" value={policy.insuranceType} icon={Tag} />
               <InfoRow label="Estado" value={policy.status} isStatus />
@@ -809,17 +810,29 @@ function InfoRow({
   value,
   icon: Icon,
   isStatus,
+  link,
 }: {
   label: string
   value: string
   icon?: React.ElementType
   isStatus?: boolean
+  link?: string
 }) {
+  const nav = useNavigate()
   return (
     <div>
       <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
       {isStatus ? (
         <StatusPill status={value} />
+      ) : link ? (
+        <button
+          onClick={() => nav(link)}
+          className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+        >
+          {Icon && <Icon size={12} className="text-blue-400 flex-shrink-0" />}
+          {value}
+          <ArrowUpRight size={11} className="text-blue-400" />
+        </button>
       ) : (
         <p className="text-sm font-medium text-slate-800 flex items-center gap-1">
           {Icon && <Icon size={12} className="text-slate-400 flex-shrink-0" />}

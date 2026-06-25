@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, FileText, CheckCircle2, Clock, AlertCircle, Eye, Edit2, Trash2 } from 'lucide-react'
+import { Plus, FileText, CheckCircle2, Clock, AlertCircle, Eye, Edit2, Trash2, Download } from 'lucide-react'
+import { downloadCSV } from '../../../shared/utils/export'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -34,7 +35,7 @@ export default function DocumentsPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
-  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
+  const { data: allDocuments = [], isLoading } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
   const { data: documentTypeItems = [] } = useQuery({ queryKey: ['catalogs', 'document_type'], queryFn: () => catalogsApi.findByCategory('document_type') })
 
   const DOCUMENT_TYPE_OPTIONS = documentTypeItems.map((t) => ({ value: t.label, label: t.label }))
@@ -190,13 +191,39 @@ export default function DocumentsPage() {
         title="Documentos Contables"
         subtitle="Facturas, endosos, notas de crédito y refacturaciones asociados a pólizas"
         actions={
-          <button
-            onClick={() => navigate('/insurance/documents/new')}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus size={16} />
-            Nuevo Documento
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const rows = [
+                  ['N° Documento', 'Tipo', 'Fecha Emisión', 'Moneda', 'Neto', 'IVA', 'Otros Imp.', 'Total', 'Aseguradora', 'Estado Pago'],
+                  ...filtered.map((d) => [
+                    d.documentNumber,
+                    d.documentType,
+                    d.issueDate,
+                    d.currency,
+                    String(d.netAmount),
+                    String(d.vatAmount),
+                    String(d.otherTaxesAmount),
+                    String(d.totalAmount),
+                    d.insuranceCompany ?? '',
+                    d.paymentStatus,
+                  ]),
+                ]
+                downloadCSV(rows, `documentos-${new Date().toISOString().slice(0, 10)}.csv`)
+              }}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+            >
+              <Download size={15} />
+              Exportar CSV
+            </button>
+            <button
+              onClick={() => navigate('/insurance/documents/new')}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus size={16} />
+              Nuevo Documento
+            </button>
+          </div>
         }
       />
 
@@ -266,6 +293,7 @@ export default function DocumentsPage() {
         <DataTable
           columns={columns}
           data={filtered}
+          loading={isLoading}
           rowKey="id"
           onRowClick={(row) => navigate(`/insurance/documents/${row.id}`)}
           emptyTitle="Sin documentos"

@@ -2,8 +2,9 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Plus, ShieldAlert, Clock, CheckCircle2, Eye, Edit2, Trash2,
+  Plus, ShieldAlert, Clock, CheckCircle2, Eye, Edit2, Trash2, Download,
 } from 'lucide-react'
+import { downloadCSV } from '../../shared/utils/export'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -48,7 +49,7 @@ export default function ClaimsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: all = [] } = useQuery({ queryKey: ['claims'], queryFn: () => claimsApi.findAll() })
+  const { data: all = [], isLoading } = useQuery({ queryKey: ['claims'], queryFn: () => claimsApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: claimStatuses = [] } = useQuery({ queryKey: ['catalogs', 'claim_status'], queryFn: () => catalogsApi.findByCategory('claim_status') })
@@ -216,13 +217,42 @@ export default function ClaimsPage() {
         title="Siniestros"
         subtitle="Gestión y seguimiento de siniestros asociados a activos y pólizas"
         actions={
-          <button
-            onClick={() => navigate('/claims/new')}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus size={16} />
-            Nuevo Siniestro
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const rows = [
+                  ['N° Siniestro', 'Tipo', 'Aseguradora', 'Activo', 'N° Póliza', 'Fecha hecho', 'Estado', 'Reclamado ARS', 'Liquidado ARS'],
+                  ...filtered.map((c) => {
+                    const asset = c.assetId ? allAssets.find((a) => a.id === c.assetId) : null
+                    const pol = c.policyId ? allPolicies.find((p) => p.id === c.policyId) : null
+                    return [
+                      c.claimNumber,
+                      c.claimType,
+                      c.insuranceCompany,
+                      asset?.name ?? '',
+                      pol?.policyNumber ?? '',
+                      c.occurrenceDate,
+                      c.status,
+                      String(c.claimedAmountArs),
+                      c.settledAmountArs != null ? String(c.settledAmountArs) : '',
+                    ]
+                  }),
+                ]
+                downloadCSV(rows, `siniestros-${new Date().toISOString().slice(0, 10)}.csv`)
+              }}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+            >
+              <Download size={15} />
+              Exportar CSV
+            </button>
+            <button
+              onClick={() => navigate('/claims/new')}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus size={16} />
+              Nuevo Siniestro
+            </button>
+          </div>
         }
       />
 
@@ -303,6 +333,7 @@ export default function ClaimsPage() {
         <DataTable
           columns={columns}
           data={filtered}
+          loading={isLoading}
           rowKey="id"
           onRowClick={(row) => navigate(`/claims/${row.id}`)}
           emptyTitle="Sin siniestros"

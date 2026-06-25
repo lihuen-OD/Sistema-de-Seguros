@@ -66,11 +66,12 @@ export default function ProducerTasksPage() {
     })
   }, [allTasks, allProducers, search, filterProducer, filterStatus, filterPriority])
 
-  // KPIs
-  const pendingCount = allTasks.filter((t) => t.status === 'pendiente').length
-  const inProgressCount = allTasks.filter((t) => t.status === 'en_curso').length
-  const overdueCount = allTasks.filter((t) => t.status === 'vencida').length
-  const completedCount = allTasks.filter((t) => t.status === 'finalizada').length
+  const { pendingCount, inProgressCount, overdueCount, completedCount } = useMemo(() => ({
+    pendingCount: allTasks.filter((t) => t.status === 'pendiente').length,
+    inProgressCount: allTasks.filter((t) => t.status === 'en_curso').length,
+    overdueCount: allTasks.filter((t) => t.status === 'vencida').length,
+    completedCount: allTasks.filter((t) => t.status === 'finalizada').length,
+  }), [allTasks])
 
   // Table columns
   const columns: TableColumn<ProducerTask>[] = [

@@ -415,7 +415,7 @@ export const documentsService = {
   // ── Private ───────────────────────────────────────────────────────────────────
 
   async assertDocumentExists(id: string) {
-    const doc = await prisma.accountingDocument.findUnique({ where: { id } })
+    const doc = await prisma.accountingDocument.findUnique({ where: { id }, select: { id: true, currency: true } })
     if (!doc) throw new AppError(404, 'Documento no encontrado', 'NOT_FOUND')
     return doc
   },

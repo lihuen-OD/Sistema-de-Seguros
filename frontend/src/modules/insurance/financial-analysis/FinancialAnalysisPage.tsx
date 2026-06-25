@@ -217,10 +217,13 @@ export default function FinancialAnalysisPage() {
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
 
-  // Derivados de la misma fuente — sin waterfall
+  // Derivados de la misma fuente — memoizados para que los useMemo downstream se actualicen
   const allDocuments = financialDocs
-  const allInstallments = financialDocs.flatMap((d) => d.installments)
-  const allAllocations: DocumentPolicyAllocation[] = financialDocs.flatMap((d) => d.allocations)
+  const allInstallments = useMemo(() => financialDocs.flatMap((d) => d.installments), [financialDocs])
+  const allAllocations = useMemo(
+    () => financialDocs.flatMap((d) => d.allocations) as DocumentPolicyAllocation[],
+    [financialDocs],
+  )
 
   // ─── Period columns ──────────────────────────────────────────────────────────
 
@@ -250,7 +253,7 @@ export default function FinancialAnalysisPage() {
   const matrixGranularity: 'week' | 'month' = colPeriod === 'semana' ? 'week' : 'month'
   const matrixData = useMemo(
     () => buildMatrixData(grouping, currency, matrixGranularity, allPolicies, allAssets, allInstallments, allAllocations),
-    [grouping, currency, matrixGranularity, allPolicies, allAssets],
+    [grouping, currency, matrixGranularity, allPolicies, allAssets, allInstallments, allAllocations],
   )
   const rows = useMemo(
     () => getRows(grouping, allCompanies, allCostCenters, allAssets, allPolicies),
@@ -276,7 +279,7 @@ export default function FinancialAnalysisPage() {
       }
     })
     return { totalPaid, totalPending, total: totalPaid + totalPending, overdueCount }
-  }, [currency, dateFrom, dateTo])
+  }, [currency, dateFrom, dateTo, allInstallments])
 
   // ─── Chart data (always monthly, for readability) ────────────────────────────
 
@@ -292,7 +295,7 @@ export default function FinancialAnalysisPage() {
       })
       return { label, paid, pending }
     })
-  }, [months, currency])
+  }, [months, currency, allInstallments])
 
   // ─── Column definitions ───────────────────────────────────────────────────────
 

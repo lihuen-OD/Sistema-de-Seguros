@@ -163,7 +163,7 @@ export const policiesService = {
   },
 
   async softDelete(id: string) {
-    const policy = await prisma.policy.findUnique({ where: { id } })
+    const policy = await prisma.policy.findUnique({ where: { id }, select: { id: true } })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
     return prisma.policy.update({ where: { id }, data: { isActive: false } })
   },
@@ -171,7 +171,7 @@ export const policiesService = {
   // ── Attachments ──────────────────────────────────────────────────────────────
 
   async findAttachments(policyId: string) {
-    const policy = await prisma.policy.findUnique({ where: { id: policyId } })
+    const policy = await prisma.policy.findUnique({ where: { id: policyId }, select: { id: true } })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
     return prisma.policyAttachment.findMany({
       where: { policyId },

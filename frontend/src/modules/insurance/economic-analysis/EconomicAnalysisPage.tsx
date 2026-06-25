@@ -244,9 +244,12 @@ export default function EconomicAnalysisPage() {
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
 
-  // Derivados de la misma fuente — sin waterfall
+  // Derivados memoizados para que los useMemo downstream reaccionen correctamente
   const allDocuments = financialDocs
-  const allAllocations: DocumentPolicyAllocation[] = financialDocs.flatMap((d) => d.allocations)
+  const allAllocations = useMemo(
+    () => financialDocs.flatMap((d) => d.allocations) as DocumentPolicyAllocation[],
+    [financialDocs],
+  )
 
   // ─── Period columns ──────────────────────────────────────────────────────────
 
@@ -293,7 +296,7 @@ export default function EconomicAnalysisPage() {
   const matrixGranularity: 'week' | 'month' = colPeriod === 'semana' ? 'week' : 'month'
   const matrixData = useMemo(
     () => buildEconomicMatrix(grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allAllocations),
-    [grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments],
+    [grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allAllocations],
   )
   const rows = useMemo(
     () => getRows(grouping, allCompanies, allCostCenters, allAssets, allPolicies),
@@ -368,7 +371,7 @@ export default function EconomicAnalysisPage() {
       .sort((a, b) => b.value - a.value)
 
     return { kpis: { totalCost, topInsurer, policiesWithCost: allocedPolicies.size }, pieChartData: pie }
-  }, [allDocuments, allPolicies, allAssets, currency, dateFrom, dateTo])
+  }, [allDocuments, allAllocations, allPolicies, allAssets, currency, dateFrom, dateTo])
 
   // ─── Bar chart (always monthly) ───────────────────────────────────────────────
 

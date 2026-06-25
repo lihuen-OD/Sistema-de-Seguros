@@ -36,13 +36,15 @@ export const dashboardService = {
         _sum: { premium: true },
         where: { isActive: true, endDate: { gte: today } },
       }),
-      prisma.accountingDocument.findMany({
+      prisma.accountingDocument.aggregate({
+        _sum: { netAmount: true, vatAmount: true, otherTaxesAmount: true },
+        _count: { id: true },
         where: { paymentStatus: { not: 'pagado' } },
-        select: { netAmount: true, vatAmount: true, otherTaxesAmount: true },
       }),
-      prisma.documentInstallment.findMany({
+      prisma.documentInstallment.aggregate({
+        _sum: { amount: true },
+        _count: { id: true },
         where: { paymentStatus: { not: 'pagado' } },
-        select: { amount: true },
       }),
       prisma.fireExtinguisher.count({ where: { isActive: true } }),
       prisma.fireExtinguisher.count({
@@ -61,14 +63,11 @@ export const dashboardService = {
       prisma.company.count({ where: { isActive: true } }),
     ])
 
-    const pendingDocAmount = docPendingRaw.reduce(
-      (sum, d) => sum + d.netAmount + d.vatAmount + d.otherTaxesAmount,
-      0,
-    )
-    const pendingInstallmentsAmount = installmentPendingRaw.reduce(
-      (sum, i) => sum + i.amount,
-      0,
-    )
+    const pendingDocAmount =
+      (docPendingRaw._sum.netAmount ?? 0) +
+      (docPendingRaw._sum.vatAmount ?? 0) +
+      (docPendingRaw._sum.otherTaxesAmount ?? 0)
+    const pendingInstallmentsAmount = installmentPendingRaw._sum.amount ?? 0
 
     return {
       assets: {
@@ -83,9 +82,9 @@ export const dashboardService = {
         premiumVigente: premiumAgg._sum.premium ?? 0,
       },
       documents: {
-        pendingCount: docPendingRaw.length,
+        pendingCount: docPendingRaw._count.id,
         pendingAmount: pendingDocAmount,
-        pendingInstallmentsCount: installmentPendingRaw.length,
+        pendingInstallmentsCount: installmentPendingRaw._count.id,
         pendingInstallmentsAmount,
       },
       extinguishers: {
@@ -179,16 +178,18 @@ export const dashboardService = {
     const yearStart = new Date(`${y}-01-01T00:00:00.000Z`)
     const yearEnd = new Date(`${y}-12-31T00:00:00.000Z`)
 
-    const [installments, allPolicies, extTotal, extVencido, extProximo, policiesVigente, policiesProxima, policiesVencida] =
+    const [installments, premiumByCompanyRaw, allCompanyNames, extTotal, extVencido, extProximo, policiesVigente, policiesProxima, policiesVencida] =
       await Promise.all([
         prisma.documentInstallment.findMany({
           where: { dueDate: { gte: yearStart, lte: yearEnd } },
           select: { dueDate: true, amount: true },
         }),
-        prisma.policy.findMany({
+        prisma.policy.groupBy({
+          by: ['companyId'],
+          _sum: { premium: true },
           where: { isActive: true },
-          select: { premium: true, company: { select: { id: true, name: true } } },
         }),
+        prisma.company.findMany({ select: { id: true, name: true } }),
         prisma.fireExtinguisher.count({ where: { isActive: true } }),
         prisma.fireExtinguisher.count({ where: { isActive: true, expirationDate: { lt: today } } }),
         prisma.fireExtinguisher.count({
@@ -210,17 +211,12 @@ export const dashboardService = {
       return { month, amount: monthlyMap.get(month) ?? 0 }
     })
 
-    // Top 5 companies by total premium
-    const companyMap = new Map<string, { name: string; total: number }>()
-    for (const p of allPolicies) {
-      const existing = companyMap.get(p.company.id) ?? { name: p.company.name, total: 0 }
-      existing.total += p.premium
-      companyMap.set(p.company.id, existing)
-    }
-    const premiumByCompany = Array.from(companyMap.values())
+    // Top 5 companies by total premium (via SQL groupBy — no in-memory aggregation)
+    const companyNameMap = new Map(allCompanyNames.map((c) => [c.id, c.name]))
+    const premiumByCompany = premiumByCompanyRaw
+      .map((row) => ({ name: companyNameMap.get(row.companyId) ?? row.companyId, total: row._sum.premium ?? 0 }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 5)
-      .map(({ name, total }) => ({ name, total }))
 
     return {
       costEvolution,

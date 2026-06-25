@@ -1,6 +1,7 @@
-import { Menu, Search, Bell, Settings } from 'lucide-react'
+import { Menu, Search, Settings } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
+import { NotificationBell } from '../notifications/NotificationBell'
 
 interface TopbarProps {
   onMenuClick: () => void
@@ -81,10 +82,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 
       <div className="flex items-center gap-1 ml-auto">
         {/* Notifications */}
-        <button className="relative p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-          <Bell size={18} />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
-        </button>
+        <NotificationBell />
 
         {/* Settings */}
         <button

@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Package, DollarSign, AlertTriangle, Archive, Eye, Trash2 } from 'lucide-react'
+import { Plus, Package, DollarSign, AlertTriangle, Archive, Eye, Trash2, Download } from 'lucide-react'
+import { downloadCSV } from '../../shared/utils/export'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -32,7 +33,7 @@ export default function AssetsPage() {
   const [filterCompany, setFilterCompany] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: allAssets = [], isLoading } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
 
@@ -56,13 +57,17 @@ export default function AssetsPage() {
     })
   }, [allAssets, search, filterStatus, filterType, filterCompany])
 
-  // KPIs
-  const active = allAssets.filter((a) => a.status === 'activo')
-  const baja = allAssets.filter((a) => a.status === 'baja')
-  const vendido = allAssets.filter((a) => a.status === 'vendido')
-  const totalValueUsd = active.reduce((s, a) => s + a.patrimonialValueUsd, 0)
+  const { active, baja, vendido, totalValueUsd } = useMemo(() => {
+    const active = allAssets.filter((a) => a.status === 'activo')
+    return {
+      active,
+      baja: allAssets.filter((a) => a.status === 'baja'),
+      vendido: allAssets.filter((a) => a.status === 'vendido'),
+      totalValueUsd: active.reduce((s, a) => s + a.patrimonialValueUsd, 0),
+    }
+  }, [allAssets])
 
-  const companyOptions = allCompanies.map((c) => ({ value: c.id, label: c.name }))
+  const companyOptions = useMemo(() => allCompanies.map((c) => ({ value: c.id, label: c.name })), [allCompanies])
 
   const columns: TableColumn<Asset>[] = [
     {
@@ -153,13 +158,38 @@ export default function AssetsPage() {
         title="Gestión de Activos"
         subtitle="Inventario patrimonial y bienes de uso"
         actions={
-          <button
-            onClick={() => navigate('/assets/new')}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus size={16} />
-            Nuevo Activo
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const rows = [
+                  ['Código', 'Nombre', 'Marca/Modelo', 'Tipo', 'Estado', 'Empresa', 'C. Costo', 'Valor USD', 'Fecha Valuación'],
+                  ...filtered.map((a) => [
+                    a.internalCode,
+                    a.name,
+                    `${a.brand} ${a.model}${a.year > 0 ? ` (${a.year})` : ''}`,
+                    a.assetType,
+                    a.status,
+                    allCompanies.find((c) => c.id === a.companyId)?.name ?? '',
+                    allCostCenters.find((cc) => cc.id === a.costCenterId)?.code ?? '',
+                    String(a.patrimonialValueUsd),
+                    a.valuationDate ?? '',
+                  ]),
+                ]
+                downloadCSV(rows, `activos-${new Date().toISOString().slice(0, 10)}.csv`)
+              }}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+            >
+              <Download size={15} />
+              Exportar CSV
+            </button>
+            <button
+              onClick={() => navigate('/assets/new')}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus size={16} />
+              Nuevo Activo
+            </button>
+          </div>
         }
       />
 
@@ -218,6 +248,7 @@ export default function AssetsPage() {
         <DataTable
           columns={columns}
           data={filtered}
+          loading={isLoading}
           rowKey="id"
           onRowClick={(row) => navigate(`/assets/${row.id}`)}
           emptyTitle="Sin activos"

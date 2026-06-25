@@ -1,6 +1,7 @@
 import express from 'express'
 import helmet from 'helmet'
 import cors from 'cors'
+import compression from 'compression'
 import rateLimit from 'express-rate-limit'
 import morgan from 'morgan'
 import { env } from './config/env'
@@ -25,6 +26,9 @@ const app = express()
 
 // ─── Security headers ────────────────────────────────────────────────────────
 app.use(helmet())
+
+// ─── Gzip compression ────────────────────────────────────────────────────────
+app.use(compression())
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 app.use(
@@ -58,7 +62,7 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }))
 
 // ─── HTTP logging ─────────────────────────────────────────────────────────────
 if (env.NODE_ENV !== 'test') {
-  app.use(morgan(env.NODE_ENV === 'development' ? 'dev' : 'combined'))
+  app.use(morgan(env.NODE_ENV === 'development' ? 'dev' : 'tiny'))
 }
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
