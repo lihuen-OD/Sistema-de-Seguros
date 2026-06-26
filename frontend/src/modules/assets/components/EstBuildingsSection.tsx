@@ -20,11 +20,20 @@ export function EstBuildingsSection({
   onChange: (id: string, field: keyof Omit<EstBuilding, 'id'>, value: string) => void
   buildingPurposes: CatalogItem[]
 }) {
+  const totalM2 = buildings.reduce((sum, b) => sum + (parseFloat(b.surfaceM2) || 0), 0)
+
   return (
     <div>
       <div className="flex items-start justify-between mb-3">
         <div>
-          <p className="text-sm font-semibold text-slate-800">Edificios y construcciones</p>
+          <p className="text-sm font-semibold text-slate-800">
+            Edificios y construcciones
+            {totalM2 > 0 && (
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                · {totalM2.toLocaleString('es-AR')} m² totales construidos
+              </span>
+            )}
+          </p>
           <p className="text-xs text-slate-500 mt-0.5">
             Registrá las construcciones que forman parte de este establecimiento
           </p>

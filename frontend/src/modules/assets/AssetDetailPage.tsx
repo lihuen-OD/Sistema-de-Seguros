@@ -514,7 +514,11 @@ export default function AssetDetailPage() {
           {asset.buildings && asset.buildings.length > 0 && (
             <SectionCard
               title="Edificios y Construcciones"
-              subtitle={`${asset.buildings.length} construcción${asset.buildings.length !== 1 ? 'es' : ''} registrada${asset.buildings.length !== 1 ? 's' : ''}`}
+              subtitle={(() => {
+                const totalM2 = asset.buildings!.reduce((s, b) => s + (b.surfaceM2 ?? 0), 0)
+                const count = `${asset.buildings!.length} construcción${asset.buildings!.length !== 1 ? 'es' : ''} registrada${asset.buildings!.length !== 1 ? 's' : ''}`
+                return totalM2 > 0 ? `${count} · ${totalM2.toLocaleString('es-AR')} m² totales` : count
+              })()}
             >
               <div className="space-y-3">
                 {asset.buildings.map((building, idx) => (

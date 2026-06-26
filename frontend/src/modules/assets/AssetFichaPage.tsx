@@ -283,7 +283,11 @@ export default function AssetFichaPage() {
             <SectionHeading>
               Edificios y Construcciones
               <span className="ml-1.5 text-xs font-normal text-slate-400">
-                ({asset.buildings.length} construcción{asset.buildings.length !== 1 ? 'es' : ''})
+                ({asset.buildings.length} construcción{asset.buildings.length !== 1 ? 'es' : ''}
+                {(() => {
+                  const totalM2 = asset.buildings!.reduce((s, b) => s + (b.surfaceM2 ?? 0), 0)
+                  return totalM2 > 0 ? ` · ${totalM2.toLocaleString('es-AR')} m² totales` : ''
+                })()})
               </span>
             </SectionHeading>
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
