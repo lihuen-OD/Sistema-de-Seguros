@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FileDown, Edit2, ShieldCheck, Flame, Paperclip,
   MapPin, Building2, Download, ShieldAlert, TrendingUp,
@@ -97,8 +97,11 @@ export default function AssetDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<Tab>('Pólizas')
-  const [photos, setPhotos] = useState<string[]>([])
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0)
+  const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
+  const [uploadingPhotos, setUploadingPhotos] = useState(false)
+  const queryClient = useQueryClient()
+  const attachmentsKey = ['assets', id, 'attachments'] as const
 
   // ── Data fetching ─────────────────────────────────────────────────────────────
 
@@ -150,19 +153,11 @@ export default function AssetDetailPage() {
     enabled: !!id,
   })
 
-  // Sync photos when asset loads
-  useEffect(() => {
-    if (asset?.photos) {
-      setPhotos(asset.photos)
-    }
-  }, [asset?.photos])
-
-  useEffect(() => {
-    setSelectedPhotoIndex((current) => {
-      if (photos.length === 0) return 0
-      return Math.min(current, photos.length - 1)
-    })
-  }, [photos])
+  const { data: allAttachments = [] } = useQuery({
+    queryKey: attachmentsKey,
+    queryFn: () => assetsApi.findAttachments(id!),
+    enabled: !!id,
+  })
 
   // Historial de estado: usa el real o genera uno sintético para activos pre-feature
   // Debe estar ANTES de cualquier return condicional (Rules of Hooks)
@@ -185,6 +180,23 @@ export default function AssetDetailPage() {
     }
     return entries
   }, [statusHistory, asset])
+
+  // Fotos persistidas en Cloudinary vía AssetAttachment (fileType === 'image')
+  const photoAttachments = useMemo(
+    () => allAttachments.filter(a => a.fileType === 'image'),
+    [allAttachments],
+  )
+  const photos = useMemo(
+    () => [...photoAttachments.map(a => a.fileUrl).filter((u): u is string => !!u), ...pendingPreviews],
+    [photoAttachments, pendingPreviews],
+  )
+
+  useEffect(() => {
+    setSelectedPhotoIndex(current => {
+      if (photos.length === 0) return 0
+      return Math.min(current, photos.length - 1)
+    })
+  }, [photos])
 
   // ── Loading state ─────────────────────────────────────────────────────────────
 
@@ -220,6 +232,32 @@ export default function AssetDetailPage() {
   const documents = allDocuments.filter((doc) =>
     doc.policyIds.some((pid) => assetPolicyIds.has(pid)),
   )
+
+  // ── Photo handlers (Cloudinary via AssetAttachment) ──────────────────────────
+
+  const handleAddPhotos = async (files: File[], previews: string[]) => {
+    setPendingPreviews(prev => [...prev, ...previews])
+    setUploadingPhotos(true)
+    try {
+      await Promise.all(files.map(file => assetsApi.addAttachment(id!, { file })))
+      await queryClient.invalidateQueries({ queryKey: attachmentsKey })
+    } catch {
+      console.error('Error subiendo fotos al activo')
+    } finally {
+      setPendingPreviews([])
+      setUploadingPhotos(false)
+    }
+  }
+
+  const handleRemovePhoto = async (idx: number) => {
+    if (idx < photoAttachments.length) {
+      await assetsApi.deleteAttachment(id!, photoAttachments[idx].id)
+      await queryClient.invalidateQueries({ queryKey: attachmentsKey })
+    } else {
+      const pendingIdx = idx - photoAttachments.length
+      setPendingPreviews(prev => prev.filter((_, i) => i !== pendingIdx))
+    }
+  }
 
   // ── Download photo ────────────────────────────────────────────────────────────
 
@@ -371,53 +409,51 @@ export default function AssetDetailPage() {
           {/* Ficha patrimonial */}
           <SectionCard title="Ficha Patrimonial">
             <div className="space-y-5">
-              {/* Fotos — solo cuando no hay mapa */}
-              {!asset.coordinates && (
-                <div className="space-y-4">
-                  <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-950">
-                    {photos[selectedPhotoIndex] ? (
-                      <img
-                        src={photos[selectedPhotoIndex]}
-                        alt={`Foto principal del activo ${asset.internalCode}`}
-                        className="w-full h-[300px] object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="h-[300px] flex items-center justify-center bg-slate-900 text-slate-400 text-sm">
-                        Sin imagen disponible
-                      </div>
-                    )}
-                    {photos[selectedPhotoIndex] && (
-                      <button
-                        type="button"
-                        onClick={downloadPhoto}
-                        className="absolute top-4 right-4 inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100"
-                      >
-                        <Download size={14} />
-                        Descargar
-                      </button>
-                    )}
-                  </div>
-                  {photos.length > 0 && (
-                    <div className="grid grid-cols-4 gap-3">
-                      {photos.slice(0, 5).map((src, idx) => (
-                        <button
-                          key={src}
-                          type="button"
-                          onClick={() => setSelectedPhotoIndex(idx)}
-                          className={`h-20 rounded-lg overflow-hidden border transition-shadow ${
-                            idx === selectedPhotoIndex
-                              ? 'border-blue-600 shadow-md'
-                              : 'border-slate-200 hover:border-slate-300'
-                          }`}
-                        >
-                          <img src={src} alt={`Miniatura ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
-                        </button>
-                      ))}
+              {/* Imagen principal */}
+              <div className="space-y-4">
+                <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-950">
+                  {photos[selectedPhotoIndex] ? (
+                    <img
+                      src={photos[selectedPhotoIndex]}
+                      alt={`Foto principal del activo ${asset.internalCode}`}
+                      className="w-full h-[300px] object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center bg-slate-900 text-slate-400 text-sm">
+                      Sin imagen disponible
                     </div>
                   )}
+                  {photos[selectedPhotoIndex] && (
+                    <button
+                      type="button"
+                      onClick={downloadPhoto}
+                      className="absolute top-4 right-4 inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100"
+                    >
+                      <Download size={14} />
+                      Descargar
+                    </button>
+                  )}
                 </div>
-              )}
+                {photos.length > 0 && (
+                  <div className="grid grid-cols-4 gap-3">
+                    {photos.slice(0, 5).map((src, idx) => (
+                      <button
+                        key={src}
+                        type="button"
+                        onClick={() => setSelectedPhotoIndex(idx)}
+                        className={`h-20 rounded-lg overflow-hidden border transition-shadow ${
+                          idx === selectedPhotoIndex
+                            ? 'border-blue-600 shadow-md'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <img src={src} alt={`Miniatura ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* Datos identificatorios */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -608,7 +644,7 @@ export default function AssetDetailPage() {
           </SectionCard>
 
 
-          {asset.coordinates ? (
+          {asset.coordinates && (
             <SectionCard
               title="Ubicación"
               subtitle={`${asset.coordinates.lat.toFixed(5)}, ${asset.coordinates.lng.toFixed(5)}`}
@@ -620,7 +656,7 @@ export default function AssetDetailPage() {
                     loading="lazy"
                     src={`https://www.openstreetmap.org/export/embed.html?bbox=${asset.coordinates.lng - 0.012},${asset.coordinates.lat - 0.012},${asset.coordinates.lng + 0.012},${asset.coordinates.lat + 0.012}&layer=mapnik&marker=${asset.coordinates.lat},${asset.coordinates.lng}`}
                     className="border-0 w-full"
-                    style={{ height: 320 }}
+                    style={{ height: 260 }}
                   />
                 </div>
                 {asset.mapsUrl && (
@@ -636,25 +672,26 @@ export default function AssetDetailPage() {
                 )}
               </div>
             </SectionCard>
-          ) : (
-            <SectionCard
-              title="Fotografías"
-              subtitle={
-                photos.length > 0
-                  ? `${photos.length} foto${photos.length !== 1 ? 's' : ''} — hacé clic para ampliar`
-                  : 'Documentá el estado físico del activo'
-              }
-              className="min-h-[420px]"
-            >
-              <div className="h-full">
-                <AssetPhotoGallery
-                  photos={photos}
-                  onAdd={newPhotos => setPhotos(prev => [...prev, ...newPhotos].slice(0, 20))}
-                  onRemove={idx => setPhotos(prev => prev.filter((_, i) => i !== idx))}
-                />
-              </div>
-            </SectionCard>
           )}
+
+          <SectionCard
+            title="Fotografías"
+            subtitle={
+              photos.length > 0
+                ? `${photos.length} foto${photos.length !== 1 ? 's' : ''} — hacé clic para ampliar`
+                : 'Documentá el estado físico del activo'
+            }
+            className="min-h-[360px]"
+          >
+            <div className="h-full">
+              <AssetPhotoGallery
+                photos={photos}
+                onAdd={handleAddPhotos}
+                onRemove={handleRemovePhoto}
+                uploading={uploadingPhotos}
+              />
+            </div>
+          </SectionCard>
         </div>
       </div>
 

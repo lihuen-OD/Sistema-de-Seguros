@@ -34,6 +34,13 @@ interface BackendAttachment {
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
 
+function parseCoordinatesFromMapsUrl(url: string | null | undefined): { lat: number; lng: number } | undefined {
+  if (!url) return undefined
+  const match = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/)
+  if (!match) return undefined
+  return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) }
+}
+
 function mapAsset(b: BackendAsset): Asset {
   const primary = b.allocations[0]
   const meta = (b.metadata ?? {}) as Record<string, unknown>
@@ -55,6 +62,7 @@ function mapAsset(b: BackendAsset): Asset {
     valuationDate: b.purchaseDate ? b.purchaseDate.slice(0, 10) : '',
     observations: b.description ?? '',
     mapsUrl: b.mapsUrl ?? '',
+    coordinates: parseCoordinatesFromMapsUrl(b.mapsUrl),
     companyId: primary?.company?.id ?? primary?.companyId ?? '',
     costCenterId: primary?.costCenterId ?? '',
     allocations: b.allocations.map((a) => ({

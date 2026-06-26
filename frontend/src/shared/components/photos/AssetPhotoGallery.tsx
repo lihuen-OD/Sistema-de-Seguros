@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { Camera, X, ZoomIn, ChevronLeft, ChevronRight, ImageOff } from 'lucide-react'
+import { Camera, X, ZoomIn, ChevronLeft, ChevronRight, ImageOff, Loader2 } from 'lucide-react'
 
 interface AssetPhotoGalleryProps {
   photos: string[]
-  onAdd: (newPhotos: string[]) => void
-  onRemove: (index: number) => void
+  onAdd: (files: File[], previews: string[]) => void | Promise<void>
+  onRemove: (index: number) => void | Promise<void>
+  uploading?: boolean
   maxPhotos?: number
 }
 
@@ -12,6 +13,7 @@ export function AssetPhotoGallery({
   photos,
   onAdd,
   onRemove,
+  uploading = false,
   maxPhotos = 20,
 }: AssetPhotoGalleryProps) {
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
@@ -43,25 +45,27 @@ export function AssetPhotoGallery({
     const files = Array.from(e.target.files ?? []).filter(f => f.type.startsWith('image/'))
     const remaining = maxPhotos - photos.length
     const toProcess = files.slice(0, remaining)
+    if (toProcess.length === 0) return
 
-    const promises = toProcess.map(
-      file =>
-        new Promise<string>(resolve => {
-          const reader = new FileReader()
-          reader.onload = ev => resolve(ev.target?.result as string)
-          reader.readAsDataURL(file)
-        }),
-    )
-
-    Promise.all(promises).then(dataUrls => {
-      if (dataUrls.length > 0) onAdd(dataUrls)
+    // Convert to base64 for optimistic preview, pass both to parent
+    Promise.all(
+      toProcess.map(
+        file =>
+          new Promise<string>(resolve => {
+            const reader = new FileReader()
+            reader.onload = ev => resolve(ev.target?.result as string)
+            reader.readAsDataURL(file)
+          }),
+      ),
+    ).then(dataUrls => {
+      if (dataUrls.length > 0) onAdd(toProcess, dataUrls)
     })
 
     e.target.value = ''
   }
 
   // ─── Empty state ─────────────────────────────────────────────────────────────
-  if (photos.length === 0) {
+  if (photos.length === 0 && !uploading) {
     return (
       <div className="py-10 flex flex-col items-center gap-3">
         <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center">
@@ -76,7 +80,8 @@ export function AssetPhotoGallery({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          disabled={uploading}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
         >
           <Camera size={15} />
           Agregar fotografías
@@ -93,13 +98,23 @@ export function AssetPhotoGallery({
     )
   }
 
+  // ─── Uploading state ─────────────────────────────────────────────────────────
+  if (uploading && photos.length === 0) {
+    return (
+      <div className="py-10 flex flex-col items-center gap-3">
+        <Loader2 size={24} className="text-blue-500 animate-spin" />
+        <p className="text-sm text-slate-500">Subiendo fotografías…</p>
+      </div>
+    )
+  }
+
   // ─── Grid with photos ─────────────────────────────────────────────────────────
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {photos.map((src, idx) => (
           <div
-            key={idx}
+            key={src}
             className="relative group aspect-[4/3] rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shadow-sm"
           >
             <img
@@ -123,13 +138,9 @@ export function AssetPhotoGallery({
               <button
                 type="button"
                 title="Eliminar foto"
-                onClick={() => {
-                  onRemove(idx)
-                  if (lightboxIdx !== null && idx <= lightboxIdx) {
-                    setLightboxIdx(prev => prev !== null ? Math.max(0, prev - 1) : null)
-                  }
-                }}
-                className="p-1.5 bg-white/90 rounded-lg text-red-600 hover:bg-white shadow-sm transition-colors translate-y-1 group-hover:translate-y-0 duration-150"
+                onClick={() => onRemove(idx)}
+                disabled={uploading}
+                className="p-1.5 bg-white/90 rounded-lg text-red-600 hover:bg-white shadow-sm transition-colors translate-y-1 group-hover:translate-y-0 duration-150 disabled:opacity-40"
               >
                 <X size={15} />
               </button>
@@ -142,8 +153,16 @@ export function AssetPhotoGallery({
           </div>
         ))}
 
+        {/* Uploading tile */}
+        {uploading && (
+          <div className="aspect-[4/3] rounded-lg border-2 border-dashed border-blue-300 bg-blue-50/40 flex flex-col items-center justify-center gap-1.5">
+            <Loader2 size={20} className="text-blue-500 animate-spin" />
+            <span className="text-xs font-medium text-blue-500">Subiendo…</span>
+          </div>
+        )}
+
         {/* Add photo tile */}
-        {photos.length < maxPhotos && (
+        {!uploading && photos.length < maxPhotos && (
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
