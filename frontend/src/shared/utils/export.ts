@@ -1,4 +1,24 @@
+import * as XLSX from 'xlsx'
 import type { TableColumn } from '../types'
+
+// ─── Excel (.xlsx) ────────────────────────────────────────────────────────────
+
+export function downloadXLSX(rows: string[][], filename: string): void {
+  if (rows.length === 0) return
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+
+  // Auto column widths capped at 60 chars
+  ws['!cols'] = rows[0].map((_, colIdx) => ({
+    wch: Math.min(60, Math.max(...rows.map((row) => String(row[colIdx] ?? '').length), 8)),
+  }))
+
+  // Freeze header row
+  ws['!freeze'] = { xSplit: 0, ySplit: 1 }
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Datos')
+  XLSX.writeFile(wb, filename)
+}
 
 // ─── CSV ─────────────────────────────────────────────────────────────────────
 

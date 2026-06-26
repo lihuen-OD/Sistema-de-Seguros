@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, KeyboardEvent } from 'react'
 import { Download, Trash2, Check, X, Plus, ChevronDown } from 'lucide-react'
-import { downloadCSV, buildExportRows } from '../../utils/export'
+import { downloadXLSX, buildExportRows } from '../../utils/export'
 import { useExportPresets } from '../../hooks/useExportPresets'
 import type { TableColumn } from '../../types'
 
@@ -35,7 +35,7 @@ export function ExportPresetsButton<T>({
     if (columns.length === 0) return
     const rows = buildExportRows(filteredRows, columns)
     const date = new Date().toISOString().slice(0, 10)
-    downloadCSV(rows, `${filenamePrefix}-${date}.csv`)
+    downloadXLSX(rows, `${filenamePrefix}-${date}.xlsx`)
     setOpen(false)
   }
 
