@@ -20,6 +20,7 @@ import {
 } from '../../../shared/utils/format'
 import { policiesApi } from '../../../shared/api/policies.api'
 import { producersApi } from '../../../shared/api/producers.api'
+import { assetsApi } from '../../../shared/api/assets.api'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { POLICY_STATUS_LABELS } from '../../../shared/constants'
@@ -40,6 +41,7 @@ export default function PoliciesPage() {
 
   const { data: allPolicies = [], isLoading, isError } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
 
   async function handleDelete(id: string) {
     await policiesApi.softDelete(id)
@@ -47,18 +49,27 @@ export default function PoliciesPage() {
     setDeleteId(null)
   }
 
+  const assetNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    allAssets.forEach((a) => map.set(a.id, a.name))
+    return map
+  }, [allAssets])
+
   const filtered = useMemo(() => {
     return allPolicies.filter((p) => {
       const q = search.toLowerCase()
+      const assetName = p.assetId ? (assetNameById.get(p.assetId) ?? '') : ''
       const matchSearch =
         !search ||
         p.policyNumber.toLowerCase().includes(q) ||
-        p.insuranceType.toLowerCase().includes(q)
+        p.insuranceType.toLowerCase().includes(q) ||
+        p.insuranceCompany.toLowerCase().includes(q) ||
+        assetName.toLowerCase().includes(q)
       const matchStatus = !filterStatus || p.status === filterStatus
       const matchType = !filterType || p.insuranceType === filterType
       return matchSearch && matchStatus && matchType
     })
-  }, [allPolicies, search, filterStatus, filterType])
+  }, [allPolicies, assetNameById, search, filterStatus, filterType])
 
   const typeOptions = useMemo(
     () => [...new Set(allPolicies.map((p) => p.insuranceType).filter(Boolean))].map((t) => ({ value: t, label: t })),
