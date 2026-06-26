@@ -12,7 +12,7 @@ import type {
 } from './policies.schemas'
 
 const POLICY_LIST_INCLUDE = {
-  insuranceType: { select: { id: true, name: true } },
+  insuranceType: { include: { coverages: { select: { id: true, name: true } } } },
   company: { select: { id: true, name: true } },
   producer: { select: { id: true, name: true } },
   _count: { select: { attachments: true, allocations: true } },
@@ -66,7 +66,16 @@ export const policiesService = {
       prisma.policy.count({ where }),
     ])
 
-    return buildPaginatedResponse(rawData.map(withStatus), total, { page, limit })
+    return buildPaginatedResponse(
+      rawData.map((p) => {
+        const selectedCoverages = p.insuranceType.coverages.filter((c) =>
+          p.coverageIds.includes(c.id),
+        )
+        return withStatus({ ...p, selectedCoverages })
+      }),
+      total,
+      { page, limit },
+    )
   },
 
   async findById(id: string) {

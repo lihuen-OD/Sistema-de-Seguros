@@ -107,7 +107,15 @@ export default function PoliciesPage() {
     {
       key: 'coverageType',
       label: 'Cobertura',
-      render: (v) => <span className="text-xs text-slate-500">{String(v)}</span>,
+      render: (_v, row) => {
+        const names = row.coverageNames?.length ? row.coverageNames : (row.coverageType ? [row.coverageType] : [])
+        const label = names.join(', ') || null
+        return (
+          <div className="max-w-[180px]">
+            <OverflowCell value={label} lines={1} className="text-xs text-slate-500" />
+          </div>
+        )
+      },
     },
     {
       key: 'startDate',
