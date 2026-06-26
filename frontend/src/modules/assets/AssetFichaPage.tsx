@@ -34,9 +34,9 @@ export default function AssetFichaPage() {
   const company = allCompanies.find((c) => c.id === asset?.companyId)
   const costCenter = allCostCenters.find((cc) => cc.id === asset?.costCenterId)
   const policies = allPolicies.filter((p) => p.assetId === asset?.id)
-  const vigentPolicies = policies.filter((p) => p.status === 'vigente')
+  const vigentPolicies = policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer')
 
-  const totalInsuredArs = vigentPolicies.reduce((s, p) => s + p.insuredAmountArs, 0)
+  const totalInsuredArs = vigentPolicies.reduce((s, p) => p.exchangeRate > 1 ? s : s + p.insuredAmountArs, 0)
   const totalInsuredUsd = vigentPolicies.reduce((s, p) => s + p.insuredAmountUsd, 0)
 
   return (

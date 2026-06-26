@@ -284,6 +284,7 @@ export default function PolicyNewPage() {
     if (!validate()) return
 
     const ars = parseFloat(form.insuredAmountArs)
+    const rate = parseFloat(form.exchangeRate)
 
     const insuranceTypeObj = insuranceTypes.find((t) => t.label === form.insuranceType)
     const insuranceTypeId = insuranceTypeObj?.id ?? ''
@@ -310,6 +311,7 @@ export default function PolicyNewPage() {
         endDate: form.endDate,
         premium: ars,
         currency: 'ARS',
+        exchangeRate: rate,
         description: form.description.trim() || undefined,
         coverageIds: form.coverageTypes,
       })

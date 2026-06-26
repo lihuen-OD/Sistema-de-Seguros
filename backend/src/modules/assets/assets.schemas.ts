@@ -25,8 +25,11 @@ export const CreateAssetSchema = z.object({
   year: z.coerce.number().int().min(1900).max(2030).optional().nullable(),
   serialNumber: z.string().max(100).optional(),
   purchaseDate: ISODate.optional(),
+  dischargeDate: ISODate.optional().nullable(),
+  saleDate: ISODate.optional().nullable(),
   purchaseValue: z.number().positive().optional(),
   currentValue: z.number().nonnegative().optional(),
+  patrimonialValueNew: z.number().nonnegative().optional(),
   location: z.string().max(300).optional(),
   mapsUrl: z.string().max(2000).optional(),
   productiveUnit: z.string().max(150).optional(),
@@ -51,6 +54,7 @@ export const ReplaceAllocationsSchema = z.object({
 export const AddValueHistorySchema = z.object({
   value: z.number().positive('El valor debe ser positivo'),
   date: ISODate,
+  type: z.enum(['real', 'nuevo']).default('real'),
   note: z.string().max(500).optional(),
 })
 

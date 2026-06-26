@@ -162,7 +162,10 @@ export default function AssetEditPage() {
 
   const [form, setForm] = useState<EditForm>(EMPTY_FORM)
   const [patrimonialValueUsd, setPatrimonialValueUsd] = useState('')
+  const [patrimonialValueNew, setPatrimonialValueNew] = useState('')
   const [valuationDate, setValuationDate] = useState('')
+  const [dischargeDate, setDischargeDate] = useState('')
+  const [saleDate, setSaleDate] = useState('')
   const [allocations, setAllocations] = useState<AssetAllocation[]>([
     { id: 'alloc-init', companyId: '', costCenterId: '', percentage: 100 },
   ])
@@ -231,7 +234,10 @@ export default function AssetEditPage() {
       observations: asset.observations,
     })
     setPatrimonialValueUsd(asset.patrimonialValueUsd > 0 ? String(asset.patrimonialValueUsd) : '')
+    setPatrimonialValueNew(asset.patrimonialValueNew != null ? String(asset.patrimonialValueNew) : '')
     setValuationDate(asset.valuationDate ?? '')
+    setDischargeDate(asset.dischargeDate ?? '')
+    setSaleDate(asset.saleDate ?? '')
     if (asset.allocations && asset.allocations.length > 0) {
       setAllocations(asset.allocations)
     } else {
@@ -306,8 +312,6 @@ export default function AssetEditPage() {
   function handleAddValueEntry(entry: Omit<AssetValueEntry, 'id'>) {
     const newEntry: AssetValueEntry = { id: `vh-${Date.now()}`, ...entry }
     setValueHistory((prev) => [...prev, newEntry])
-    setPatrimonialValueUsd(String(entry.valueUsd))
-    setValuationDate(entry.date)
   }
 
   function buildMetadata(): Record<string, unknown> {
@@ -389,41 +393,53 @@ export default function AssetEditPage() {
     setSubmitting(true)
     try {
       const metadata = buildMetadata()
-
-      await assetsApi.update(asset.id, {
-        name: form.name.trim(),
-        assetType: form.assetType.trim(),
-        status: form.status,
-        fixedAssetCode: form.fixedAssetCode?.trim() || undefined,
-        brand: form.brand.trim() || undefined,
-        model: form.model.trim() || undefined,
-        year: form.year ? parseInt(form.year, 10) : undefined,
-        serialNumber: form.serialNumber.trim() || undefined,
-        purchaseDate: valuationDate || undefined,
-        currentValue: patrimonialValueUsd ? parseFloat(patrimonialValueUsd) : undefined,
-        mapsUrl: form.mapsUrl.trim() || undefined,
-        productiveUnit: form.productiveUnit || undefined,
-        area: form.area || undefined,
-        description: form.observations.trim() || undefined,
-        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-      })
-
-      // Sync allocations
       const validAllocations = allocations.filter((a) => a.companyId && a.costCenterId)
-      if (validAllocations.length > 0) {
-        await assetsApi.replaceAllocations(
-          asset.id,
-          validAllocations.map(({ companyId, costCenterId, percentage }) => ({ companyId, costCenterId, percentage })),
-        )
-      }
-
-      // Sync attachments: delete removed, upload new
       const existingIds = new Set(existingAttachments.map((a) => a.id))
       const currentIds = new Set(attachments.filter((a) => !a.pendingFile).map((a) => a.id))
       const toDelete = [...existingIds].filter((eid) => !currentIds.has(eid))
       const toUpload = attachments.filter((a) => a.pendingFile)
+      const newHistoryEntries = valueHistory.filter((e) => e.id.startsWith('vh-'))
 
-      await Promise.all(toDelete.map((attId) => assetsApi.deleteAttachment(asset.id, attId)))
+      // Update asset + allocations + delete attachments + history entries — all in parallel
+      await Promise.all([
+        assetsApi.update(asset.id, {
+          name: form.name.trim(),
+          assetType: form.assetType.trim(),
+          status: form.status,
+          fixedAssetCode: form.fixedAssetCode?.trim() || undefined,
+          brand: form.brand.trim() || undefined,
+          model: form.model.trim() || undefined,
+          year: form.year ? parseInt(form.year, 10) : undefined,
+          serialNumber: form.serialNumber.trim() || undefined,
+          purchaseDate: valuationDate || undefined,
+          dischargeDate: dischargeDate || null,
+          saleDate: saleDate || null,
+          currentValue: patrimonialValueUsd ? parseFloat(patrimonialValueUsd) : undefined,
+          patrimonialValueNew: patrimonialValueNew ? parseFloat(patrimonialValueNew) : undefined,
+          mapsUrl: form.mapsUrl.trim() || undefined,
+          productiveUnit: form.productiveUnit || undefined,
+          area: form.area || undefined,
+          description: form.observations.trim() || undefined,
+          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        }),
+        validAllocations.length > 0
+          ? assetsApi.replaceAllocations(
+              asset.id,
+              validAllocations.map(({ companyId, costCenterId, percentage }) => ({ companyId, costCenterId, percentage })),
+            )
+          : Promise.resolve(),
+        ...toDelete.map((attId) => assetsApi.deleteAttachment(asset.id, attId)),
+        ...newHistoryEntries.map((entry) =>
+          assetsApi.addValueHistory(asset.id, {
+            value: entry.valueUsd,
+            date: entry.date,
+            type: entry.type,
+            note: entry.notes || undefined,
+          }),
+        ),
+      ])
+
+      // Uploads are sequential (multipart, can't parallelize safely)
       for (const att of toUpload) {
         if (att.pendingFile) {
           await assetsApi.addAttachment(asset.id, {
@@ -435,10 +451,10 @@ export default function AssetEditPage() {
         }
       }
 
-      await queryClient.invalidateQueries({ queryKey: ['assets', id] })
-      await queryClient.invalidateQueries({ queryKey: ['assets'] })
       toast.success('Activo actualizado correctamente')
       navigate(`/assets/${asset.id}`)
+      void queryClient.invalidateQueries({ queryKey: ['assets', id] })
+      void queryClient.invalidateQueries({ queryKey: ['assets'] })
     } finally {
       setSubmitting(false)
     }
@@ -454,24 +470,6 @@ export default function AssetEditPage() {
           subtitle={`${asset.internalCode} · ${asset.name}`}
           backTo={`/assets/${asset.id}`}
           backLabel="Volver al activo"
-          actions={
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => navigate(`/assets/${asset.id}`)}
-                className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
-              >
-                <X size={15} /> Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                <Save size={15} /> {submitting ? 'Guardando…' : 'Guardar cambios'}
-              </button>
-            </div>
-          }
         />
 
         <div className="max-w-5xl space-y-5">
@@ -757,7 +755,7 @@ export default function AssetEditPage() {
           >
             <div className="space-y-5">
               <FormSection title="">
-                <FormField label="Valor patrimonial actual (USD)" required error={errors.patrimonialValueUsd as string | undefined}>
+                <FormField label="Valor Patrimonial Real (USD)" required error={errors.patrimonialValueUsd as string | undefined}>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
                     <FormInput
@@ -768,9 +766,30 @@ export default function AssetEditPage() {
                     />
                   </div>
                 </FormField>
+                <FormField label="Valor Patrimonial a Nuevo (USD)">
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
+                    <FormInput
+                      type="number" min={0} step="0.01" placeholder="Ej: 45000"
+                      className="pl-7"
+                      value={patrimonialValueNew}
+                      onChange={(e) => setPatrimonialValueNew(e.target.value)}
+                    />
+                  </div>
+                </FormField>
                 <FormField label="Fecha de valuación">
                   <FormInput type="date" value={valuationDate} onChange={(e) => setValuationDate(e.target.value)} />
                 </FormField>
+                {form.status === 'baja' && (
+                  <FormField label="Fecha de baja">
+                    <FormInput type="date" value={dischargeDate} onChange={(e) => setDischargeDate(e.target.value)} />
+                  </FormField>
+                )}
+                {form.status === 'vendido' && (
+                  <FormField label="Fecha de venta">
+                    <FormInput type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
+                  </FormField>
+                )}
               </FormSection>
               <div className="border-t border-slate-100 pt-4">
                 <ValueHistorySection
@@ -852,15 +871,17 @@ export default function AssetEditPage() {
             <button
               type="button"
               onClick={() => navigate(`/assets/${asset.id}`)}
-              className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+              disabled={submitting}
+              className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50 rounded-lg transition-colors"
             >
               <X size={15} /> Cancelar
             </button>
             <button
               type="submit"
-              className="flex items-center gap-2 px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+              disabled={submitting}
+              className="flex items-center gap-2 px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg transition-colors font-medium"
             >
-              <Save size={15} /> Guardar cambios
+              <Save size={15} /> {submitting ? 'Guardando…' : 'Guardar cambios'}
             </button>
           </div>
 

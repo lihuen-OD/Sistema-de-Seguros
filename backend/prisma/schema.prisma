@@ -84,9 +84,12 @@ model Asset {
   model          String?
   year           Int?
   serialNumber   String?
-  purchaseDate  DateTime? @db.Date
-  purchaseValue Float?
-  currentValue  Float?
+  purchaseDate           DateTime? @db.Date
+  dischargeDate          DateTime? @db.Date
+  saleDate               DateTime? @db.Date
+  purchaseValue          Float?
+  currentValue           Float?
+  patrimonialValueNew    Float?
   location       String?
   mapsUrl        String?
   productiveUnit String?
@@ -131,6 +134,7 @@ model AssetValueHistory {
   assetId String
   value   Float
   date    DateTime @db.Date
+  type    String   @default("real")
   note    String?
   asset   Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
@@ -218,6 +222,7 @@ model Policy {
   endDate                DateTime @db.Date
   premium                Float
   currency               String   @default("ARS")
+  exchangeRate           Float    @default(1)
   description            String?
   coverageIds            String[]
   isActive               Boolean  @default(true)

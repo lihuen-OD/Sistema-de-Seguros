@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "policies" ADD COLUMN "exchangeRate" DOUBLE PRECISION NOT NULL DEFAULT 1;

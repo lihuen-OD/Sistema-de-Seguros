@@ -10,7 +10,7 @@ interface BackendPolicy {
   costCenterId: string | null; producerId: string | null
   insuredName: string; assetId: string | null; beneficiaryDescription: string | null
   startDate: string; endDate: string
-  premium: number; currency: string; description: string | null; coverageIds: string[]
+  premium: number; currency: string; exchangeRate: number; description: string | null; coverageIds: string[]
   isActive: boolean; status: string; createdAt: string; updatedAt: string
   insuranceType?: BackendInsuranceType
   company?: BackendCompany
@@ -71,9 +71,10 @@ function mapPolicy(b: BackendPolicy): Policy {
     assetId: b.assetId ?? null,
     companyId: b.companyId,
     costCenterId: b.costCenterId ?? null,
-    insuredAmountArs: b.premium,
-    exchangeRate: 1,
-    insuredAmountUsd: b.currency === 'USD' ? b.premium : 0,
+    currency: (b.currency === 'USD' ? 'USD' : 'ARS') as 'ARS' | 'USD',
+    exchangeRate: b.exchangeRate ?? 1,
+    insuredAmountArs: b.currency === 'USD' ? 0 : b.premium,
+    insuredAmountUsd: b.currency === 'USD' ? b.premium : (b.exchangeRate ?? 1) > 1 ? b.premium / b.exchangeRate : 0,
     description: b.description ?? '',
     status: mapStatus(b.status),
     attachmentsCount: b._count?.attachments ?? 0,
@@ -85,7 +86,7 @@ function mapPolicy(b: BackendPolicy): Policy {
 export interface PolicyCreateInput {
   policyNumber: string; insuranceTypeId: string; companyId: string; costCenterId?: string | null
   producerId?: string; insuredName: string; startDate: string; endDate: string; premium: number
-  currency?: string; description?: string; coverageIds?: string[]
+  currency?: string; exchangeRate?: number; description?: string; coverageIds?: string[]
   assetId?: string | null; beneficiaryDescription?: string | null
 }
 

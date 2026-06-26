@@ -4,7 +4,8 @@ import clsx from 'clsx'
 import { formatDate } from '../../../shared/utils/format'
 import type { AssetValueEntry } from '../../../shared/types'
 
-type NewValueEntry = { date: string; valueUsd: string; notes: string }
+type NewValueEntry = { date: string; valueUsd: string; type: 'real' | 'nuevo'; notes: string }
+const EMPTY: NewValueEntry = { date: '', valueUsd: '', type: 'real', notes: '' }
 
 interface ValueHistorySectionProps {
   history: AssetValueEntry[]
@@ -12,18 +13,74 @@ interface ValueHistorySectionProps {
   onAdd: (entry: Omit<AssetValueEntry, 'id'>) => void
 }
 
+function EntryColumn({
+  entries,
+  label,
+  accent,
+}: {
+  entries: AssetValueEntry[]
+  label: string
+  accent: 'blue' | 'purple'
+}) {
+  const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date))
+  const colors =
+    accent === 'purple'
+      ? { header: 'text-purple-700', ring: 'bg-purple-100', icon: 'text-purple-500', value: 'text-purple-700', badge: 'text-purple-600' }
+      : { header: 'text-blue-700', ring: 'bg-blue-100', icon: 'text-blue-500', value: 'text-blue-700', badge: 'text-blue-600' }
+
+  return (
+    <div>
+      <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${colors.header}`}>{label}</p>
+      {sorted.length === 0 ? (
+        <div className="py-5 text-center text-xs text-slate-400 border-2 border-dashed border-slate-100 rounded-lg">
+          Sin registros
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 overflow-hidden">
+          {sorted.map((h, idx) => {
+            const isLatest = idx === 0
+            return (
+              <div key={h.id} className={clsx('flex items-center justify-between gap-3 px-3 py-2.5', isLatest && 'bg-slate-50')}>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className={clsx('w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0', isLatest ? colors.ring : 'bg-slate-100')}>
+                    <Calendar size={11} className={isLatest ? colors.icon : 'text-slate-400'} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-slate-700">{formatDate(h.date)}</p>
+                    {h.notes && <p className="text-[10px] text-slate-400 truncate">{h.notes}</p>}
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className={clsx('text-xs font-semibold font-mono tabular-nums', isLatest ? colors.value : 'text-slate-600')}>
+                    US$ {h.valueUsd.toLocaleString('es-AR')}
+                  </p>
+                  {isLatest && <p className={clsx('text-[9px] font-bold uppercase tracking-wide', colors.badge)}>Actual</p>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ValueHistorySection({ history, currentValue, onAdd }: ValueHistorySectionProps) {
   const [adding, setAdding] = useState(false)
-  const [entry, setEntry] = useState<NewValueEntry>({ date: '', valueUsd: '', notes: '' })
+  const [entry, setEntry] = useState<NewValueEntry>(EMPTY)
+
+  const realEntries = history.filter((e) => e.type === 'real')
+  const nuevoEntries = history.filter((e) => e.type === 'nuevo')
 
   function handleAdd() {
     if (!entry.date || !entry.valueUsd) return
     onAdd({
       date: entry.date,
       valueUsd: parseFloat(entry.valueUsd),
+      type: entry.type,
       notes: entry.notes.trim() || undefined,
     })
-    setEntry({ date: '', valueUsd: '', notes: '' })
+    setEntry(EMPTY)
     setAdding(false)
   }
 
@@ -32,9 +89,7 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
       <div className="flex items-center justify-between mb-3">
         <div>
           <p className="text-sm font-semibold text-slate-800">Historial de valuaciones USD</p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Registro histórico de valuaciones para seguimiento patrimonial.
-          </p>
+          <p className="text-xs text-slate-500 mt-0.5">Registro histórico para seguimiento patrimonial.</p>
         </div>
         {!adding && (
           <button
@@ -49,8 +104,25 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
       </div>
 
       {adding && (
-        <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/50 p-4">
+        <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50/50 p-4">
           <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-3">Nueva entrada de valuación</p>
+          <div className="flex gap-2 mb-3">
+            {(['real', 'nuevo'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setEntry((p) => ({ ...p, type: t }))}
+                className={clsx(
+                  'flex-1 py-2 text-xs font-semibold rounded-lg border transition-colors',
+                  entry.type === t
+                    ? 'bg-blue-600 border-blue-600 text-white'
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300',
+                )}
+              >
+                {t === 'real' ? 'Valor Patrimonial Real' : 'Valor Patrimonial a Nuevo'}
+              </button>
+            ))}
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Fecha</label>
@@ -99,7 +171,7 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
             </button>
             <button
               type="button"
-              onClick={() => { setAdding(false); setEntry({ date: '', valueUsd: '', notes: '' }) }}
+              onClick={() => { setAdding(false); setEntry(EMPTY) }}
               className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800 transition-colors"
             >
               Cancelar
@@ -114,29 +186,9 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
           <p className="text-sm text-slate-500">Sin historial de valuaciones registrado</p>
         </div>
       ) : (
-        <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white overflow-hidden">
-          {history.map((h, idx) => {
-            const isLatest = idx === history.length - 1
-            return (
-              <div key={h.id} className={clsx('flex items-center justify-between gap-4 px-4 py-3', isLatest && 'bg-emerald-50/40')}>
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={clsx('w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0', isLatest ? 'bg-emerald-100' : 'bg-slate-100')}>
-                    <Calendar size={13} className={isLatest ? 'text-emerald-600' : 'text-slate-500'} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm text-slate-700">{formatDate(h.date)}</p>
-                    {h.notes && <p className="text-xs text-slate-400 truncate">{h.notes}</p>}
-                  </div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className={clsx('text-sm font-semibold font-mono', isLatest ? 'text-emerald-700' : 'text-slate-700')}>
-                    US$ {h.valueUsd.toLocaleString('es-AR')}
-                  </p>
-                  {isLatest && <p className="text-[10px] text-emerald-600 font-medium uppercase tracking-wide">Actual</p>}
-                </div>
-              </div>
-            )
-          })}
+        <div className="grid grid-cols-2 gap-4">
+          <EntryColumn entries={realEntries} label="Valor Patrimonial Real" accent="blue" />
+          <EntryColumn entries={nuevoEntries} label="Valor Patrimonial a Nuevo" accent="purple" />
         </div>
       )}
 

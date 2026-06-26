@@ -27,8 +27,71 @@ import type { Policy, FireExtinguisher, TableColumn, AssetValueEntry, Accounting
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
 
-const TABS = ['Pólizas', 'Doc. Contables', 'Matafuegos', 'Siniestros', 'Adjuntos'] as const
+const TABS = ['Pólizas', 'Doc. Contables', 'Matafuegos', 'Siniestros', 'Valuaciones', 'Adjuntos'] as const
 type Tab = (typeof TABS)[number]
+
+function ValuacionesEntryList({ entries, accent }: { entries: AssetValueEntry[]; accent: 'blue' | 'purple' }) {
+  if (entries.length === 0) {
+    return (
+      <div className="py-6 text-center text-xs text-slate-400 border-2 border-dashed border-slate-100 rounded-lg">
+        Sin registros
+      </div>
+    )
+  }
+  return (
+    <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 overflow-hidden">
+      {entries.map((entry, idx) => {
+        const isLatest = idx === 0
+        const colors = accent === 'purple'
+          ? { ring: 'bg-purple-100', icon: 'text-purple-500', value: 'text-purple-700', badge: 'text-purple-600' }
+          : { ring: 'bg-blue-100', icon: 'text-blue-500', value: 'text-blue-700', badge: 'text-blue-600' }
+        return (
+          <div key={entry.id} className={`flex items-center justify-between gap-3 px-3 py-2.5 ${isLatest ? 'bg-slate-50' : 'bg-white'}`}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isLatest ? colors.ring : 'bg-slate-100'}`}>
+                <Calendar size={11} className={isLatest ? colors.icon : 'text-slate-400'} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-slate-700">{formatDate(entry.date)}</p>
+                {entry.notes && <p className="text-[10px] text-slate-400 truncate">{entry.notes}</p>}
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className={`text-xs font-semibold font-mono tabular-nums ${isLatest ? colors.value : 'text-slate-600'}`}>
+                {formatCurrencyCompact(entry.valueUsd, 'USD')}
+              </p>
+              {isLatest && <p className={`text-[9px] font-bold uppercase tracking-wide ${colors.badge}`}>Actual</p>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ValuacionesTab({ history }: { history: AssetValueEntry[] }) {
+  const byDate = (a: AssetValueEntry, b: AssetValueEntry) => b.date.localeCompare(a.date)
+  const realEntries = [...history].filter((e) => e.type === 'real').sort(byDate)
+  const nuevoEntries = [...history].filter((e) => e.type === 'nuevo').sort(byDate)
+  return (
+    <div className="p-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">Valor Patrimonial Real</p>
+          <ValuacionesEntryList entries={realEntries} accent="blue" />
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-2">Valor Patrimonial a Nuevo</p>
+          <ValuacionesEntryList entries={nuevoEntries} accent="purple" />
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400">
+        <TrendingUp size={12} />
+        {history.length} entrada{history.length !== 1 ? 's' : ''} registrada{history.length !== 1 ? 's' : ''}
+      </div>
+    </div>
+  )
+}
 
 export default function AssetDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -154,10 +217,22 @@ export default function AssetDetailPage() {
 
   // ── Financial KPIs ────────────────────────────────────────────────────────────
 
-  const totalInsuredUsd = policies
-    .filter((p) => p.status === 'vigente')
-    .reduce((s, p) => s + p.insuredAmountUsd, 0)
-  const diffUsd = asset.patrimonialValueUsd - totalInsuredUsd
+  const latestReal = asset.valueHistory?.find((e) => e.type === 'real')
+  const latestNuevo = asset.valueHistory?.find((e) => e.type === 'nuevo')
+  const displayReal = latestReal?.valueUsd ?? asset.patrimonialValueUsd
+  const displayRealDate = latestReal?.date ?? asset.valuationDate
+  const displayNuevo = latestNuevo?.valueUsd ?? asset.patrimonialValueNew
+  const displayNuevoDate = latestNuevo?.date ?? asset.valuationDate
+
+  const vigentePolicies = policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer')
+  const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + p.insuredAmountUsd, 0)
+  // Solo cuenta como ARS puro si la póliza no tiene conversión (exchangeRate = 1)
+  const totalInsuredArs = vigentePolicies.reduce((s, p) => p.exchangeRate > 1 ? s : s + p.insuredAmountArs, 0)
+  const hasUsdCoverage = totalInsuredUsd > 0
+  const hasArsCoverage = totalInsuredArs > 0
+  const mixedCurrencies = hasUsdCoverage && hasArsCoverage
+  const diffBase = displayNuevo ?? displayReal
+  const diffUsd = hasUsdCoverage ? diffBase - totalInsuredUsd : null
 
   // ── Table columns ─────────────────────────────────────────────────────────────
 
@@ -243,9 +318,15 @@ export default function AssetDetailPage() {
             <p className="text-sm font-semibold text-slate-800 truncate">{costCenter ? `${costCenter.code} — ${costCenter.name}` : '—'}</p>
           </div>
           <div className="flex-1 min-w-0 px-5 py-4">
-            <p className="text-xs text-slate-500 mb-1">Valor Patrimonial</p>
+            <p className="text-xs text-slate-500 mb-1">Valor Patrimonial Real</p>
             <p className="text-sm font-semibold text-slate-800 tabular-nums">{formatCurrencyFull(asset.patrimonialValueUsd, 'USD')}</p>
           </div>
+          {asset.patrimonialValueNew != null && (
+            <div className="flex-1 min-w-0 px-5 py-4">
+              <p className="text-xs text-slate-500 mb-1">Valor Patrimonial a Nuevo</p>
+              <p className="text-sm font-semibold text-slate-800 tabular-nums">{formatCurrencyFull(asset.patrimonialValueNew, 'USD')}</p>
+            </div>
+          )}
           <div className="flex-1 min-w-0 px-5 py-4">
             <p className="text-xs text-slate-500 mb-1">Fecha Valuación</p>
             <p className="text-sm font-semibold text-slate-800">{formatDate(asset.valuationDate)}</p>
@@ -320,8 +401,12 @@ export default function AssetDetailPage() {
                 {asset.year > 0 && <InfoRow label="Año" value={String(asset.year)} />}
                 {asset.serialNumber && <InfoRow label="N° de Serie" value={asset.serialNumber} mono />}
                 {asset.chassisNumber && <InfoRow label="N° de Chasis" value={asset.chassisNumber} mono />}
+                {asset.engineNumber && <InfoRow label="N° de Motor" value={asset.engineNumber} mono />}
                 {asset.fixedAssetCode && <InfoRow label="Cód. Bien de Uso" value={asset.fixedAssetCode} mono />}
                 <InfoRow label="Fecha Valuación" value={formatDate(asset.valuationDate)} />
+                <InfoRow label="Fecha de Alta" value={formatDate(asset.createdAt)} />
+                {asset.dischargeDate && <InfoRow label="Fecha de Baja" value={formatDate(asset.dischargeDate)} />}
+                {asset.saleDate && <InfoRow label="Fecha de Venta" value={formatDate(asset.saleDate)} />}
               </div>
             </div>
           </SectionCard>
@@ -412,71 +497,57 @@ export default function AssetDetailPage() {
         {/* Right col: KPIs financieros */}
         <div className="space-y-4">
           <KpiCard
-            label="Valor Patrimonial"
-            value={formatCurrencyFull(asset.patrimonialValueUsd, 'USD')}
-            description={`Al ${formatDate(asset.valuationDate)}`}
+            label="Valor Patrimonial Real"
+            value={formatCurrencyFull(displayReal, 'USD')}
+            description={`Al ${formatDate(displayRealDate)}`}
             variant="info"
           />
+          {displayNuevo != null && (
+            <KpiCard
+              label="Valor Patrimonial a Nuevo"
+              value={formatCurrencyFull(displayNuevo, 'USD')}
+              description={`Al ${formatDate(displayNuevoDate)}`}
+              variant="default"
+            />
+          )}
           <KpiCard
             label="Valor Asegurado"
-            value={totalInsuredUsd > 0 ? formatCurrencyFull(totalInsuredUsd, 'USD') : 'Sin cobertura'}
-            description={`${policies.filter((p) => p.status === 'vigente').length} pólizas vigentes`}
-            variant={totalInsuredUsd > 0 ? 'success' : 'danger'}
+            value={
+              !hasUsdCoverage && !hasArsCoverage ? 'Sin cobertura'
+              : mixedCurrencies ? `${formatCurrencyFull(totalInsuredUsd, 'USD')} + ${formatCurrencyFull(totalInsuredArs, 'ARS')}`
+              : hasUsdCoverage ? formatCurrencyFull(totalInsuredUsd, 'USD')
+              : formatCurrencyFull(totalInsuredArs, 'ARS')
+            }
+            description={`${vigentePolicies.length} póliza${vigentePolicies.length !== 1 ? 's' : ''} vigente${vigentePolicies.length !== 1 ? 's' : ''}${hasArsCoverage && !hasUsdCoverage ? ' · Cobertura en ARS' : ''}`}
+            variant={hasUsdCoverage || hasArsCoverage ? 'success' : 'danger'}
           />
           <KpiCard
             label="Diferencia"
-            value={diffUsd !== 0 ? formatCurrencyFull(Math.abs(diffUsd), 'USD') : 'Cubierto 100%'}
-            description={diffUsd > 0 ? 'Subcobertura' : diffUsd < 0 ? 'Sobrecobertura' : ''}
-            variant={diffUsd > 0 ? 'warning' : diffUsd < 0 ? 'default' : 'success'}
+            value={
+              diffUsd === null ? '—'
+              : diffUsd === 0 ? 'Cubierto 100%'
+              : formatCurrencyFull(Math.abs(diffUsd), 'USD')
+            }
+            description={
+              diffUsd === null ? 'Cobertura en ARS · no comparable en USD'
+              : diffUsd > 0 ? 'Subcobertura'
+              : diffUsd < 0 ? 'Sobrecobertura'
+              : ''
+            }
+            variant={diffUsd === null ? 'default' : diffUsd > 0 ? 'danger' : 'success'}
           />
 
           {/* Resumen rápido */}
           <SectionCard title="Resumen">
             <div className="space-y-3">
               <SummaryRow label="Pólizas asociadas" value={String(policies.length)} />
-              <SummaryRow label="Pólizas vigentes" value={String(policies.filter((p) => p.status === 'vigente').length)} />
+              <SummaryRow label="Pólizas vigentes" value={String(policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer').length)} />
               <SummaryRow label="Doc. Contables" value={String(documents.length)} />
               <SummaryRow label="Matafuegos" value={String(fireExtinguishers.length)} />
               <SummaryRow label="Mat. vencidos" value={String(fireExtinguishers.filter((f) => f.status === 'vencido').length)} color="text-red-600" />
               <SummaryRow label="Siniestros" value={String(claimsCount)} color={claimsCount > 0 ? 'text-orange-600' : 'text-slate-800'} />
             </div>
           </SectionCard>
-
-          {/* Historial de valuaciones */}
-          {asset.valueHistory && asset.valueHistory.length > 0 && (
-            <SectionCard title="Historial de valuaciones">
-              <div className="divide-y divide-slate-100">
-                {[...asset.valueHistory].reverse().map((entry: AssetValueEntry, idx) => {
-                  const isLatest = idx === 0
-                  return (
-                    <div key={entry.id} className={`flex items-center justify-between gap-3 py-2.5 ${isLatest ? 'first:pt-0' : ''}`}>
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isLatest ? 'bg-emerald-100' : 'bg-slate-100'}`}>
-                          <Calendar size={11} className={isLatest ? 'text-emerald-600' : 'text-slate-400'} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs text-slate-600">{formatDate(entry.date)}</p>
-                          {entry.notes && <p className="text-[10px] text-slate-400 truncate">{entry.notes}</p>}
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className={`text-sm font-semibold font-mono tabular-nums ${isLatest ? 'text-emerald-700' : 'text-slate-600'}`}>
-                          {formatCurrencyCompact(entry.valueUsd, 'USD')}
-                        </p>
-                        {isLatest && (
-                          <p className="text-[9px] font-semibold uppercase tracking-wide text-emerald-600">Actual</p>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 text-xs text-slate-400">
-                <TrendingUp size={12} />
-                {asset.valueHistory.length} entrada{asset.valueHistory.length !== 1 ? 's' : ''} registrada{asset.valueHistory.length !== 1 ? 's' : ''}
-              </div>
-            </SectionCard>
-          )}
 
           {asset.coordinates ? (
             <SectionCard
@@ -538,6 +609,7 @@ export default function AssetDetailPage() {
               : tab === 'Doc. Contables' ? documents.length
               : tab === 'Matafuegos' ? fireExtinguishers.length
               : tab === 'Siniestros' ? claimsCount
+              : tab === 'Valuaciones' ? (asset.valueHistory?.length ?? 0)
               : tab === 'Adjuntos' ? (asset.attachmentsCount ?? 0)
               : 0
             const isActive = activeTab === tab
@@ -555,6 +627,7 @@ export default function AssetDetailPage() {
                 {tab === 'Doc. Contables' && <FileText size={13} />}
                 {tab === 'Matafuegos' && <Flame size={13} />}
                 {tab === 'Siniestros' && <ShieldAlert size={13} />}
+                {tab === 'Valuaciones' && <TrendingUp size={13} />}
                 {tab === 'Adjuntos' && <Paperclip size={13} />}
                 {tab}
                 {count > 0 && (
@@ -603,6 +676,9 @@ export default function AssetDetailPage() {
           )}
           {activeTab === 'Siniestros' && (
             <AssetClaimsTab assetId={asset.id} policies={policies} claims={claims} />
+          )}
+          {activeTab === 'Valuaciones' && (
+            <ValuacionesTab history={asset.valueHistory ?? []} />
           )}
           {activeTab === 'Adjuntos' && (
             <AssetAttachmentsTab assetId={asset.id} />

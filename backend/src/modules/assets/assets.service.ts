@@ -131,6 +131,29 @@ export const assetsService = {
         })),
       })
 
+      if (assetData.currentValue) {
+        await tx.assetValueHistory.create({
+          data: {
+            assetId: asset.id,
+            value: assetData.currentValue,
+            date: assetData.purchaseDate ?? new Date(),
+            type: 'real',
+            note: 'Valor inicial al alta del activo',
+          },
+        })
+      }
+      if (assetData.patrimonialValueNew) {
+        await tx.assetValueHistory.create({
+          data: {
+            assetId: asset.id,
+            value: assetData.patrimonialValueNew,
+            date: assetData.purchaseDate ?? new Date(),
+            type: 'nuevo',
+            note: 'Valor a nuevo inicial al alta del activo',
+          },
+        })
+      }
+
       return tx.asset.findUniqueOrThrow({
         where: { id: asset.id },
         include: ASSET_DETAIL_INCLUDE,
@@ -145,7 +168,7 @@ export const assetsService = {
         ...data,
         metadata: data.metadata ? (data.metadata as Prisma.InputJsonValue) : undefined,
       },
-      include: ASSET_DETAIL_INCLUDE,
+      select: { id: true, updatedAt: true },
     }).catch(handleUpdateNotFound)
   },
 
@@ -205,12 +228,7 @@ export const assetsService = {
 
   async addValueHistory(assetId: string, data: AddValueHistoryDTO) {
     await assertAssetExists(assetId)
-
-    return prisma.$transaction(async (tx) => {
-      const entry = await tx.assetValueHistory.create({ data: { ...data, assetId } })
-      await tx.asset.update({ where: { id: assetId }, data: { currentValue: data.value } })
-      return entry
-    })
+    return prisma.assetValueHistory.create({ data: { ...data, assetId } })
   },
 
   // ── Attachments ──────────────────────────────────────────────────────────────

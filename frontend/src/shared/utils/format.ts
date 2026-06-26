@@ -1,5 +1,9 @@
 export function formatCurrencyCompact(value: number, currency: string = 'ARS'): string {
-  const prefix = currency === 'ARS' ? 'AR$' : 'US$'
+  if (currency === 'ARS') {
+    return `AR$ ${value.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+  }
+
+  const prefix = 'US$'
   const abs = Math.abs(value)
   const sign = value < 0 ? '-' : ''
 

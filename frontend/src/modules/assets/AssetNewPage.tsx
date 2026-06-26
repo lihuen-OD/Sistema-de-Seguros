@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Save, X, Building2, Plus, Trash2, MapPin, Hash, Package, Info,
+  Save, X, Building2, Plus, Trash2, MapPin, Hash, Info,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -26,7 +26,7 @@ import { CategoryPicker } from './components/CategoryPicker'
 import { BienDeUsoField } from './components/BienDeUsoField'
 import { AllocationEditor } from './components/AllocationEditor'
 import { SilosSection } from './components/SilosSection'
-import type { AssetCategory, AssetAttachment, AssetAllocation, Silo, AssetStatus } from '../../shared/types'
+import type { AssetCategory, AssetAttachment, AssetAllocation, Silo } from '../../shared/types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +36,8 @@ const IS_AGRO = (c: AssetCategory | '') =>
   ['tractor', 'cosechadora', 'pulverizadora', 'implemento'].includes(c)
 const HAS_BRAND = (c: AssetCategory | '') => IS_WHEELED(c) || IS_AGRO(c)
 const IS_CARGA = (c: AssetCategory | '') => c === 'carga'
+const IS_IMMOVABLE = (c: AssetCategory | '') =>
+  ['establecimiento', 'edificio', 'infraestructura'].includes(c as string)
 
 // ── Local form state ───────────────────────────────────────────────────────────
 
@@ -78,6 +80,7 @@ type FormState = {
   productiveUnit: string
   area: string
   observations: string
+  patrimonialValueNew: string
 }
 
 const EMPTY: FormState = {
@@ -91,6 +94,7 @@ const EMPTY: FormState = {
   infraType: '', infraCapacityTons: '', infraContent: '',
   technicalSpec: '',
   productiveUnit: '', area: '', observations: '',
+  patrimonialValueNew: '',
 }
 
 // ── Internal code display ──────────────────────────────────────────────────────
@@ -407,6 +411,7 @@ export default function AssetNewPage() {
         serialNumber: form.serialNumber.trim() || undefined,
         purchaseDate: form.valuationDate || undefined,
         currentValue: form.patrimonialValueUsd ? parseFloat(form.patrimonialValueUsd) : undefined,
+        patrimonialValueNew: form.patrimonialValueNew ? parseFloat(form.patrimonialValueNew) : undefined,
         mapsUrl: form.mapsUrl.trim() || undefined,
         productiveUnit: form.productiveUnit || undefined,
         area: form.area || undefined,
@@ -530,10 +535,16 @@ export default function AssetNewPage() {
                     <FormInput placeholder="Ej: RW8320P024316" value={form.serialNumber} onChange={set('serialNumber')} />
                   </FormField>
                 )}
-                <FormField label="Valor Patrimonial (USD)" required error={errors.patrimonialValueUsd}>
+                <FormField label="Valor Patrimonial Real (USD)" required error={errors.patrimonialValueUsd}>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
                     <FormInput type="number" placeholder="0.00" min={0} step="0.01" className="pl-7" value={form.patrimonialValueUsd} onChange={set('patrimonialValueUsd')} />
+                  </div>
+                </FormField>
+                <FormField label="Valor Patrimonial a Nuevo (USD)">
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
+                    <FormInput type="number" placeholder="0.00" min={0} step="0.01" className="pl-7" value={form.patrimonialValueNew} onChange={set('patrimonialValueNew')} />
                   </div>
                 </FormField>
                 <FormField label="Fecha de Valuación" required error={errors.valuationDate}>

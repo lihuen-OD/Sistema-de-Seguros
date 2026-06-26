@@ -10,15 +10,17 @@ interface BackendAllocation {
   percentage: number
 }
 interface BackendValueHistory {
-  id: string; assetId: string; date: string; valueUsd: number; notes: string | null
+  id: string; assetId: string; date: string; value: number; type: string; note: string | null
 }
 interface BackendAsset {
   id: string; code: string | null; name: string; assetType: string
   status: string | null; fixedAssetCode: string | null
   brand: string | null; model: string | null
   year: number | null; serialNumber: string | null
-  purchaseDate: string | null; purchaseValue: number | null
-  currentValue: number | null; location: string | null; mapsUrl: string | null
+  purchaseDate: string | null; dischargeDate: string | null; saleDate: string | null
+  purchaseValue: number | null
+  currentValue: number | null; patrimonialValueNew: number | null
+  location: string | null; mapsUrl: string | null
   productiveUnit: string | null; area: string | null
   description: string | null; metadata: Record<string, unknown> | null
   isActive: boolean; createdAt: string; updatedAt: string
@@ -46,8 +48,10 @@ function mapAsset(b: BackendAsset): Asset {
     year: b.year ?? (b.purchaseDate ? parseInt(b.purchaseDate.slice(0, 4)) : 0),
     serialNumber: b.serialNumber ?? '',
     chassisNumber: (meta.chassisNumber as string) ?? '',
+    engineNumber: (meta.engineNumber as string) || undefined,
     status: (b.status ?? (b.isActive ? 'activo' : 'baja')) as AssetStatus,
     patrimonialValueUsd: b.currentValue ?? b.purchaseValue ?? 0,
+    patrimonialValueNew: b.patrimonialValueNew ?? null,
     valuationDate: b.purchaseDate ? b.purchaseDate.slice(0, 10) : '',
     observations: b.description ?? '',
     mapsUrl: b.mapsUrl ?? '',
@@ -64,7 +68,7 @@ function mapAsset(b: BackendAsset): Asset {
     area: b.area ?? '',
     photos: [],
     valueHistory: b.valueHistory
-      ? b.valueHistory.map((v) => ({ id: v.id, date: v.date, valueUsd: v.valueUsd, notes: v.notes ?? undefined }))
+      ? b.valueHistory.map((v) => ({ id: v.id, date: v.date.slice(0, 10), valueUsd: v.value, type: (v.type ?? 'real') as 'real' | 'nuevo', notes: v.note ?? undefined }))
       : undefined,
     silos: (() => {
       const metaSilos = meta.silos as Array<{ capacityTons: number; content: string }> | undefined
@@ -72,6 +76,8 @@ function mapAsset(b: BackendAsset): Asset {
       return metaSilos.map((s, i) => ({ id: `silo-${i}`, capacityTons: s.capacityTons, content: s.content }))
     })(),
     attachmentsCount: b._count?.attachments ?? 0,
+    dischargeDate: b.dischargeDate ? b.dischargeDate.slice(0, 10) : null,
+    saleDate: b.saleDate ? b.saleDate.slice(0, 10) : null,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   }
@@ -106,7 +112,10 @@ export interface AssetCreateInput {
   year?: number
   serialNumber?: string
   purchaseDate?: string
+  dischargeDate?: string | null
+  saleDate?: string | null
   currentValue?: number
+  patrimonialValueNew?: number
   mapsUrl?: string
   productiveUnit?: string
   area?: string
@@ -131,9 +140,8 @@ export const assetsApi = {
     return mapAsset(res.data.data)
   },
 
-  async update(id: string, input: Partial<Omit<AssetCreateInput, 'allocations'>>): Promise<Asset> {
-    const res = await apiClient.put<{ data: BackendAsset }>(`/assets/${id}`, input)
-    return mapAsset(res.data.data)
+  async update(id: string, input: Partial<Omit<AssetCreateInput, 'allocations'>>): Promise<void> {
+    await apiClient.put(`/assets/${id}`, input)
   },
 
   async replaceAllocations(id: string, allocations: { companyId: string; costCenterId: string; percentage: number }[]): Promise<void> {
@@ -165,5 +173,9 @@ export const assetsApi = {
 
   async deleteAttachment(assetId: string, attachmentId: string): Promise<void> {
     await apiClient.delete(`/assets/${assetId}/attachments/${attachmentId}`)
+  },
+
+  async addValueHistory(assetId: string, entry: { value: number; date: string; type: 'real' | 'nuevo'; note?: string }): Promise<void> {
+    await apiClient.post(`/assets/${assetId}/value-history`, entry)
   },
 }

@@ -352,6 +352,7 @@ export default function PolicyEditPage() {
       endDate: form.endDate,
       premium: ars,
       currency: 'ARS',
+      exchangeRate: rate,
       description: form.description.trim() || undefined,
       coverageIds: form.coverageTypes,
     })

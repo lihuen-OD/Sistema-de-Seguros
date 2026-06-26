@@ -103,6 +103,7 @@ export interface AssetValueEntry {
   id: string
   date: string
   valueUsd: number
+  type: 'real' | 'nuevo'
   notes?: string
 }
 
@@ -135,8 +136,10 @@ export interface Asset {
   year: number
   serialNumber: string
   chassisNumber?: string
+  engineNumber?: string
   status: AssetStatus
   patrimonialValueUsd: number
+  patrimonialValueNew: number | null
   valuationDate: string
   /** Historial de valuaciones USD con fecha */
   valueHistory?: AssetValueEntry[]
@@ -159,6 +162,8 @@ export interface Asset {
   /** Datos tipo-específicos persistidos en JSONB (patente, HP, superficie, etc.) */
   metadata?: Record<string, unknown>
   attachmentsCount?: number
+  dischargeDate?: string | null
+  saleDate?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -207,6 +212,7 @@ export interface Policy {
   insuredAmountArs: number
   exchangeRate: number
   insuredAmountUsd: number
+  currency: 'ARS' | 'USD'
   description: string
   status: PolicyStatus
   attachmentsCount?: number

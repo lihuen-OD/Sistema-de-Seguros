@@ -1,0 +1,2 @@
+ALTER TABLE "assets" ADD COLUMN IF NOT EXISTS "dischargeDate" DATE;
+ALTER TABLE "assets" ADD COLUMN IF NOT EXISTS "saleDate" DATE;
