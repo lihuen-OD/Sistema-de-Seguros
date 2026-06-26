@@ -3,25 +3,32 @@ import { Printer, ArrowLeft } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
-import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
+import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
 import { useQuery } from '@tanstack/react-query'
 import { assetsApi } from '../../shared/api/assets.api'
-import { policiesApi } from '../../shared/api/policies.api'
 import { companiesApi } from '../../shared/api/companies.api'
 import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { ASSET_STATUS_LABELS } from '../../shared/constants'
-import type { Policy } from '../../shared/types'
+import { LABEL_TO_CATEGORY } from '../../shared/constants/asset-categories'
 
-const EMISSION_DATE = '11/06/2026'
+const EMISSION_DATE = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+
+const VEHICLE_CATS = new Set(['vehiculo', 'camioneta', 'camion', 'moto', 'tractor', 'cosechadora', 'pulverizadora', 'implemento'])
+const LOCATION_CATS = new Set(['edificio', 'establecimiento'])
+const HAS_CHASSIS = new Set(['vehiculo', 'camioneta', 'camion', 'moto', 'tractor', 'cosechadora', 'pulverizadora'])
 
 export default function AssetFichaPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
   const { data: asset } = useQuery({ queryKey: ['assets', id], queryFn: () => assetsApi.findById(id!) })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
+  const { data: allAttachments = [] } = useQuery({
+    queryKey: ['assets', id, 'attachments'],
+    queryFn: () => assetsApi.findAttachments(id!),
+    enabled: !!id,
+  })
 
   if (!asset) {
     return (
@@ -31,13 +38,18 @@ export default function AssetFichaPage() {
     )
   }
 
-  const company = allCompanies.find((c) => c.id === asset?.companyId)
-  const costCenter = allCostCenters.find((cc) => cc.id === asset?.costCenterId)
-  const policies = allPolicies.filter((p) => p.assetId === asset?.id)
-  const vigentPolicies = policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer')
+  const coverPhoto = allAttachments.find(a => a.fileType === 'image')?.fileUrl
 
-  const totalInsuredArs = vigentPolicies.reduce((s, p) => p.exchangeRate > 1 ? s : s + p.insuredAmountArs, 0)
-  const totalInsuredUsd = vigentPolicies.reduce((s, p) => s + p.insuredAmountUsd, 0)
+  const assetCategory = LABEL_TO_CATEGORY[asset.assetType]
+  const isVehicle = VEHICLE_CATS.has(assetCategory ?? '')
+  const isLocation = LOCATION_CATS.has(assetCategory ?? '')
+  const hasChassis = HAS_CHASSIS.has(assetCategory ?? '')
+
+  // Patrimonial values — sort history DESC to get latest entries
+  const sortedHistory = [...(asset.valueHistory ?? [])].sort((a, b) => b.date.localeCompare(a.date))
+  const latestReal = sortedHistory.find(e => e.type === 'real')
+  const latestNuevo = sortedHistory.find(e => e.type === 'nuevo')
+  const baseNuevo = asset.patrimonialValueNew != null && asset.patrimonialValueNew > 0 ? asset.patrimonialValueNew : null
 
   return (
     <PageContent>
@@ -86,11 +98,13 @@ export default function AssetFichaPage() {
               <StatusPill status={asset.status} />
             </div>
             <h1 className="text-2xl font-bold text-slate-900 leading-tight">{asset.name}</h1>
-            <p className="text-sm text-slate-500 mt-1">
-              {[asset.brand, asset.model, asset.year > 0 ? String(asset.year) : null]
-                .filter(Boolean)
-                .join(' · ')}
-            </p>
+            {isVehicle && (
+              <p className="text-sm text-slate-500 mt-1">
+                {[asset.brand, asset.model, asset.year > 0 ? String(asset.year) : null]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            )}
           </div>
           <div className="flex-shrink-0 text-right">
             <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Valor patrimonial</p>
@@ -108,9 +122,9 @@ export default function AssetFichaPage() {
 
           {/* Left: photo + características técnicas */}
           <div className="p-8 space-y-6">
-            {asset.photos?.[0] && (
+            {coverPhoto && (
               <img
-                src={asset.photos[0]}
+                src={coverPhoto}
                 alt={asset.name}
                 className="w-full h-52 object-cover rounded-xl border border-slate-200 print:rounded-none"
               />
@@ -120,14 +134,59 @@ export default function AssetFichaPage() {
               <SectionHeading>Características Técnicas</SectionHeading>
               <div className="space-y-2.5">
                 <FichaRow label="Tipo de activo" value={asset.assetType || '—'} />
-                <FichaRow label="Marca" value={asset.brand || '—'} />
-                <FichaRow label="Modelo" value={asset.model || '—'} />
-                <FichaRow label="Año" value={asset.year > 0 ? String(asset.year) : '—'} />
-                <FichaRow label="N° de serie / chasis" value={asset.serialNumber || '—'} />
-                <FichaRow label="Código bien de uso" value={asset.fixedAssetCode || '—'} />
                 <FichaRow label="Estado" value={ASSET_STATUS_LABELS[asset.status] ?? asset.status} />
+                {asset.fixedAssetCode && <FichaRow label="Código bien de uso" value={asset.fixedAssetCode} />}
+
+                {/* Campos específicos de vehículo */}
+                {isVehicle && (
+                  <>
+                    {asset.brand && <FichaRow label="Marca" value={asset.brand} />}
+                    {asset.model && <FichaRow label="Modelo" value={asset.model} />}
+                    {asset.year > 0 && <FichaRow label="Año" value={String(asset.year)} />}
+                    {asset.serialNumber && <FichaRow label="N° de serie" value={asset.serialNumber} />}
+                    {hasChassis && asset.chassisNumber && <FichaRow label="N° de chasis" value={asset.chassisNumber} />}
+                    {asset.engineNumber && <FichaRow label="N° de motor" value={asset.engineNumber} />}
+                  </>
+                )}
+
+                {/* Campos específicos de implemento (sin chasis) */}
+                {assetCategory === 'implemento' && (
+                  <>
+                    {asset.brand && <FichaRow label="Marca" value={asset.brand} />}
+                    {asset.model && <FichaRow label="Modelo" value={asset.model} />}
+                    {asset.serialNumber && <FichaRow label="N° de serie" value={asset.serialNumber} />}
+                  </>
+                )}
+
+                {/* N° de serie para equipos/maquinaria */}
+                {!isVehicle && assetCategory !== 'implemento' && !isLocation && asset.serialNumber && (
+                  <FichaRow label="N° de serie" value={asset.serialNumber} />
+                )}
               </div>
             </div>
+
+            {/* Mapa para ubicaciones */}
+            {isLocation && asset.coordinates && (
+              <div>
+                <SectionHeading>Ubicación</SectionHeading>
+                <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm print:shadow-none">
+                  <iframe
+                    title="Mapa"
+                    loading="lazy"
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${asset.coordinates.lng - 0.012},${asset.coordinates.lat - 0.012},${asset.coordinates.lng + 0.012},${asset.coordinates.lat + 0.012}&layer=mapnik&marker=${asset.coordinates.lat},${asset.coordinates.lng}`}
+                    className="border-0 w-full"
+                    style={{ height: 200 }}
+                  />
+                </div>
+                {asset.mapsUrl && (
+                  <p className="text-xs text-slate-400 mt-1 print:hidden">
+                    <a href={asset.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                      Ver en Google Maps
+                    </a>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Right: valuación + imputación */}
@@ -136,91 +195,130 @@ export default function AssetFichaPage() {
               <SectionHeading>Valuación Patrimonial</SectionHeading>
               <div className="space-y-2.5">
                 <FichaRow
-                  label="Valor patrimonial"
+                  label="Valor patrimonial real"
                   value={formatCurrencyFull(asset.patrimonialValueUsd, 'USD')}
                   highlight
                 />
-                <FichaRow label="Fecha de valuación" value={formatDate(asset.valuationDate)} />
+                {latestReal && (
+                  <FichaRow
+                    label={`Valor real actualizado (${formatDate(latestReal.date)})`}
+                    value={formatCurrencyFull(latestReal.valueUsd, 'USD')}
+                    highlight
+                  />
+                )}
+                {baseNuevo != null && (
+                  <FichaRow
+                    label="Valor patrimonial a nuevo"
+                    value={formatCurrencyFull(baseNuevo, 'USD')}
+                  />
+                )}
+                {latestNuevo && (
+                  <FichaRow
+                    label={`Valor a nuevo actualizado (${formatDate(latestNuevo.date)})`}
+                    value={formatCurrencyFull(latestNuevo.valueUsd, 'USD')}
+                  />
+                )}
+                {asset.valuationDate && (
+                  <FichaRow label="Fecha de valuación" value={formatDate(asset.valuationDate)} />
+                )}
               </div>
             </div>
 
             <div>
               <SectionHeading>Imputación Contable</SectionHeading>
-              <div className="space-y-2.5">
-                <FichaRow label="Empresa" value={company?.name ?? '—'} />
-                <FichaRow
-                  label="Centro de costo"
-                  value={costCenter ? `${costCenter.code} — ${costCenter.name}` : '—'}
-                />
-                <FichaRow label="Unidad productiva" value={asset.productiveUnit || '—'} />
-                <FichaRow label="Área" value={asset.area || '—'} />
+              <div className="space-y-4">
+                {asset.allocations.map((alloc, idx) => {
+                  const allocCompany = allCompanies.find(c => c.id === alloc.companyId)
+                  const allocCostCenter = allCostCenters.find(cc => cc.id === alloc.costCenterId)
+                  return (
+                    <div key={alloc.id} className="space-y-2.5">
+                      {asset.allocations.length > 1 && (
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 pt-1">
+                          Imputación {idx + 1} · {alloc.percentage}%
+                        </p>
+                      )}
+                      <FichaRow label="Empresa" value={allocCompany?.name ?? '—'} />
+                      <FichaRow
+                        label="Centro de costo"
+                        value={allocCostCenter ? `${allocCostCenter.code} — ${allocCostCenter.name}` : '—'}
+                      />
+                    </div>
+                  )
+                })}
+                {asset.productiveUnit && (
+                  <FichaRow label="Unidad productiva" value={asset.productiveUnit} />
+                )}
+                {asset.area && (
+                  <FichaRow label="Área" value={asset.area} />
+                )}
               </div>
             </div>
-
-            {vigentPolicies.length > 0 && (
-              <div>
-                <SectionHeading>Resumen de Cobertura</SectionHeading>
-                <div className="space-y-2.5">
-                  <FichaRow
-                    label="Pólizas vigentes"
-                    value={String(vigentPolicies.length)}
-                  />
-                  <FichaRow
-                    label="Suma asegurada ARS"
-                    value={formatCurrencyCompact(totalInsuredArs, 'ARS')}
-                    highlight
-                  />
-                  {totalInsuredUsd > 0 && (
-                    <FichaRow
-                      label="Suma asegurada USD"
-                      value={formatCurrencyFull(totalInsuredUsd, 'USD')}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* ── Policies table ── */}
-        {policies.length > 0 && (
+        {/* ── Silos (Establecimiento) ── */}
+        {isLocation && asset.silos && asset.silos.length > 0 && (
           <div className="px-8 py-6 border-t border-slate-200">
             <SectionHeading>
-              Pólizas de Seguros
+              Silos / Celdas de Almacenamiento
               <span className="ml-1.5 text-xs font-normal text-slate-400">
-                ({policies.length} póliza{policies.length !== 1 ? 's' : ''})
+                ({asset.silos.length} silo{asset.silos.length !== 1 ? 's' : ''} · {asset.silos.reduce((s, x) => s + x.capacityTons, 0).toLocaleString('es-AR')} tn totales)
               </span>
             </SectionHeading>
-            <table className="w-full mt-4 text-sm">
-              <thead>
-                <tr className="border-b border-slate-200">
-                  {['N° Póliza', 'Aseguradora', 'Tipo', 'Cobertura', 'Suma aseg. ARS', 'Vigencia', 'Estado'].map((h) => (
-                    <th key={h} className="text-left pb-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide pr-4 last:pr-0">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {policies.map((p: Policy) => (
-                  <tr key={p.id} className="text-xs">
-                    <td className="py-2.5 pr-4 font-mono text-slate-600">{p.policyNumber}</td>
-                    <td className="py-2.5 pr-4 text-slate-700">{p.insuranceCompany}</td>
-                    <td className="py-2.5 pr-4 text-slate-600">{p.insuranceType}</td>
-                    <td className="py-2.5 pr-4 text-slate-500">{p.coverageType}</td>
-                    <td className="py-2.5 pr-4 font-semibold text-slate-800 tabular-nums">
-                      {formatCurrencyCompact(p.insuredAmountArs, 'ARS')}
-                    </td>
-                    <td className="py-2.5 pr-4 text-slate-500">
-                      {formatDate(p.startDate)} — {formatDate(p.endDate)}
-                    </td>
-                    <td className="py-2.5">
-                      <StatusPill status={p.status} size="sm" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {asset.silos.map((silo, idx) => (
+                <div key={silo.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Silo {idx + 1}</p>
+                  <p className="text-sm font-bold text-slate-800 tabular-nums">{silo.capacityTons.toLocaleString('es-AR')} tn</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{silo.content || '—'}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Edificios (Establecimiento) ── */}
+        {isLocation && asset.buildings && asset.buildings.length > 0 && (
+          <div className="px-8 py-6 border-t border-slate-200">
+            <SectionHeading>
+              Edificios y Construcciones
+              <span className="ml-1.5 text-xs font-normal text-slate-400">
+                ({asset.buildings.length} construcción{asset.buildings.length !== 1 ? 'es' : ''})
+              </span>
+            </SectionHeading>
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {asset.buildings.map((building, idx) => (
+                <div key={building.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-sm font-bold text-slate-800 mb-2">{building.name || `Edificio ${idx + 1}`}</p>
+                  <div className="space-y-1">
+                    {building.surfaceM2 != null && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-400">Superficie</span>
+                        <span className="font-medium text-slate-700">{building.surfaceM2.toLocaleString('es-AR')} m²</span>
+                      </div>
+                    )}
+                    {building.purpose && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-400">Uso</span>
+                        <span className="font-medium text-slate-700">{building.purpose}</span>
+                      </div>
+                    )}
+                    {building.constructionType && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-400">Estructura</span>
+                        <span className="font-medium text-slate-700">{building.constructionType}</span>
+                      </div>
+                    )}
+                    {building.constructionYear != null && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-400">Año</span>
+                        <span className="font-medium text-slate-700">{building.constructionYear}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

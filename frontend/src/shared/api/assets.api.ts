@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { Asset, AssetAttachment, AssetStatus, AssetStatusHistory } from '../types'
+import type { Asset, AssetAttachment, AssetStatus, AssetStatusHistory, Building } from '../types'
 
 interface BackendCompany { id: string; name: string; cuit: string }
 interface BackendCostCenter { id: string; name: string; code: string | null }
@@ -82,6 +82,11 @@ function mapAsset(b: BackendAsset): Asset {
       const metaSilos = meta.silos as Array<{ capacityTons: number; content: string }> | undefined
       if (!metaSilos || metaSilos.length === 0) return undefined
       return metaSilos.map((s, i) => ({ id: `silo-${i}`, capacityTons: s.capacityTons, content: s.content }))
+    })(),
+    buildings: (() => {
+      const metaBuildings = meta.buildings as Array<{ name: string; surfaceM2?: number; purpose?: string; constructionType?: string; constructionYear?: number }> | undefined
+      if (!metaBuildings || metaBuildings.length === 0) return undefined
+      return metaBuildings.map((b, i): Building => ({ id: `building-${i}`, name: b.name, surfaceM2: b.surfaceM2, purpose: b.purpose, constructionType: b.constructionType, constructionYear: b.constructionYear }))
     })(),
     attachmentsCount: b._count?.attachments ?? 0,
     dischargeDate: b.dischargeDate ? b.dischargeDate.slice(0, 10) : null,

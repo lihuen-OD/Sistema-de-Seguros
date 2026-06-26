@@ -99,6 +99,15 @@ export interface Silo {
   content: string
 }
 
+export interface Building {
+  id: string
+  name: string
+  surfaceM2?: number
+  purpose?: string
+  constructionType?: string
+  constructionYear?: number
+}
+
 export interface AssetValueEntry {
   id: string
   date: string
@@ -158,6 +167,8 @@ export interface Asset {
   mapsUrl?: string
   /** Silos asociados (Establecimientos e Infraestructura tipo Silo) */
   silos?: Silo[]
+  /** Edificios/construcciones (Establecimientos) */
+  buildings?: Building[]
   photos?: string[]
   /** Datos tipo-específicos persistidos en JSONB (patente, HP, superficie, etc.) */
   metadata?: Record<string, unknown>

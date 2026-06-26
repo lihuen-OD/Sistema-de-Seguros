@@ -510,6 +510,53 @@ export default function AssetDetailPage() {
             </SectionCard>
           )}
 
+          {/* Edificios y construcciones */}
+          {asset.buildings && asset.buildings.length > 0 && (
+            <SectionCard
+              title="Edificios y Construcciones"
+              subtitle={`${asset.buildings.length} construcción${asset.buildings.length !== 1 ? 'es' : ''} registrada${asset.buildings.length !== 1 ? 's' : ''}`}
+            >
+              <div className="space-y-3">
+                {asset.buildings.map((building, idx) => (
+                  <div key={building.id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-7 h-7 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                        <Building2 size={13} className="text-purple-600" />
+                      </div>
+                      <span className="text-sm font-semibold text-slate-800">{building.name || `Edificio ${idx + 1}`}</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {building.surfaceM2 != null && (
+                        <div>
+                          <p className="text-xs text-slate-400">Superficie</p>
+                          <p className="text-sm font-semibold text-slate-800 tabular-nums">{building.surfaceM2.toLocaleString('es-AR')} m²</p>
+                        </div>
+                      )}
+                      {building.purpose && (
+                        <div>
+                          <p className="text-xs text-slate-400">Uso / Destino</p>
+                          <p className="text-sm font-semibold text-slate-800">{building.purpose}</p>
+                        </div>
+                      )}
+                      {building.constructionType && (
+                        <div>
+                          <p className="text-xs text-slate-400">Tipo de estructura</p>
+                          <p className="text-sm font-semibold text-slate-800">{building.constructionType}</p>
+                        </div>
+                      )}
+                      {building.constructionYear != null && (
+                        <div>
+                          <p className="text-xs text-slate-400">Año construcción</p>
+                          <p className="text-sm font-semibold text-slate-800 tabular-nums">{building.constructionYear}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+
           {/* Imputación contable */}
           <SectionCard title="Imputación Contable">
             {asset.allocations && asset.allocations.length > 0 ? (

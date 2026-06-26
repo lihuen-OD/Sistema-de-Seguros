@@ -19,6 +19,8 @@ import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { BienDeUsoField } from './components/BienDeUsoField'
 import { AllocationEditor } from './components/AllocationEditor'
 import { SilosSection } from './components/SilosSection'
+import { EstBuildingsSection } from './components/EstBuildingsSection'
+import type { EstBuilding } from './components/EstBuildingsSection'
 import { ValueHistorySection } from './components/ValueHistorySection'
 import type {
   AssetStatus, AssetAllocation, AssetValueEntry, AssetAttachment, AssetCategory, Silo,
@@ -172,6 +174,7 @@ export default function AssetEditPage() {
   ])
   const [valueHistory, setValueHistory] = useState<AssetValueEntry[]>([])
   const [silos, setSilos] = useState<Silo[]>([])
+  const [buildings, setBuildings] = useState<EstBuilding[]>([])
   const [attachments, setAttachments] = useState<AssetAttachment[]>([])
   const [errors, setErrors] = useState<FormErrors>({})
 
@@ -246,6 +249,16 @@ export default function AssetEditPage() {
     }
     setValueHistory(asset.valueHistory ?? [])
     setSilos(asset.silos ?? [])
+    setBuildings(
+      (asset.buildings ?? []).map((b) => ({
+        id: b.id,
+        name: b.name,
+        surfaceM2: b.surfaceM2 != null ? String(b.surfaceM2) : '',
+        purpose: b.purpose ?? '',
+        constructionType: b.constructionType ?? '',
+        constructionYear: b.constructionYear != null ? String(b.constructionYear) : '',
+      })),
+    )
   }, [asset])
 
   useEffect(() => {
@@ -310,6 +323,14 @@ export default function AssetEditPage() {
     setSilos((prev) => prev.map((s) => s.id === sid ? { ...s, [field]: value } : s))
   }
 
+  function addBuilding() {
+    setBuildings((prev) => [...prev, { id: `building-${Date.now()}`, name: '', surfaceM2: '', purpose: '', constructionType: '', constructionYear: '' }])
+  }
+  function removeBuilding(bid: string) { setBuildings((prev) => prev.filter((b) => b.id !== bid)) }
+  function updateBuilding(bid: string, field: keyof Omit<EstBuilding, 'id'>, value: string) {
+    setBuildings((prev) => prev.map((b) => b.id === bid ? { ...b, [field]: value } : b))
+  }
+
   function handleAddValueEntry(entry: Omit<AssetValueEntry, 'id'>) {
     const newEntry: AssetValueEntry = { id: `vh-${Date.now()}`, ...entry }
     setValueHistory((prev) => [...prev, newEntry])
@@ -362,6 +383,15 @@ export default function AssetEditPage() {
         ...(opt(form.address) && { address: form.address.trim() }),
         ...(silos.length > 0 && {
           silos: silos.map((s) => ({ capacityTons: s.capacityTons, content: s.content })),
+        }),
+        ...(buildings.length > 0 && {
+          buildings: buildings.map((b) => ({
+            name: b.name,
+            ...(b.surfaceM2 && { surfaceM2: parseFloat(b.surfaceM2) }),
+            ...(b.purpose && { purpose: b.purpose }),
+            ...(b.constructionType && { constructionType: b.constructionType }),
+            ...(b.constructionYear && { constructionYear: parseInt(b.constructionYear, 10) }),
+          })),
         }),
       }
     }
@@ -846,6 +876,11 @@ export default function AssetEditPage() {
                 {(isEstablecimiento || isSiloInfra) && (
                   <div className="border-t border-slate-100 pt-5">
                     <SilosSection silos={silos} siloContents={siloContents} onAdd={addSilo} onRemove={removeSilo} onChange={updateSilo} />
+                  </div>
+                )}
+                {isEstablecimiento && (
+                  <div className="border-t border-slate-100 pt-5">
+                    <EstBuildingsSection buildings={buildings} onAdd={addBuilding} onRemove={removeBuilding} onChange={updateBuilding} buildingPurposes={buildingPurposes} />
                   </div>
                 )}
               </div>
