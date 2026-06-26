@@ -1,8 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, FileText, CheckCircle2, Clock, AlertCircle, Eye, Edit2, Trash2, Download } from 'lucide-react'
-import { downloadCSV } from '../../../shared/utils/export'
+import { Plus, FileText, CheckCircle2, Clock, AlertCircle, Eye, Edit2, Trash2, X } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -10,7 +9,9 @@ import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { ColumnConfigButton } from '../../../shared/components/data-table/ColumnConfigButton'
-import { FilterBar } from '../../../shared/components/filters/FilterBar'
+import { ExportPresetsButton } from '../../../shared/components/data-table/ExportPresetsButton'
+import { MultiSelectFilter } from '../../../shared/components/filters/MultiSelectFilter'
+import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import {
@@ -34,8 +35,10 @@ export default function DocumentsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [filterType, setFilterType] = useState('')
-  const [filterStatus, setFilterStatus] = useState('')
+  const [filterType, setFilterType] = useState<string[]>([])
+  const [filterStatus, setFilterStatus] = useState<string[]>([])
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const { data: allDocuments = [], isLoading, isError } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
@@ -54,11 +57,14 @@ export default function DocumentsPage() {
     return allDocuments.filter((doc) => {
       const q = search.toLowerCase()
       const matchSearch = !search || doc.documentNumber.toLowerCase().includes(q)
-      const matchType = !filterType || doc.documentType === filterType
-      const matchStatus = !filterStatus || doc.paymentStatus === filterStatus
-      return matchSearch && matchType && matchStatus
+      const matchType = filterType.length === 0 || filterType.includes(doc.documentType)
+      const matchStatus = filterStatus.length === 0 || filterStatus.includes(doc.paymentStatus)
+      const date = doc.issueDate ?? ''
+      const matchDateFrom = !filterDateFrom || date.slice(0, 7) >= filterDateFrom
+      const matchDateTo   = !filterDateTo   || date.slice(0, 7) <= filterDateTo
+      return matchSearch && matchType && matchStatus && matchDateFrom && matchDateTo
     })
-  }, [allDocuments, search, filterType, filterStatus])
+  }, [allDocuments, search, filterType, filterStatus, filterDateFrom, filterDateTo])
 
   async function handleDelete(id: string) {
     await documentsApi.softDelete(id)
@@ -105,6 +111,7 @@ export default function DocumentsPage() {
       key: 'netAmount',
       label: 'Neto',
       defaultVisible: true,
+      exportValue: (row) => String(row.netAmount),
       render: (v, row) => (
         <span className="tabular-nums text-xs text-slate-600">
           {formatCurrencyFull(v as number, row.currency)}
@@ -118,6 +125,7 @@ export default function DocumentsPage() {
       key: 'vatAmount',
       label: 'IVA',
       defaultVisible: true,
+      exportValue: (row) => String(row.vatAmount),
       render: (v, row) => (
         <span className="tabular-nums text-xs text-slate-600">
           {formatCurrencyFull(v as number, row.currency)}
@@ -131,6 +139,7 @@ export default function DocumentsPage() {
       key: 'totalAmount',
       label: 'Total',
       defaultVisible: true,
+      exportValue: (row) => String(row.totalAmount),
       render: (v, row) => (
         <span className="tabular-nums text-sm font-semibold text-slate-800">
           {formatCurrencyFull(v as number, row.currency)}
@@ -152,6 +161,7 @@ export default function DocumentsPage() {
       key: 'otherTaxesAmount',
       label: 'Otros impuestos',
       defaultVisible: false,
+      exportValue: (row) => String(row.otherTaxesAmount),
       render: (v, row) =>
         (v as number) > 0
           ? <span className="tabular-nums text-xs text-slate-600">{formatCurrencyFull(v as number, row.currency)}</span>
@@ -181,6 +191,7 @@ export default function DocumentsPage() {
       key: 'exchangeRate',
       label: 'Tipo de cambio',
       defaultVisible: false,
+      exportValue: (row) => String(row.exchangeRate),
       render: (v) =>
         (v as number) > 1
           ? <span className="tabular-nums text-sm text-slate-600">${(v as number).toLocaleString('es-AR')}</span>
@@ -193,6 +204,7 @@ export default function DocumentsPage() {
       key: 'attachmentsCount',
       label: 'Adjuntos',
       defaultVisible: false,
+      exportValue: (row) => String(row.attachmentsCount ?? 0),
       render: (v) => {
         const n = v as number | undefined
         return n != null && n > 0
@@ -209,7 +221,7 @@ export default function DocumentsPage() {
       defaultVisible: false,
       render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
-    // ── Acciones (siempre visible, siempre última) ────────────────────────────
+    // ── Acciones ────────────────────────────────────────────────────────────────
     {
       id: 'actions',
       key: 'id',
@@ -274,75 +286,23 @@ export default function DocumentsPage() {
         title="Documentos Contables"
         subtitle="Facturas, endosos, notas de crédito y refacturaciones asociados a pólizas"
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                const rows = [
-                  ['N° Documento', 'Tipo', 'Fecha Emisión', 'Moneda', 'Neto', 'IVA', 'Otros Imp.', 'Total', 'Aseguradora', 'Estado Pago'],
-                  ...filtered.map((d) => [
-                    d.documentNumber,
-                    d.documentType,
-                    d.issueDate,
-                    d.currency,
-                    String(d.netAmount),
-                    String(d.vatAmount),
-                    String(d.otherTaxesAmount),
-                    String(d.totalAmount),
-                    d.insuranceCompany ?? '',
-                    d.paymentStatus,
-                  ]),
-                ]
-                downloadCSV(rows, `documentos-${new Date().toISOString().slice(0, 10)}.csv`)
-              }}
-              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
-            >
-              <Download size={15} />
-              Exportar CSV
-            </button>
-            <button
-              onClick={() => navigate('/insurance/documents/new')}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <Plus size={16} />
-              Nuevo Documento
-            </button>
-          </div>
+          <button
+            onClick={() => navigate('/insurance/documents/new')}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Plus size={16} />
+            Nuevo Documento
+          </button>
         }
       />
 
-      {/* KPIs */}
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard
-          label="Total Documentos"
-          value={allDocuments.length}
-          description="Todos los tipos de documentos"
-          icon={FileText}
-          variant="default"
-        />
-        <KpiCard
-          label="Total Pendiente"
-          value={formatCurrencyCompact(totals.pending, 'ARS')}
-          description={`AR$ ${totals.pending.toLocaleString('es-AR', { minimumFractionDigits: 0 })}`}
-          icon={Clock}
-          variant="warning"
-        />
-        <KpiCard
-          label="Total Pagado"
-          value={formatCurrencyCompact(totals.paid, 'ARS')}
-          description={`AR$ ${totals.paid.toLocaleString('es-AR', { minimumFractionDigits: 0 })}`}
-          icon={CheckCircle2}
-          variant="success"
-        />
-        <KpiCard
-          label="Pago Parcial"
-          value={partialCount}
-          description="Documentos con pago parcial"
-          icon={AlertCircle}
-          variant="warning"
-        />
+        <KpiCard label="Total Documentos" value={allDocuments.length} description="Todos los tipos de documentos" icon={FileText} variant="default" />
+        <KpiCard label="Total Pendiente" value={formatCurrencyCompact(totals.pending, 'ARS')} description={`AR$ ${totals.pending.toLocaleString('es-AR', { minimumFractionDigits: 0 })}`} icon={Clock} variant="warning" />
+        <KpiCard label="Total Pagado" value={formatCurrencyCompact(totals.paid, 'ARS')} description={`AR$ ${totals.paid.toLocaleString('es-AR', { minimumFractionDigits: 0 })}`} icon={CheckCircle2} variant="success" />
+        <KpiCard label="Pago Parcial" value={partialCount} description="Documentos con pago parcial" icon={AlertCircle} variant="warning" />
       </MetricGrid>
 
-      {/* Filters + Table */}
       <SectionCard noPadding>
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
@@ -351,28 +311,34 @@ export default function DocumentsPage() {
             placeholder="Buscar por N° de documento…"
             className="w-full sm:w-72"
           />
-          <FilterBar
-            filters={[
-              {
-                key: 'type',
-                label: 'Tipo',
-                options: DOCUMENT_TYPE_OPTIONS,
-                value: filterType,
-                onChange: setFilterType,
-              },
-              {
-                key: 'status',
-                label: 'Estado de Pago',
-                options: PAYMENT_STATUS_OPTIONS,
-                value: filterStatus,
-                onChange: setFilterStatus,
-              },
-            ]}
+          <MultiSelectFilter label="Tipo" options={DOCUMENT_TYPE_OPTIONS} value={filterType} onChange={setFilterType} />
+          <MultiSelectFilter label="Estado de Pago" options={PAYMENT_STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
+          <DateRangeMonthPicker
+            from={filterDateFrom}
+            to={filterDateTo}
+            onChange={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
           />
-          <div className="ml-auto flex items-center gap-3">
+          {(filterDateFrom || filterDateTo) && (
+            <button
+              type="button"
+              onClick={() => { setFilterDateFrom(''); setFilterDateTo('') }}
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              <X size={12} />
+              Limpiar fechas
+            </button>
+          )}
+          <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
               {filtered.length} de {allDocuments.length} documentos
             </span>
+            <ExportPresetsButton
+              tableKey="documents"
+              allColumns={ALL_COLUMNS}
+              visibleColumns={visibleColumns}
+              filteredRows={filtered}
+              filenamePrefix="documentos"
+            />
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}

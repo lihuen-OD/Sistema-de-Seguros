@@ -2,18 +2,19 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Plus, ShieldAlert, Clock, CheckCircle2, Eye, Edit2, Trash2, Download,
+  Plus, ShieldAlert, Clock, CheckCircle2, Eye, Edit2, Trash2, X,
 } from 'lucide-react'
-import { downloadCSV } from '../../shared/utils/export'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
-import { FilterBar } from '../../shared/components/filters/FilterBar'
-import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
+import { ExportPresetsButton } from '../../shared/components/data-table/ExportPresetsButton'
+import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
+import { DateRangeMonthPicker } from '../../shared/components/filters/DateRangeMonthPicker'
+import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { claimsApi } from '../../shared/api/claims.api'
@@ -21,13 +22,14 @@ import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
-import { catalogsApi } from '../../shared/api/catalogs.api'
 import {
   CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
   CLAIM_STATUS_DEFAULT_STYLE, CLAIM_STATUS_DEFAULT_ICON,
 } from '../../shared/constants/claim-status'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { Claim, TableColumn } from '../../shared/types'
+
+const STATUS_OPTIONS = Object.keys(CLAIM_STATUS_STYLES).map((s) => ({ value: s, label: s }))
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 
@@ -47,19 +49,21 @@ function ClaimStatusPill({ status }: { status: string }) {
 export default function ClaimsPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState('')
-  const [filterType, setFilterType] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string[]>([])
+  const [filterType, setFilterType] = useState<string[]>([])
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const { data: all = [], isLoading, isError } = useQuery({ queryKey: ['claims'], queryFn: () => claimsApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: claimStatuses = [] } = useQuery({ queryKey: ['catalogs', 'claim_status'], queryFn: () => catalogsApi.findByCategory('claim_status') })
-  const { data: claimTypes = [] } = useQuery({ queryKey: ['catalogs', 'claim_type'], queryFn: () => catalogsApi.findByCategory('claim_type') })
 
-  const STATUS_OPTIONS = claimStatuses.map((s) => ({ value: s.label, label: s.label }))
-  const TYPE_OPTIONS = claimTypes.map((t) => ({ value: t.label, label: t.label }))
+  const TYPE_OPTIONS = useMemo(() => {
+    const unique = [...new Set(all.map((c) => c.claimType))].sort()
+    return unique.map((v) => ({ value: v, label: v }))
+  }, [all])
 
   async function handleDelete(id: string) {
     await claimsApi.softDelete(id)
@@ -80,24 +84,27 @@ export default function ClaimsPage() {
     totalSettled: all.reduce((s, c) => s + (c.settledAmountArs ?? 0), 0),
   }), [all])
 
-  const assetNameById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
+  const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
   const policyById = useMemo(() => new Map(allPolicies.map((p) => [p.id, p])), [allPolicies])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return all.filter((c) => {
-      const asset = c.assetId ? assetNameById.get(c.assetId) : null
+      const asset = c.assetId ? assetById.get(c.assetId) : null
       const matchSearch =
         !search ||
         c.claimNumber.toLowerCase().includes(q) ||
         c.insuranceCompany.toLowerCase().includes(q) ||
         (asset?.name.toLowerCase().includes(q) ?? false) ||
         c.claimType.toLowerCase().includes(q)
-      const matchStatus = !filterStatus || c.status === filterStatus
-      const matchType   = !filterType   || c.claimType === filterType
-      return matchSearch && matchStatus && matchType
+      const matchStatus = filterStatus.length === 0 || filterStatus.includes(c.status)
+      const matchType   = filterType.length === 0   || filterType.includes(c.claimType)
+      const date = c.occurrenceDate ?? ''
+      const matchDateFrom = !filterDateFrom || date.slice(0, 7) >= filterDateFrom
+      const matchDateTo   = !filterDateTo   || date.slice(0, 7) <= filterDateTo
+      return matchSearch && matchStatus && matchType && matchDateFrom && matchDateTo
     })
-  }, [all, assetNameById, search, filterStatus, filterType])
+  }, [all, assetById, search, filterStatus, filterType, filterDateFrom, filterDateTo])
 
   const inProgress = counts.denunciado + counts.en_tramite
 
@@ -121,9 +128,13 @@ export default function ClaimsPage() {
       key: 'assetId',
       label: 'Activo',
       defaultVisible: true,
+      exportValue: (row) => {
+        const a = row.assetId ? assetById.get(row.assetId) : null
+        return a ? `${a.name} (${a.internalCode})` : ''
+      },
       render: (v) => {
         if (!v) return <span className="text-xs text-slate-400">—</span>
-        const asset = assetNameById.get(v as string)
+        const asset = assetById.get(v as string)
         if (!asset) return <span className="text-xs text-slate-400">—</span>
         return (
           <button
@@ -141,6 +152,10 @@ export default function ClaimsPage() {
       key: 'policyId',
       label: 'Póliza',
       defaultVisible: true,
+      exportValue: (row) => {
+        const p = row.policyId ? policyById.get(row.policyId) : null
+        return p?.policyNumber ?? ''
+      },
       render: (v) => {
         if (!v) return <span className="text-xs text-slate-400">—</span>
         const pol = policyById.get(v as string)
@@ -170,6 +185,7 @@ export default function ClaimsPage() {
       defaultVisible: true,
       headerClassName: 'text-right',
       className: 'text-right',
+      exportValue: (row) => String(row.claimedAmountArs),
       render: (v) => (
         <span className="text-sm font-semibold text-slate-800 tabular-nums">
           {formatCurrencyCompact(v as number, 'ARS')}
@@ -183,6 +199,7 @@ export default function ClaimsPage() {
       defaultVisible: true,
       headerClassName: 'text-right',
       className: 'text-right',
+      exportValue: (row) => row.settledAmountArs != null ? String(row.settledAmountArs) : '',
       render: (v) =>
         v != null ? (
           <span className="text-sm font-semibold text-emerald-700 tabular-nums">
@@ -217,6 +234,7 @@ export default function ClaimsPage() {
       defaultVisible: false,
       headerClassName: 'text-right',
       className: 'text-right',
+      exportValue: (row) => row.realAmountArs != null ? String(row.realAmountArs) : '',
       render: (v) =>
         v != null && (v as number) > 0
           ? <span className="tabular-nums text-slate-700">{formatCurrencyCompact(v as number, 'ARS')}</span>
@@ -229,6 +247,7 @@ export default function ClaimsPage() {
       defaultVisible: false,
       headerClassName: 'text-right',
       className: 'text-right',
+      exportValue: (row) => row.deductibleArs != null ? String(row.deductibleArs) : '',
       render: (v) =>
         v != null && (v as number) > 0
           ? <span className="tabular-nums text-slate-700">{formatCurrencyCompact(v as number, 'ARS')}</span>
@@ -273,7 +292,7 @@ export default function ClaimsPage() {
       defaultVisible: false,
       render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
-    // ── Acciones (siempre visible, siempre última) ────────────────────────────
+    // ── Acciones ────────────────────────────────────────────────────────────────
     {
       id: 'actions',
       key: 'id',
@@ -306,7 +325,7 @@ export default function ClaimsPage() {
         </div>
       ),
     },
-  ], [navigate, assetNameById, policyById])
+  ], [navigate, assetById, policyById])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('claims', ALL_COLUMNS)
 
@@ -318,78 +337,23 @@ export default function ClaimsPage() {
         title="Siniestros"
         subtitle="Gestión y seguimiento de siniestros asociados a activos y pólizas"
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                const rows = [
-                  ['N° Siniestro', 'Tipo', 'Aseguradora', 'Activo', 'N° Póliza', 'Fecha hecho', 'Estado', 'Reclamado ARS', 'Liquidado ARS'],
-                  ...filtered.map((c) => {
-                    const asset = c.assetId ? assetNameById.get(c.assetId) : null
-                    const pol = c.policyId ? policyById.get(c.policyId) : null
-                    return [
-                      c.claimNumber,
-                      c.claimType,
-                      c.insuranceCompany,
-                      asset?.name ?? '',
-                      pol?.policyNumber ?? '',
-                      c.occurrenceDate,
-                      c.status,
-                      String(c.claimedAmountArs),
-                      c.settledAmountArs != null ? String(c.settledAmountArs) : '',
-                    ]
-                  }),
-                ]
-                downloadCSV(rows, `siniestros-${new Date().toISOString().slice(0, 10)}.csv`)
-              }}
-              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
-            >
-              <Download size={15} />
-              Exportar CSV
-            </button>
-            <button
-              onClick={() => navigate('/claims/new')}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <Plus size={16} />
-              Nuevo Siniestro
-            </button>
-          </div>
+          <button
+            onClick={() => navigate('/claims/new')}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Plus size={16} />
+            Nuevo Siniestro
+          </button>
         }
       />
 
-      {/* KPIs */}
       <MetricGrid cols={4} className="mb-5">
-        <KpiCard
-          label="En Gestión"
-          value={inProgress}
-          description="Denunciados o en trámite"
-          icon={Clock}
-          variant={inProgress > 0 ? 'warning' : 'default'}
-        />
-        <KpiCard
-          label="Liquidados"
-          value={counts.liquidado}
-          description="Con indemnización aprobada"
-          icon={CheckCircle2}
-          variant="success"
-        />
-        <KpiCard
-          label="Monto Reclamado"
-          value={formatCurrencyCompact(totals.totalClaimed, 'ARS')}
-          description="Total histórico reclamado"
-          icon={ShieldAlert}
-          variant="info"
-        />
-        <KpiCard
-          label="Monto Liquidado"
-          value={formatCurrencyCompact(totals.totalSettled, 'ARS')}
-          description="Total indemnizado efectivo"
-          icon={CheckCircle2}
-          variant={totals.totalSettled > 0 ? 'success' : 'default'}
-        />
+        <KpiCard label="En Gestión" value={inProgress} description="Denunciados o en trámite" icon={Clock} variant={inProgress > 0 ? 'warning' : 'default'} />
+        <KpiCard label="Liquidados" value={counts.liquidado} description="Con indemnización aprobada" icon={CheckCircle2} variant="success" />
+        <KpiCard label="Monto Reclamado" value={formatCurrencyCompact(totals.totalClaimed, 'ARS')} description="Total histórico reclamado" icon={ShieldAlert} variant="info" />
+        <KpiCard label="Monto Liquidado" value={formatCurrencyCompact(totals.totalSettled, 'ARS')} description="Total indemnizado efectivo" icon={CheckCircle2} variant={totals.totalSettled > 0 ? 'success' : 'default'} />
       </MetricGrid>
 
-      {/* Alert: siniestros en trámite */}
       {inProgress > 0 && (
         <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
           <Clock size={16} className="mt-0.5 flex-shrink-0" />
@@ -400,7 +364,6 @@ export default function ClaimsPage() {
         </div>
       )}
 
-      {/* Filtros + Tabla */}
       <SectionCard noPadding>
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
@@ -409,28 +372,34 @@ export default function ClaimsPage() {
             placeholder="Buscar por N° siniestro, activo, aseguradora…"
             className="w-full sm:w-80"
           />
-          <FilterBar
-            filters={[
-              {
-                key: 'status',
-                label: 'Estado',
-                options: STATUS_OPTIONS,
-                value: filterStatus,
-                onChange: setFilterStatus,
-              },
-              {
-                key: 'type',
-                label: 'Tipo',
-                options: TYPE_OPTIONS,
-                value: filterType,
-                onChange: setFilterType,
-              },
-            ]}
+          <MultiSelectFilter label="Estado" options={STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
+          <MultiSelectFilter label="Tipo" options={TYPE_OPTIONS} value={filterType} onChange={setFilterType} />
+          <DateRangeMonthPicker
+            from={filterDateFrom}
+            to={filterDateTo}
+            onChange={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
           />
-          <div className="ml-auto flex items-center gap-3">
+          {(filterDateFrom || filterDateTo) && (
+            <button
+              type="button"
+              onClick={() => { setFilterDateFrom(''); setFilterDateTo('') }}
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              <X size={12} />
+              Limpiar fechas
+            </button>
+          )}
+          <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
               {filtered.length} de {all.length} siniestros
             </span>
+            <ExportPresetsButton
+              tableKey="claims"
+              allColumns={ALL_COLUMNS}
+              visibleColumns={visibleColumns}
+              filteredRows={filtered}
+              filenamePrefix="siniestros"
+            />
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}

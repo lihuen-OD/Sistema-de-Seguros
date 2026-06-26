@@ -1,8 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Package, DollarSign, AlertTriangle, Archive, Eye, Trash2, Download } from 'lucide-react'
-import { downloadCSV } from '../../shared/utils/export'
+import { Plus, Package, DollarSign, AlertTriangle, Archive, Eye, Trash2 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -11,7 +10,8 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
-import { FilterBar } from '../../shared/components/filters/FilterBar'
+import { ExportPresetsButton } from '../../shared/components/data-table/ExportPresetsButton'
+import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
@@ -31,9 +31,9 @@ export default function AssetsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState('')
-  const [filterType, setFilterType] = useState('')
-  const [filterCompany, setFilterCompany] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string[]>([])
+  const [filterType, setFilterType] = useState<string[]>([])
+  const [filterCompany, setFilterCompany] = useState<string[]>([])
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const { data: allAssets = [], isLoading, isError } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
@@ -53,9 +53,9 @@ export default function AssetsPage() {
         a.name.toLowerCase().includes(search.toLowerCase()) ||
         a.internalCode.toLowerCase().includes(search.toLowerCase()) ||
         a.brand.toLowerCase().includes(search.toLowerCase())
-      const matchStatus = !filterStatus || a.status === filterStatus
-      const matchType = !filterType || a.assetType === filterType
-      const matchCompany = !filterCompany || a.companyId === filterCompany
+      const matchStatus = filterStatus.length === 0 || filterStatus.includes(a.status)
+      const matchType = filterType.length === 0 || filterType.includes(a.assetType)
+      const matchCompany = filterCompany.length === 0 || filterCompany.includes(a.companyId)
       return matchSearch && matchStatus && matchType && matchCompany
     })
   }, [allAssets, search, filterStatus, filterType, filterCompany])
@@ -90,6 +90,7 @@ export default function AssetsPage() {
       key: 'name',
       label: 'Nombre',
       defaultVisible: true,
+      exportValue: (row) => `${row.name} (${row.brand} ${row.model}${row.year > 0 ? ` ${row.year}` : ''})`.trim(),
       render: (_, row) => (
         <div className="min-w-0 max-w-[220px]">
           <OverflowCell value={row.name} lines={1} className="font-medium text-slate-800 text-sm" />
@@ -116,6 +117,7 @@ export default function AssetsPage() {
       key: 'companyId',
       label: 'Empresa',
       defaultVisible: true,
+      exportValue: (row) => companyNameById.get(row.companyId) ?? '',
       render: (v) => {
         const name = v ? companyNameById.get(v as string) : null
         return <span className="text-slate-600 text-xs">{name ?? '—'}</span>
@@ -126,6 +128,7 @@ export default function AssetsPage() {
       key: 'costCenterId',
       label: 'C. Costo',
       defaultVisible: true,
+      exportValue: (row) => costCenterById.get(row.costCenterId)?.code ?? '',
       render: (v) => {
         const cc = v ? costCenterById.get(v as string) : null
         return <span className="text-slate-500 text-xs">{cc?.code ?? '—'}</span>
@@ -136,6 +139,7 @@ export default function AssetsPage() {
       key: 'patrimonialValueUsd',
       label: 'Valor (USD)',
       defaultVisible: true,
+      exportValue: (row) => String(row.patrimonialValueUsd),
       render: (v) => (
         <span className="font-semibold text-slate-800 tabular-nums">
           {formatCurrencyFull(v as number, 'USD')}
@@ -171,6 +175,7 @@ export default function AssetsPage() {
       key: 'year',
       label: 'Año',
       defaultVisible: false,
+      exportValue: (row) => row.year > 0 ? String(row.year) : '',
       render: (v) => <span className="tabular-nums text-slate-600">{(v as number) > 0 ? String(v) : '—'}</span>,
       className: 'text-center',
       headerClassName: 'text-center',
@@ -180,42 +185,35 @@ export default function AssetsPage() {
       key: 'serialNumber',
       label: 'N° de Serie',
       defaultVisible: false,
-      render: (v) => (
-        <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>
-      ),
+      render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
       id: 'chassisNumber',
       key: 'chassisNumber',
       label: 'N° Chasis',
       defaultVisible: false,
-      render: (v) => (
-        <span className="font-mono text-xs text-slate-600">{(v as string) || <span className="text-slate-400">—</span>}</span>
-      ),
+      render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
       id: 'engineNumber',
       key: 'engineNumber',
       label: 'N° Motor',
       defaultVisible: false,
-      render: (v) => (
-        <span className="font-mono text-xs text-slate-600">{(v as string) || <span className="text-slate-400">—</span>}</span>
-      ),
+      render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
       id: 'fixedAssetCode',
       key: 'fixedAssetCode',
       label: 'Bien de Uso',
       defaultVisible: false,
-      render: (v) => (
-        <span className="font-mono text-xs text-slate-600">{(v as string) || <span className="text-slate-400">—</span>}</span>
-      ),
+      render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
       id: 'patrimonialValueNew',
       key: 'patrimonialValueNew',
       label: 'Valor a Nuevo (USD)',
       defaultVisible: false,
+      exportValue: (row) => row.patrimonialValueNew != null ? String(row.patrimonialValueNew) : '',
       render: (v) =>
         v != null && (v as number) > 0
           ? <span className="font-semibold tabular-nums text-slate-700">{formatCurrencyFull(v as number, 'USD')}</span>
@@ -228,6 +226,10 @@ export default function AssetsPage() {
       key: 'costCenterId',
       label: 'Centro de costo',
       defaultVisible: false,
+      exportValue: (row) => {
+        const cc = costCenterById.get(row.costCenterId)
+        return cc ? `${cc.code} — ${cc.name}` : ''
+      },
       render: (v) => {
         const cc = v ? costCenterById.get(v as string) : null
         return cc
@@ -274,6 +276,7 @@ export default function AssetsPage() {
       key: 'attachmentsCount',
       label: 'Adjuntos',
       defaultVisible: false,
+      exportValue: (row) => String(row.attachmentsCount ?? 0),
       render: (v) => {
         const n = v as number | undefined
         return n != null && n > 0
@@ -290,7 +293,7 @@ export default function AssetsPage() {
       defaultVisible: false,
       render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
-    // ── Acciones (siempre visible, siempre última) ────────────────────────────
+    // ── Acciones ────────────────────────────────────────────────────────────────
     {
       id: 'actions',
       key: 'id',
@@ -328,74 +331,23 @@ export default function AssetsPage() {
         title="Gestión de Activos"
         subtitle="Inventario patrimonial y bienes de uso"
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                const rows = [
-                  ['Código', 'Nombre', 'Marca/Modelo', 'Tipo', 'Estado', 'Empresa', 'C. Costo', 'Valor USD', 'Fecha Valuación'],
-                  ...filtered.map((a) => [
-                    a.internalCode,
-                    a.name,
-                    `${a.brand} ${a.model}${a.year > 0 ? ` (${a.year})` : ''}`,
-                    a.assetType,
-                    a.status,
-                    companyNameById.get(a.companyId) ?? '',
-                    costCenterById.get(a.costCenterId)?.code ?? '',
-                    String(a.patrimonialValueUsd),
-                    a.valuationDate ?? '',
-                  ]),
-                ]
-                downloadCSV(rows, `activos-${new Date().toISOString().slice(0, 10)}.csv`)
-              }}
-              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
-            >
-              <Download size={15} />
-              Exportar CSV
-            </button>
-            <button
-              onClick={() => navigate('/assets/new')}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <Plus size={16} />
-              Nuevo Activo
-            </button>
-          </div>
+          <button
+            onClick={() => navigate('/assets/new')}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Plus size={16} />
+            Nuevo Activo
+          </button>
         }
       />
 
-      {/* KPIs */}
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard
-          label="Activos Totales"
-          value={allAssets.length}
-          description={`${active.length} activos operativos`}
-          icon={Package}
-          variant="info"
-        />
-        <KpiCard
-          label="Valor Patrimonial"
-          value={`US$ ${(totalValueUsd / 1_000_000).toFixed(1).replace('.', ',')}M`}
-          description="Activos operativos"
-          icon={DollarSign}
-          variant="success"
-        />
-        <KpiCard
-          label="Dados de Baja"
-          value={baja.length}
-          description="Activos inactivos o retirados"
-          icon={AlertTriangle}
-          variant={baja.length > 0 ? 'warning' : 'default'}
-        />
-        <KpiCard
-          label="Vendidos"
-          value={vendido.length}
-          description="Activos transferidos o vendidos"
-          icon={Archive}
-          variant="default"
-        />
+        <KpiCard label="Activos Totales" value={allAssets.length} description={`${active.length} activos operativos`} icon={Package} variant="info" />
+        <KpiCard label="Valor Patrimonial" value={`US$ ${(totalValueUsd / 1_000_000).toFixed(1).replace('.', ',')}M`} description="Activos operativos" icon={DollarSign} variant="success" />
+        <KpiCard label="Dados de Baja" value={baja.length} description="Activos inactivos o retirados" icon={AlertTriangle} variant={baja.length > 0 ? 'warning' : 'default'} />
+        <KpiCard label="Vendidos" value={vendido.length} description="Activos transferidos o vendidos" icon={Archive} variant="default" />
       </MetricGrid>
 
-      {/* Filters + Table */}
       <SectionCard noPadding>
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
@@ -404,17 +356,20 @@ export default function AssetsPage() {
             placeholder="Buscar por código, nombre o marca…"
             className="w-full sm:w-72"
           />
-          <FilterBar
-            filters={[
-              { key: 'status', label: 'Estado', options: STATUS_OPTIONS, value: filterStatus, onChange: setFilterStatus },
-              { key: 'type', label: 'Tipo', options: TYPE_OPTIONS, value: filterType, onChange: setFilterType },
-              { key: 'company', label: 'Empresa', options: companyOptions, value: filterCompany, onChange: setFilterCompany },
-            ]}
-          />
-          <div className="ml-auto flex items-center gap-3">
+          <MultiSelectFilter label="Estado" options={STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
+          <MultiSelectFilter label="Tipo" options={TYPE_OPTIONS} value={filterType} onChange={setFilterType} />
+          <MultiSelectFilter label="Empresa" options={companyOptions} value={filterCompany} onChange={setFilterCompany} />
+          <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
               {filtered.length} de {allAssets.length} activos
             </span>
+            <ExportPresetsButton
+              tableKey="assets"
+              allColumns={ALL_COLUMNS}
+              visibleColumns={visibleColumns}
+              filteredRows={filtered}
+              filenamePrefix="activos"
+            />
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}

@@ -411,12 +411,19 @@ export interface TableColumn<T> {
   key: keyof T | string
   label: string
   render?: (value: unknown, row: T) => React.ReactNode
+  exportValue?: (row: T) => string  // plain string for CSV export; fallback: String(row[key])
   className?: string
   headerClassName?: string
   sortable?: boolean
   id?: string           // stable ID for column config (defaults to String(key))
   defaultVisible?: boolean  // shown by default when no saved config (default: true)
   hideable?: boolean    // can be hidden by user (default: true; set false for actions col)
+}
+
+export interface ExportPreset {
+  id: string
+  name: string
+  columnIds: string[]
 }
 
 export interface PaginationState {

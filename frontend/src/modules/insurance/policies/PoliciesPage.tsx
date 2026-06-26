@@ -1,8 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2, Download } from 'lucide-react'
-import { downloadCSV } from '../../../shared/utils/export'
+import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2, X } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -11,7 +10,9 @@ import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { OverflowCell } from '../../../shared/components/data-table/OverflowCell'
 import { ColumnConfigButton } from '../../../shared/components/data-table/ColumnConfigButton'
-import { FilterBar } from '../../../shared/components/filters/FilterBar'
+import { ExportPresetsButton } from '../../../shared/components/data-table/ExportPresetsButton'
+import { MultiSelectFilter } from '../../../shared/components/filters/MultiSelectFilter'
+import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import {
@@ -39,8 +40,10 @@ export default function PoliciesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState('')
-  const [filterType, setFilterType] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string[]>([])
+  const [filterType, setFilterType] = useState<string[]>([])
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const { data: allPolicies = [], isLoading, isError } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
@@ -83,11 +86,14 @@ export default function PoliciesPage() {
         p.insuranceType.toLowerCase().includes(q) ||
         p.insuranceCompany.toLowerCase().includes(q) ||
         assetName.toLowerCase().includes(q)
-      const matchStatus = !filterStatus || p.status === filterStatus
-      const matchType = !filterType || p.insuranceType === filterType
-      return matchSearch && matchStatus && matchType
+      const matchStatus = filterStatus.length === 0 || filterStatus.includes(p.status)
+      const matchType = filterType.length === 0 || filterType.includes(p.insuranceType)
+      const date = p.startDate ?? ''
+      const matchDateFrom = !filterDateFrom || date.slice(0, 7) >= filterDateFrom
+      const matchDateTo   = !filterDateTo   || date.slice(0, 7) <= filterDateTo
+      return matchSearch && matchStatus && matchType && matchDateFrom && matchDateTo
     })
-  }, [allPolicies, assetNameById, search, filterStatus, filterType])
+  }, [allPolicies, assetNameById, search, filterStatus, filterType, filterDateFrom, filterDateTo])
 
   const typeOptions = useMemo(
     () => [...new Set(allPolicies.map((p) => p.insuranceType).filter(Boolean))].map((t) => ({ value: t, label: t })),
@@ -125,6 +131,7 @@ export default function PoliciesPage() {
       key: 'producerId',
       label: 'Productor',
       defaultVisible: true,
+      exportValue: (row) => allProducers.find((p) => p.id === row.producerId)?.name ?? '',
       render: (v) => {
         const producer = allProducers.find((p) => p.id === v)
         return (
@@ -146,6 +153,10 @@ export default function PoliciesPage() {
       key: 'coverageType',
       label: 'Cobertura',
       defaultVisible: true,
+      exportValue: (row) => {
+        const names = row.coverageNames?.length ? row.coverageNames : (row.coverageType ? [row.coverageType] : [])
+        return names.join(', ')
+      },
       render: (_v, row) => {
         const names = row.coverageNames?.length ? row.coverageNames : (row.coverageType ? [row.coverageType] : [])
         const label = names.join(', ') || null
@@ -175,6 +186,7 @@ export default function PoliciesPage() {
       key: 'insuredAmountArs',
       label: 'Suma aseg. ARS',
       defaultVisible: true,
+      exportValue: (row) => String(row.insuredAmountArs),
       render: (v) => (
         <span className="font-semibold text-slate-800 tabular-nums">
           {(v as number) > 0 ? formatCurrencyFull(v as number, 'ARS') : <span className="text-slate-400">—</span>}
@@ -196,6 +208,7 @@ export default function PoliciesPage() {
       key: 'assetId',
       label: 'Activo asociado',
       defaultVisible: false,
+      exportValue: (row) => row.assetId ? (assetNameById.get(row.assetId) ?? '') : '',
       render: (_v, row) => {
         const name = row.assetId ? assetNameById.get(row.assetId) : null
         return name
@@ -208,6 +221,7 @@ export default function PoliciesPage() {
       key: 'insuredAmountUsd',
       label: 'Suma aseg. USD',
       defaultVisible: false,
+      exportValue: (row) => String(row.insuredAmountUsd),
       render: (v) => (
         <span className="tabular-nums text-slate-700">
           {(v as number) > 0 ? formatCurrencyFull(v as number, 'USD') : <span className="text-slate-400">—</span>}
@@ -228,6 +242,7 @@ export default function PoliciesPage() {
       key: 'exchangeRate',
       label: 'Tipo de cambio',
       defaultVisible: false,
+      exportValue: (row) => String(row.exchangeRate),
       render: (v) => (
         <span className="tabular-nums text-slate-600 text-sm">
           {(v as number) > 0 ? `$${(v as number).toLocaleString('es-AR')}` : <span className="text-slate-400">—</span>}
@@ -241,6 +256,7 @@ export default function PoliciesPage() {
       key: 'companyId',
       label: 'Empresa',
       defaultVisible: false,
+      exportValue: (row) => row.companyId ? (companyNameById.get(row.companyId) ?? '') : '',
       render: (v) => {
         const name = v ? companyNameById.get(v as string) : null
         return <span className="text-sm text-slate-700">{name ?? <span className="text-slate-400">—</span>}</span>
@@ -251,6 +267,7 @@ export default function PoliciesPage() {
       key: 'costCenterId',
       label: 'Centro de costo',
       defaultVisible: false,
+      exportValue: (row) => row.costCenterId ? (costCenterById.get(row.costCenterId) ?? '') : '',
       render: (v) => {
         const label = v ? costCenterById.get(v as string) : null
         return label
@@ -285,6 +302,7 @@ export default function PoliciesPage() {
       key: 'attachmentsCount',
       label: 'Adjuntos',
       defaultVisible: false,
+      exportValue: (row) => String(row.attachmentsCount ?? 0),
       render: (v) => {
         const n = v as number | undefined
         return n != null && n > 0
@@ -301,7 +319,7 @@ export default function PoliciesPage() {
       defaultVisible: false,
       render: (v) => <span className="text-xs text-slate-500">{formatDate(v as string)}</span>,
     },
-    // ── Acciones (siempre visible, siempre última) ────────────────────────────
+    // ── Acciones ────────────────────────────────────────────────────────────────
     {
       id: 'actions',
       key: 'id',
@@ -339,74 +357,23 @@ export default function PoliciesPage() {
         title="Pólizas de Seguros"
         subtitle="Administración de pólizas vigentes, vencidas y próximas a vencer"
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                const rows = [
-                  ['N° Póliza', 'Aseguradora', 'Productor', 'Tipo de Seguro', 'Cobertura', 'Inicio', 'Vencimiento', 'Suma Asegurada ARS', 'Estado'],
-                  ...filtered.map((p) => [
-                    p.policyNumber,
-                    p.insuranceCompany,
-                    allProducers.find((pr) => pr.id === p.producerId)?.name ?? '',
-                    p.insuranceType,
-                    p.coverageType ?? '',
-                    p.startDate,
-                    p.endDate,
-                    String(p.insuredAmountArs),
-                    p.status,
-                  ]),
-                ]
-                downloadCSV(rows, `polizas-${new Date().toISOString().slice(0, 10)}.csv`)
-              }}
-              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
-            >
-              <Download size={15} />
-              Exportar CSV
-            </button>
-            <button
-              onClick={() => navigate('/insurance/policies/new')}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <Plus size={16} />
-              Nueva Póliza
-            </button>
-          </div>
+          <button
+            onClick={() => navigate('/insurance/policies/new')}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Plus size={16} />
+            Nueva Póliza
+          </button>
         }
       />
 
-      {/* KPIs */}
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard
-          label="Vigentes"
-          value={counts.vigente}
-          description="Pólizas con cobertura activa"
-          icon={ShieldCheck}
-          variant="success"
-        />
-        <KpiCard
-          label="Vencidas"
-          value={counts.vencida}
-          description="Requieren renovación"
-          icon={ShieldOff}
-          variant="danger"
-        />
-        <KpiCard
-          label="Próximas a Vencer"
-          value={counts.proximo_vencer}
-          description="Vencen en los próximos 30 días"
-          icon={AlertTriangle}
-          variant="warning"
-        />
-        <KpiCard
-          label="Suma Asegurada"
-          value={formatCurrencyCompact(totalInsuredArs, 'ARS')}
-          description="Pólizas vigentes — ARS"
-          icon={DollarSign}
-          variant="info"
-        />
+        <KpiCard label="Vigentes" value={counts.vigente} description="Pólizas con cobertura activa" icon={ShieldCheck} variant="success" />
+        <KpiCard label="Vencidas" value={counts.vencida} description="Requieren renovación" icon={ShieldOff} variant="danger" />
+        <KpiCard label="Próximas a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
+        <KpiCard label="Suma Asegurada" value={formatCurrencyCompact(totalInsuredArs, 'ARS')} description="Pólizas vigentes — ARS" icon={DollarSign} variant="info" />
       </MetricGrid>
 
-      {/* Filters + Table */}
       <SectionCard noPadding>
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
@@ -415,28 +382,44 @@ export default function PoliciesPage() {
             placeholder="Buscar por N° póliza, aseguradora, tipo o activo…"
             className="w-full sm:w-72"
           />
-          <FilterBar
-            filters={[
-              {
-                key: 'status',
-                label: 'Estado',
-                options: STATUS_OPTIONS,
-                value: filterStatus,
-                onChange: setFilterStatus,
-              },
-              {
-                key: 'type',
-                label: 'Tipo',
-                options: typeOptions,
-                value: filterType,
-                onChange: setFilterType,
-              },
-            ]}
+          <MultiSelectFilter
+            label="Estado"
+            options={STATUS_OPTIONS}
+            value={filterStatus}
+            onChange={setFilterStatus}
           />
-          <div className="ml-auto flex items-center gap-3">
+          <MultiSelectFilter
+            label="Tipo"
+            options={typeOptions}
+            value={filterType}
+            onChange={setFilterType}
+          />
+          <DateRangeMonthPicker
+            from={filterDateFrom}
+            to={filterDateTo}
+            onChange={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
+          />
+          {(filterDateFrom || filterDateTo) && (
+            <button
+              type="button"
+              onClick={() => { setFilterDateFrom(''); setFilterDateTo('') }}
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              <X size={12} />
+              Limpiar fechas
+            </button>
+          )}
+          <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
               {filtered.length} de {allPolicies.length} pólizas
             </span>
+            <ExportPresetsButton
+              tableKey="policies"
+              allColumns={ALL_COLUMNS}
+              visibleColumns={visibleColumns}
+              filteredRows={filtered}
+              filenamePrefix="polizas"
+            />
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}

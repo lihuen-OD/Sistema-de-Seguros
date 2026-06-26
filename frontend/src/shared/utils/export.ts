@@ -1,3 +1,5 @@
+import type { TableColumn } from '../types'
+
 // ─── CSV ─────────────────────────────────────────────────────────────────────
 
 function escapeCsvCell(value: string): string {
@@ -19,6 +21,19 @@ export function downloadCSV(rows: string[][], filename: string): void {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+export function buildExportRows<T>(rows: T[], columns: TableColumn<T>[]): string[][] {
+  const exportCols = columns.filter((c) => c.hideable !== false)
+  const header = exportCols.map((c) => c.label)
+  const body = rows.map((row) =>
+    exportCols.map((col) => {
+      if (col.exportValue) return col.exportValue(row)
+      const v = row[col.key as keyof T]
+      return v != null ? String(v) : ''
+    }),
+  )
+  return [header, ...body]
 }
 
 // ─── PDF (print window) ───────────────────────────────────────────────────────

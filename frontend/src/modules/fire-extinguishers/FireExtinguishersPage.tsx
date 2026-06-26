@@ -9,7 +9,8 @@ import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
-import { FilterBar } from '../../shared/components/filters/FilterBar'
+import { ExportPresetsButton } from '../../shared/components/data-table/ExportPresetsButton'
+import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
@@ -28,21 +29,6 @@ import type { FireExtinguisher, Asset, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 const LOCATION_OPTIONS = Object.entries(LOCATION_TYPES).map(([value, label]) => ({ value, label }))
-
-// Column IDs for the custom table
-const FE_COL_DEFS: TableColumn<FireExtinguisher>[] = [
-  { id: 'code', key: 'code', label: 'Código', defaultVisible: true, hideable: true },
-  { id: 'type', key: 'type', label: 'Tipo', defaultVisible: true, hideable: true },
-  { id: 'capacity', key: 'capacity', label: 'Cap.', defaultVisible: true, hideable: true },
-  { id: 'assetId', key: 'associatedAssetId', label: 'Activo / Ubicación', defaultVisible: true, hideable: true },
-  { id: 'chargeDate', key: 'chargeDate', label: 'Fecha Carga', defaultVisible: true, hideable: true },
-  { id: 'expirationDate', key: 'expirationDate', label: 'Vencimiento', defaultVisible: true, hideable: true },
-  { id: 'status', key: 'status', label: 'Estado', defaultVisible: true, hideable: true },
-  { id: 'daysUntil', key: 'expirationDate', label: 'Días', defaultVisible: true, hideable: true },
-  { id: 'observations', key: 'observations', label: 'Observaciones', defaultVisible: false, hideable: true },
-  { id: 'createdAt', key: 'createdAt', label: 'Fecha de alta', defaultVisible: false, hideable: true },
-  { id: 'actions', key: 'id', label: '', hideable: false },
-]
 
 // ─── SelectAll checkbox (handles indeterminate) ───────────────────────────────
 
@@ -76,8 +62,8 @@ export default function FireExtinguishersPage() {
   const navigate = useNavigate()
 
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState('')
-  const [filterLocation, setFilterLocation] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string[]>([])
+  const [filterLocation, setFilterLocation] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showRechargeModal, setShowRechargeModal] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -86,29 +72,56 @@ export default function FireExtinguishersPage() {
   const { data: all = [], isError } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: () => fireExtinguishersApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
 
+  const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
+
+  const FE_COL_DEFS: TableColumn<FireExtinguisher>[] = useMemo(() => [
+    { id: 'code',           key: 'code',               label: 'Código',           defaultVisible: true,  hideable: true },
+    { id: 'type',           key: 'type',               label: 'Tipo',             defaultVisible: true,  hideable: true },
+    { id: 'capacity',       key: 'capacity',            label: 'Cap.',             defaultVisible: true,  hideable: true },
+    {
+      id: 'assetId',
+      key: 'associatedAssetId',
+      label: 'Activo / Ubicación',
+      defaultVisible: true,
+      hideable: true,
+      exportValue: (row) => {
+        const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
+        const locationLabel = LOCATION_TYPES[row.associatedLocationType] ?? row.associatedLocationType
+        return asset ? `${asset.name} — ${locationLabel}` : locationLabel
+      },
+    },
+    { id: 'chargeDate',     key: 'chargeDate',          label: 'Fecha Carga',      defaultVisible: true,  hideable: true },
+    { id: 'expirationDate', key: 'expirationDate',      label: 'Vencimiento',      defaultVisible: true,  hideable: true },
+    { id: 'status',         key: 'status',              label: 'Estado',           defaultVisible: true,  hideable: true },
+    { id: 'daysUntil',      key: 'expirationDate',      label: 'Días',             defaultVisible: true,  hideable: true },
+    { id: 'observations',   key: 'observations',        label: 'Observaciones',    defaultVisible: false, hideable: true },
+    { id: 'createdAt',      key: 'createdAt',           label: 'Fecha de alta',    defaultVisible: false, hideable: true },
+    { id: 'actions',        key: 'id',                  label: '',                 hideable: false },
+  ], [assetById])
+
   const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('fire-extinguishers', FE_COL_DEFS)
   const visibleIds = useMemo(() => new Set(visibleColumns.map((c) => c.id ?? '')), [visibleColumns])
 
   const counts = useMemo(() => ({
-    vigente: all.filter((f) => f.status === 'vigente').length,
+    vigente:        all.filter((f) => f.status === 'vigente').length,
     proximo_vencer: all.filter((f) => f.status === 'proximo_vencer').length,
-    vencido: all.filter((f) => f.status === 'vencido').length,
+    vencido:        all.filter((f) => f.status === 'vencido').length,
   }), [all])
 
   const filtered = useMemo(() => {
     return all.filter((fe) => {
       const q = search.toLowerCase()
-      const asset = fe.associatedAssetId ? allAssets.find((a) => a.id === fe.associatedAssetId) : null
+      const asset = fe.associatedAssetId ? assetById.get(fe.associatedAssetId) : null
       const matchSearch =
         !search ||
         fe.code.toLowerCase().includes(q) ||
         fe.type.toLowerCase().includes(q) ||
         (asset?.name.toLowerCase().includes(q) ?? false)
-      const matchStatus = !filterStatus || fe.status === filterStatus
-      const matchLocation = !filterLocation || fe.associatedLocationType === filterLocation
+      const matchStatus   = filterStatus.length === 0   || filterStatus.includes(fe.status)
+      const matchLocation = filterLocation.length === 0 || filterLocation.includes(fe.associatedLocationType)
       return matchSearch && matchStatus && matchLocation
     })
-  }, [all, allAssets, search, filterStatus, filterLocation])
+  }, [all, assetById, search, filterStatus, filterLocation])
 
   // Selection helpers
   const selectedCount = selectedIds.size
@@ -167,39 +180,13 @@ export default function FireExtinguishersPage() {
         }
       />
 
-      {/* KPIs */}
       <MetricGrid cols={4} className="mb-5">
-        <KpiCard
-          label="Vigentes"
-          value={counts.vigente}
-          description="Con carga al día"
-          icon={ShieldCheck}
-          variant="success"
-        />
-        <KpiCard
-          label="Próximos a Vencer"
-          value={counts.proximo_vencer}
-          description="Vencen en los próximos 30 días"
-          icon={AlertTriangle}
-          variant="warning"
-        />
-        <KpiCard
-          label="Vencidos"
-          value={counts.vencido}
-          description="Requieren recarga inmediata"
-          icon={ShieldOff}
-          variant={counts.vencido > 0 ? 'danger' : 'default'}
-        />
-        <KpiCard
-          label="Total"
-          value={all.length}
-          description="Matafuegos registrados"
-          icon={Flame}
-          variant="default"
-        />
+        <KpiCard label="Vigentes"          value={counts.vigente}        description="Con carga al día"                icon={ShieldCheck} variant="success" />
+        <KpiCard label="Próximos a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
+        <KpiCard label="Vencidos"          value={counts.vencido}        description="Requieren recarga inmediata"     icon={ShieldOff} variant={counts.vencido > 0 ? 'danger' : 'default'} />
+        <KpiCard label="Total"             value={all.length}            description="Matafuegos registrados"          icon={Flame} variant="default" />
       </MetricGrid>
 
-      {/* Alert banner */}
       {counts.vencido > 0 && (
         <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
           <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
@@ -212,9 +199,7 @@ export default function FireExtinguishersPage() {
         </div>
       )}
 
-      {/* Table card */}
       <SectionCard noPadding>
-        {/* Filter bar */}
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
             value={search}
@@ -222,28 +207,29 @@ export default function FireExtinguishersPage() {
             placeholder="Buscar por código, tipo o activo…"
             className="w-full sm:w-72"
           />
-          <FilterBar
-            filters={[
-              {
-                key: 'status',
-                label: 'Estado',
-                options: STATUS_OPTIONS,
-                value: filterStatus,
-                onChange: setFilterStatus,
-              },
-              {
-                key: 'location',
-                label: 'Ubicación',
-                options: LOCATION_OPTIONS,
-                value: filterLocation,
-                onChange: setFilterLocation,
-              },
-            ]}
+          <MultiSelectFilter
+            label="Estado"
+            options={STATUS_OPTIONS}
+            value={filterStatus}
+            onChange={setFilterStatus}
           />
-          <div className="ml-auto flex items-center gap-3">
+          <MultiSelectFilter
+            label="Ubicación"
+            options={LOCATION_OPTIONS}
+            value={filterLocation}
+            onChange={setFilterLocation}
+          />
+          <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
               {filtered.length} de {all.length} matafuegos
             </span>
+            <ExportPresetsButton
+              tableKey="fire-extinguishers"
+              allColumns={FE_COL_DEFS}
+              visibleColumns={visibleColumns}
+              filteredRows={filtered}
+              filenamePrefix="matafuegos"
+            />
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -253,7 +239,6 @@ export default function FireExtinguishersPage() {
           </div>
         </div>
 
-        {/* Selection action strip */}
         {selectedCount > 0 && (
           <div className="px-5 py-2.5 bg-blue-50 border-b border-blue-100 flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-blue-800">
@@ -276,7 +261,6 @@ export default function FireExtinguishersPage() {
           </div>
         )}
 
-        {/* Table */}
         <FireExtTable
           extinguishers={filtered}
           allAssets={allAssets}
@@ -291,7 +275,6 @@ export default function FireExtinguishersPage() {
         />
       </SectionCard>
 
-      {/* Recharge modal */}
       {showRechargeModal && (
         <RechargeModal
           extinguishers={selectedExtinguishers}
@@ -355,16 +338,16 @@ function FireExtTable({
   }
 
   const headers = [
-    show('code') && 'Código',
-    show('type') && 'Tipo',
-    show('capacity') && 'Cap.',
-    show('assetId') && 'Activo / Ubicación',
-    show('chargeDate') && 'Fecha Carga',
+    show('code')           && 'Código',
+    show('type')           && 'Tipo',
+    show('capacity')       && 'Cap.',
+    show('assetId')        && 'Activo / Ubicación',
+    show('chargeDate')     && 'Fecha Carga',
     show('expirationDate') && 'Vencimiento',
-    show('status') && 'Estado',
-    show('daysUntil') && 'Días',
-    show('observations') && 'Observaciones',
-    show('createdAt') && 'Fecha de alta',
+    show('status')         && 'Estado',
+    show('daysUntil')      && 'Días',
+    show('observations')   && 'Observaciones',
+    show('createdAt')      && 'Fecha de alta',
     '',
   ].filter(Boolean) as string[]
 
@@ -414,7 +397,6 @@ function FireExtTable({
                   isSoon && !isSelected && !isExp && 'border-l-2 border-l-amber-400',
                 )}
               >
-                {/* Checkbox */}
                 <td className="px-4 py-3 w-10" onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
@@ -508,7 +490,6 @@ function FireExtTable({
                   </td>
                 )}
 
-                {/* Action */}
                 <td className="px-4 py-3 w-20" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">
                     <button
