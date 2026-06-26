@@ -273,8 +273,6 @@ export default function PolicyNewPage() {
     if (showBeneficiaryField && !form.beneficiaryDescription.trim()) {
       next.beneficiaryDescription = 'Describí a quién corresponde este seguro'
     }
-    if (!form.insuredAmountArs) next.insuredAmountArs = 'Requerido'
-    if (!form.exchangeRate)     next.exchangeRate     = 'Requerido'
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -283,8 +281,8 @@ export default function PolicyNewPage() {
     e.preventDefault()
     if (!validate()) return
 
-    const ars = parseFloat(form.insuredAmountArs)
-    const rate = parseFloat(form.exchangeRate)
+    const ars = parseFloat(form.insuredAmountArs) || 0
+    const rate = parseFloat(form.exchangeRate) || 1
 
     const insuranceTypeObj = insuranceTypes.find((t) => t.label === form.insuranceType)
     const insuranceTypeId = insuranceTypeObj?.id ?? ''
@@ -538,7 +536,7 @@ export default function PolicyNewPage() {
         {/* 4. Importes */}
         <SectionCard title="Importes" subtitle="Suma asegurada y tipo de cambio al momento del alta">
           <FormSection title="">
-            <FormField label="Suma Asegurada (ARS)" required error={errors.insuredAmountArs}>
+            <FormField label="Suma Asegurada (ARS)" error={errors.insuredAmountArs}>
               <FormInput
                 type="number"
                 placeholder="Ej: 30000000"
@@ -546,10 +544,9 @@ export default function PolicyNewPage() {
                 onChange={set('insuredAmountArs')}
                 min="0"
                 step="1"
-                required
               />
             </FormField>
-            <FormField label="Tipo de Cambio (ARS/USD)" required error={errors.exchangeRate}>
+            <FormField label="Tipo de Cambio (ARS/USD)" error={errors.exchangeRate}>
               <FormInput
                 type="number"
                 placeholder="Ej: 970"
@@ -557,7 +554,6 @@ export default function PolicyNewPage() {
                 onChange={set('exchangeRate')}
                 min="0"
                 step="0.01"
-                required
               />
             </FormField>
             <FormField label="Suma Asegurada (USD)">

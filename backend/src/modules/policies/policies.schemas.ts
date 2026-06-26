@@ -17,9 +17,9 @@ const PolicyBaseSchema = z.object({
   beneficiaryDescription: z.string().max(2000).optional().nullable(),
   startDate: ISODate,
   endDate: ISODate,
-  premium: z.number().positive('La prima debe ser un valor positivo'),
+  premium: z.number().min(0).default(0),
   currency: z.string().min(1).max(10).default('ARS'),
-  exchangeRate: z.number().positive('El tipo de cambio debe ser positivo').default(1),
+  exchangeRate: z.number().min(0).default(1),
   description: z.string().max(1000).optional(),
   coverageIds: z.array(z.string()).default([]),
 })
