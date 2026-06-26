@@ -39,6 +39,12 @@ export const assetsController = {
     res.json({ data: allocations })
   }),
 
+  // Status history
+  getStatusHistory: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const history = await assetsService.findStatusHistory(req.params.id)
+    res.json({ data: history })
+  }),
+
   // Value history
   getValueHistory: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     const history = await assetsService.findValueHistory(req.params.id)

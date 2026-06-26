@@ -303,6 +303,15 @@ export interface FireExtinguisher {
   updatedAt: string
 }
 
+export interface AssetStatusHistory {
+  id: string
+  assetId: string
+  status: 'activo' | 'baja' | 'vendido'
+  date: string
+  note: string | null
+  createdAt: string
+}
+
 export interface AssetAttachment {
   id: string
   assetId: string

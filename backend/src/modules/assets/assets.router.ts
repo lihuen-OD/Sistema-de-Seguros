@@ -42,6 +42,9 @@ assetsRouter.put(
   assetsController.replaceAllocations,
 )
 
+// Status history
+assetsRouter.get('/:id/status-history', assetsController.getStatusHistory)
+
 // Value history
 assetsRouter.get('/:id/value-history', assetsController.getValueHistory)
 assetsRouter.post(

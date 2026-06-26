@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -144,6 +144,12 @@ export default function AssetDetailPage() {
     enabled: !!asset,
   })
 
+  const { data: statusHistory = [] } = useQuery({
+    queryKey: ['asset-status-history', id],
+    queryFn: () => assetsApi.findStatusHistory(id!),
+    enabled: !!id,
+  })
+
   // Sync photos when asset loads
   useEffect(() => {
     if (asset?.photos) {
@@ -157,6 +163,28 @@ export default function AssetDetailPage() {
       return Math.min(current, photos.length - 1)
     })
   }, [photos])
+
+  // Historial de estado: usa el real o genera uno sintético para activos pre-feature
+  // Debe estar ANTES de cualquier return condicional (Rules of Hooks)
+  const displayHistory = useMemo(() => {
+    if (!asset) return []
+    if (statusHistory.length > 0) return statusHistory
+    const entries: typeof statusHistory = [{
+      id: 'synthetic-alta',
+      assetId: asset.id,
+      status: 'activo',
+      date: asset.createdAt.slice(0, 10),
+      note: 'Alta del activo',
+      createdAt: asset.createdAt,
+    }]
+    if (asset.status === 'baja' && asset.dischargeDate) {
+      entries.push({ id: 'synthetic-baja', assetId: asset.id, status: 'baja', date: asset.dischargeDate, note: 'Activo dado de baja', createdAt: asset.dischargeDate })
+    }
+    if (asset.status === 'vendido' && asset.saleDate) {
+      entries.push({ id: 'synthetic-vendido', assetId: asset.id, status: 'vendido', date: asset.saleDate, note: 'Activo vendido', createdAt: asset.saleDate })
+    }
+    return entries
+  }, [statusHistory, asset])
 
   // ── Loading state ─────────────────────────────────────────────────────────────
 
@@ -492,6 +520,36 @@ export default function AssetDetailPage() {
               <p className="text-sm text-slate-700 leading-relaxed">{asset.observations}</p>
             </SectionCard>
           )}
+
+          {/* Historial de Estado */}
+          <SectionCard title="Historial de Estado">
+            <div className="space-y-0">
+              {displayHistory.map((entry, idx) => {
+                const isLast = idx === displayHistory.length - 1
+                const cfg = ({
+                  activo:  { label: 'Alta',  color: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
+                  baja:    { label: 'Baja',  color: 'bg-red-500',     text: 'text-red-700',     bg: 'bg-red-50' },
+                  vendido: { label: 'Venta', color: 'bg-blue-500',    text: 'text-blue-700',    bg: 'bg-blue-50' },
+                } as Record<string, { label: string; color: string; text: string; bg: string }>)[entry.status]
+                  ?? { label: entry.status, color: 'bg-slate-400', text: 'text-slate-600', bg: 'bg-slate-50' }
+                return (
+                  <div key={entry.id} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 ${cfg.color}`} />
+                      {!isLast && <div className="w-px flex-1 bg-slate-200 my-1" />}
+                    </div>
+                    <div className="flex-1 pb-3">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${cfg.bg} ${cfg.text}`}>{cfg.label}</span>
+                        <span className="text-xs text-slate-500">{formatDate(entry.date)}</span>
+                      </div>
+                      {entry.note && <p className="text-xs text-slate-400">{entry.note}</p>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </SectionCard>
         </div>
 
         {/* Right col: KPIs financieros */}
@@ -548,6 +606,7 @@ export default function AssetDetailPage() {
               <SummaryRow label="Siniestros" value={String(claimsCount)} color={claimsCount > 0 ? 'text-orange-600' : 'text-slate-800'} />
             </div>
           </SectionCard>
+
 
           {asset.coordinates ? (
             <SectionCard

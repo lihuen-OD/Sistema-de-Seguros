@@ -102,6 +102,7 @@ model Asset {
 
   allocations       AssetAllocation[]
   valueHistory      AssetValueHistory[]
+  statusHistory     AssetStatusHistory[]
   attachments       AssetAttachment[]
   fireExtinguishers FireExtinguisher[]
   claims            Claim[]
@@ -111,6 +112,20 @@ model Asset {
   @@index([name])
   @@index([brand])
   @@map("assets")
+}
+
+model AssetStatusHistory {
+  id        String   @id @default(uuid())
+  assetId   String
+  status    String
+  date      DateTime @db.Date
+  note      String?
+  createdAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@map("asset_status_history")
 }
 
 model AssetAllocation {

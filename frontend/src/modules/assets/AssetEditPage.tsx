@@ -166,6 +166,7 @@ export default function AssetEditPage() {
   const [valuationDate, setValuationDate] = useState('')
   const [dischargeDate, setDischargeDate] = useState('')
   const [saleDate, setSaleDate] = useState('')
+  const [reactivationDate, setReactivationDate] = useState('')
   const [allocations, setAllocations] = useState<AssetAllocation[]>([
     { id: 'alloc-init', companyId: '', costCenterId: '', percentage: 100 },
   ])
@@ -414,6 +415,7 @@ export default function AssetEditPage() {
           purchaseDate: valuationDate || undefined,
           dischargeDate: dischargeDate || null,
           saleDate: saleDate || null,
+          reactivationDate: reactivationDate || null,
           currentValue: patrimonialValueUsd ? parseFloat(patrimonialValueUsd) : undefined,
           patrimonialValueNew: patrimonialValueNew ? parseFloat(patrimonialValueNew) : undefined,
           mapsUrl: form.mapsUrl.trim() || undefined,
@@ -455,6 +457,7 @@ export default function AssetEditPage() {
       navigate(`/assets/${asset.id}`)
       void queryClient.invalidateQueries({ queryKey: ['assets', id] })
       void queryClient.invalidateQueries({ queryKey: ['assets'] })
+      void queryClient.invalidateQueries({ queryKey: ['asset-status-history', id] })
     } finally {
       setSubmitting(false)
     }
@@ -518,6 +521,21 @@ export default function AssetEditPage() {
                   ))}
                 </FormSelect>
               </FormField>
+              {form.status === 'baja' && (
+                <FormField label="Fecha de baja">
+                  <FormInput type="date" value={dischargeDate} onChange={(e) => setDischargeDate(e.target.value)} />
+                </FormField>
+              )}
+              {form.status === 'vendido' && (
+                <FormField label="Fecha de venta">
+                  <FormInput type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
+                </FormField>
+              )}
+              {form.status === 'activo' && asset.status !== 'activo' && (
+                <FormField label="Fecha de reactivación">
+                  <FormInput type="date" value={reactivationDate} onChange={(e) => setReactivationDate(e.target.value)} />
+                </FormField>
+              )}
             </FormSection>
           </SectionCard>
 
@@ -780,16 +798,6 @@ export default function AssetEditPage() {
                 <FormField label="Fecha de valuación">
                   <FormInput type="date" value={valuationDate} onChange={(e) => setValuationDate(e.target.value)} />
                 </FormField>
-                {form.status === 'baja' && (
-                  <FormField label="Fecha de baja">
-                    <FormInput type="date" value={dischargeDate} onChange={(e) => setDischargeDate(e.target.value)} />
-                  </FormField>
-                )}
-                {form.status === 'vendido' && (
-                  <FormField label="Fecha de venta">
-                    <FormInput type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
-                  </FormField>
-                )}
               </FormSection>
               <div className="border-t border-slate-100 pt-4">
                 <ValueHistorySection

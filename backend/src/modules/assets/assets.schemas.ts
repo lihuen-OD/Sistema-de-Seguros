@@ -27,6 +27,7 @@ export const CreateAssetSchema = z.object({
   purchaseDate: ISODate.optional(),
   dischargeDate: ISODate.optional().nullable(),
   saleDate: ISODate.optional().nullable(),
+  reactivationDate: ISODate.optional().nullable(),
   purchaseValue: z.number().positive().optional(),
   currentValue: z.number().nonnegative().optional(),
   patrimonialValueNew: z.number().nonnegative().optional(),

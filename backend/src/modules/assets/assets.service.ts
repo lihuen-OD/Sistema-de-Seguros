@@ -38,6 +38,7 @@ const ASSET_DETAIL_INCLUDE = {
   },
   _count: { select: { attachments: true, fireExtinguishers: true } },
   valueHistory: { orderBy: { date: 'desc' as const }, take: 100 },
+  statusHistory: { orderBy: { date: 'asc' as const } },
   attachments: { orderBy: { uploadedAt: 'desc' as const }, take: 50 },
 }
 
@@ -154,6 +155,16 @@ export const assetsService = {
         })
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (tx as any).assetStatusHistory.create({
+        data: {
+          assetId: asset.id,
+          status: assetData.status ?? 'activo',
+          date: assetData.purchaseDate ?? new Date(),
+          note: 'Alta del activo',
+        },
+      })
+
       return tx.asset.findUniqueOrThrow({
         where: { id: asset.id },
         include: ASSET_DETAIL_INCLUDE,
@@ -162,14 +173,53 @@ export const assetsService = {
   },
 
   async update(id: string, data: UpdateAssetDTO) {
-    return prisma.asset.update({
+    // reactivationDate no es columna de assets — solo se usa para loguear el historial
+    const { reactivationDate, ...assetData } = data
+
+    const current = await prisma.asset.findUnique({
       where: { id },
-      data: {
-        ...data,
-        metadata: data.metadata ? (data.metadata as Prisma.InputJsonValue) : undefined,
-      },
-      select: { id: true, updatedAt: true },
-    }).catch(handleUpdateNotFound)
+      select: { id: true, status: true },
+    })
+    if (!current) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
+
+    if (assetData.status && assetData.status !== current.status) {
+      const statusDate = assetData.status === 'baja' ? assetData.dischargeDate
+        : assetData.status === 'vendido' ? assetData.saleDate
+        : reactivationDate ?? new Date()
+
+      await prisma.$transaction([
+        prisma.asset.update({
+          where: { id },
+          data: {
+            ...assetData,
+            metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
+          },
+          select: { id: true },
+        }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (prisma as any).assetStatusHistory.create({
+          data: {
+            assetId: id,
+            status: assetData.status,
+            date: statusDate ?? new Date(),
+            note: assetData.status === 'baja' ? 'Activo dado de baja'
+              : assetData.status === 'vendido' ? 'Activo vendido'
+              : 'Activo reactivado',
+          },
+        }),
+      ])
+    } else {
+      await prisma.asset.update({
+        where: { id },
+        data: {
+          ...assetData,
+          metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
+        },
+        select: { id: true },
+      }).catch(handleUpdateNotFound)
+    }
+
+    return { id }
   },
 
   async softDelete(id: string) {
@@ -213,6 +263,17 @@ export const assetsService = {
         include: { costCenter: { select: { id: true, name: true, code: true } } },
         orderBy: { percentage: 'desc' },
       })
+    })
+  },
+
+  // ── Status History ───────────────────────────────────────────────────────────
+
+  async findStatusHistory(assetId: string) {
+    await assertAssetExists(assetId)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (prisma as any).assetStatusHistory.findMany({
+      where: { assetId },
+      orderBy: { date: 'asc' },
     })
   },
 
