@@ -414,6 +414,9 @@ export interface TableColumn<T> {
   className?: string
   headerClassName?: string
   sortable?: boolean
+  id?: string           // stable ID for column config (defaults to String(key))
+  defaultVisible?: boolean  // shown by default when no saved config (default: true)
+  hideable?: boolean    // can be hidden by user (default: true; set false for actions col)
 }
 
 export interface PaginationState {

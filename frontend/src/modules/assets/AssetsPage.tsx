@@ -10,6 +10,7 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
+import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
@@ -20,6 +21,7 @@ import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { ASSET_TYPES, ASSET_STATUS_LABELS } from '../../shared/constants'
+import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { Asset, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(ASSET_STATUS_LABELS).map(([value, label]) => ({ value, label }))
@@ -69,16 +71,25 @@ export default function AssetsPage() {
   }, [allAssets])
 
   const companyOptions = useMemo(() => allCompanies.map((c) => ({ value: c.id, label: c.name })), [allCompanies])
+  const companyNameById = useMemo(() => new Map(allCompanies.map((c) => [c.id, c.name])), [allCompanies])
+  const costCenterById = useMemo(
+    () => new Map(allCostCenters.map((cc) => [cc.id, { code: cc.code, name: cc.name }])),
+    [allCostCenters],
+  )
 
-  const columns: TableColumn<Asset>[] = [
+  const ALL_COLUMNS: TableColumn<Asset>[] = useMemo(() => [
     {
+      id: 'internalCode',
       key: 'internalCode',
       label: 'Código',
+      defaultVisible: true,
       className: 'font-mono text-slate-600',
     },
     {
+      id: 'name',
       key: 'name',
       label: 'Nombre',
+      defaultVisible: true,
       render: (_, row) => (
         <div className="min-w-0 max-w-[220px]">
           <OverflowCell value={row.name} lines={1} className="font-medium text-slate-800 text-sm" />
@@ -87,34 +98,44 @@ export default function AssetsPage() {
       ),
     },
     {
+      id: 'assetType',
       key: 'assetType',
       label: 'Tipo',
+      defaultVisible: true,
       render: (v) => <span className="text-slate-600 whitespace-normal">{String(v)}</span>,
     },
     {
+      id: 'status',
       key: 'status',
       label: 'Estado',
+      defaultVisible: true,
       render: (v) => <StatusPill status={v as string} />,
     },
     {
+      id: 'companyId',
       key: 'companyId',
       label: 'Empresa',
+      defaultVisible: true,
       render: (v) => {
-        const c = allCompanies.find((co) => co.id === v)
-        return <span className="text-slate-600 text-xs">{c?.name ?? '—'}</span>
+        const name = v ? companyNameById.get(v as string) : null
+        return <span className="text-slate-600 text-xs">{name ?? '—'}</span>
       },
     },
     {
+      id: 'costCenterId',
       key: 'costCenterId',
       label: 'C. Costo',
+      defaultVisible: true,
       render: (v) => {
-        const cc = allCostCenters.find((c) => c.id === v)
+        const cc = v ? costCenterById.get(v as string) : null
         return <span className="text-slate-500 text-xs">{cc?.code ?? '—'}</span>
       },
     },
     {
+      id: 'patrimonialValueUsd',
       key: 'patrimonialValueUsd',
       label: 'Valor (USD)',
+      defaultVisible: true,
       render: (v) => (
         <span className="font-semibold text-slate-800 tabular-nums">
           {formatCurrencyFull(v as number, 'USD')}
@@ -124,13 +145,157 @@ export default function AssetsPage() {
       headerClassName: 'text-right',
     },
     {
+      id: 'valuationDate',
       key: 'valuationDate',
       label: 'Valuación',
+      defaultVisible: true,
       render: (v) => <span className="text-slate-500 text-xs">{formatDate(v as string)}</span>,
     },
+    // ── Columnas opcionales ────────────────────────────────────────────────────
     {
+      id: 'brand',
+      key: 'brand',
+      label: 'Marca',
+      defaultVisible: false,
+      render: (v) => <span className="text-sm text-slate-700">{(v as string) || '—'}</span>,
+    },
+    {
+      id: 'model',
+      key: 'model',
+      label: 'Modelo',
+      defaultVisible: false,
+      render: (v) => <span className="text-sm text-slate-700">{(v as string) || '—'}</span>,
+    },
+    {
+      id: 'year',
+      key: 'year',
+      label: 'Año',
+      defaultVisible: false,
+      render: (v) => <span className="tabular-nums text-slate-600">{(v as number) > 0 ? String(v) : '—'}</span>,
+      className: 'text-center',
+      headerClassName: 'text-center',
+    },
+    {
+      id: 'serialNumber',
+      key: 'serialNumber',
+      label: 'N° de Serie',
+      defaultVisible: false,
+      render: (v) => (
+        <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>
+      ),
+    },
+    {
+      id: 'chassisNumber',
+      key: 'chassisNumber',
+      label: 'N° Chasis',
+      defaultVisible: false,
+      render: (v) => (
+        <span className="font-mono text-xs text-slate-600">{(v as string) || <span className="text-slate-400">—</span>}</span>
+      ),
+    },
+    {
+      id: 'engineNumber',
+      key: 'engineNumber',
+      label: 'N° Motor',
+      defaultVisible: false,
+      render: (v) => (
+        <span className="font-mono text-xs text-slate-600">{(v as string) || <span className="text-slate-400">—</span>}</span>
+      ),
+    },
+    {
+      id: 'fixedAssetCode',
+      key: 'fixedAssetCode',
+      label: 'Bien de Uso',
+      defaultVisible: false,
+      render: (v) => (
+        <span className="font-mono text-xs text-slate-600">{(v as string) || <span className="text-slate-400">—</span>}</span>
+      ),
+    },
+    {
+      id: 'patrimonialValueNew',
+      key: 'patrimonialValueNew',
+      label: 'Valor a Nuevo (USD)',
+      defaultVisible: false,
+      render: (v) =>
+        v != null && (v as number) > 0
+          ? <span className="font-semibold tabular-nums text-slate-700">{formatCurrencyFull(v as number, 'USD')}</span>
+          : <span className="text-slate-400">—</span>,
+      className: 'text-right',
+      headerClassName: 'text-right',
+    },
+    {
+      id: 'costCenterName',
+      key: 'costCenterId',
+      label: 'Centro de costo',
+      defaultVisible: false,
+      render: (v) => {
+        const cc = v ? costCenterById.get(v as string) : null
+        return cc
+          ? <span className="text-xs text-slate-600">{cc.code} — {cc.name}</span>
+          : <span className="text-slate-400">—</span>
+      },
+    },
+    {
+      id: 'productiveUnit',
+      key: 'productiveUnit',
+      label: 'Unidad Productiva',
+      defaultVisible: false,
+      render: (v) => <span className="text-sm text-slate-700">{(v as string) || '—'}</span>,
+    },
+    {
+      id: 'area',
+      key: 'area',
+      label: 'Área',
+      defaultVisible: false,
+      render: (v) => <span className="text-sm text-slate-700">{(v as string) || '—'}</span>,
+    },
+    {
+      id: 'dischargeDate',
+      key: 'dischargeDate',
+      label: 'Fecha de baja',
+      defaultVisible: false,
+      render: (v) =>
+        v
+          ? <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>
+          : <span className="text-slate-400">—</span>,
+    },
+    {
+      id: 'saleDate',
+      key: 'saleDate',
+      label: 'Fecha de venta',
+      defaultVisible: false,
+      render: (v) =>
+        v
+          ? <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>
+          : <span className="text-slate-400">—</span>,
+    },
+    {
+      id: 'attachmentsCount',
+      key: 'attachmentsCount',
+      label: 'Adjuntos',
+      defaultVisible: false,
+      render: (v) => {
+        const n = v as number | undefined
+        return n != null && n > 0
+          ? <span className="text-sm font-medium text-slate-700">{n}</span>
+          : <span className="text-slate-400">—</span>
+      },
+      className: 'text-center',
+      headerClassName: 'text-center',
+    },
+    {
+      id: 'createdAt',
+      key: 'createdAt',
+      label: 'Fecha de alta',
+      defaultVisible: false,
+      render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
+    },
+    // ── Acciones (siempre visible, siempre última) ────────────────────────────
+    {
+      id: 'actions',
       key: 'id',
       label: '',
+      hideable: false,
       render: (_, row) => (
         <div className="flex items-center gap-1">
           <button
@@ -151,7 +316,9 @@ export default function AssetsPage() {
       ),
       className: 'w-20',
     },
-  ]
+  ], [companyNameById, costCenterById, navigate])
+
+  const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('assets', ALL_COLUMNS)
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -172,8 +339,8 @@ export default function AssetsPage() {
                     `${a.brand} ${a.model}${a.year > 0 ? ` (${a.year})` : ''}`,
                     a.assetType,
                     a.status,
-                    allCompanies.find((c) => c.id === a.companyId)?.name ?? '',
-                    allCostCenters.find((cc) => cc.id === a.costCenterId)?.code ?? '',
+                    companyNameById.get(a.companyId) ?? '',
+                    costCenterById.get(a.costCenterId)?.code ?? '',
                     String(a.patrimonialValueUsd),
                     a.valuationDate ?? '',
                   ]),
@@ -244,19 +411,27 @@ export default function AssetsPage() {
               { key: 'company', label: 'Empresa', options: companyOptions, value: filterCompany, onChange: setFilterCompany },
             ]}
           />
-          <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-            {filtered.length} de {allAssets.length} activos
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-xs text-slate-400 whitespace-nowrap">
+              {filtered.length} de {allAssets.length} activos
+            </span>
+            <ColumnConfigButton
+              columnConfigs={columnConfigs}
+              onToggle={toggle}
+              onReorder={reorder}
+              onReset={reset}
+            />
+          </div>
         </div>
         <DataTable
-          columns={columns}
+          columns={visibleColumns}
           data={filtered}
           loading={isLoading}
           rowKey="id"
           onRowClick={(row) => navigate(`/assets/${row.id}`)}
           emptyTitle="Sin activos"
           emptyDescription="No se encontraron activos con los filtros aplicados."
-          minWidth={1020}
+          minWidth={900}
         />
       </SectionCard>
       <ConfirmDialog

@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2, Download } from 'lucide-react'
@@ -10,6 +10,7 @@ import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { OverflowCell } from '../../../shared/components/data-table/OverflowCell'
+import { ColumnConfigButton } from '../../../shared/components/data-table/ColumnConfigButton'
 import { FilterBar } from '../../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
@@ -21,9 +22,12 @@ import {
 import { policiesApi } from '../../../shared/api/policies.api'
 import { producersApi } from '../../../shared/api/producers.api'
 import { assetsApi } from '../../../shared/api/assets.api'
+import { companiesApi } from '../../../shared/api/companies.api'
+import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { POLICY_STATUS_LABELS } from '../../../shared/constants'
+import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
 import type { Policy, TableColumn } from '../../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(POLICY_STATUS_LABELS).map(([value, label]) => ({
@@ -42,6 +46,8 @@ export default function PoliciesPage() {
   const { data: allPolicies = [], isLoading, isError } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
+  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
 
   async function handleDelete(id: string) {
     await policiesApi.softDelete(id)
@@ -54,6 +60,18 @@ export default function PoliciesPage() {
     allAssets.forEach((a) => map.set(a.id, a.name))
     return map
   }, [allAssets])
+
+  const companyNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    allCompanies.forEach((c) => map.set(c.id, c.name))
+    return map
+  }, [allCompanies])
+
+  const costCenterById = useMemo(() => {
+    const map = new Map<string, string>()
+    allCostCenters.forEach((cc) => map.set(cc.id, `${cc.code} — ${cc.name}`))
+    return map
+  }, [allCostCenters])
 
   const filtered = useMemo(() => {
     return allPolicies.filter((p) => {
@@ -76,31 +94,37 @@ export default function PoliciesPage() {
     [allPolicies],
   )
 
-  // KPI counts computed locally
   const counts = useMemo(() => ({
     vigente: allPolicies.filter((p) => p.status === 'vigente').length,
     vencida: allPolicies.filter((p) => p.status === 'vencida').length,
     proximo_vencer: allPolicies.filter((p) => p.status === 'proximo_vencer').length,
   }), [allPolicies])
+
   const totalInsuredArs = useMemo(
     () => allPolicies.filter((p) => p.status === 'vigente').reduce((s, p) => s + p.insuredAmountArs, 0),
     [allPolicies],
   )
 
-  const columns: TableColumn<Policy>[] = [
+  const ALL_COLUMNS: TableColumn<Policy>[] = useMemo(() => [
     {
+      id: 'policyNumber',
       key: 'policyNumber',
       label: 'N° Póliza',
+      defaultVisible: true,
       className: 'font-mono text-slate-600 text-xs',
     },
     {
+      id: 'insuranceCompany',
       key: 'insuranceCompany',
       label: 'Aseguradora',
+      defaultVisible: true,
       render: (v) => <span className="font-medium text-slate-800">{String(v)}</span>,
     },
     {
+      id: 'producerId',
       key: 'producerId',
       label: 'Productor',
+      defaultVisible: true,
       render: (v) => {
         const producer = allProducers.find((p) => p.id === v)
         return (
@@ -111,13 +135,17 @@ export default function PoliciesPage() {
       },
     },
     {
+      id: 'insuranceType',
       key: 'insuranceType',
       label: 'Tipo',
+      defaultVisible: true,
       render: (v) => <span className="text-slate-600">{String(v)}</span>,
     },
     {
+      id: 'coverageType',
       key: 'coverageType',
       label: 'Cobertura',
+      defaultVisible: true,
       render: (_v, row) => {
         const names = row.coverageNames?.length ? row.coverageNames : (row.coverageType ? [row.coverageType] : [])
         const label = names.join(', ') || null
@@ -129,34 +157,156 @@ export default function PoliciesPage() {
       },
     },
     {
+      id: 'startDate',
       key: 'startDate',
       label: 'Inicio',
+      defaultVisible: true,
       render: (v) => <span className="text-xs text-slate-500">{formatDate(v as string)}</span>,
     },
     {
+      id: 'endDate',
       key: 'endDate',
       label: 'Vencimiento',
+      defaultVisible: true,
       render: (v) => <span className="text-xs text-slate-500">{formatDate(v as string)}</span>,
     },
     {
+      id: 'insuredAmountArs',
       key: 'insuredAmountArs',
-      label: 'Suma Aseg. ARS',
+      label: 'Suma aseg. ARS',
+      defaultVisible: true,
       render: (v) => (
         <span className="font-semibold text-slate-800 tabular-nums">
-          {formatCurrencyFull(v as number, 'ARS')}
+          {(v as number) > 0 ? formatCurrencyFull(v as number, 'ARS') : <span className="text-slate-400">—</span>}
         </span>
       ),
       className: 'text-right',
       headerClassName: 'text-right',
     },
     {
+      id: 'status',
       key: 'status',
       label: 'Estado',
+      defaultVisible: true,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
+    // ── Columnas opcionales ────────────────────────────────────────────────────
     {
+      id: 'assetName',
+      key: 'assetId',
+      label: 'Activo asociado',
+      defaultVisible: false,
+      render: (_v, row) => {
+        const name = row.assetId ? assetNameById.get(row.assetId) : null
+        return name
+          ? <span className="text-sm text-slate-700">{name}</span>
+          : <span className="text-slate-400">—</span>
+      },
+    },
+    {
+      id: 'insuredAmountUsd',
+      key: 'insuredAmountUsd',
+      label: 'Suma aseg. USD',
+      defaultVisible: false,
+      render: (v) => (
+        <span className="tabular-nums text-slate-700">
+          {(v as number) > 0 ? formatCurrencyFull(v as number, 'USD') : <span className="text-slate-400">—</span>}
+        </span>
+      ),
+      className: 'text-right',
+      headerClassName: 'text-right',
+    },
+    {
+      id: 'currency',
+      key: 'currency',
+      label: 'Moneda',
+      defaultVisible: false,
+      render: (v) => <span className="text-xs font-mono text-slate-600">{String(v ?? '—')}</span>,
+    },
+    {
+      id: 'exchangeRate',
+      key: 'exchangeRate',
+      label: 'Tipo de cambio',
+      defaultVisible: false,
+      render: (v) => (
+        <span className="tabular-nums text-slate-600 text-sm">
+          {(v as number) > 0 ? `$${(v as number).toLocaleString('es-AR')}` : <span className="text-slate-400">—</span>}
+        </span>
+      ),
+      className: 'text-right',
+      headerClassName: 'text-right',
+    },
+    {
+      id: 'companyId',
+      key: 'companyId',
+      label: 'Empresa',
+      defaultVisible: false,
+      render: (v) => {
+        const name = v ? companyNameById.get(v as string) : null
+        return <span className="text-sm text-slate-700">{name ?? <span className="text-slate-400">—</span>}</span>
+      },
+    },
+    {
+      id: 'costCenterId',
+      key: 'costCenterId',
+      label: 'Centro de costo',
+      defaultVisible: false,
+      render: (v) => {
+        const label = v ? costCenterById.get(v as string) : null
+        return label
+          ? <span className="text-xs text-slate-600">{label}</span>
+          : <span className="text-slate-400">—</span>
+      },
+    },
+    {
+      id: 'beneficiaryDescription',
+      key: 'beneficiaryDescription',
+      label: 'Beneficiario',
+      defaultVisible: false,
+      render: (v) => (
+        <div className="max-w-[200px]">
+          <OverflowCell value={(v as string) || null} lines={1} className="text-xs text-slate-500" />
+        </div>
+      ),
+    },
+    {
+      id: 'description',
+      key: 'description',
+      label: 'Descripción',
+      defaultVisible: false,
+      render: (v) => (
+        <div className="max-w-[200px]">
+          <OverflowCell value={(v as string) || null} lines={1} className="text-xs text-slate-500" />
+        </div>
+      ),
+    },
+    {
+      id: 'attachmentsCount',
+      key: 'attachmentsCount',
+      label: 'Adjuntos',
+      defaultVisible: false,
+      render: (v) => {
+        const n = v as number | undefined
+        return n != null && n > 0
+          ? <span className="text-sm font-medium text-slate-700">{n}</span>
+          : <span className="text-slate-400">—</span>
+      },
+      className: 'text-center',
+      headerClassName: 'text-center',
+    },
+    {
+      id: 'createdAt',
+      key: 'createdAt',
+      label: 'Fecha de alta',
+      defaultVisible: false,
+      render: (v) => <span className="text-xs text-slate-500">{formatDate(v as string)}</span>,
+    },
+    // ── Acciones (siempre visible, siempre última) ────────────────────────────
+    {
+      id: 'actions',
       key: 'id',
       label: '',
+      hideable: false,
       render: (_, row) => (
         <div className="flex items-center gap-1">
           <button
@@ -177,7 +327,9 @@ export default function PoliciesPage() {
       ),
       className: 'w-20',
     },
-  ]
+  ], [allProducers, assetNameById, companyNameById, costCenterById, navigate])
+
+  const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('policies', ALL_COLUMNS)
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -260,7 +412,7 @@ export default function PoliciesPage() {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder="Buscar por N° póliza, aseguradora o tipo…"
+            placeholder="Buscar por N° póliza, aseguradora, tipo o activo…"
             className="w-full sm:w-72"
           />
           <FilterBar
@@ -281,19 +433,27 @@ export default function PoliciesPage() {
               },
             ]}
           />
-          <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-            {filtered.length} de {allPolicies.length} pólizas
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-xs text-slate-400 whitespace-nowrap">
+              {filtered.length} de {allPolicies.length} pólizas
+            </span>
+            <ColumnConfigButton
+              columnConfigs={columnConfigs}
+              onToggle={toggle}
+              onReorder={reorder}
+              onReset={reset}
+            />
+          </div>
         </div>
         <DataTable
-          columns={columns}
+          columns={visibleColumns}
           data={filtered}
           loading={isLoading}
           rowKey="id"
           onRowClick={(row) => navigate(`/insurance/policies/${row.id}`)}
           emptyTitle="Sin pólizas"
           emptyDescription="No se encontraron pólizas con los filtros aplicados."
-          minWidth={1100}
+          minWidth={900}
         />
       </SectionCard>
       <ConfirmDialog

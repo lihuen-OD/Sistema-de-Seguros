@@ -8,6 +8,7 @@ import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
+import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
@@ -22,10 +23,26 @@ import { assetsApi } from '../../shared/api/assets.api'
 import { FIRE_EXT_STATUS_LABELS, LOCATION_TYPES } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
-import type { FireExtinguisher, Asset } from '../../shared/types'
+import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
+import type { FireExtinguisher, Asset, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 const LOCATION_OPTIONS = Object.entries(LOCATION_TYPES).map(([value, label]) => ({ value, label }))
+
+// Column IDs for the custom table
+const FE_COL_DEFS: TableColumn<FireExtinguisher>[] = [
+  { id: 'code', key: 'code', label: 'Código', defaultVisible: true, hideable: true },
+  { id: 'type', key: 'type', label: 'Tipo', defaultVisible: true, hideable: true },
+  { id: 'capacity', key: 'capacity', label: 'Cap.', defaultVisible: true, hideable: true },
+  { id: 'assetId', key: 'associatedAssetId', label: 'Activo / Ubicación', defaultVisible: true, hideable: true },
+  { id: 'chargeDate', key: 'chargeDate', label: 'Fecha Carga', defaultVisible: true, hideable: true },
+  { id: 'expirationDate', key: 'expirationDate', label: 'Vencimiento', defaultVisible: true, hideable: true },
+  { id: 'status', key: 'status', label: 'Estado', defaultVisible: true, hideable: true },
+  { id: 'daysUntil', key: 'expirationDate', label: 'Días', defaultVisible: true, hideable: true },
+  { id: 'observations', key: 'observations', label: 'Observaciones', defaultVisible: false, hideable: true },
+  { id: 'createdAt', key: 'createdAt', label: 'Fecha de alta', defaultVisible: false, hideable: true },
+  { id: 'actions', key: 'id', label: '', hideable: false },
+]
 
 // ─── SelectAll checkbox (handles indeterminate) ───────────────────────────────
 
@@ -68,6 +85,9 @@ export default function FireExtinguishersPage() {
 
   const { data: all = [], isError } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: () => fireExtinguishersApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+
+  const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('fire-extinguishers', FE_COL_DEFS)
+  const visibleIds = useMemo(() => new Set(visibleColumns.map((c) => c.id ?? '')), [visibleColumns])
 
   const counts = useMemo(() => ({
     vigente: all.filter((f) => f.status === 'vigente').length,
@@ -124,7 +144,6 @@ export default function FireExtinguishersPage() {
     setDeleteId(null)
   }
 
-  // Extinguishers selected (for modal)
   const selectedExtinguishers = useMemo(
     () => all.filter((fe) => selectedIds.has(fe.id)),
     [all, selectedIds],
@@ -221,9 +240,17 @@ export default function FireExtinguishersPage() {
               },
             ]}
           />
-          <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-            {filtered.length} de {all.length} matafuegos
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-xs text-slate-400 whitespace-nowrap">
+              {filtered.length} de {all.length} matafuegos
+            </span>
+            <ColumnConfigButton
+              columnConfigs={columnConfigs}
+              onToggle={toggle}
+              onReorder={reorder}
+              onReset={reset}
+            />
+          </div>
         </div>
 
         {/* Selection action strip */}
@@ -256,6 +283,7 @@ export default function FireExtinguishersPage() {
           selectedIds={selectedIds}
           allSelected={allFilteredSelected}
           someSelected={someFilteredSelected}
+          visibleIds={visibleIds}
           onToggleAll={toggleAll}
           onToggleOne={toggleOne}
           onNavigate={(id) => navigate(`/fire-extinguishers/${id}`)}
@@ -292,6 +320,7 @@ interface FireExtTableProps {
   selectedIds: Set<string>
   allSelected: boolean
   someSelected: boolean
+  visibleIds: Set<string>
   onToggleAll: (checked: boolean) => void
   onToggleOne: (id: string) => void
   onNavigate: (id: string) => void
@@ -304,12 +333,15 @@ function FireExtTable({
   selectedIds,
   allSelected,
   someSelected,
+  visibleIds,
   onToggleAll,
   onToggleOne,
   onNavigate,
   onDelete,
 }: FireExtTableProps) {
   const navigate = useNavigate()
+
+  const show = (id: string) => visibleIds.has(id)
 
   if (extinguishers.length === 0) {
     return (
@@ -322,8 +354,22 @@ function FireExtTable({
     )
   }
 
+  const headers = [
+    show('code') && 'Código',
+    show('type') && 'Tipo',
+    show('capacity') && 'Cap.',
+    show('assetId') && 'Activo / Ubicación',
+    show('chargeDate') && 'Fecha Carga',
+    show('expirationDate') && 'Vencimiento',
+    show('status') && 'Estado',
+    show('daysUntil') && 'Días',
+    show('observations') && 'Observaciones',
+    show('createdAt') && 'Fecha de alta',
+    '',
+  ].filter(Boolean) as string[]
+
   return (
-    <TableShell minWidth={1040}>
+    <TableShell minWidth={700}>
       <table className="enterprise-table">
         <thead>
           <tr>
@@ -334,7 +380,7 @@ function FireExtTable({
                 onChange={onToggleAll}
               />
             </th>
-            {['Código', 'Tipo', 'Cap.', 'Activo / Ubicación', 'Fecha Carga', 'Fecha Venc.', 'Estado', 'Días', ''].map((h) => (
+            {headers.map((h) => (
               <th
                 key={h}
                 className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap bg-slate-50"
@@ -378,67 +424,89 @@ function FireExtTable({
                   />
                 </td>
 
-                {/* Code */}
-                <td className="px-4 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">
-                  {fe.code}
-                </td>
+                {show('code') && (
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">
+                    {fe.code}
+                  </td>
+                )}
 
-                {/* Type */}
-                <td className="px-4 py-3 text-sm text-slate-800 font-medium whitespace-nowrap">
-                  {fe.type}
-                </td>
+                {show('type') && (
+                  <td className="px-4 py-3 text-sm text-slate-800 font-medium whitespace-nowrap">
+                    {fe.type}
+                  </td>
+                )}
 
-                {/* Capacity */}
-                <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-                  {fe.capacity}
-                </td>
+                {show('capacity') && (
+                  <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+                    {fe.capacity}
+                  </td>
+                )}
 
-                {/* Asset / location */}
-                <td className="px-4 py-3">
-                  {asset ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); navigate(`/assets/${asset.id}`) }}
-                      className="text-left block min-w-0 max-w-[200px] group"
-                    >
-                      <OverflowCell value={asset.name} lines={1} className="text-xs text-blue-600 group-hover:underline" />
-                      <span className="block text-xs text-slate-400 mt-0.5">{locationLabel}</span>
-                    </button>
-                  ) : (
-                    <div className="min-w-0 max-w-[200px]">
-                      <span className="block text-xs text-slate-400">Sin activo</span>
-                      <span className="block text-xs text-slate-400">{locationLabel}</span>
-                    </div>
-                  )}
-                </td>
-
-                {/* Charge date */}
-                <td className="px-4 py-3 text-xs text-slate-500 tabular-nums whitespace-nowrap">
-                  {formatDate(fe.chargeDate)}
-                </td>
-
-                {/* Expiration date */}
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <span className={clsx('text-xs tabular-nums font-medium', isExp ? 'text-red-600' : isSoon ? 'text-amber-600' : 'text-slate-600')}>
-                    {formatDate(fe.expirationDate)}
-                  </span>
-                </td>
-
-                {/* Status */}
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <StatusPill status={fe.status} size="sm" />
-                </td>
-
-                {/* Days badge */}
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <span
-                    className={clsx(
-                      'inline-block text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full',
-                      isExp ? 'bg-red-50 text-red-700' : isSoon ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700',
+                {show('assetId') && (
+                  <td className="px-4 py-3">
+                    {asset ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/assets/${asset.id}`) }}
+                        className="text-left block min-w-0 max-w-[200px] group"
+                      >
+                        <OverflowCell value={asset.name} lines={1} className="text-xs text-blue-600 group-hover:underline" />
+                        <span className="block text-xs text-slate-400 mt-0.5">{locationLabel}</span>
+                      </button>
+                    ) : (
+                      <div className="min-w-0 max-w-[200px]">
+                        <span className="block text-xs text-slate-400">Sin activo</span>
+                        <span className="block text-xs text-slate-400">{locationLabel}</span>
+                      </div>
                     )}
-                  >
-                    {isExp ? `−${Math.abs(days)}d` : `${days}d`}
-                  </span>
-                </td>
+                  </td>
+                )}
+
+                {show('chargeDate') && (
+                  <td className="px-4 py-3 text-xs text-slate-500 tabular-nums whitespace-nowrap">
+                    {formatDate(fe.chargeDate)}
+                  </td>
+                )}
+
+                {show('expirationDate') && (
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className={clsx('text-xs tabular-nums font-medium', isExp ? 'text-red-600' : isSoon ? 'text-amber-600' : 'text-slate-600')}>
+                      {formatDate(fe.expirationDate)}
+                    </span>
+                  </td>
+                )}
+
+                {show('status') && (
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <StatusPill status={fe.status} size="sm" />
+                  </td>
+                )}
+
+                {show('daysUntil') && (
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span
+                      className={clsx(
+                        'inline-block text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full',
+                        isExp ? 'bg-red-50 text-red-700' : isSoon ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700',
+                      )}
+                    >
+                      {isExp ? `−${Math.abs(days)}d` : `${days}d`}
+                    </span>
+                  </td>
+                )}
+
+                {show('observations') && (
+                  <td className="px-4 py-3 max-w-[200px]">
+                    {fe.observations
+                      ? <OverflowCell value={fe.observations} lines={1} className="text-xs text-slate-500" />
+                      : <span className="text-slate-400">—</span>}
+                  </td>
+                )}
+
+                {show('createdAt') && (
+                  <td className="px-4 py-3 text-xs text-slate-500 tabular-nums whitespace-nowrap">
+                    {formatDate(fe.createdAt)}
+                  </td>
+                )}
 
                 {/* Action */}
                 <td className="px-4 py-3 w-20" onClick={(e) => e.stopPropagation()}>

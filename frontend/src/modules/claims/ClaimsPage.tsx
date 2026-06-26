@@ -13,6 +13,7 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
+import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
 import { formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { claimsApi } from '../../shared/api/claims.api'
@@ -25,6 +26,7 @@ import {
   CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
   CLAIM_STATUS_DEFAULT_STYLE, CLAIM_STATUS_DEFAULT_ICON,
 } from '../../shared/constants/claim-status'
+import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { Claim, TableColumn } from '../../shared/types'
 
 // ── Status pill ───────────────────────────────────────────────────────────────
@@ -78,10 +80,13 @@ export default function ClaimsPage() {
     totalSettled: all.reduce((s, c) => s + (c.settledAmountArs ?? 0), 0),
   }), [all])
 
+  const assetNameById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
+  const policyById = useMemo(() => new Map(allPolicies.map((p) => [p.id, p])), [allPolicies])
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return all.filter((c) => {
-      const asset = c.assetId ? allAssets.find((a) => a.id === c.assetId) : null
+      const asset = c.assetId ? assetNameById.get(c.assetId) : null
       const matchSearch =
         !search ||
         c.claimNumber.toLowerCase().includes(q) ||
@@ -92,31 +97,33 @@ export default function ClaimsPage() {
       const matchType   = !filterType   || c.claimType === filterType
       return matchSearch && matchStatus && matchType
     })
-  }, [all, allAssets, search, filterStatus, filterType])
+  }, [all, assetNameById, search, filterStatus, filterType])
 
   const inProgress = counts.denunciado + counts.en_tramite
 
-  const columns: TableColumn<Claim>[] = [
+  const ALL_COLUMNS: TableColumn<Claim>[] = useMemo(() => [
     {
+      id: 'claimNumber',
       key: 'claimNumber',
       label: 'N° Siniestro',
+      defaultVisible: true,
       className: 'font-mono text-xs text-slate-600 min-w-[140px]',
     },
     {
+      id: 'claimType',
       key: 'claimType',
       label: 'Tipo',
-      render: (v) => (
-        <span className="text-sm text-slate-800 font-medium">
-          {String(v)}
-        </span>
-      ),
+      defaultVisible: true,
+      render: (v) => <span className="text-sm text-slate-800 font-medium">{String(v)}</span>,
     },
     {
+      id: 'assetId',
       key: 'assetId',
       label: 'Activo',
+      defaultVisible: true,
       render: (v) => {
         if (!v) return <span className="text-xs text-slate-400">—</span>
-        const asset = allAssets.find((a) => a.id === v)
+        const asset = assetNameById.get(v as string)
         if (!asset) return <span className="text-xs text-slate-400">—</span>
         return (
           <button
@@ -130,29 +137,37 @@ export default function ClaimsPage() {
       },
     },
     {
+      id: 'policyId',
       key: 'policyId',
       label: 'Póliza',
+      defaultVisible: true,
       render: (v) => {
         if (!v) return <span className="text-xs text-slate-400">—</span>
-        const pol = allPolicies.find((p) => p.id === v)
+        const pol = policyById.get(v as string)
         return pol
           ? <span className="text-xs font-mono text-slate-600">{pol.policyNumber}</span>
           : <span className="text-xs text-slate-400">—</span>
       },
     },
     {
+      id: 'occurrenceDate',
       key: 'occurrenceDate',
       label: 'Fecha hecho',
+      defaultVisible: true,
       render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
     {
+      id: 'insuranceCompany',
       key: 'insuranceCompany',
       label: 'Aseguradora',
+      defaultVisible: true,
       render: (v) => <span className="text-xs text-slate-600">{String(v)}</span>,
     },
     {
+      id: 'claimedAmountArs',
       key: 'claimedAmountArs',
       label: 'Reclamado',
+      defaultVisible: true,
       headerClassName: 'text-right',
       className: 'text-right',
       render: (v) => (
@@ -162,8 +177,10 @@ export default function ClaimsPage() {
       ),
     },
     {
+      id: 'settledAmountArs',
       key: 'settledAmountArs',
       label: 'Liquidado',
+      defaultVisible: true,
       headerClassName: 'text-right',
       className: 'text-right',
       render: (v) =>
@@ -176,13 +193,92 @@ export default function ClaimsPage() {
         ),
     },
     {
+      id: 'status',
       key: 'status',
       label: 'Estado',
+      defaultVisible: true,
       render: (v) => <ClaimStatusPill status={String(v)} />,
     },
+    // ── Columnas opcionales ────────────────────────────────────────────────────
     {
+      id: 'reportDate',
+      key: 'reportDate',
+      label: 'Fecha denuncia',
+      defaultVisible: false,
+      render: (v) =>
+        v
+          ? <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>
+          : <span className="text-slate-400">—</span>,
+    },
+    {
+      id: 'realAmountArs',
+      key: 'realAmountArs',
+      label: 'Monto real ARS',
+      defaultVisible: false,
+      headerClassName: 'text-right',
+      className: 'text-right',
+      render: (v) =>
+        v != null && (v as number) > 0
+          ? <span className="tabular-nums text-slate-700">{formatCurrencyCompact(v as number, 'ARS')}</span>
+          : <span className="text-slate-400">—</span>,
+    },
+    {
+      id: 'deductibleArs',
+      key: 'deductibleArs',
+      label: 'Franquicia ARS',
+      defaultVisible: false,
+      headerClassName: 'text-right',
+      className: 'text-right',
+      render: (v) =>
+        v != null && (v as number) > 0
+          ? <span className="tabular-nums text-slate-700">{formatCurrencyCompact(v as number, 'ARS')}</span>
+          : <span className="text-slate-400">—</span>,
+    },
+    {
+      id: 'currency',
+      key: 'currency',
+      label: 'Moneda',
+      defaultVisible: false,
+      render: (v) =>
+        v
+          ? <span className="text-xs font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">{String(v)}</span>
+          : <span className="text-slate-400">—</span>,
+    },
+    {
+      id: 'description',
+      key: 'description',
+      label: 'Descripción',
+      defaultVisible: false,
+      render: (v) => (
+        <div className="max-w-[200px]">
+          <OverflowCell value={(v as string) || null} lines={1} className="text-xs text-slate-500" />
+        </div>
+      ),
+    },
+    {
+      id: 'observations',
+      key: 'observations',
+      label: 'Observaciones',
+      defaultVisible: false,
+      render: (v) => (
+        <div className="max-w-[200px]">
+          <OverflowCell value={(v as string) || null} lines={1} className="text-xs text-slate-500" />
+        </div>
+      ),
+    },
+    {
+      id: 'createdAt',
+      key: 'createdAt',
+      label: 'Fecha de alta',
+      defaultVisible: false,
+      render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
+    },
+    // ── Acciones (siempre visible, siempre última) ────────────────────────────
+    {
+      id: 'actions',
       key: 'id',
       label: '',
+      hideable: false,
       className: 'w-20',
       render: (_, row) => (
         <div className="flex items-center gap-1">
@@ -210,7 +306,9 @@ export default function ClaimsPage() {
         </div>
       ),
     },
-  ]
+  ], [navigate, assetNameById, policyById])
+
+  const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('claims', ALL_COLUMNS)
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -226,8 +324,8 @@ export default function ClaimsPage() {
                 const rows = [
                   ['N° Siniestro', 'Tipo', 'Aseguradora', 'Activo', 'N° Póliza', 'Fecha hecho', 'Estado', 'Reclamado ARS', 'Liquidado ARS'],
                   ...filtered.map((c) => {
-                    const asset = c.assetId ? allAssets.find((a) => a.id === c.assetId) : null
-                    const pol = c.policyId ? allPolicies.find((p) => p.id === c.policyId) : null
+                    const asset = c.assetId ? assetNameById.get(c.assetId) : null
+                    const pol = c.policyId ? policyById.get(c.policyId) : null
                     return [
                       c.claimNumber,
                       c.claimType,
@@ -329,19 +427,27 @@ export default function ClaimsPage() {
               },
             ]}
           />
-          <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-            {filtered.length} de {all.length} siniestros
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-xs text-slate-400 whitespace-nowrap">
+              {filtered.length} de {all.length} siniestros
+            </span>
+            <ColumnConfigButton
+              columnConfigs={columnConfigs}
+              onToggle={toggle}
+              onReorder={reorder}
+              onReset={reset}
+            />
+          </div>
         </div>
         <DataTable
-          columns={columns}
+          columns={visibleColumns}
           data={filtered}
           loading={isLoading}
           rowKey="id"
           onRowClick={(row) => navigate(`/claims/${row.id}`)}
           emptyTitle="Sin siniestros"
           emptyDescription="No se encontraron siniestros con los filtros aplicados."
-          minWidth={1060}
+          minWidth={900}
         />
       </SectionCard>
       <ConfirmDialog

@@ -9,6 +9,7 @@ import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
+import { ColumnConfigButton } from '../../../shared/components/data-table/ColumnConfigButton'
 import { FilterBar } from '../../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
@@ -21,6 +22,7 @@ import { documentsApi } from '../../../shared/api/documents.api'
 import { catalogsApi } from '../../../shared/api/catalogs.api'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PAYMENT_STATUS_LABELS } from '../../../shared/constants'
+import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
 import type { AccountingDocument, TableColumn } from '../../../shared/types'
 
 const PAYMENT_STATUS_OPTIONS = Object.entries(PAYMENT_STATUS_LABELS).map(([value, label]) => ({
@@ -64,31 +66,33 @@ export default function DocumentsPage() {
     setConfirmDeleteId(null)
   }
 
-  const columns: TableColumn<AccountingDocument>[] = [
+  const ALL_COLUMNS: TableColumn<AccountingDocument>[] = useMemo(() => [
     {
+      id: 'documentNumber',
       key: 'documentNumber',
       label: 'N° Documento',
+      defaultVisible: true,
       className: 'font-mono text-xs text-slate-600 min-w-[160px]',
     },
     {
+      id: 'documentType',
       key: 'documentType',
       label: 'Tipo',
-      render: (v) => (
-        <span className="text-slate-700 font-medium text-xs">
-          {String(v)}
-        </span>
-      ),
+      defaultVisible: true,
+      render: (v) => <span className="text-slate-700 font-medium text-xs">{String(v)}</span>,
     },
     {
+      id: 'issueDate',
       key: 'issueDate',
       label: 'Fecha Emisión',
-      render: (v) => (
-        <span className="text-xs text-slate-500">{formatDate(v as string)}</span>
-      ),
+      defaultVisible: true,
+      render: (v) => <span className="text-xs text-slate-500">{formatDate(v as string)}</span>,
     },
     {
+      id: 'currency',
       key: 'currency',
       label: 'Moneda',
+      defaultVisible: true,
       render: (v) => (
         <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
           {String(v)}
@@ -97,8 +101,10 @@ export default function DocumentsPage() {
       className: 'w-20',
     },
     {
+      id: 'netAmount',
       key: 'netAmount',
       label: 'Neto',
+      defaultVisible: true,
       render: (v, row) => (
         <span className="tabular-nums text-xs text-slate-600">
           {formatCurrencyFull(v as number, row.currency)}
@@ -108,8 +114,10 @@ export default function DocumentsPage() {
       headerClassName: 'text-right',
     },
     {
+      id: 'vatAmount',
       key: 'vatAmount',
       label: 'IVA',
+      defaultVisible: true,
       render: (v, row) => (
         <span className="tabular-nums text-xs text-slate-600">
           {formatCurrencyFull(v as number, row.currency)}
@@ -119,8 +127,10 @@ export default function DocumentsPage() {
       headerClassName: 'text-right',
     },
     {
+      id: 'totalAmount',
       key: 'totalAmount',
       label: 'Total',
+      defaultVisible: true,
       render: (v, row) => (
         <span className="tabular-nums text-sm font-semibold text-slate-800">
           {formatCurrencyFull(v as number, row.currency)}
@@ -130,13 +140,81 @@ export default function DocumentsPage() {
       headerClassName: 'text-right',
     },
     {
+      id: 'paymentStatus',
       key: 'paymentStatus',
       label: 'Estado Pago',
+      defaultVisible: true,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
+    // ── Columnas opcionales ────────────────────────────────────────────────────
     {
+      id: 'otherTaxesAmount',
+      key: 'otherTaxesAmount',
+      label: 'Otros impuestos',
+      defaultVisible: false,
+      render: (v, row) =>
+        (v as number) > 0
+          ? <span className="tabular-nums text-xs text-slate-600">{formatCurrencyFull(v as number, row.currency)}</span>
+          : <span className="text-slate-400">—</span>,
+      className: 'text-right',
+      headerClassName: 'text-right',
+    },
+    {
+      id: 'insuranceCompany',
+      key: 'insuranceCompany',
+      label: 'Aseguradora',
+      defaultVisible: false,
+      render: (v) => <span className="text-sm text-slate-700">{(v as string) || '—'}</span>,
+    },
+    {
+      id: 'paymentMethod',
+      key: 'paymentMethod',
+      label: 'Método de pago',
+      defaultVisible: false,
+      render: (v) =>
+        v
+          ? <span className="text-xs text-slate-600">{String(v).replace(/_/g, ' ')}</span>
+          : <span className="text-slate-400">—</span>,
+    },
+    {
+      id: 'exchangeRate',
+      key: 'exchangeRate',
+      label: 'Tipo de cambio',
+      defaultVisible: false,
+      render: (v) =>
+        (v as number) > 1
+          ? <span className="tabular-nums text-sm text-slate-600">${(v as number).toLocaleString('es-AR')}</span>
+          : <span className="text-slate-400">—</span>,
+      className: 'text-right',
+      headerClassName: 'text-right',
+    },
+    {
+      id: 'attachmentsCount',
+      key: 'attachmentsCount',
+      label: 'Adjuntos',
+      defaultVisible: false,
+      render: (v) => {
+        const n = v as number | undefined
+        return n != null && n > 0
+          ? <span className="text-sm font-medium text-slate-700">{n}</span>
+          : <span className="text-slate-400">—</span>
+      },
+      className: 'text-center',
+      headerClassName: 'text-center',
+    },
+    {
+      id: 'createdAt',
+      key: 'createdAt',
+      label: 'Fecha de alta',
+      defaultVisible: false,
+      render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
+    },
+    // ── Acciones (siempre visible, siempre última) ────────────────────────────
+    {
+      id: 'actions',
       key: 'id',
       label: '',
+      hideable: false,
       render: (_, row) => (
         <div className="flex items-center gap-1 justify-end">
           {confirmDeleteId === row.id ? (
@@ -184,7 +262,9 @@ export default function DocumentsPage() {
       ),
       className: 'w-36',
     },
-  ]
+  ], [navigate, confirmDeleteId])
+
+  const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('documents', ALL_COLUMNS)
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -289,12 +369,20 @@ export default function DocumentsPage() {
               },
             ]}
           />
-          <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-            {filtered.length} de {allDocuments.length} documentos
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-xs text-slate-400 whitespace-nowrap">
+              {filtered.length} de {allDocuments.length} documentos
+            </span>
+            <ColumnConfigButton
+              columnConfigs={columnConfigs}
+              onToggle={toggle}
+              onReorder={reorder}
+              onReset={reset}
+            />
+          </div>
         </div>
         <DataTable
-          columns={columns}
+          columns={visibleColumns}
           data={filtered}
           loading={isLoading}
           rowKey="id"
