@@ -276,7 +276,7 @@ export default function DocumentsPage() {
     },
   ], [navigate, confirmDeleteId])
 
-  const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('documents', ALL_COLUMNS)
+  const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('documents', ALL_COLUMNS)
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -338,6 +338,7 @@ export default function DocumentsPage() {
               visibleColumns={visibleColumns}
               filteredRows={filtered}
               filenamePrefix="documentos"
+              onApplyPreset={applyPreset}
             />
             <ColumnConfigButton
               columnConfigs={columnConfigs}

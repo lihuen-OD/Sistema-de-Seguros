@@ -99,7 +99,7 @@ export default function FireExtinguishersPage() {
     { id: 'actions',        key: 'id',                  label: '',                 hideable: false },
   ], [assetById])
 
-  const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('fire-extinguishers', FE_COL_DEFS)
+  const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('fire-extinguishers', FE_COL_DEFS)
   const visibleIds = useMemo(() => new Set(visibleColumns.map((c) => c.id ?? '')), [visibleColumns])
 
   const counts = useMemo(() => ({
@@ -229,6 +229,7 @@ export default function FireExtinguishersPage() {
               visibleColumns={visibleColumns}
               filteredRows={filtered}
               filenamePrefix="matafuegos"
+              onApplyPreset={applyPreset}
             />
             <ColumnConfigButton
               columnConfigs={columnConfigs}

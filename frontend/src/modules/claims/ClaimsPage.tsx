@@ -327,7 +327,7 @@ export default function ClaimsPage() {
     },
   ], [navigate, assetById, policyById])
 
-  const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('claims', ALL_COLUMNS)
+  const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('claims', ALL_COLUMNS)
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -399,6 +399,7 @@ export default function ClaimsPage() {
               visibleColumns={visibleColumns}
               filteredRows={filtered}
               filenamePrefix="siniestros"
+              onApplyPreset={applyPreset}
             />
             <ColumnConfigButton
               columnConfigs={columnConfigs}

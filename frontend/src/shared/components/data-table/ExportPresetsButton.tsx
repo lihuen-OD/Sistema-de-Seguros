@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, KeyboardEvent } from 'react'
-import { Download, Trash2, Check, X, Plus, ChevronDown } from 'lucide-react'
+import { Download, Trash2, Check, X, Plus, ChevronDown, Columns2 } from 'lucide-react'
 import { downloadXLSX, buildExportRows } from '../../utils/export'
 import { useExportPresets } from '../../hooks/useExportPresets'
 import type { TableColumn } from '../../types'
@@ -10,6 +10,7 @@ interface Props<T> {
   visibleColumns: TableColumn<T>[]
   filteredRows: T[]
   filenamePrefix: string
+  onApplyPreset?: (columnIds: string[]) => void
 }
 
 export function ExportPresetsButton<T>({
@@ -18,6 +19,7 @@ export function ExportPresetsButton<T>({
   visibleColumns,
   filteredRows,
   filenamePrefix,
+  onApplyPreset,
 }: Props<T>) {
   const [open, setOpen] = useState(false)
   const [savingName, setSavingName] = useState<string | null>(null)
@@ -169,6 +171,16 @@ export function ExportPresetsButton<T>({
                         {colNames.length} cols
                       </span>
                     </button>
+                    {onApplyPreset && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onApplyPreset(preset.columnIds); setOpen(false) }}
+                        className="p-1 rounded text-slate-300 hover:text-blue-500 transition-colors flex-shrink-0"
+                        title="Aplicar este formato"
+                      >
+                        <Columns2 size={12} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); deletePreset(preset.id) }}

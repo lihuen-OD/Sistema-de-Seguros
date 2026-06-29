@@ -76,6 +76,20 @@ export function useColumnConfig<T extends object>(
     persist(defaults)
   }, [allColumns, persist])
 
+  const applyPreset = useCallback((columnIds: string[]) => {
+    const presetSet = new Set(columnIds)
+    setStates((prev) => {
+      const colById = new Map(allColumns.map((c) => [colId(c), c]))
+      const next = prev.map((s) => ({
+        ...s,
+        // Fixed columns (hideable === false, e.g. actions) stay always visible
+        visible: colById.get(s.id)?.hideable === false ? true : presetSet.has(s.id),
+      }))
+      try { localStorage.setItem(storageKey, JSON.stringify(next)) } catch { /* noop */ }
+      return next
+    })
+  }, [storageKey, allColumns])
+
   const colMap = useMemo(
     () => new Map(allColumns.map((c) => [colId(c), c])),
     [allColumns],
@@ -102,5 +116,5 @@ export function useColumnConfig<T extends object>(
       .filter((s) => s.column)
   }, [states, colMap])
 
-  return { visibleColumns, columnConfigs, toggle, reorder, reset }
+  return { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset }
 }

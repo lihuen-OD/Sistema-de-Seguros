@@ -347,7 +347,7 @@ export default function PoliciesPage() {
     },
   ], [allProducers, assetNameById, companyNameById, costCenterById, navigate])
 
-  const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('policies', ALL_COLUMNS)
+  const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('policies', ALL_COLUMNS)
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -419,6 +419,7 @@ export default function PoliciesPage() {
               visibleColumns={visibleColumns}
               filteredRows={filtered}
               filenamePrefix="polizas"
+              onApplyPreset={applyPreset}
             />
             <ColumnConfigButton
               columnConfigs={columnConfigs}

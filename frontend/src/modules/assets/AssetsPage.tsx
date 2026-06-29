@@ -321,7 +321,7 @@ export default function AssetsPage() {
     },
   ], [companyNameById, costCenterById, navigate])
 
-  const { visibleColumns, columnConfigs, toggle, reorder, reset } = useColumnConfig('assets', ALL_COLUMNS)
+  const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('assets', ALL_COLUMNS)
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -369,6 +369,7 @@ export default function AssetsPage() {
               visibleColumns={visibleColumns}
               filteredRows={filtered}
               filenamePrefix="activos"
+              onApplyPreset={applyPreset}
             />
             <ColumnConfigButton
               columnConfigs={columnConfigs}
