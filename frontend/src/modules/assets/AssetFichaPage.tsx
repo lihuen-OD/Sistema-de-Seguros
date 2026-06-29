@@ -1,5 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { Printer, ArrowLeft } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { FileDown, ArrowLeft, Loader2 } from 'lucide-react'
+import { downloadAsPdf } from '../../shared/utils/downloadAsPdf'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
@@ -20,6 +22,19 @@ const HAS_CHASSIS = new Set(['vehiculo', 'camioneta', 'camion', 'moto', 'tractor
 export default function AssetFichaPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const fichaRef = useRef<HTMLDivElement>(null)
+  const [downloading, setDownloading] = useState(false)
+
+  async function handleDownload() {
+    if (!fichaRef.current || !asset) return
+    setDownloading(true)
+    try {
+      const date = new Date().toISOString().slice(0, 10)
+      await downloadAsPdf(fichaRef.current, `ficha-activo-${asset.internalCode}-${date}.pdf`)
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const { data: asset } = useQuery({ queryKey: ['assets', id], queryFn: () => assetsApi.findById(id!) })
   const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
@@ -63,16 +78,17 @@ export default function AssetFichaPage() {
           Volver al activo
         </button>
         <button
-          onClick={() => window.print()}
-          className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+          onClick={handleDownload}
+          disabled={downloading}
+          className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
         >
-          <Printer size={15} />
-          Imprimir / Guardar como PDF
+          {downloading ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />}
+          {downloading ? 'Generando…' : 'Descargar PDF'}
         </button>
       </div>
 
       {/* Document */}
-      <div className="max-w-[860px] mx-auto bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden print:shadow-none print:border-0 print:rounded-none print:max-w-none">
+      <div ref={fichaRef} className="max-w-[860px] mx-auto bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 
         {/* ── Document header ── */}
         <div className="bg-slate-900 text-white px-8 py-5 flex items-start justify-between">
@@ -368,10 +384,10 @@ function FichaRow({
   highlight?: boolean
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 min-w-0">
+    <div className="flex items-start justify-between gap-4 min-w-0">
       <span className="text-xs text-slate-500 flex-shrink-0">{label}</span>
       <span
-        className={`text-sm font-medium text-right truncate ${
+        className={`text-sm font-medium text-right min-w-0 break-words ${
           highlight ? 'text-blue-700 font-semibold' : 'text-slate-800'
         }`}
       >

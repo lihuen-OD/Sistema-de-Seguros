@@ -13,17 +13,36 @@ export interface PolicyPdfData {
 
 export function exportPolicyToPdf(data: PolicyPdfData): void {
   const html = buildHtml(data)
-  const win = window.open('', '_blank', 'width=900,height=720')
-  if (!win) {
-    alert('Por favor, permitir ventanas emergentes para exportar el PDF.')
+
+  const iframe = document.createElement('iframe')
+  iframe.style.cssText = 'position:fixed;top:-10000px;left:-10000px;width:1px;height:1px;opacity:0;'
+  document.body.appendChild(iframe)
+
+  const doc = iframe.contentDocument ?? iframe.contentWindow?.document
+  if (!doc) {
+    document.body.removeChild(iframe)
     return
   }
-  win.document.write(html)
-  win.document.close()
-  setTimeout(() => {
-    win.focus()
-    win.print()
-  }, 300)
+
+  doc.open()
+  doc.write(html)
+  doc.close()
+
+  // Wait for resources (fonts, styles) to load before printing
+  const doprint = () => {
+    iframe.contentWindow?.focus()
+    iframe.contentWindow?.print()
+    // Remove after print dialog closes
+    setTimeout(() => {
+      if (document.body.contains(iframe)) document.body.removeChild(iframe)
+    }, 2000)
+  }
+
+  if (iframe.contentDocument?.readyState === 'complete') {
+    setTimeout(doprint, 300)
+  } else {
+    iframe.addEventListener('load', () => setTimeout(doprint, 300), { once: true })
+  }
 }
 
 // ─── Status helpers ────────────────────────────────────────────────────────────

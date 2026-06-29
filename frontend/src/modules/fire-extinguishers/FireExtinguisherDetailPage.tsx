@@ -9,6 +9,7 @@ import {
   Pencil,
   ArrowLeft,
   Clock,
+  FileDown,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -175,6 +176,13 @@ export default function FireExtinguisherDetailPage() {
             >
               <RefreshCw size={15} />
               Registrar Recarga
+            </button>
+            <button
+              onClick={() => navigate(`/fire-extinguishers/${fe.id}/ficha`)}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+            >
+              <FileDown size={15} />
+              Ficha PDF
             </button>
             <button
               onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_EDIT(fe.id))}

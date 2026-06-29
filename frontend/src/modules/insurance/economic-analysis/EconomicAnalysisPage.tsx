@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { TrendingUp, Building2, FileText, FileSpreadsheet, FileDown } from 'lucide-react'
+import { TrendingUp, Building2, FileText, FileSpreadsheet, FileDown, Loader2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -231,6 +231,7 @@ export default function EconomicAnalysisPage() {
   const [colPeriod, setColPeriod] = useState<ColPeriod>('mes')
   const [dateFrom, setDateFrom] = useState('2025-07')
   const [dateTo, setDateTo] = useState('2026-06')
+  const [pdfLoading, setPdfLoading] = useState(false)
 
   // ─── Remote data ─────────────────────────────────────────────────────────────
 
@@ -440,7 +441,9 @@ export default function EconomicAnalysisPage() {
     )
   }
 
-  function handleExportPDF() {
+  async function handleExportPDF() {
+    setPdfLoading(true)
+    try {
     const pdfColumns = [
       { label: groupingLabel, align: 'left' as const },
       ...columns.map((c) => ({ label: c.label, align: 'right' as const })),
@@ -468,12 +471,15 @@ export default function EconomicAnalysisPage() {
       isTotal: true,
     })
 
-    printTableAsPDF(
-      'Análisis Económico',
-      `Vista ${periodLabel} · Agrupado por ${groupingLabel} · ${currency} · ${dateFrom} – ${dateTo}`,
-      pdfColumns,
-      pdfRows,
-    )
+      await printTableAsPDF(
+        'Análisis Económico',
+        `Vista ${periodLabel} · Agrupado por ${groupingLabel} · ${currency} · ${dateFrom} – ${dateTo}`,
+        pdfColumns,
+        pdfRows,
+      )
+    } finally {
+      setPdfLoading(false)
+    }
   }
 
   const handleDateRange = (from: string, to: string) => { setDateFrom(from); setDateTo(to) }
@@ -680,11 +686,12 @@ export default function EconomicAnalysisPage() {
             </button>
             <button
               onClick={handleExportPDF}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-red-600 hover:border-red-200 transition-colors"
+              disabled={pdfLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               title="Exportar a PDF"
             >
-              <FileDown size={13} />
-              PDF
+              {pdfLoading ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
+              {pdfLoading ? 'Generando…' : 'PDF'}
             </button>
           </div>
         }

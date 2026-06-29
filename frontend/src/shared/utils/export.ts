@@ -69,12 +69,19 @@ export interface PrintRow {
   isDim?: boolean
 }
 
-export function printTableAsPDF(
+export async function printTableAsPDF(
   title: string,
   subtitle: string,
   columns: PrintColumn[],
   rows: PrintRow[],
-): void {
+): Promise<void> {
+  const [html2canvasModule, jsPDFModule] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ])
+  const html2canvas = html2canvasModule.default
+  const jsPDF = jsPDFModule.default
+
   const thCells = columns
     .map(
       (c) =>
@@ -99,36 +106,50 @@ export function printTableAsPDF(
     })
     .join('')
 
-  const html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<title>${title}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Helvetica Neue',Arial,sans-serif;font-size:9px;color:#1e293b;padding:18px}
-  h1{font-size:13px;font-weight:700;margin-bottom:3px}
-  p.sub{font-size:9px;color:#64748b;margin-bottom:14px}
-  table{border-collapse:collapse;width:100%}
-  @page{size:landscape;margin:1.5cm}
-  @media print{body{padding:0}}
-</style>
-</head>
-<body>
-<h1>${title}</h1>
-<p class="sub">${subtitle}</p>
-<table>
-  <thead><tr>${thCells}</tr></thead>
-  <tbody>${trRows}</tbody>
-</table>
-</body>
-</html>`
+  const container = document.createElement('div')
+  container.style.cssText = 'position:fixed;top:-99999px;left:-99999px;background:#ffffff;padding:24px;font-family:Helvetica Neue,Arial,sans-serif;color:#1e293b;'
+  container.innerHTML = `
+    <h1 style="font-size:14px;font-weight:700;margin:0 0 4px">${title}</h1>
+    <p style="font-size:9px;color:#64748b;margin:0 0 16px">${subtitle}</p>
+    <table style="border-collapse:collapse;width:100%">
+      <thead><tr>${thCells}</tr></thead>
+      <tbody>${trRows}</tbody>
+    </table>`
 
-  const w = window.open('', '_blank', 'width=1200,height=800')
-  if (!w) return
-  w.document.write(html)
-  w.document.close()
-  w.addEventListener('load', () => w.print())
+  document.body.appendChild(container)
+
+  try {
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+    })
+
+    const pdf = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4' })
+    const pageW = pdf.internal.pageSize.getWidth()
+    const pageH = pdf.internal.pageSize.getHeight()
+    const mmPerPx = pageW / canvas.width
+    const contentH = canvas.height * mmPerPx
+    const imgData = canvas.toDataURL('image/jpeg', 0.92)
+
+    if (contentH <= pageH) {
+      pdf.addImage(imgData, 'JPEG', 0, 0, pageW, contentH)
+    } else {
+      let yOffset = 0
+      while (yOffset < contentH) {
+        pdf.addImage(imgData, 'JPEG', 0, -yOffset, pageW, contentH)
+        yOffset += pageH
+        if (yOffset < contentH) pdf.addPage()
+      }
+    }
+
+    const date = new Date().toISOString().slice(0, 10)
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    pdf.save(`${slug}-${date}.pdf`)
+  } finally {
+    if (document.body.contains(container)) document.body.removeChild(container)
+  }
 }
 
 // ─── ISO week helpers ─────────────────────────────────────────────────────────

@@ -19,12 +19,14 @@ const PoliciesPage = lazy(() => import('../modules/insurance/policies/PoliciesPa
 const PolicyDetailPage = lazy(() => import('../modules/insurance/policies/PolicyDetailPage'))
 const PolicyNewPage = lazy(() => import('../modules/insurance/policies/PolicyNewPage'))
 const PolicyEditPage = lazy(() => import('../modules/insurance/policies/PolicyEditPage'))
+const PolicyFichaPage = lazy(() => import('../modules/insurance/policies/PolicyFichaPage'))
 
 // Insurance — Documents
 const DocumentsPage = lazy(() => import('../modules/insurance/accounting-documents/DocumentsPage'))
 const DocumentDetailPage = lazy(() => import('../modules/insurance/accounting-documents/DocumentDetailPage'))
 const DocumentNewPage = lazy(() => import('../modules/insurance/accounting-documents/DocumentNewPage'))
 const DocumentEditPage = lazy(() => import('../modules/insurance/accounting-documents/DocumentEditPage'))
+const DocumentFichaPage = lazy(() => import('../modules/insurance/accounting-documents/DocumentFichaPage'))
 
 // Insurance — Analysis
 const FinancialAnalysisPage = lazy(() => import('../modules/insurance/financial-analysis/FinancialAnalysisPage'))
@@ -47,12 +49,14 @@ const ClaimsPage = lazy(() => import('../modules/claims/ClaimsPage'))
 const ClaimNewPage = lazy(() => import('../modules/claims/ClaimNewPage'))
 const ClaimDetailPage = lazy(() => import('../modules/claims/ClaimDetailPage'))
 const ClaimEditPage = lazy(() => import('../modules/claims/ClaimEditPage'))
+const ClaimFichaPage = lazy(() => import('../modules/claims/ClaimFichaPage'))
 
 // Fire Extinguishers
 const FireExtinguishersPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguishersPage'))
 const FireExtinguisherDetailPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherDetailPage'))
 const FireExtinguisherNewPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherNewPage'))
 const FireExtinguisherEditPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherEditPage'))
+const FireExtinguisherFichaPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherFichaPage'))
 
 // Settings
 const CompaniesPage = lazy(() => import('../modules/settings/companies/CompaniesPage'))
@@ -97,12 +101,14 @@ export default function App() {
           <Route path="/insurance/policies/new" element={<PolicyNewPage />} />
           <Route path="/insurance/policies/:id" element={<PolicyDetailPage />} />
           <Route path="/insurance/policies/:id/edit" element={<PolicyEditPage />} />
+          <Route path="/insurance/policies/:id/ficha" element={<PolicyFichaPage />} />
 
           {/* Insurance — Documents */}
           <Route path="/insurance/documents" element={<DocumentsPage />} />
           <Route path="/insurance/documents/new" element={<DocumentNewPage />} />
           <Route path="/insurance/documents/:id" element={<DocumentDetailPage />} />
           <Route path="/insurance/documents/:id/edit" element={<DocumentEditPage />} />
+          <Route path="/insurance/documents/:id/ficha" element={<DocumentFichaPage />} />
 
           {/* Analysis */}
           <Route path="/insurance/financial-analysis" element={<FinancialAnalysisPage />} />
@@ -125,12 +131,14 @@ export default function App() {
           <Route path="/claims/new" element={<ClaimNewPage />} />
           <Route path="/claims/:id" element={<ClaimDetailPage />} />
           <Route path="/claims/:id/edit" element={<ClaimEditPage />} />
+          <Route path="/claims/:id/ficha" element={<ClaimFichaPage />} />
 
           {/* Fire Extinguishers */}
           <Route path="/fire-extinguishers" element={<FireExtinguishersPage />} />
           <Route path="/fire-extinguishers/new" element={<FireExtinguisherNewPage />} />
           <Route path="/fire-extinguishers/:id" element={<FireExtinguisherDetailPage />} />
           <Route path="/fire-extinguishers/:id/edit" element={<FireExtinguisherEditPage />} />
+          <Route path="/fire-extinguishers/:id/ficha" element={<FireExtinguisherFichaPage />} />
 
           {/* Settings */}
           <Route path="/settings/companies" element={<CompaniesPage />} />

@@ -205,9 +205,12 @@ export default function DocumentDetailPage() {
               <Edit2 size={15} />
               Editar
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors">
+            <button
+              onClick={() => navigate(`/insurance/documents/${doc.id}/ficha`)}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+            >
               <FileDown size={15} />
-              Exportar PDF
+              Ficha PDF
             </button>
             {confirmDelete ? (
               <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50">

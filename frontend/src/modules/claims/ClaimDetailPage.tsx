@@ -6,7 +6,7 @@ import {
   ArrowUpRight, Pencil, ArrowLeft, Package, ShieldCheck,
   Calendar, DollarSign, AlertTriangle, ArrowLeftRight,
   PlusCircle, ArrowRight, MessageSquare, Paperclip, Edit2,
-  TrendingDown, Percent, FileText, ImageIcon, Download, Trash2,
+  TrendingDown, Percent, FileText, ImageIcon, Download, Trash2, FileDown,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -408,6 +408,13 @@ export default function ClaimDetailPage() {
         badge={<StatusBadge status={effectiveStatus} />}
         actions={
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate(`/claims/${claim.id}/ficha`)}
+              className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+            >
+              <FileDown size={14} />
+              Ficha PDF
+            </button>
             <button
               onClick={() => navigate(ROUTES.CLAIMS_EDIT(claim.id))}
               className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"

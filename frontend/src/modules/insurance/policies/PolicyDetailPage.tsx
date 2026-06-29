@@ -25,7 +25,6 @@ import { companiesApi } from '../../../shared/api/companies.api'
 import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import { assetsApi } from '../../../shared/api/assets.api'
 import { documentsApi } from '../../../shared/api/documents.api'
-import { exportPolicyToPdf } from '../../../shared/utils/policyPdf'
 import { ROUTES } from '../../../app/routes'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
@@ -217,13 +216,11 @@ export default function PolicyDetailPage() {
         actions={
           <div className="flex items-center gap-2">
             <button
-              onClick={() =>
-                exportPolicyToPdf({ policy, producer, asset, company, costCenter, documents })
-              }
+              onClick={() => navigate(`/insurance/policies/${policy.id}/ficha`)}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
             >
               <FileDown size={15} />
-              Exportar PDF
+              Ficha PDF
             </button>
             <button
               onClick={() => navigate(ROUTES.POLICIES_EDIT(policy.id))}
