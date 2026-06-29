@@ -14,7 +14,7 @@ import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
 import {
-  downloadCSV, printTableAsPDF, getISOWeekKey, generateWeekRange,
+  downloadXLSX, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
 import { documentsApi } from '../../../shared/api/documents.api'
 import { policiesApi } from '../../../shared/api/policies.api'
@@ -392,7 +392,7 @@ export default function FinancialAnalysisPage() {
     })
     dataRows.push(['TOTAL', ...colTotals, kpis.totalPaid.toFixed(0), kpis.totalPending.toFixed(0)])
 
-    downloadCSV([header, ...dataRows], `analisis-financiero-${periodLabel}-${dateFrom}-${dateTo}.csv`)
+    downloadXLSX([header, ...dataRows], `analisis-financiero-${periodLabel}-${dateFrom}-${dateTo}.xlsx`)
   }
 
   function handleExportPDF() {

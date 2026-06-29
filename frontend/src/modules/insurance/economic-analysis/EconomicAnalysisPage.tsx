@@ -13,7 +13,7 @@ import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
 import {
-  downloadCSV, printTableAsPDF, getISOWeekKey, generateWeekRange,
+  downloadXLSX, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
 import { documentsApi } from '../../../shared/api/documents.api'
 import { policiesApi } from '../../../shared/api/policies.api'
@@ -434,9 +434,9 @@ export default function EconomicAnalysisPage() {
       ...columns.map((c) => getColumnTotal(c.key).toFixed(0)),
       columns.reduce((s, c) => s + getColumnTotal(c.key), 0).toFixed(0),
     ]
-    downloadCSV(
+    downloadXLSX(
       [header, ...dataRows, totalRow],
-      `analisis-economico-${periodLabel}-${dateFrom}-${dateTo}.csv`,
+      `analisis-economico-${periodLabel}-${dateFrom}-${dateTo}.xlsx`,
     )
   }
 
