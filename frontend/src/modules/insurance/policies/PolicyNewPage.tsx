@@ -99,8 +99,13 @@ function AssetSelector({
         {assets.map((asset) => {
           const checked = selected.includes(asset.id)
           return (
-            <label
+            <div
               key={asset.id}
+              role="checkbox"
+              aria-checked={checked}
+              tabIndex={0}
+              onClick={() => onToggle(asset.id)}
+              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(asset.id) } }}
               className={`flex items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors select-none ${
                 checked ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
               }`}
@@ -116,13 +121,12 @@ function AssetSelector({
                   </svg>
                 )}
               </div>
-              <input type="checkbox" checked={checked} onChange={() => onToggle(asset.id)} className="sr-only" />
               <span className={`text-sm leading-snug min-w-0 ${checked ? 'text-blue-800 font-medium' : 'text-slate-700'}`}>
                 <span className="font-mono text-xs mr-1.5">{asset.internalCode}</span>
                 {asset.name}
                 <span className="text-slate-400 ml-1.5 text-xs">({asset.assetType})</span>
               </span>
-            </label>
+            </div>
           )
         })}
       </div>

@@ -311,7 +311,7 @@ export default function AssetsPage() {
           <button
             onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-            title="Eliminar activo"
+            title="Dar de baja"
           >
             <Trash2 size={15} />
           </button>
@@ -392,9 +392,9 @@ export default function AssetsPage() {
       </SectionCard>
       <ConfirmDialog
         open={deleteId !== null}
-        title="Eliminar activo"
-        description={`¿Eliminar "${allAssets.find((a) => a.id === deleteId)?.name ?? 'este activo'}"? Esta acción no se puede deshacer.`}
-        confirmLabel="Eliminar"
+        title="Dar de baja"
+        description={`¿Dar de baja a "${allAssets.find((a) => a.id === deleteId)?.name ?? 'este activo'}"? El activo quedará inactivo y se registrará en el historial.`}
+        confirmLabel="Dar de baja"
         onConfirm={() => deleteId && handleDelete(deleteId)}
         onCancel={() => setDeleteId(null)}
       />

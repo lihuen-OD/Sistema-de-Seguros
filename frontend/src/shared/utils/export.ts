@@ -107,7 +107,10 @@ export async function printTableAsPDF(
     .join('')
 
   const container = document.createElement('div')
-  container.style.cssText = 'position:fixed;top:-99999px;left:-99999px;background:#ffffff;padding:24px;font-family:Helvetica Neue,Arial,sans-serif;color:#1e293b;'
+  // position:absolute + visibility:hidden so the element lays out at its natural width
+  // without being clipped to the viewport (position:fixed would constrain to viewport width,
+  // breaking wide tables with many time-period columns).
+  container.style.cssText = 'visibility:hidden;position:absolute;top:0;left:0;background:#ffffff;padding:24px;font-family:Helvetica Neue,Arial,sans-serif;color:#1e293b;'
   container.innerHTML = `
     <h1 style="font-size:14px;font-weight:700;margin:0 0 4px">${title}</h1>
     <p style="font-size:9px;color:#64748b;margin:0 0 16px">${subtitle}</p>
@@ -119,11 +122,17 @@ export async function printTableAsPDF(
   document.body.appendChild(container)
 
   try {
+    // After the browser lays out the element, read its natural width (may be wider than viewport).
+    const renderWidth = Math.max(container.scrollWidth, 900)
+    container.style.width = renderWidth + 'px'
+
     const canvas = await html2canvas(container, {
       scale: 2,
       useCORS: true,
       logging: false,
       backgroundColor: '#ffffff',
+      windowWidth: renderWidth,
+      windowHeight: container.scrollHeight + 40,
     })
 
     const pdf = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4' })

@@ -114,7 +114,7 @@ export const assetsService = {
     const seqResult = await prisma.$queryRaw<[{ nextval: bigint }]>`SELECT nextval('asset_code_seq')`
     const code = `ACT-${String(Number(seqResult[0].nextval)).padStart(5, '0')}`
 
-    return prisma.$transaction(async (tx) => {
+    const created = await prisma.$transaction(async (tx) => {
       const asset = await tx.asset.create({
         data: {
           ...assetData,
@@ -165,10 +165,14 @@ export const assetsService = {
         },
       })
 
-      return tx.asset.findUniqueOrThrow({
-        where: { id: asset.id },
-        include: ASSET_DETAIL_INCLUDE,
-      })
+      return asset.id
+    })
+
+    // La transacción solo ejecuta writes. La lectura con include se hace fuera
+    // para no agotar el timeout de 5s de la transacción interactiva.
+    return prisma.asset.findUniqueOrThrow({
+      where: { id: created },
+      include: ASSET_DETAIL_INCLUDE,
     })
   },
 
@@ -223,10 +227,23 @@ export const assetsService = {
   },
 
   async softDelete(id: string) {
-    return prisma.asset.update({
-      where: { id },
-      data: { isActive: false, status: 'baja' },
-    }).catch(handleUpdateNotFound)
+    await prisma.$transaction([
+      prisma.asset.update({
+        where: { id },
+        data: { isActive: false, status: 'baja' },
+        select: { id: true },
+      }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (prisma as any).assetStatusHistory.create({
+        data: {
+          assetId: id,
+          status: 'baja',
+          date: new Date(),
+          note: 'Activo dado de baja',
+        },
+      }),
+    ]).catch(handleUpdateNotFound)
+    return { id }
   },
 
   // ── Allocations ─────────────────────────────────────────────────────────────
