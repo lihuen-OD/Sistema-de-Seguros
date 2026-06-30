@@ -126,6 +126,7 @@ export default function DocumentEditPage() {
   const [isSaved, setIsSaved] = useState(true)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [emailTo, setEmailTo] = useState('')
+  const [emailSubjectEdit, setEmailSubjectEdit] = useState('')
   const [emailSent, setEmailSent] = useState(false)
   const [allocationsInitialized, setAllocationsInitialized] = useState(false)
   const [installmentsInitialized, setInstallmentsInitialized] = useState(false)
@@ -749,7 +750,7 @@ export default function DocumentEditPage() {
           <button
             type="button"
             disabled={!isSaved}
-            onClick={() => setEmailModalOpen(true)}
+            onClick={() => { setEmailSubjectEdit(emailSubject); setEmailModalOpen(true) }}
             className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title={!isSaved ? 'Guardá los cambios primero para poder enviar' : 'Enviar por mail'}
           >
@@ -827,9 +828,9 @@ export default function DocumentEditPage() {
                   <label className="text-xs font-medium text-slate-600 block mb-1">Asunto</label>
                   <input
                     type="text"
-                    value={emailSubject}
-                    readOnly
-                    className="w-full px-3 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-500 cursor-default"
+                    value={emailSubjectEdit}
+                    onChange={(e) => setEmailSubjectEdit(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
                   />
                 </div>
 
