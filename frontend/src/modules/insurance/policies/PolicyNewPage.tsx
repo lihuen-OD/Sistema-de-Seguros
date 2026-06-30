@@ -41,7 +41,7 @@ interface PolicyForm {
   description: string
   beneficiaryDescription: string
   association: AssociationType
-  assetId: string
+  assetIds: string[]
   companyId: string
   costCenterId: string
   insuredAmountArs: string
@@ -59,11 +59,76 @@ const INITIAL: PolicyForm = {
   description: '',
   beneficiaryDescription: '',
   association: 'activo',
-  assetId: '',
+  assetIds: [],
   companyId: '',
   costCenterId: '',
   insuredAmountArs: '',
   exchangeRate: '',
+}
+
+// ── AssetSelector ─────────────────────────────────────────────────────────────
+
+import type { Asset } from '../../../shared/types'
+
+function AssetSelector({
+  assets,
+  selected,
+  onToggle,
+  error,
+}: {
+  assets: Asset[]
+  selected: string[]
+  onToggle: (id: string) => void
+  error?: string
+}) {
+  if (assets.length === 0) {
+    return (
+      <div className="rounded-xl border-2 border-dashed border-slate-200 py-5 text-center">
+        <p className="text-sm text-slate-400">No hay activos activos disponibles</p>
+      </div>
+    )
+  }
+  return (
+    <div>
+      <p className="text-xs text-slate-500 mb-2">
+        {selected.length === 0
+          ? 'Ninguno seleccionado'
+          : `${selected.length} activo${selected.length !== 1 ? 's' : ''} seleccionado${selected.length !== 1 ? 's' : ''}`}
+      </p>
+      <div className="rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+        {assets.map((asset) => {
+          const checked = selected.includes(asset.id)
+          return (
+            <label
+              key={asset.id}
+              className={`flex items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors select-none ${
+                checked ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
+              }`}
+            >
+              <div
+                className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                  checked ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
+                }`}
+              >
+                {checked && (
+                  <svg width="9" height="7" viewBox="0 0 10 8" fill="none">
+                    <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </div>
+              <input type="checkbox" checked={checked} onChange={() => onToggle(asset.id)} className="sr-only" />
+              <span className={`text-sm leading-snug min-w-0 ${checked ? 'text-blue-800 font-medium' : 'text-slate-700'}`}>
+                <span className="font-mono text-xs mr-1.5">{asset.internalCode}</span>
+                {asset.name}
+                <span className="text-slate-400 ml-1.5 text-xs">({asset.assetType})</span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+      {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
+    </div>
+  )
 }
 
 // ── CoverageSelector ──────────────────────────────────────────────────────────
@@ -233,11 +298,21 @@ export default function PolicyNewPage() {
     setForm((prev) => ({
       ...prev,
       association: value,
-      assetId: '',
+      assetIds: [],
       companyId: '',
       costCenterId: '',
       beneficiaryDescription: '',
     }))
+  }
+
+  const toggleAsset = (assetId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      assetIds: prev.assetIds.includes(assetId)
+        ? prev.assetIds.filter((id) => id !== assetId)
+        : [...prev.assetIds, assetId],
+    }))
+    setErrors((prev) => ({ ...prev, assetIds: undefined }))
   }
 
   const insuredAmountUsd = useMemo(() => {
@@ -265,7 +340,7 @@ export default function PolicyNewPage() {
     if (form.coverageTypes.length === 0) next.coverageTypes = 'Seleccioná al menos una cobertura'
     if (!form.startDate)             next.startDate        = 'Requerido'
     if (!form.endDate)               next.endDate          = 'Requerido'
-    if (form.association === 'activo' && !form.assetId) next.assetId = 'Seleccioná un activo'
+    if (form.association === 'activo' && form.assetIds.length === 0) next.assetIds = 'Seleccioná al menos un activo'
     if (form.association === 'sin_activo') {
       if (!form.companyId)    next.companyId    = 'Requerido'
       if (!form.costCenterId) next.costCenterId = 'Requerido'
@@ -287,12 +362,12 @@ export default function PolicyNewPage() {
     const insuranceTypeObj = insuranceTypes.find((t) => t.label === form.insuranceType)
     const insuranceTypeId = insuranceTypeObj?.id ?? ''
 
-    const selectedAsset = form.association === 'activo'
-      ? allAssets.find((a) => a.id === form.assetId)
+    const firstAsset = form.association === 'activo' && form.assetIds.length > 0
+      ? allAssets.find((a) => a.id === form.assetIds[0])
       : undefined
     const companyId = form.association === 'sin_activo'
       ? form.companyId
-      : (selectedAsset?.companyId ?? '')
+      : (firstAsset?.companyId ?? '')
     const costCenterId = form.association === 'sin_activo' ? form.costCenterId || null : null
 
     try {
@@ -303,7 +378,7 @@ export default function PolicyNewPage() {
         costCenterId,
         producerId: form.producerId || undefined,
         insuredName: form.insuranceCompany,
-        assetId: form.association === 'activo' ? (form.assetId || null) : null,
+        assetIds: form.association === 'activo' ? form.assetIds : [],
         beneficiaryDescription: form.beneficiaryDescription.trim() || null,
         startDate: form.startDate,
         endDate: form.endDate,
@@ -470,18 +545,14 @@ export default function PolicyNewPage() {
           </div>
 
           {form.association === 'activo' ? (
-            <FormSection title="">
-              <FormField label="Activo Asegurado" required error={errors.assetId} fullWidth>
-                <FormSelect value={form.assetId} onChange={set('assetId')} required>
-                  <option value="">Seleccionar activo…</option>
-                  {allAssets.filter((a) => a.status === 'activo').map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.internalCode} — {a.name} ({a.assetType})
-                    </option>
-                  ))}
-                </FormSelect>
-              </FormField>
-            </FormSection>
+            <FormField label="Activos Asegurados" required error={errors.assetIds} fullWidth>
+              <AssetSelector
+                assets={allAssets.filter((a) => a.status === 'activo')}
+                selected={form.assetIds}
+                onToggle={toggleAsset}
+                error={errors.assetIds}
+              />
+            </FormField>
           ) : (
             <div className="space-y-4">
               <FormSection title="">

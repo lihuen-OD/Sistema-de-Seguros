@@ -205,6 +205,16 @@ export interface PolicyAttachment {
   uploadedBy: string
 }
 
+export interface PolicyAsset {
+  id: string
+  internalCode: string
+  name: string
+  assetType: string
+  fixedAssetCode?: string | null
+  costCenterName?: string | null
+  costCenterCode?: string | null
+}
+
 export interface Policy {
   id: string
   policyNumber: string
@@ -217,7 +227,8 @@ export interface Policy {
   beneficiaryDescription?: string
   startDate: string
   endDate: string
-  assetId: string | null
+  assetIds: string[]
+  selectedAssets?: PolicyAsset[]
   companyId: string | null
   costCenterId: string | null
   insuredAmountArs: number

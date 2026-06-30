@@ -107,7 +107,8 @@ export default function DashboardPage() {
     () =>
       allPolicies.filter((p) => {
         if (!filterCompany && !filterCostCenter && !filterAssetType) return true
-        const asset = p.assetId ? assetById.get(p.assetId) : undefined
+        const primaryAssetId = p.assetIds?.[0]
+        const asset = primaryAssetId ? assetById.get(primaryAssetId) : undefined
         if (filterCompany && p.companyId !== filterCompany && asset?.companyId !== filterCompany) return false
         if (filterCostCenter && p.costCenterId !== filterCostCenter && asset?.costCenterId !== filterCostCenter) return false
         if (filterAssetType && asset?.assetType !== filterAssetType) return false

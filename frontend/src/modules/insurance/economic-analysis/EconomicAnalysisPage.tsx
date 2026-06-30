@@ -68,20 +68,20 @@ function convertAmount(amount: number, from: string, to: string): number {
 
 function buildPolicyContext(policies: Policy[], assets: Asset[]) {
   const map = new Map<string, {
-    companyId: string; costCenterId: string; assetId: string | null; insuranceCompany: string
+    companyId: string; costCenterId: string; primaryAssetId: string | null; insuranceCompany: string
   }>()
   policies.forEach((pol) => {
     let companyId = pol.companyId ?? ''
     let costCenterId = pol.costCenterId ?? ''
-    const assetId = pol.assetId
-    if (assetId) {
-      const asset = assets.find((a) => a.id === assetId)
+    const primaryAssetId = pol.assetIds?.[0] ?? null
+    if (primaryAssetId) {
+      const asset = assets.find((a) => a.id === primaryAssetId)
       if (asset) {
         companyId = companyId || asset.companyId
         costCenterId = costCenterId || asset.costCenterId
       }
     }
-    map.set(pol.id, { companyId, costCenterId, assetId, insuranceCompany: pol.insuranceCompany })
+    map.set(pol.id, { companyId, costCenterId, primaryAssetId, insuranceCompany: pol.insuranceCompany })
   })
   return map
 }
@@ -164,7 +164,7 @@ function buildEconomicMatrix(
         case 'centro_costo': if (ctx.costCenterId) rowIds.push(ctx.costCenterId); break
         case 'aseguradora':  rowIds.push(ctx.insuranceCompany); break
         case 'poliza':       rowIds.push(policyId); break
-        case 'activo':       if (ctx.assetId)      rowIds.push(ctx.assetId);      break
+        case 'activo':       if (ctx.primaryAssetId) rowIds.push(ctx.primaryAssetId); break
       }
 
       rowIds.forEach((rowId) => {

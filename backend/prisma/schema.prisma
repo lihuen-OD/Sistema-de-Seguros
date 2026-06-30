@@ -231,7 +231,7 @@ model Policy {
   costCenterId           String?
   producerId             String?
   insuredName            String
-  assetId                String?
+  assetIds               String[]
   beneficiaryDescription String?
   startDate              DateTime @db.Date
   endDate                DateTime @db.Date
@@ -258,7 +258,6 @@ model Policy {
   @@index([companyId])
   @@index([insuranceTypeId])
   @@index([producerId])
-  @@index([assetId])
   @@map("policies")
 }
 

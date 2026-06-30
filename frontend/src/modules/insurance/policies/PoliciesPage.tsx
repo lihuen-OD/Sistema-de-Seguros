@@ -79,7 +79,7 @@ export default function PoliciesPage() {
   const filtered = useMemo(() => {
     return allPolicies.filter((p) => {
       const q = search.toLowerCase()
-      const assetName = p.assetId ? (assetNameById.get(p.assetId) ?? '') : ''
+      const assetName = p.assetIds?.[0] ? (assetNameById.get(p.assetIds[0]) ?? '') : ''
       const matchSearch =
         !search ||
         p.policyNumber.toLowerCase().includes(q) ||
@@ -205,12 +205,12 @@ export default function PoliciesPage() {
     // ── Columnas opcionales ────────────────────────────────────────────────────
     {
       id: 'assetName',
-      key: 'assetId',
+      key: 'assetIds',
       label: 'Activo asociado',
       defaultVisible: false,
-      exportValue: (row) => row.assetId ? (assetNameById.get(row.assetId) ?? '') : '',
+      exportValue: (row) => row.assetIds?.[0] ? (assetNameById.get(row.assetIds[0]) ?? '') : '',
       render: (_v, row) => {
-        const name = row.assetId ? assetNameById.get(row.assetId) : null
+        const name = row.assetIds?.[0] ? assetNameById.get(row.assetIds[0]) : null
         return name
           ? <span className="text-sm text-slate-700">{name}</span>
           : <span className="text-slate-400">—</span>

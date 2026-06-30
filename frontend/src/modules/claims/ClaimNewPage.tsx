@@ -105,7 +105,7 @@ export default function ClaimNewPage() {
 
   // Derived
   const selectedAsset = assetId ? (allAssets.find((a) => a.id === assetId) ?? null) : null
-  const availablePolicies = assetId ? allPolicies.filter((p) => p.assetId === assetId) : allPolicies
+  const availablePolicies = assetId ? allPolicies.filter((p) => p.assetIds?.includes(assetId)) : allPolicies
   const selectedPolicy = policyId ? availablePolicies.find((p) => p.id === policyId) ?? null : null
 
   const tc = parseFloat(exchangeRate) || 0

@@ -23,7 +23,6 @@ import { policiesApi } from '../../../shared/api/policies.api'
 import { producersApi } from '../../../shared/api/producers.api'
 import { companiesApi } from '../../../shared/api/companies.api'
 import { costCentersApi } from '../../../shared/api/cost-centers.api'
-import { assetsApi } from '../../../shared/api/assets.api'
 import { documentsApi } from '../../../shared/api/documents.api'
 import { ROUTES } from '../../../app/routes'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
@@ -54,11 +53,6 @@ export default function PolicyDetailPage() {
   const { data: costCenters = [] } = useQuery({
     queryKey: ['cost-centers'],
     queryFn: () => costCentersApi.findAll(),
-  })
-
-  const { data: assets = [] } = useQuery({
-    queryKey: ['assets'],
-    queryFn: () => assetsApi.findAll(),
   })
 
   const { data: allDocuments = [] } = useQuery({
@@ -115,7 +109,7 @@ export default function PolicyDetailPage() {
   const producer = producers.find((p) => p.id === policy.producerId) ?? null
   const company = policy.companyId ? companies.find((c) => c.id === policy.companyId) ?? null : null
   const costCenter = policy.costCenterId ? costCenters.find((cc) => cc.id === policy.costCenterId) ?? null : null
-  const asset = policy.assetId ? assets.find((a) => a.id === policy.assetId) ?? null : null
+  const linkedAssets = policy.selectedAssets ?? []
 
   const documents = allDocuments.filter((d) => d.policyIds.includes(id!))
 
@@ -295,31 +289,41 @@ export default function PolicyDetailPage() {
             )}
           </SectionCard>
 
-          {/* Association: asset or company+costCenter */}
+          {/* Association: assets or company+costCenter */}
           <SectionCard title="Asociación">
-            {asset ? (
-              <div className="space-y-3">
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
-                  Activo Asegurado
+            {linkedAssets.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">
+                  Activo{linkedAssets.length !== 1 ? 's' : ''} Asegurado{linkedAssets.length !== 1 ? 's' : ''} ({linkedAssets.length})
                 </p>
-                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <ShieldCheck size={16} className="text-blue-600" />
+                {linkedAssets.map((asset) => (
+                  <div key={asset.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <ShieldCheck size={16} className="text-blue-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-800">{asset.name}</p>
+                      <p className="text-xs text-slate-500">{asset.internalCode} — {asset.assetType}</p>
+                      {asset.fixedAssetCode && (
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Bien de uso: <span className="font-mono">{asset.fixedAssetCode}</span>
+                        </p>
+                      )}
+                      {asset.costCenterCode && (
+                        <p className="text-xs text-slate-400">
+                          CC: {asset.costCenterCode}{asset.costCenterName ? ` — ${asset.costCenterName}` : ''}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => navigate(`/assets/${asset.id}`)}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium flex-shrink-0"
+                    >
+                      <Link2 size={12} />
+                      Ver
+                    </button>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">{asset.name}</p>
-                    <p className="text-xs text-slate-500">
-                      {asset.internalCode} — {asset.assetType}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => navigate(`/assets/${asset.id}`)}
-                    className="ml-auto flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    <Link2 size={12} />
-                    Ver activo
-                  </button>
-                </div>
+                ))}
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-4">
@@ -410,7 +414,7 @@ export default function PolicyDetailPage() {
           {activeDocTab === 'documentos' && (
             <button
               type="button"
-              onClick={() => navigate('/insurance/documents/new')}
+              onClick={() => navigate(`/insurance/documents/new?policyId=${id}`)}
               className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
             >
               <Plus size={13} />
@@ -434,7 +438,7 @@ export default function PolicyDetailPage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => navigate('/insurance/documents/new')}
+                  onClick={() => navigate(`/insurance/documents/new?policyId=${id}`)}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
                 >
                   <Plus size={14} />

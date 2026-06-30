@@ -46,7 +46,7 @@ export const policiesService = {
       ...(query.insuranceTypeId && { insuranceTypeId: query.insuranceTypeId }),
       ...(query.companyId && { companyId: query.companyId }),
       ...(query.producerId && { producerId: query.producerId }),
-      ...(query.assetId && { assetId: query.assetId }),
+      ...(query.assetId && { assetIds: { has: query.assetId } }),
       ...(query.search && {
         OR: [
           { policyNumber: { contains: query.search, mode: 'insensitive' as const } },
@@ -85,12 +85,39 @@ export const policiesService = {
     })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
 
-    // Resuelve los coverageIds a objetos de cobertura
     const selectedCoverages = policy.insuranceType.coverages.filter((c) =>
       policy.coverageIds.includes(c.id),
     )
 
-    return withStatus({ ...policy, selectedCoverages })
+    const selectedAssets = policy.assetIds.length > 0
+      ? (await prisma.asset.findMany({
+          where: { id: { in: policy.assetIds } },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            assetType: true,
+            fixedAssetCode: true,
+            allocations: {
+              orderBy: { percentage: 'desc' as const },
+              take: 1,
+              select: {
+                costCenter: { select: { id: true, name: true, code: true } },
+              },
+            },
+          },
+        })).map((a) => ({
+          id: a.id,
+          code: a.code,
+          name: a.name,
+          assetType: a.assetType,
+          fixedAssetCode: a.fixedAssetCode,
+          costCenterName: a.allocations[0]?.costCenter?.name ?? null,
+          costCenterCode: a.allocations[0]?.costCenter?.code ?? null,
+        }))
+      : []
+
+    return withStatus({ ...policy, selectedCoverages, selectedAssets })
   },
 
   async create(data: CreatePolicyDTO) {

@@ -1,14 +1,18 @@
 import { apiClient } from './client'
-import type { Policy, PolicyStatus, PolicyAttachment, ProducerTask, TaskPriority } from '../types'
+import type { Policy, PolicyStatus, PolicyAsset, PolicyAttachment, ProducerTask, TaskPriority } from '../types'
 
 interface BackendInsuranceType { id: string; name: string }
 interface BackendCompany { id: string; name: string; cuit: string | null }
 interface BackendProducer { id: string; name: string }
 interface BackendCoverage { id: string; name: string; description: string | null }
+interface BackendPolicyAsset {
+  id: string; code: string | null; name: string; assetType: string
+  fixedAssetCode: string | null; costCenterName: string | null; costCenterCode: string | null
+}
 interface BackendPolicy {
   id: string; policyNumber: string; insuranceTypeId: string; companyId: string
   costCenterId: string | null; producerId: string | null
-  insuredName: string; assetId: string | null; beneficiaryDescription: string | null
+  insuredName: string; assetIds: string[]; beneficiaryDescription: string | null
   startDate: string; endDate: string
   premium: number; currency: string; exchangeRate: number; description: string | null; coverageIds: string[]
   isActive: boolean; status: string; createdAt: string; updatedAt: string
@@ -16,6 +20,7 @@ interface BackendPolicy {
   company?: BackendCompany
   producer?: BackendProducer
   selectedCoverages?: BackendCoverage[]
+  selectedAssets?: BackendPolicyAsset[]
   _count?: { attachments: number; allocations: number }
 }
 interface BackendTask {
@@ -55,6 +60,18 @@ function mapStatus(s: string): PolicyStatus {
   return 'vigente'
 }
 
+function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
+  return {
+    id: a.id,
+    internalCode: a.code ?? '',
+    name: a.name,
+    assetType: a.assetType,
+    fixedAssetCode: a.fixedAssetCode,
+    costCenterName: a.costCenterName,
+    costCenterCode: a.costCenterCode,
+  }
+}
+
 function mapPolicy(b: BackendPolicy): Policy {
   return {
     id: b.id,
@@ -68,7 +85,8 @@ function mapPolicy(b: BackendPolicy): Policy {
     beneficiaryDescription: b.beneficiaryDescription ?? '',
     startDate: b.startDate?.slice(0, 10) ?? '',
     endDate: b.endDate?.slice(0, 10) ?? '',
-    assetId: b.assetId ?? null,
+    assetIds: b.assetIds ?? [],
+    selectedAssets: b.selectedAssets ? b.selectedAssets.map(mapPolicyAsset) : undefined,
     companyId: b.companyId,
     costCenterId: b.costCenterId ?? null,
     currency: (b.currency === 'USD' ? 'USD' : 'ARS') as 'ARS' | 'USD',
@@ -87,7 +105,7 @@ export interface PolicyCreateInput {
   policyNumber: string; insuranceTypeId: string; companyId: string; costCenterId?: string | null
   producerId?: string; insuredName: string; startDate: string; endDate: string; premium: number
   currency?: string; exchangeRate?: number; description?: string; coverageIds?: string[]
-  assetId?: string | null; beneficiaryDescription?: string | null
+  assetIds?: string[]; beneficiaryDescription?: string | null
 }
 
 export const policiesApi = {

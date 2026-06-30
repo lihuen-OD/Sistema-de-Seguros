@@ -243,12 +243,12 @@ export default function AssetFichaPage() {
             <div>
               <SectionHeading>Imputación Contable</SectionHeading>
               <div className="space-y-4">
-                {asset.allocations.map((alloc, idx) => {
+                {(asset.allocations ?? []).map((alloc, idx) => {
                   const allocCompany = allCompanies.find(c => c.id === alloc.companyId)
                   const allocCostCenter = allCostCenters.find(cc => cc.id === alloc.costCenterId)
                   return (
                     <div key={alloc.id} className="space-y-2.5">
-                      {asset.allocations.length > 1 && (
+                      {(asset.allocations ?? []).length > 1 && (
                         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 pt-1">
                           Imputación {idx + 1} · {alloc.percentage}%
                         </p>

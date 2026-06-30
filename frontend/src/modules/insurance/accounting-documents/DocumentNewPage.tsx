@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Save,
@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   ArrowLeftRight,
   Paperclip,
+  Info,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -75,6 +76,8 @@ const INITIAL_FORM: DocumentForm = {
 export default function DocumentNewPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const fromPolicyId = searchParams.get('policyId') ?? ''
 
   const [form, setForm] = useState<DocumentForm>(INITIAL_FORM)
   const [errors, setErrors] = useState<FormErrors>({})
@@ -106,6 +109,30 @@ export default function DocumentNewPage() {
   const { data: documentTypes = [] } = useQuery({ queryKey: ['catalogs', 'document_type'], queryFn: () => catalogsApi.findByCategory('document_type') })
   const { data: paymentMethods = [] } = useQuery({ queryKey: ['catalogs', 'document_payment_method'], queryFn: () => catalogsApi.findByCategory('document_payment_method') })
   const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+
+  const { data: sourcePolicy } = useQuery({
+    queryKey: ['policy', fromPolicyId],
+    queryFn: () => policiesApi.findById(fromPolicyId),
+    enabled: !!fromPolicyId,
+  })
+
+  useEffect(() => {
+    if (!sourcePolicy) return
+    setForm((prev) => ({
+      ...prev,
+      insuranceCompany: sourcePolicy.insuranceCompany,
+      currency: sourcePolicy.currency,
+      exchangeRate: sourcePolicy.exchangeRate > 1
+        ? sourcePolicy.exchangeRate.toString()
+        : prev.exchangeRate,
+      documentNumber: sourcePolicy.policyNumber,
+    }))
+    setPolicyRows([{
+      id: crypto.randomUUID(),
+      policyId: sourcePolicy.id,
+      allocatedAmount: '',
+    }])
+  }, [sourcePolicy])
 
   const existingFacturas = useMemo(
     () => allDocuments.filter((d) => d.documentType === 'Factura'),
@@ -325,6 +352,41 @@ export default function DocumentNewPage() {
         backTo="/insurance/documents"
         backLabel="Volver a documentos"
       />
+
+      {sourcePolicy && (
+        <div className="mb-2 max-w-5xl flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 text-blue-700 text-sm rounded-lg">
+          <Info size={14} className="flex-shrink-0" />
+          <span>
+            Datos pre-completados desde la póliza <strong>{sourcePolicy.policyNumber}</strong> ({sourcePolicy.insuranceCompany}). Podés editarlos.
+          </span>
+        </div>
+      )}
+
+      {sourcePolicy && (sourcePolicy.selectedAssets?.length ?? 0) > 0 && (
+        <div className="mb-4 max-w-5xl rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">
+            Activos asegurados en esta póliza
+          </p>
+          <div className="space-y-1.5">
+            {sourcePolicy.selectedAssets!.map((a) => (
+              <div key={a.id} className="flex items-center gap-4 text-sm flex-wrap">
+                <span className="font-mono text-xs text-slate-500 w-24 flex-shrink-0">{a.internalCode}</span>
+                <span className="text-slate-700 font-medium">{a.name}</span>
+                {a.fixedAssetCode && (
+                  <span className="text-xs text-slate-400">
+                    Bien de uso: <span className="font-mono">{a.fixedAssetCode}</span>
+                  </span>
+                )}
+                {a.costCenterCode && (
+                  <span className="text-xs text-slate-400">
+                    CC: {a.costCenterCode}{a.costCenterName ? ` — ${a.costCenterName}` : ''}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="max-w-5xl space-y-5">
 

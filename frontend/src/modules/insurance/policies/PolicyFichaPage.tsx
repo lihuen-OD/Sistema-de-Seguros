@@ -9,7 +9,6 @@ import { formatCurrencyFull, formatDate } from '../../../shared/utils/format'
 import { downloadAsPdf } from '../../../shared/utils/downloadAsPdf'
 import { policiesApi } from '../../../shared/api/policies.api'
 import { producersApi } from '../../../shared/api/producers.api'
-import { assetsApi } from '../../../shared/api/assets.api'
 import { companiesApi } from '../../../shared/api/companies.api'
 import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import { documentsApi } from '../../../shared/api/documents.api'
@@ -25,7 +24,6 @@ export default function PolicyFichaPage() {
 
   const { data: policy } = useQuery({ queryKey: ['policy', id], queryFn: () => policiesApi.findById(id!) })
   const { data: producers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
-  const { data: assets = [] } = useQuery({ queryKey: ['assets-list'], queryFn: () => assetsApi.findAll() })
   const { data: companies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
   const { data: costCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
   const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
@@ -39,7 +37,7 @@ export default function PolicyFichaPage() {
   }
 
   const producer = producers.find(p => p.id === policy.producerId)
-  const asset = policy.assetId ? assets.find(a => a.id === policy.assetId) : null
+  const linkedAssets = policy.selectedAssets ?? []
   const company = policy.companyId ? companies.find(c => c.id === policy.companyId) : null
   const costCenter = policy.costCenterId ? costCenters.find(cc => cc.id === policy.costCenterId) : null
   const documents = allDocuments.filter(d => d.policyIds?.includes(policy.id))
@@ -151,12 +149,27 @@ export default function PolicyFichaPage() {
           {/* Right */}
           <div className="p-8 space-y-6">
             <div>
-              <SectionHeading>{asset ? 'Activo Asegurado' : 'Imputación Contable'}</SectionHeading>
-              {asset ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 space-y-2">
-                  <FichaRow label="Código interno" value={asset.internalCode} mono />
-                  <FichaRow label="Nombre" value={asset.name} />
-                  <FichaRow label="Tipo" value={asset.assetType} />
+              <SectionHeading>
+                {linkedAssets.length > 0
+                  ? `Activo${linkedAssets.length !== 1 ? 's' : ''} Asegurado${linkedAssets.length !== 1 ? 's' : ''}`
+                  : 'Imputación Contable'}
+              </SectionHeading>
+              {linkedAssets.length > 0 ? (
+                <div className="space-y-2">
+                  {linkedAssets.map((a) => (
+                    <div key={a.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 space-y-1.5">
+                      <FichaRow label="Código interno" value={a.internalCode} mono />
+                      <FichaRow label="Nombre" value={a.name} />
+                      <FichaRow label="Tipo" value={a.assetType} />
+                      {a.fixedAssetCode && <FichaRow label="Bien de uso" value={a.fixedAssetCode} />}
+                      {a.costCenterCode && (
+                        <FichaRow
+                          label="Centro de costo"
+                          value={a.costCenterName ? `${a.costCenterCode} — ${a.costCenterName}` : a.costCenterCode}
+                        />
+                      )}
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="space-y-2.5">
