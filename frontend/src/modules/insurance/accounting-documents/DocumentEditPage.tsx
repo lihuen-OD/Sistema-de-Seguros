@@ -26,6 +26,7 @@ import { documentsApi } from '../../../shared/api/documents.api'
 import { policiesApi } from '../../../shared/api/policies.api'
 import { catalogsApi } from '../../../shared/api/catalogs.api'
 import { ROUTES } from '../../../app/routes'
+import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,6 +129,7 @@ export default function DocumentEditPage() {
   const [emailTo, setEmailTo] = useState('')
   const [emailSubjectEdit, setEmailSubjectEdit] = useState('')
   const [emailSent, setEmailSent] = useState(false)
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false)
   const [allocationsInitialized, setAllocationsInitialized] = useState(false)
   const [installmentsInitialized, setInstallmentsInitialized] = useState(false)
 
@@ -760,7 +762,7 @@ export default function DocumentEditPage() {
 
           <button
             type="button"
-            onClick={() => navigate(ROUTES.DOCUMENTS_DETAIL(doc.id))}
+            onClick={() => setCancelConfirmOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
           >
             <X size={15} />
@@ -909,6 +911,15 @@ export default function DocumentEditPage() {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={cancelConfirmOpen}
+        title="¿Cancelar los cambios?"
+        description="Si salís ahora, los cambios no guardados se perderán."
+        confirmLabel="Sí, descartar"
+        cancelLabel="Seguir editando"
+        onConfirm={() => navigate(ROUTES.DOCUMENTS_DETAIL(doc.id))}
+        onCancel={() => setCancelConfirmOpen(false)}
+      />
     </PageContent>
   )
 }

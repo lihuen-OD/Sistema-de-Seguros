@@ -26,6 +26,7 @@ import { documentsApi } from '../../../shared/api/documents.api'
 import { policiesApi } from '../../../shared/api/policies.api'
 import { catalogsApi } from '../../../shared/api/catalogs.api'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
+import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,7 @@ export default function DocumentNewPage() {
   const [emailSent, setEmailSent] = useState(false)
   const [dupWarning, setDupWarning] = useState(false)
   const [dupChecking, setDupChecking] = useState(false)
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false)
 
   const { data: allPolicies = [] } = useQuery({
     queryKey: ['policies'],
@@ -815,7 +817,7 @@ export default function DocumentNewPage() {
 
           <button
             type="button"
-            onClick={() => navigate('/insurance/documents')}
+            onClick={() => setCancelConfirmOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
           >
             <X size={15} />
@@ -975,6 +977,15 @@ export default function DocumentNewPage() {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={cancelConfirmOpen}
+        title="¿Cancelar la creación?"
+        description="Si salís ahora, perderás todos los datos ingresados. Esta acción no se puede deshacer."
+        confirmLabel="Sí, descartar"
+        cancelLabel="Seguir editando"
+        onConfirm={() => navigate('/insurance/documents')}
+        onCancel={() => setCancelConfirmOpen(false)}
+      />
     </PageContent>
   )
 }
