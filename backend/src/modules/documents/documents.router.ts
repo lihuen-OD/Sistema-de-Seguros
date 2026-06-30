@@ -28,6 +28,9 @@ documentsRouter.post(
   documentsController.create,
 )
 
+// ── Verificación de número duplicado (debe ir antes de /:id) ─────────────────
+documentsRouter.get('/check-number', documentsController.checkNumber)
+
 // ── Análisis financiero (debe ir antes de /:id para evitar conflicto de ruta) ─
 documentsRouter.get('/financial', documentsController.getFinancial)
 

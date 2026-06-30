@@ -145,11 +145,6 @@ export const documentsService = {
   async create(data: CreateDocumentDTO) {
     const { installments, allocations, ...docData } = data
 
-    const exists = await prisma.accountingDocument.findUnique({
-      where: { documentNumber: docData.documentNumber },
-    })
-    if (exists) throw new AppError(409, 'Ya existe un documento con ese número', 'CONFLICT')
-
     if (allocations.length > 0) {
       await this.validatePolicyRefs(allocations.map((a) => a.policyId))
     }
@@ -432,6 +427,14 @@ export const documentsService = {
     const doc = await prisma.accountingDocument.findUnique({ where: { id }, select: { id: true, currency: true } })
     if (!doc) throw new AppError(404, 'Documento no encontrado', 'NOT_FOUND')
     return doc
+  },
+
+  async checkDocumentNumber(documentNumber: string) {
+    const existing = await prisma.accountingDocument.findFirst({
+      where: { documentNumber },
+      select: { id: true },
+    })
+    return { exists: !!existing }
   },
 
   async validatePolicyRefs(policyIds: string[]) {

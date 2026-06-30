@@ -136,6 +136,13 @@ export const documentsApi = {
     await apiClient.delete(`/documents/${id}`)
   },
 
+  async checkDocumentNumber(documentNumber: string): Promise<{ exists: boolean }> {
+    const res = await apiClient.get<{ data: { exists: boolean } }>('/documents/check-number', {
+      params: { documentNumber },
+    })
+    return res.data.data
+  },
+
   async findAllocations(documentId: string): Promise<BackendAllocation[]> {
     const res = await apiClient.get<{ data: BackendAllocation[] }>(`/documents/${documentId}/allocations`)
     return res.data.data

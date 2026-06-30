@@ -286,7 +286,7 @@ model PolicyAttachment {
 
 model AccountingDocument {
   id               String   @id @default(uuid())
-  documentNumber   String   @unique
+  documentNumber   String
   documentType     String
   issueDate        DateTime @db.Date
   netAmount        Float

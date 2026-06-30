@@ -95,6 +95,8 @@ export default function DocumentNewPage() {
   const [emailTo, setEmailTo] = useState('')
   const [emailSubjectEdit, setEmailSubjectEdit] = useState('')
   const [emailSent, setEmailSent] = useState(false)
+  const [dupWarning, setDupWarning] = useState(false)
+  const [dupChecking, setDupChecking] = useState(false)
 
   const { data: allPolicies = [] } = useQuery({
     queryKey: ['policies'],
@@ -134,6 +136,24 @@ export default function DocumentNewPage() {
       allocatedAmount: '',
     }])
   }, [sourcePolicy])
+
+  // Debounced check for duplicate document number
+  useEffect(() => {
+    const trimmed = form.documentNumber.trim()
+    if (!trimmed) { setDupWarning(false); return }
+    setDupChecking(true)
+    const timer = setTimeout(async () => {
+      try {
+        const { exists } = await documentsApi.checkDocumentNumber(trimmed)
+        setDupWarning(exists)
+      } catch {
+        setDupWarning(false)
+      } finally {
+        setDupChecking(false)
+      }
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [form.documentNumber])
 
   const existingFacturas = useMemo(
     () => allDocuments.filter((d) => d.documentType === 'Factura'),
@@ -423,6 +443,18 @@ export default function DocumentNewPage() {
                 onChange={set('documentNumber')}
                 required
               />
+              {dupChecking && (
+                <p className="mt-1 text-xs text-slate-400">Verificando número…</p>
+              )}
+              {!dupChecking && dupWarning && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 leading-snug">
+                    Ya existe un documento con el número <strong>{form.documentNumber.trim()}</strong>.
+                    Podés guardarlo igual — quedará bajo tu responsabilidad como administrador.
+                  </p>
+                </div>
+              )}
             </FormField>
 
             <FormField label="Fecha de Emisión" required error={errors.issueDate}>

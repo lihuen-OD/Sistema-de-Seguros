@@ -20,6 +20,16 @@ export const documentsController = {
     res.json(result)
   }),
 
+  checkNumber: asyncHandler(async (req: Request, res: Response) => {
+    const { documentNumber } = req.query as { documentNumber?: string }
+    if (!documentNumber?.trim()) {
+      res.json({ data: { exists: false } })
+      return
+    }
+    const result = await documentsService.checkDocumentNumber(documentNumber.trim())
+    res.json({ data: result })
+  }),
+
   getFinancial: asyncHandler(async (req: Request, res: Response) => {
     const { from, to } = req.query as { from?: string; to?: string }
     const docs = await documentsService.findAllForFinancial({ from, to })
