@@ -184,7 +184,10 @@ export default function DocumentDetailPage() {
   const pendingCount = installments.filter((i) => i.paymentStatus === 'PENDING').length
   const partialCount = installments.filter((i) => i.paymentStatus === 'PARTIALLY_PAID').length
 
-  const saldo = balance?.outstandingBalance ?? installments
+  // Suma cruda de cuotas no pagadas — deliberadamente no usa balance.outstandingBalance,
+  // que ya viene neteado por Notas de Crédito/Débito/Ajustes (ese número vive en la
+  // tarjeta "Saldo", con su propio desglose para que se entienda de dónde sale).
+  const cuotasPendientes = installments
     .filter((i) => i.paymentStatus !== 'PAID')
     .reduce((sum, i) => sum + Math.abs(i.amount), 0)
 
@@ -236,9 +239,9 @@ export default function DocumentDetailPage() {
     )
     try {
       await documentsApi.updateInstallment(doc!.id, instId, updates)
+    } finally {
       queryClient.invalidateQueries({ queryKey: ['documents', id, 'installments'] })
-    } catch {
-      queryClient.invalidateQueries({ queryKey: ['documents', id, 'installments'] })
+      queryClient.invalidateQueries({ queryKey: ['documents', id, 'balance'] })
     }
   }
 
@@ -494,14 +497,14 @@ export default function DocumentDetailPage() {
                   onUpdate={(updates) => handleInstallmentUpdate(inst.id, updates)}
                 />
               ))}
-              {/* Footer: saldo */}
+              {/* Footer: cuotas pendientes */}
               <div className="flex items-center justify-between px-5 py-3 bg-slate-50 border-t border-slate-200">
                 <span className="text-xs font-medium text-slate-500">
-                  {saldo > 0 ? 'Saldo pendiente' : 'Estado'}
+                  {cuotasPendientes > 0 ? 'Cuotas pendientes' : 'Estado'}
                 </span>
-                {saldo > 0 ? (
+                {cuotasPendientes > 0 ? (
                   <span className="text-sm font-bold text-amber-700 tabular-nums">
-                    {doc.currency} {saldo.toLocaleString('es-AR', {
+                    {doc.currency} {cuotasPendientes.toLocaleString('es-AR', {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
