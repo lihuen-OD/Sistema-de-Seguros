@@ -1,5 +1,19 @@
 import { apiClient } from './client'
-import type { AccountingDocument, PaymentStatus, AccountingDocumentAttachment, Installment, DocumentPolicyAllocation } from '../types'
+import type {
+  AccountingDocument,
+  PaymentStatus,
+  DocumentType,
+  DocumentStatus,
+  RelationType,
+  AdjustmentSign,
+  DocumentTypeDef,
+  AdjustmentReasonOption,
+  AccountingDocumentAttachment,
+  Installment,
+  DocumentPolicyAllocation,
+  DocumentBalance,
+  DocumentAuditLog,
+} from '../types'
 
 export interface DocumentForFinancial extends AccountingDocument {
   installments: Installment[]
@@ -7,11 +21,13 @@ export interface DocumentForFinancial extends AccountingDocument {
 }
 
 interface BackendDocument {
-  id: string; documentNumber: string; documentType: string; issueDate: string
+  id: string; documentNumber: string; documentType: string; documentStatus: string; issueDate: string
   netAmount: number; vatAmount: number; otherTaxesAmount: number; totalAmount: number
   currency: string; exchangeRate: number; description: string | null
   paymentStatus: string; insuranceCompany: string | null; paymentMethod: string | null
-  linkedDocumentId: string | null; createdAt: string; updatedAt: string
+  linkedDocumentId: string | null; relationType: string | null
+  adjustmentReason: string | null; adjustmentSign: string | null
+  createdAt: string; updatedAt: string
   allocations?: { policyId: string }[]
   _count?: { attachments: number }
 }
@@ -43,7 +59,8 @@ interface Paginated<T> { data: T[]; pagination: { total: number; page: number; l
 function mapDocument(b: BackendDocument): AccountingDocument {
   return {
     id: b.id,
-    documentType: b.documentType,
+    documentType: b.documentType as DocumentType,
+    documentStatus: b.documentStatus as DocumentStatus,
     documentNumber: b.documentNumber,
     issueDate: b.issueDate?.slice(0, 10) ?? '',
     currency: b.currency,
@@ -56,6 +73,9 @@ function mapDocument(b: BackendDocument): AccountingDocument {
     insuranceCompany: b.insuranceCompany ?? undefined,
     paymentMethod: b.paymentMethod ?? undefined,
     linkedDocumentId: b.linkedDocumentId ?? undefined,
+    relationType: (b.relationType as RelationType) ?? undefined,
+    adjustmentReason: b.adjustmentReason ?? undefined,
+    adjustmentSign: (b.adjustmentSign as AdjustmentSign) ?? undefined,
     policyIds: b.allocations?.map((a) => a.policyId) ?? [],
     attachmentsCount: b._count?.attachments ?? 0,
     createdAt: b.createdAt,
@@ -80,11 +100,19 @@ export interface DocumentCreateInput {
   netAmount: number; vatAmount?: number; otherTaxesAmount?: number
   currency?: string; exchangeRate?: number; description?: string
   insuranceCompany?: string; paymentMethod?: string; linkedDocumentId?: string
+  documentStatus?: DocumentStatus; adjustmentReason?: string; adjustmentSign?: AdjustmentSign
   allocations?: AllocationInput[]
   installments?: InstallmentInput[]
 }
 
 export const documentsApi = {
+  async getTypes(): Promise<{ types: DocumentTypeDef[]; adjustmentReasons: AdjustmentReasonOption[] }> {
+    const res = await apiClient.get<{ data: { types: DocumentTypeDef[]; adjustmentReasons: AdjustmentReasonOption[] } }>(
+      '/documents/types',
+    )
+    return res.data.data
+  },
+
   async findAll(): Promise<AccountingDocument[]> {
     const res = await apiClient.get<Paginated<BackendDocument>>('/documents', { params: { limit: 200 } })
     return res.data.data.map(mapDocument)
@@ -134,6 +162,26 @@ export const documentsApi = {
 
   async softDelete(id: string): Promise<void> {
     await apiClient.delete(`/documents/${id}`)
+  },
+
+  async getBalance(id: string): Promise<DocumentBalance> {
+    const res = await apiClient.get<{ data: DocumentBalance }>(`/documents/${id}/balance`)
+    return res.data.data
+  },
+
+  async apply(id: string): Promise<AccountingDocument> {
+    const res = await apiClient.post<{ data: BackendDocument }>(`/documents/${id}/apply`)
+    return mapDocument(res.data.data)
+  },
+
+  async cancel(id: string, reason?: string): Promise<AccountingDocument> {
+    const res = await apiClient.post<{ data: BackendDocument }>(`/documents/${id}/cancel`, { reason })
+    return mapDocument(res.data.data)
+  },
+
+  async getAuditLog(id: string): Promise<DocumentAuditLog[]> {
+    const res = await apiClient.get<{ data: DocumentAuditLog[] }>(`/documents/${id}/audit-log`)
+    return res.data.data
   },
 
   async checkDocumentNumber(documentNumber: string): Promise<{ exists: boolean }> {

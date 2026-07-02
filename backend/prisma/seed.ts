@@ -661,11 +661,12 @@ async function main() {
   // PASO 8 — Documentos Contables
   // ─────────────────────────────────────────────────────────────────────────
 
-  await Promise.all([
+  const [facturaIncendio] = await Promise.all([
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00001234',
-        documentType: 'Factura',
+        documentType: 'INVOICE',
+        documentStatus: 'ISSUED',
         issueDate: d('2025-07-05'),
         netAmount: 280000,
         vatAmount: 58800,
@@ -674,13 +675,13 @@ async function main() {
         exchangeRate: 1,
         description: 'Prima anual. Poliza LS-INC-2025-001234',
         insuranceCompany: 'La Segunda',
-        paymentStatus: 'parcial',
+        paymentStatus: 'PARTIALLY_PAID',
         installments: {
           createMany: {
             data: [
-              { installmentNumber: 1, dueDate: d('2025-08-05'), amount: 112933, paymentStatus: 'pagado', paymentDate: d('2025-08-04'), paymentMethod: 'Transferencia bancaria', notes: 'Pagado en termino' },
-              { installmentNumber: 2, dueDate: d('2025-11-05'), amount: 112933, paymentStatus: 'pagado', paymentDate: d('2025-11-03'), paymentMethod: 'Transferencia bancaria', notes: 'Pagado en termino' },
-              { installmentNumber: 3, dueDate: d('2026-07-10'), amount: 112934, paymentStatus: 'pendiente' },
+              { installmentNumber: 1, dueDate: d('2025-08-05'), amount: 112933, paymentStatus: 'PAID', paymentDate: d('2025-08-04'), paymentMethod: 'Transferencia bancaria', notes: 'Pagado en termino' },
+              { installmentNumber: 2, dueDate: d('2025-11-05'), amount: 112933, paymentStatus: 'PAID', paymentDate: d('2025-11-03'), paymentMethod: 'Transferencia bancaria', notes: 'Pagado en termino' },
+              { installmentNumber: 3, dueDate: d('2026-07-10'), amount: 112934, paymentStatus: 'PENDING' },
             ],
           },
         },
@@ -692,7 +693,8 @@ async function main() {
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00005678',
-        documentType: 'Factura',
+        documentType: 'INVOICE',
+        documentStatus: 'ISSUED',
         issueDate: d('2026-01-05'),
         netAmount: 320000,
         vatAmount: 67200,
@@ -701,12 +703,12 @@ async function main() {
         exchangeRate: 1,
         description: 'Prima anual. Poliza FP-AUT-2026-005678',
         insuranceCompany: 'Federación Patronal',
-        paymentStatus: 'pendiente',
+        paymentStatus: 'PENDING',
         installments: {
           createMany: {
             data: [
-              { installmentNumber: 1, dueDate: d('2026-06-05'), amount: 193600, paymentStatus: 'pendiente', notes: 'VENCIDA. Gestionar pago urgente' },
-              { installmentNumber: 2, dueDate: d('2026-09-05'), amount: 193600, paymentStatus: 'pendiente' },
+              { installmentNumber: 1, dueDate: d('2026-06-05'), amount: 193600, paymentStatus: 'PENDING', notes: 'VENCIDA. Gestionar pago urgente' },
+              { installmentNumber: 2, dueDate: d('2026-09-05'), amount: 193600, paymentStatus: 'PENDING' },
             ],
           },
         },
@@ -718,7 +720,8 @@ async function main() {
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00009012',
-        documentType: 'Nota de Débito',
+        documentType: 'DEBIT_NOTE',
+        documentStatus: 'ISSUED',
         issueDate: d('2025-07-20'),
         netAmount: 95000,
         vatAmount: 19950,
@@ -727,11 +730,11 @@ async function main() {
         exchangeRate: 1,
         description: 'Prima anual. Poliza ZA-RC-2025-009012',
         insuranceCompany: 'Zurich Argentina',
-        paymentStatus: 'pagado',
+        paymentStatus: 'PAID',
         installments: {
           createMany: {
             data: [
-              { installmentNumber: 1, dueDate: d('2025-08-15'), amount: 117800, paymentStatus: 'pagado', paymentDate: d('2025-08-13'), paymentMethod: 'E-Cheq', notes: 'E-Cheq N 00123456' },
+              { installmentNumber: 1, dueDate: d('2025-08-15'), amount: 117800, paymentStatus: 'PAID', paymentDate: d('2025-08-13'), paymentMethod: 'E-Cheq', notes: 'E-Cheq N 00123456' },
             ],
           },
         },
@@ -743,7 +746,8 @@ async function main() {
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00012345',
-        documentType: 'Factura',
+        documentType: 'INVOICE',
+        documentStatus: 'ISSUED',
         issueDate: d('2026-06-05'),
         netAmount: 520000,
         vatAmount: 109200,
@@ -752,12 +756,12 @@ async function main() {
         exchangeRate: 1,
         description: 'Prima semestral. Poliza SB-MAG-2026-007890',
         insuranceCompany: 'Sancor Seguros',
-        paymentStatus: 'pendiente',
+        paymentStatus: 'PENDING',
         installments: {
           createMany: {
             data: [
-              { installmentNumber: 1, dueDate: d('2026-07-15'), amount: 314600, paymentStatus: 'pendiente' },
-              { installmentNumber: 2, dueDate: d('2026-08-15'), amount: 314600, paymentStatus: 'pendiente' },
+              { installmentNumber: 1, dueDate: d('2026-07-15'), amount: 314600, paymentStatus: 'PENDING' },
+              { installmentNumber: 2, dueDate: d('2026-08-15'), amount: 314600, paymentStatus: 'PENDING' },
             ],
           },
         },
@@ -769,7 +773,8 @@ async function main() {
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00015000',
-        documentType: 'Factura',
+        documentType: 'INVOICE',
+        documentStatus: 'ISSUED',
         issueDate: d('2026-01-05'),
         netAmount: 180000,
         vatAmount: 37800,
@@ -778,12 +783,12 @@ async function main() {
         exchangeRate: 1,
         description: 'Prima anual. Poliza LS-TRA-2026-011000',
         insuranceCompany: 'La Segunda',
-        paymentStatus: 'pendiente',
+        paymentStatus: 'PENDING',
         installments: {
           createMany: {
             data: [
-              { installmentNumber: 1, dueDate: d('2026-06-20'), amount: 108900, paymentStatus: 'pendiente', notes: 'VENCIDA. Coordinar con area contable' },
-              { installmentNumber: 2, dueDate: d('2026-09-20'), amount: 108900, paymentStatus: 'pendiente' },
+              { installmentNumber: 1, dueDate: d('2026-06-20'), amount: 108900, paymentStatus: 'PENDING', notes: 'VENCIDA. Coordinar con area contable' },
+              { installmentNumber: 2, dueDate: d('2026-09-20'), amount: 108900, paymentStatus: 'PENDING' },
             ],
           },
         },
@@ -793,7 +798,33 @@ async function main() {
       },
     }),
   ])
-  console.log('  OK Documentos (5) + Cuotas (10) + Imputaciones (5)')
+
+  // Asiento de ajuste de ejemplo — requiere documento vinculado, motivo y signo
+  // (ver document-types.ts). Se crea después de los 5 documentos base porque
+  // necesita el id real de la factura a la que ajusta.
+  await prisma.accountingDocument.create({
+    data: {
+      documentNumber: '0001-00001234-AJ1',
+      documentType: 'ADJUSTMENT_ENTRY',
+      documentStatus: 'ISSUED',
+      issueDate: d('2026-07-11'),
+      // Magnitud siempre positiva — el signo del efecto lo da adjustmentSign,
+      // no el monto (ver documents-balance.service.ts).
+      netAmount: 934,
+      vatAmount: 0,
+      otherTaxesAmount: 0,
+      currency: 'ARS',
+      exchangeRate: 1,
+      description: 'Ajuste por diferencia de redondeo en la 3ra cuota',
+      insuranceCompany: 'La Segunda',
+      paymentStatus: 'NOT_APPLICABLE',
+      linkedDocumentId: facturaIncendio.id,
+      adjustmentReason: 'ROUNDING_DIFFERENCE',
+      adjustmentSign: 'NEGATIVE',
+    },
+  })
+
+  console.log('  OK Documentos (6) + Cuotas (10) + Imputaciones (5)')
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 9 — Matafuegos
@@ -997,13 +1028,12 @@ async function main() {
     catalogBatch('fire_ext_capacity', ['1 kg', '2 kg', '4 kg', '6 kg', '10 kg', '25 kg', '50 kg']),
     catalogBatch('fire_ext_location_type', ['Vehículo', 'Maquinaria', 'Establecimiento', 'Edificio', 'Infraestructura']),
     catalogBatch('task_type', ['Solicitar cotización', 'Renovar póliza', 'Enviar documentación', 'Gestionar siniestro', 'Solicitar endoso', 'Reclamar documentación', 'Revisar vencimiento', 'Auditoría de activos']),
-    catalogBatch('document_type', ['Factura', 'Nota de Crédito', 'Nota de Débito', 'Endoso', 'Refacturación']),
     catalogBatch('document_payment_method', ['Transferencia bancaria', 'E-Cheq', 'Efectivo', 'Débito automático', 'Otros']),
     catalogBatch('document_currency', ['ARS', 'USD']),
     catalogBatch('claim_type', ['Accidente', 'Robo con violencia', 'Hurto', 'Incendio', 'Granizo', 'Granizo (cosecha)', 'Inundación', 'Daños materiales', 'Daños eléctricos', 'Rotura mecánica', 'Responsabilidad civil', 'Muerte accidental', 'Incapacidad', 'Otro']),
     catalogBatch('claim_status', ['Denunciado', 'En trámite', 'Liquidado', 'Rechazado', 'Cerrado']),
   ])
-  console.log('  OK Catalogos (18 categorias)')
+  console.log('  OK Catalogos (17 categorias)')
 
   // ─────────────────────────────────────────────────────────────────────────
   // Resumen final

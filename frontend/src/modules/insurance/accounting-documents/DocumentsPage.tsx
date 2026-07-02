@@ -20,7 +20,6 @@ import {
   formatDate,
 } from '../../../shared/utils/format'
 import { documentsApi } from '../../../shared/api/documents.api'
-import { catalogsApi } from '../../../shared/api/catalogs.api'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PAYMENT_STATUS_LABELS } from '../../../shared/constants'
 import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
@@ -42,16 +41,21 @@ export default function DocumentsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const { data: allDocuments = [], isLoading, isError } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
-  const { data: documentTypeItems = [] } = useQuery({ queryKey: ['catalogs', 'document_type'], queryFn: () => catalogsApi.findByCategory('document_type') })
+  const { data: documentTypesData } = useQuery({ queryKey: ['documents', 'types'], queryFn: () => documentsApi.getTypes() })
+  const documentTypes = documentTypesData?.types ?? []
+  const documentTypeLabels = useMemo(
+    () => Object.fromEntries(documentTypes.map((t) => [t.key, t.label])),
+    [documentTypes],
+  )
 
-  const DOCUMENT_TYPE_OPTIONS = documentTypeItems.map((t) => ({ value: t.label, label: t.label }))
+  const DOCUMENT_TYPE_OPTIONS = documentTypes.map((t) => ({ value: t.key, label: t.label }))
 
   const totals = useMemo(() => ({
-    pending: allDocuments.filter((d) => d.paymentStatus === 'pendiente').reduce((s, d) => s + d.totalAmount, 0),
-    paid: allDocuments.filter((d) => d.paymentStatus === 'pagado').reduce((s, d) => s + d.totalAmount, 0),
+    pending: allDocuments.filter((d) => d.paymentStatus === 'PENDING').reduce((s, d) => s + d.totalAmount, 0),
+    paid: allDocuments.filter((d) => d.paymentStatus === 'PAID').reduce((s, d) => s + d.totalAmount, 0),
   }), [allDocuments])
 
-  const partialCount = allDocuments.filter((d) => d.paymentStatus === 'parcial').length
+  const partialCount = allDocuments.filter((d) => d.paymentStatus === 'PARTIALLY_PAID').length
 
   const filtered = useMemo(() => {
     return allDocuments.filter((doc) => {
@@ -85,7 +89,7 @@ export default function DocumentsPage() {
       key: 'documentType',
       label: 'Tipo',
       defaultVisible: true,
-      render: (v) => <span className="text-slate-700 font-medium text-xs">{String(v)}</span>,
+      render: (v) => <span className="text-slate-700 font-medium text-xs">{documentTypeLabels[v as string] ?? String(v)}</span>,
     },
     {
       id: 'issueDate',
@@ -274,7 +278,7 @@ export default function DocumentsPage() {
       ),
       className: 'w-36',
     },
-  ], [navigate, confirmDeleteId])
+  ], [navigate, confirmDeleteId, documentTypeLabels])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('documents', ALL_COLUMNS)
 

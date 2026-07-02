@@ -288,6 +288,7 @@ model AccountingDocument {
   id               String   @id @default(uuid())
   documentNumber   String
   documentType     String
+  documentStatus   String   @default("ISSUED")
   issueDate        DateTime @db.Date
   netAmount        Float
   vatAmount        Float    @default(0)
@@ -295,10 +296,13 @@ model AccountingDocument {
   currency         String   @default("ARS")
   exchangeRate     Float    @default(1)
   description      String?
-  paymentStatus    String   @default("pendiente")
+  paymentStatus    String   @default("PENDING")
   insuranceCompany String?
   paymentMethod    String?
   linkedDocumentId String?
+  relationType     String?
+  adjustmentReason String?
+  adjustmentSign   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -306,11 +310,29 @@ model AccountingDocument {
   installments DocumentInstallment[]
   allocations  DocumentPolicyAllocation[]
   attachments  DocumentAttachment[]
+  auditLogs    DocumentAuditLog[]
 
   @@index([paymentStatus])
   @@index([issueDate])
   @@index([documentType])
+  @@index([documentStatus])
   @@map("accounting_documents")
+}
+
+model DocumentAuditLog {
+  id                   String   @id @default(uuid())
+  accountingDocumentId String
+  action               String // CREATE | UPDATE | APPLY | CANCEL | PAYMENT_CHANGE
+  description          String
+  previousData         Json?
+  newData              Json?
+  performedBy          String?
+  reason               String?
+  createdAt            DateTime @default(now())
+  document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([accountingDocumentId])
+  @@map("document_audit_logs")
 }
 
 model DocumentInstallment {
@@ -320,7 +342,7 @@ model DocumentInstallment {
   dueDate              DateTime @db.Date
   amount               Float
   currency             String   @default("ARS")
-  paymentStatus        String   @default("pendiente")
+  paymentStatus        String   @default("PENDING")
   paymentDate          DateTime? @db.Date
   paymentMethod        String?
   notes                String?

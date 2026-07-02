@@ -3,6 +3,7 @@ import {
   ASSET_STATUS_LABELS,
   POLICY_STATUS_LABELS,
   PAYMENT_STATUS_LABELS,
+  DOCUMENT_STATUS_LABELS,
   FIRE_EXT_STATUS_LABELS,
   TASK_STATUS_LABELS,
   TASK_PRIORITY_LABELS,
@@ -12,6 +13,8 @@ type StatusType =
   | 'activo' | 'inactivo' | 'en_reparacion' | 'vendido' | 'dado_de_baja' | 'pendiente_documentacion'
   | 'vigente' | 'proximo_vencer' | 'vencida'
   | 'pendiente' | 'parcial' | 'pagado'
+  | 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'NOT_APPLICABLE'
+  | 'ISSUED' | 'APPLIED' | 'CANCELLED' | 'OBSERVED'
   | 'vencido'
   | 'en_curso' | 'finalizada'
   | 'baja' | 'media' | 'alta'
@@ -30,10 +33,21 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   proximo_vencer:          { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
   vencida:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   sin_factura:             { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200' },
-  // Payment
+  // Payment (legacy es-ES keys, kept for other modules)
   pendiente:               { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200' },
   parcial:                 { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
   pagado:                  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  // Payment (technical keys — Documentos Contables)
+  PENDING:                 { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200' },
+  PARTIALLY_PAID:          { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
+  PAID:                    { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  OVERDUE:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
+  NOT_APPLICABLE:          { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
+  // Document status
+  ISSUED:                  { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+  APPLIED:                 { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  CANCELLED:               { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
+  OBSERVED:                { bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200' },
   // Fire ext
   vencido:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   // Task
@@ -50,6 +64,7 @@ const allLabels = {
   ...ASSET_STATUS_LABELS,
   ...POLICY_STATUS_LABELS,
   ...PAYMENT_STATUS_LABELS,
+  ...DOCUMENT_STATUS_LABELS,
   ...FIRE_EXT_STATUS_LABELS,
   ...TASK_STATUS_LABELS,
   ...TASK_PRIORITY_LABELS,

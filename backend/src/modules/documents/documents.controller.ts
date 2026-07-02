@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { documentsService } from './documents.service'
+import { documentsBalanceService } from './documents-balance.service'
 import { AppError } from '../../shared/errors/AppError'
 import type {
   ListDocumentsQueryDTO,
@@ -8,6 +9,7 @@ import type {
   ReplaceInstallmentsDTO,
   ReplaceAllocationsDTO,
   BulkIdsQueryDTO,
+  CancelDocumentDTO,
 } from './documents.schemas'
 
 type IdParam = { id: string }
@@ -15,6 +17,11 @@ type InstallmentParam = { id: string; installmentId: string }
 type AttachmentParam = { id: string; attachmentId: string }
 
 export const documentsController = {
+  getTypes: asyncHandler(async (_req: Request, res: Response) => {
+    const result = documentsService.getTypes()
+    res.json({ data: result })
+  }),
+
   list: asyncHandler(async (req: Request, res: Response) => {
     const result = await documentsService.findAll(req.query as unknown as ListDocumentsQueryDTO)
     res.json(result)
@@ -42,18 +49,41 @@ export const documentsController = {
   }),
 
   create: asyncHandler(async (req: Request, res: Response) => {
-    const doc = await documentsService.create(req.body)
+    const doc = await documentsService.create(req.body, req.user?.email ?? 'sistema')
     res.status(201).json({ data: doc })
   }),
 
   update: asyncHandler(async (req: Request<IdParam>, res: Response) => {
-    const doc = await documentsService.update(req.params.id, req.body)
+    const doc = await documentsService.update(req.params.id, req.body, req.user?.email ?? 'sistema')
     res.json({ data: doc })
   }),
 
   remove: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     await documentsService.delete(req.params.id)
     res.json({ data: { message: 'Documento eliminado correctamente' } })
+  }),
+
+  // ── Saldo y ciclo de aplicación (Fase 2) ─────────────────────────────────────
+
+  getBalance: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const balance = await documentsBalanceService.getBalance(req.params.id)
+    res.json({ data: balance })
+  }),
+
+  apply: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const doc = await documentsService.apply(req.params.id, req.user?.email ?? 'sistema')
+    res.json({ data: doc })
+  }),
+
+  cancel: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const { reason } = req.body as CancelDocumentDTO
+    const doc = await documentsService.cancel(req.params.id, req.user?.email ?? 'sistema', reason)
+    res.json({ data: doc })
+  }),
+
+  getAuditLog: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const log = await documentsService.getAuditLog(req.params.id)
+    res.json({ data: log })
   }),
 
   // ── Bulk ──────────────────────────────────────────────────────────────────────
@@ -90,6 +120,7 @@ export const documentsController = {
       req.params.id,
       req.params.installmentId,
       req.body as UpdateInstallmentDTO,
+      req.user?.email ?? 'sistema',
     )
     res.json({ data: installment })
   }),

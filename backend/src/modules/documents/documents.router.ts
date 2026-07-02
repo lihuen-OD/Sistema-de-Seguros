@@ -12,6 +12,7 @@ import {
   ReplaceInstallmentsSchema,
   ReplaceAllocationsSchema,
   AddDocumentAttachmentSchema,
+  CancelDocumentSchema,
   BulkIdsQuerySchema,
 } from './documents.schemas'
 
@@ -27,6 +28,9 @@ documentsRouter.post(
   validate(CreateDocumentSchema),
   documentsController.create,
 )
+
+// ── Tipos de documento controlados (debe ir antes de /:id) ───────────────────
+documentsRouter.get('/types', documentsController.getTypes)
 
 // ── Verificación de número duplicado (debe ir antes de /:id) ─────────────────
 documentsRouter.get('/check-number', documentsController.checkNumber)
@@ -46,6 +50,19 @@ documentsRouter.put(
   documentsController.update,
 )
 documentsRouter.delete('/:id', requireRole('ADMIN', 'CONTADOR'), documentsController.remove)
+
+// ── Saldo y ciclo de aplicación (Fase 2) ──────────────────────────────────────
+documentsRouter.get('/:id/balance', documentsController.getBalance)
+documentsRouter.post('/:id/apply', requireRole('ADMIN', 'CONTADOR'), documentsController.apply)
+documentsRouter.post(
+  '/:id/cancel',
+  requireRole('ADMIN', 'CONTADOR'),
+  validate(CancelDocumentSchema),
+  documentsController.cancel,
+)
+
+// ── Auditoría (Fase 4) ────────────────────────────────────────────────────────
+documentsRouter.get('/:id/audit-log', documentsController.getAuditLog)
 
 // ── Cuotas ────────────────────────────────────────────────────────────────────
 documentsRouter.get('/:id/installments', documentsController.getInstallments)

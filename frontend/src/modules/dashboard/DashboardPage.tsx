@@ -142,7 +142,7 @@ export default function DashboardPage() {
   const totalInsuredArs = vigentePolicies.reduce((s, p) => s + p.insuredAmountArs, 0)
 
   // Documents — global (no company filter in current model)
-  const pendingDocs = allDocuments.filter((d) => d.paymentStatus !== 'pagado')
+  const pendingDocs = allDocuments.filter((d) => d.paymentStatus !== 'PAID')
   const pendingTotal = pendingDocs.reduce((s, d) => s + d.totalAmount, 0)
 
   const expiredFe = filteredFireExtinguishers.filter((f) => f.status === 'vencido')
@@ -158,7 +158,7 @@ export default function DashboardPage() {
     [financialDocs],
   )
   const pendingInstallments = useMemo(
-    () => allInstallments.filter((i) => i.paymentStatus !== 'pagado'),
+    () => allInstallments.filter((i) => i.paymentStatus !== 'PAID'),
     [allInstallments],
   )
   const pendingInstallmentsTotal = useMemo(

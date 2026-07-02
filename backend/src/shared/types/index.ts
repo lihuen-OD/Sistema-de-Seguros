@@ -52,5 +52,5 @@ export interface ApiErrorBody {
 // ─── Shared domain types ──────────────────────────────────────────────────────
 
 export type ExpirationStatus = 'vigente' | 'proximo_a_vencer' | 'vencido'
-export type PaymentStatus = 'pagado' | 'parcial' | 'pendiente'
+export type PaymentStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'NOT_APPLICABLE'
 export type Currency = 'ARS' | 'USD' | 'EUR'

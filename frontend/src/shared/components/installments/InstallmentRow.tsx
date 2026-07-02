@@ -25,7 +25,7 @@ export function InstallmentRow({
   const [editPaidAt, setEditPaidAt] = useState(inst.paidAt ?? today)
   const [editDueDate, setEditDueDate] = useState(inst.dueDate)
 
-  const isPaid = inst.paymentStatus === 'pagado'
+  const isPaid = inst.paymentStatus === 'PAID'
   const isOverdue = !isPaid && inst.dueDate < today
 
   const openEdit = () => {
@@ -41,7 +41,7 @@ export function InstallmentRow({
     onUpdate({
       amount: inst.amount < 0 ? -parsedAmount : parsedAmount,
       paymentStatus: editStatus,
-      paidAt: editStatus === 'pagado' ? editPaidAt : null,
+      paidAt: editStatus === 'PAID' ? editPaidAt : null,
       dueDate: editDueDate,
     })
     setMode('view')
@@ -86,12 +86,12 @@ export function InstallmentRow({
               onChange={(e) => setEditStatus(e.target.value as Installment['paymentStatus'])}
               className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="pendiente">Pendiente</option>
-              <option value="pagado">Pagado</option>
-              <option value="parcial">Parcial</option>
+              <option value="PENDING">Pendiente</option>
+              <option value="PAID">Pagado</option>
+              <option value="PARTIALLY_PAID">Parcial</option>
             </select>
           </div>
-          {editStatus === 'pagado' && (
+          {editStatus === 'PAID' && (
             <div>
               <label className="text-[10px] font-semibold text-slate-500 block mb-1">Fecha de pago</label>
               <input

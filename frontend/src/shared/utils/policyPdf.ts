@@ -1,6 +1,6 @@
 import type { Policy, Producer, Asset, Company, CostCenter, AccountingDocument } from '../types'
 import { formatDate, formatCurrencyFull } from './format'
-import { PAYMENT_STATUS_LABELS, POLICY_STATUS_LABELS } from '../constants'
+import { PAYMENT_STATUS_LABELS, POLICY_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../constants'
 
 export interface PolicyPdfData {
   policy: Policy
@@ -89,7 +89,7 @@ function buildHtml(data: PolicyPdfData): string {
     : documents.map((d) => `
         <tr>
           <td style="font-family:monospace;font-size:11px;">${d.documentNumber}</td>
-          <td>${d.documentType}</td>
+          <td>${DOCUMENT_TYPE_LABELS[d.documentType] ?? d.documentType}</td>
           <td>${formatDate(d.issueDate)}</td>
           <td>${d.currency}</td>
           <td style="text-align:right;font-weight:600;">${formatCurrencyFull(d.totalAmount, d.currency)}</td>

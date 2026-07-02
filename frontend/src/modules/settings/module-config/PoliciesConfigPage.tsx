@@ -25,18 +25,6 @@ export default function PoliciesConfigPage() {
         </SectionCard>
 
         <SectionCard
-          title="Tipos de Documento"
-          subtitle="Factura, Nota de Crédito, Endoso, etc."
-          noPadding
-        >
-          <CatalogManager
-            category="document_type"
-            title="Tipos de Documento"
-            addPlaceholder="Ej: Nota de Débito"
-          />
-        </SectionCard>
-
-        <SectionCard
           title="Formas de Pago"
           subtitle="Opciones de forma de pago en documentos contables"
           noPadding

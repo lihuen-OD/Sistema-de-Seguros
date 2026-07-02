@@ -139,7 +139,7 @@ function buildMatrixData(
       ? getISOWeekKey(inst.dueDate)
       : inst.dueDate.substring(0, 7)
     const amount = convertAmount(inst.amount, inst.currency, displayCurrency)
-    const isPaid = inst.paymentStatus === 'pagado'
+    const isPaid = inst.paymentStatus === 'PAID'
     const policyIds = documentPolicies.get(inst.accountingDocumentId) ?? []
     const matchingRowIds = new Set<string>()
 
@@ -273,7 +273,7 @@ export default function FinancialAnalysisPage() {
       const monthKey = inst.dueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
       const amount = convertAmount(inst.amount, inst.currency, currency)
-      if (inst.paymentStatus === 'pagado') {
+      if (inst.paymentStatus === 'PAID') {
         totalPaid += amount
       } else {
         totalPending += amount
@@ -292,7 +292,7 @@ export default function FinancialAnalysisPage() {
       allInstallments.forEach((inst) => {
         if (inst.dueDate.substring(0, 7) !== key) return
         const amount = convertAmount(inst.amount, inst.currency, currency)
-        if (inst.paymentStatus === 'pagado') paid += amount
+        if (inst.paymentStatus === 'PAID') paid += amount
         else pending += amount
       })
       return { label, paid, pending }

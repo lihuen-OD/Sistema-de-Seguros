@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -9,6 +10,7 @@ interface ConfirmDialogProps {
   danger?: boolean
   onConfirm: () => void
   onCancel: () => void
+  children?: ReactNode
 }
 
 export function ConfirmDialog({
@@ -20,6 +22,7 @@ export function ConfirmDialog({
   danger = true,
   onConfirm,
   onCancel,
+  children,
 }: ConfirmDialogProps) {
   if (!open) return null
 
@@ -46,6 +49,8 @@ export function ConfirmDialog({
             <p className="mt-1 text-sm text-slate-500 leading-relaxed">{description}</p>
           </div>
         </div>
+
+        {children && <div className="mt-4">{children}</div>}
 
         <div className="flex items-center justify-end gap-2 mt-6">
           <button

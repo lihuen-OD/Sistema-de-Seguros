@@ -54,6 +54,8 @@ interface DocumentForm {
   vatAmount: string
   otherTaxesAmount: string
   linkedDocumentId: string
+  adjustmentReason: string
+  adjustmentSign: string
 }
 
 type FormErrors = Partial<Record<keyof DocumentForm | 'policies', string>>
@@ -70,6 +72,8 @@ const INITIAL_FORM: DocumentForm = {
   vatAmount: '',
   otherTaxesAmount: '',
   linkedDocumentId: '',
+  adjustmentReason: '',
+  adjustmentSign: '',
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -111,9 +115,11 @@ export default function DocumentNewPage() {
   })
 
   const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
-  const { data: documentTypes = [] } = useQuery({ queryKey: ['catalogs', 'document_type'], queryFn: () => catalogsApi.findByCategory('document_type') })
   const { data: paymentMethods = [] } = useQuery({ queryKey: ['catalogs', 'document_payment_method'], queryFn: () => catalogsApi.findByCategory('document_payment_method') })
   const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+  const { data: documentTypesData } = useQuery({ queryKey: ['documents', 'types'], queryFn: () => documentsApi.getTypes() })
+  const documentTypes = documentTypesData?.types ?? []
+  const adjustmentReasons = documentTypesData?.adjustmentReasons ?? []
 
   const { data: sourcePolicy } = useQuery({
     queryKey: ['policy', fromPolicyId],
@@ -157,10 +163,15 @@ export default function DocumentNewPage() {
     return () => clearTimeout(timer)
   }, [form.documentNumber])
 
-  const existingFacturas = useMemo(
-    () => allDocuments.filter((d) => d.documentType === 'Factura'),
-    [allDocuments],
+  const selectedTypeDef = useMemo(
+    () => documentTypes.find((t) => t.key === form.documentType),
+    [documentTypes, form.documentType],
   )
+
+  const linkableDocuments = useMemo(() => {
+    if (!selectedTypeDef?.linkedDocumentType) return allDocuments
+    return allDocuments.filter((d) => d.documentType === selectedTypeDef.linkedDocumentType)
+  }, [allDocuments, selectedTypeDef])
 
   // ─── Derived ─────────────────────────────────────────────────────────────────
 
@@ -193,9 +204,6 @@ export default function DocumentNewPage() {
         (p.status === 'vigente' || p.status === 'proximo_vencer'),
     )
   }, [allPolicies, form.insuranceCompany])
-
-  const isRefDoc =
-    form.documentType === 'Nota de Crédito' || form.documentType === 'Endoso'
 
   // Distribution for email modal
   const distribution = useMemo(
@@ -297,8 +305,17 @@ export default function DocumentNewPage() {
     if (!form.vatAmount || isNaN(parseFloat(form.vatAmount))) next.vatAmount = 'Requerido'
     if (!form.otherTaxesAmount || isNaN(parseFloat(form.otherTaxesAmount)))
       next.otherTaxesAmount = 'Requerido'
-    if (policyRows.length === 0 || policyRows.every((r) => !r.policyId))
+    if (
+      selectedTypeDef?.key !== 'CREDIT_NOTE' &&
+      (policyRows.length === 0 || policyRows.every((r) => !r.policyId))
+    )
       next.policies = 'Asociá al menos una póliza'
+    if (selectedTypeDef?.requiresLinkedDocument && !form.linkedDocumentId)
+      next.linkedDocumentId = 'Requerido'
+    if (selectedTypeDef?.requiresAdjustmentReason && !form.adjustmentReason)
+      next.adjustmentReason = 'Requerido'
+    if (selectedTypeDef?.requiresAdjustmentSign && !form.adjustmentSign)
+      next.adjustmentSign = 'Requerido'
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -325,21 +342,27 @@ export default function DocumentNewPage() {
       otherTaxesAmount: parsedOther,
       insuranceCompany: form.insuranceCompany,
       paymentMethod: form.paymentMethod,
-      linkedDocumentId: isRefDoc && form.linkedDocumentId ? form.linkedDocumentId : undefined,
-      allocations: policyRows
+      linkedDocumentId: form.linkedDocumentId || undefined,
+      adjustmentReason: selectedTypeDef?.requiresAdjustmentReason ? form.adjustmentReason : undefined,
+      adjustmentSign: selectedTypeDef?.requiresAdjustmentSign ? (form.adjustmentSign as 'POSITIVE' | 'NEGATIVE') : undefined,
+      // La Nota de Crédito no admite asignación manual — el backend genera sus
+      // propias asignaciones (negativas) al aplicarla.
+      allocations: selectedTypeDef?.key === 'CREDIT_NOTE' ? [] : policyRows
         .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
         .map((r) => ({
           policyId: r.policyId,
           allocatedAmount: parseFloat(r.allocatedAmount),
           allocationPercentage: totalAllocated > 0 ? (parseFloat(r.allocatedAmount) / totalAllocated) * 100 : 0,
         })),
-      installments: installmentRows
-        .filter((r) => r.dueDate && parseFloat(r.amount) > 0)
-        .map((r) => ({
-          installmentNumber: r.installmentNumber,
-          dueDate: r.dueDate,
-          amount: parseFloat(r.amount),
-        })),
+      installments: selectedTypeDef?.hasInstallments
+        ? installmentRows
+            .filter((r) => r.dueDate && parseFloat(r.amount) > 0)
+            .map((r) => ({
+              installmentNumber: r.installmentNumber,
+              dueDate: r.dueDate,
+              amount: parseFloat(r.amount),
+            }))
+        : [],
     })
 
     queryClient.invalidateQueries({ queryKey: ['documents'] })
@@ -433,7 +456,7 @@ export default function DocumentNewPage() {
               <FormSelect value={form.documentType} onChange={set('documentType')} required>
                 <option value="">Seleccionar tipo…</option>
                 {documentTypes.map((t) => (
-                  <option key={t.id} value={t.label}>{t.label}</option>
+                  <option key={t.key} value={t.key}>{t.label}</option>
                 ))}
               </FormSelect>
             </FormField>
@@ -468,15 +491,17 @@ export default function DocumentNewPage() {
               />
             </FormField>
 
-            {/* Factura de referencia — solo para NC y Endoso */}
-            {isRefDoc && (
+            {/* Documento vinculado — visible cuando el tipo lo admite (obligatorio u opcional) */}
+            {selectedTypeDef?.linkedDocumentLabel && (
               <FormField
-                label="Factura de referencia"
+                label={selectedTypeDef.linkedDocumentLabel}
+                required={selectedTypeDef.requiresLinkedDocument}
+                error={errors.linkedDocumentId}
                 fullWidth
               >
                 <FormSelect value={form.linkedDocumentId} onChange={set('linkedDocumentId')}>
-                  <option value="">Seleccionar factura base…</option>
-                  {existingFacturas.map((f) => (
+                  <option value="">Seleccionar documento…</option>
+                  {linkableDocuments.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.documentNumber} — {f.issueDate} — {f.currency === 'USD' ? 'US$' : 'AR$'}{' '}
                       {f.totalAmount.toLocaleString('es-AR')}
@@ -484,9 +509,49 @@ export default function DocumentNewPage() {
                   ))}
                 </FormSelect>
                 <p className="text-xs text-slate-400 mt-1">
-                  Una {form.documentType} siempre está asociada a una factura preexistente. La imputación sobre cuotas se gestiona desde la póliza.
+                  Este tipo de documento ({selectedTypeDef.label}) {selectedTypeDef.requiresLinkedDocument ? 'siempre está asociado' : 'puede estar asociado'} a un documento preexistente.
                 </p>
               </FormField>
+            )}
+
+            {/* Motivo y signo — solo para Asiento de Ajuste */}
+            {selectedTypeDef?.requiresAdjustmentReason && (
+              <FormField label="Motivo del ajuste" required error={errors.adjustmentReason}>
+                <FormSelect value={form.adjustmentReason} onChange={set('adjustmentReason')} required>
+                  <option value="">Seleccionar motivo…</option>
+                  {adjustmentReasons.map((r) => (
+                    <option key={r.key} value={r.key}>{r.label}</option>
+                  ))}
+                </FormSelect>
+              </FormField>
+            )}
+
+            {selectedTypeDef?.requiresAdjustmentSign && (
+              <FormField label="Signo del ajuste" required error={errors.adjustmentSign}>
+                <FormSelect value={form.adjustmentSign} onChange={set('adjustmentSign')} required>
+                  <option value="">Seleccionar signo…</option>
+                  <option value="POSITIVE">Positivo (suma al saldo)</option>
+                  <option value="NEGATIVE">Negativo (resta al saldo)</option>
+                </FormSelect>
+              </FormField>
+            )}
+
+            {selectedTypeDef?.isInternal && (
+              <div className="sm:col-span-2 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
+                <Info size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-800 leading-snug">
+                  Este asiento de ajuste es interno. No genera pago ni cuotas. Solo impactará el saldo cuando sea aplicado, desde el detalle del documento.
+                </p>
+              </div>
+            )}
+
+            {selectedTypeDef?.key === 'CREDIT_NOTE' && (
+              <div className="sm:col-span-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 leading-snug">
+                  Esta Nota de Crédito no genera cuotas ni pago propio. Solo reducirá el saldo, y la distribución por póliza de la factura, cuando sea aplicada desde el detalle del documento.
+                </p>
+              </div>
             )}
           </FormSection>
         </SectionCard>
@@ -587,7 +652,17 @@ export default function DocumentNewPage() {
           )}
         </SectionCard>
 
-        {/* ── Sección 3: Pólizas Asociadas ─────────────────────────────────── */}
+        {/* ── Sección 3: Pólizas Asociadas — no aplica a Nota de Crédito ────── */}
+        {selectedTypeDef?.key === 'CREDIT_NOTE' ? (
+          <SectionCard title="Pólizas Asociadas" subtitle="Distribución automática al aplicar">
+            <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
+              <Info size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-800 leading-snug">
+                La distribución por póliza de esta Nota de Crédito se calcula automáticamente, proporcional a la de la factura de referencia, en el momento en que se aplique.
+              </p>
+            </div>
+          </SectionCard>
+        ) : (
         <SectionCard
           title="Pólizas Asociadas"
           subtitle={
@@ -711,8 +786,10 @@ export default function DocumentNewPage() {
             </div>
           )}
         </SectionCard>
+        )}
 
-        {/* ── Sección 4: Cuotas ────────────────────────────────────────────── */}
+        {/* ── Sección 4: Cuotas — solo para tipos que admiten cuotas ────────── */}
+        {selectedTypeDef?.hasInstallments && (
         <SectionCard title="Cuotas" subtitle="Cantidad de cuotas, fechas e importes">
           <div className="flex items-end gap-4 mb-5 flex-wrap">
             <div className="flex flex-col gap-1">
@@ -777,6 +854,7 @@ export default function DocumentNewPage() {
             ))}
           </div>
         </SectionCard>
+        )}
 
         {/* ── Sección 5: Adjuntos ──────────────────────────────────────────── */}
         <SectionCard

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PaginationSchema } from '../../shared/schemas/common'
+import { isValidDocumentType } from './document-types'
 
 const ISODate = z
   .string()
@@ -14,12 +15,18 @@ const InstallmentInputSchema = z.object({
 
 const AllocationInputSchema = z.object({
   policyId: z.string().uuid('ID de póliza inválido'),
-  allocatedAmount: z.number().positive('El monto asignado debe ser positivo'),
+  // Puede ser negativo: las Notas de Crédito aplicadas generan asignaciones
+  // negativas proporcionales a la distribución de la factura vinculada.
+  allocatedAmount: z.number().refine((v) => v !== 0, { message: 'El monto asignado no puede ser cero' }),
   allocationPercentage: z.number().min(0.01).max(100),
 })
 
 const DocumentBaseSchema = z.object({
-  documentType: z.string().min(1, 'El tipo de documento es requerido').max(100),
+  documentType: z
+    .string()
+    .min(1, 'El tipo de documento es requerido')
+    .max(100)
+    .refine(isValidDocumentType, { message: 'Tipo de documento inválido' }),
   documentNumber: z.string().min(1, 'El número de documento es requerido').max(100),
   issueDate: ISODate,
   netAmount: z.number({ required_error: 'El monto neto es requerido' }),
@@ -31,6 +38,10 @@ const DocumentBaseSchema = z.object({
   insuranceCompany: z.string().max(300).optional().nullable(),
   paymentMethod: z.string().max(100).optional().nullable(),
   linkedDocumentId: z.string().uuid('ID de documento vinculado inválido').optional().nullable(),
+  documentStatus: z.enum(['ISSUED', 'APPLIED', 'CANCELLED', 'OBSERVED']).optional(),
+  relationType: z.enum(['CREDITS', 'DEBITS', 'REPLACES', 'ADJUSTS', 'ENDORSES']).optional().nullable(),
+  adjustmentReason: z.string().max(100).optional().nullable(),
+  adjustmentSign: z.enum(['POSITIVE', 'NEGATIVE']).optional().nullable(),
   installments: z.array(InstallmentInputSchema).default([]),
   allocations: z.array(AllocationInputSchema).default([]),
 })
@@ -41,7 +52,7 @@ export const UpdateDocumentSchema = DocumentBaseSchema.partial().omit({ document
 
 export const ListDocumentsQuerySchema = PaginationSchema.extend({
   search: z.string().optional(),
-  paymentStatus: z.enum(['pendiente', 'parcial', 'pagado']).optional(),
+  paymentStatus: z.enum(['PENDING', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'NOT_APPLICABLE']).optional(),
   documentType: z.string().max(100).optional(),
   currency: z.string().max(10).optional(),
   year: z.coerce.number().int().min(2000).max(2100).optional(),
@@ -50,7 +61,7 @@ export const ListDocumentsQuerySchema = PaginationSchema.extend({
 export const UpdateInstallmentSchema = z.object({
   amount: z.number().positive().optional(),
   dueDate: ISODate.optional(),
-  paymentStatus: z.enum(['pendiente', 'pagado', 'parcial']).optional(),
+  paymentStatus: z.enum(['PENDING', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'NOT_APPLICABLE']).optional(),
   paymentDate: ISODate.optional().nullable(),
   paymentMethod: z.string().max(100).optional().nullable(),
   notes: z.string().max(500).optional().nullable(),
@@ -68,6 +79,10 @@ export const AddDocumentAttachmentSchema = z.object({
   description: z.string().max(500).optional(),
 })
 
+export const CancelDocumentSchema = z.object({
+  reason: z.string().max(500).optional(),
+})
+
 export const BulkIdsQuerySchema = z.object({
   ids: z
     .string()
@@ -82,4 +97,5 @@ export type UpdateInstallmentDTO = z.infer<typeof UpdateInstallmentSchema>
 export type ReplaceInstallmentsDTO = z.infer<typeof ReplaceInstallmentsSchema>
 export type ReplaceAllocationsDTO = z.infer<typeof ReplaceAllocationsSchema>
 export type AddDocumentAttachmentDTO = z.infer<typeof AddDocumentAttachmentSchema>
+export type CancelDocumentDTO = z.infer<typeof CancelDocumentSchema>
 export type BulkIdsQueryDTO = z.infer<typeof BulkIdsQuerySchema>

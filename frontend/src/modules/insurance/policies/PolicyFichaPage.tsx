@@ -12,7 +12,7 @@ import { producersApi } from '../../../shared/api/producers.api'
 import { companiesApi } from '../../../shared/api/companies.api'
 import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import { documentsApi } from '../../../shared/api/documents.api'
-import { POLICY_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '../../../shared/constants'
+import { POLICY_STATUS_LABELS, PAYMENT_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 
 const EMISSION_DATE = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
@@ -211,7 +211,7 @@ export default function PolicyFichaPage() {
                 {documents.map(doc => (
                   <tr key={doc.id} className="border-b border-slate-100">
                     <td className="py-2 pr-4 font-mono text-xs text-slate-700">{doc.documentNumber}</td>
-                    <td className="py-2 pr-4 text-slate-600">{doc.documentType}</td>
+                    <td className="py-2 pr-4 text-slate-600">{DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType}</td>
                     <td className="py-2 pr-4 text-slate-600">{formatDate(doc.issueDate)}</td>
                     <td className="py-2 pr-4 text-right font-semibold text-slate-800">{formatCurrencyFull(doc.totalAmount, doc.currency)}</td>
                     <td className="py-2 text-slate-600">{PAYMENT_STATUS_LABELS[doc.paymentStatus] ?? doc.paymentStatus}</td>

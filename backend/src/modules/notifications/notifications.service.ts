@@ -111,13 +111,13 @@ export const notificationsService = {
         }),
         // Cuotas vencidas y sin pagar
         prisma.documentInstallment.findMany({
-          where: { paymentStatus: { not: 'pagado' }, dueDate: { lt: today } },
+          where: { paymentStatus: { not: 'PAID' }, dueDate: { lt: today } },
           orderBy: { dueDate: 'asc' },
           include: { document: { select: { documentNumber: true, insuranceCompany: true } } },
         }),
         // Cuotas que vencen en los próximos 7 días
         prisma.documentInstallment.findMany({
-          where: { paymentStatus: { not: 'pagado' }, dueDate: { gte: today, lte: in7Days } },
+          where: { paymentStatus: { not: 'PAID' }, dueDate: { gte: today, lte: in7Days } },
           orderBy: { dueDate: 'asc' },
           include: { document: { select: { documentNumber: true, insuranceCompany: true } } },
         }),
@@ -219,10 +219,10 @@ export const notificationsService = {
           where: { isActive: true, expirationDate: { lte: in30Days } },
         }),
         prisma.documentInstallment.count({
-          where: { paymentStatus: { not: 'pagado' }, dueDate: { lt: today } },
+          where: { paymentStatus: { not: 'PAID' }, dueDate: { lt: today } },
         }),
         prisma.documentInstallment.count({
-          where: { paymentStatus: { not: 'pagado' }, dueDate: { gte: today, lte: in7Days } },
+          where: { paymentStatus: { not: 'PAID' }, dueDate: { gte: today, lte: in7Days } },
         }),
       ])
 

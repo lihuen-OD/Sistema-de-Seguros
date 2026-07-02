@@ -22,7 +22,7 @@ import { companiesApi } from '../../shared/api/companies.api'
 import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { claimsApi } from '../../shared/api/claims.api'
 import { documentsApi } from '../../shared/api/documents.api'
-import { ASSET_STATUS_LABELS } from '../../shared/constants'
+import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../shared/constants'
 import type { Policy, FireExtinguisher, TableColumn, AssetValueEntry, AccountingDocument } from '../../shared/types'
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
@@ -325,7 +325,7 @@ export default function AssetDetailPage() {
 
   const docColumns: TableColumn<AccountingDocument>[] = [
     { key: 'documentNumber', label: 'N° Documento', className: 'font-mono text-xs text-slate-600' },
-    { key: 'documentType', label: 'Tipo' },
+    { key: 'documentType', label: 'Tipo', render: (v) => <span className="text-xs">{DOCUMENT_TYPE_LABELS[v as string] ?? String(v)}</span> },
     { key: 'issueDate', label: 'Fecha', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
     { key: 'insuranceCompany', label: 'Aseguradora', render: (v) => <span className="text-sm">{(v as string) || '—'}</span> },
     { key: 'totalAmount', label: 'Total', render: (v) => <span className="font-semibold tabular-nums">{formatCurrencyCompact(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },

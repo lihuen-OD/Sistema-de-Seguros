@@ -169,13 +169,8 @@ const CATALOGS: Record<string, string[]> = {
   ],
 
   // ── Documentos Contables ────────────────────────────────────────────────
-  document_type: [
-    'Factura',
-    'Nota de Crédito',
-    'Nota de Débito',
-    'Endoso',
-    'Refacturación',
-  ],
+  // Nota: los tipos de documento (Factura, Nota de Crédito, etc.) ya no son un
+  // catálogo editable — están controlados en backend/src/modules/documents/document-types.ts
 
   document_payment_method: [
     'Transferencia bancaria',

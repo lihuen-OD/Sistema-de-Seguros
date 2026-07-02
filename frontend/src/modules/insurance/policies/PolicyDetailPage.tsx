@@ -24,6 +24,7 @@ import { producersApi } from '../../../shared/api/producers.api'
 import { companiesApi } from '../../../shared/api/companies.api'
 import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import { documentsApi } from '../../../shared/api/documents.api'
+import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
@@ -163,8 +164,8 @@ export default function PolicyDetailPage() {
   }
 
   // Separate facturas from modifications (NC / Endoso)
-  const facturas = documents.filter((d) => d.documentType === 'factura')
-  const docModifications = documents.filter((d) => d.documentType !== 'factura')
+  const facturas = documents.filter((d) => d.documentType === 'INVOICE')
+  const docModifications = documents.filter((d) => d.documentType !== 'INVOICE')
 
   const daysLeft = daysUntil(policy.endDate)
   const isExpired = daysLeft < 0
@@ -530,13 +531,13 @@ function FacturaCard({
   const currency = factura.currency === 'USD' ? 'US$' : 'AR$'
   const modSum = linkedMods.reduce((sum, m) => sum + m.totalAmount, 0)
   const netTotal = factura.totalAmount + modSum
-  const paidCount = installments.filter((i) => i.paymentStatus === 'pagado').length
+  const paidCount = installments.filter((i) => i.paymentStatus === 'PAID').length
   const pendingCount = installments.length - paidCount
   const today = new Date().toISOString().slice(0, 10)
 
   const allInstallments = [...installments, ...Array.from(modInstallments.values()).flat()]
   const saldo = allInstallments
-    .filter((i) => i.paymentStatus !== 'pagado')
+    .filter((i) => i.paymentStatus !== 'PAID')
     .reduce((sum, i) => sum + Math.abs(i.amount), 0)
 
   return (
@@ -624,7 +625,7 @@ function FacturaCard({
           </div>
 
           {linkedMods.map((mod) => {
-            const isNC = mod.documentType === 'nota_credito'
+            const isNC = mod.documentType === 'CREDIT_NOTE'
             const mInst = modInstallments.get(mod.id) ?? []
             return (
               <div key={mod.id} className="border-t border-slate-200">
@@ -648,7 +649,7 @@ function FacturaCard({
                         'text-[10px] px-1.5 py-0.5 rounded font-semibold',
                         isNC ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700',
                       )}>
-                        {mod.documentType}
+                        {DOCUMENT_TYPE_LABELS[mod.documentType] ?? mod.documentType}
                       </span>
                       <span className="text-xs text-slate-400">·</span>
                       <p className="text-xs text-slate-500">{formatDate(mod.issueDate)}</p>
@@ -734,7 +735,7 @@ function StandaloneDocCard({
 }) {
   const [expanded, setExpanded] = useState(true)
   const currency = doc.currency === 'USD' ? 'US$' : 'AR$'
-  const isNC = doc.documentType === 'nota_credito'
+  const isNC = doc.documentType === 'CREDIT_NOTE'
   const today = new Date().toISOString().slice(0, 10)
 
   return (
@@ -764,7 +765,7 @@ function StandaloneDocCard({
                 'text-[10px] px-1.5 py-0.5 rounded font-semibold',
                 isNC ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700',
               )}>
-                {doc.documentType}
+                {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType}
               </span>
               <span className="text-xs text-slate-400">·</span>
               <p className="text-xs text-slate-500">{formatDate(doc.issueDate)}</p>

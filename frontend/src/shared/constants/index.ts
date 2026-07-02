@@ -16,9 +16,30 @@ export const ASSET_TYPES = [
 ]
 
 export const PAYMENT_STATUS_LABELS: Record<string, string> = {
-  pendiente: 'Pendiente',
-  parcial: 'Pago Parcial',
-  pagado: 'Pagado',
+  PENDING: 'Pendiente',
+  PARTIALLY_PAID: 'Pago Parcial',
+  PAID: 'Pagado',
+  OVERDUE: 'Vencido',
+  NOT_APPLICABLE: 'No Aplica',
+}
+
+export const DOCUMENT_STATUS_LABELS: Record<string, string> = {
+  ISSUED: 'Emitido',
+  APPLIED: 'Aplicado',
+  CANCELLED: 'Anulado',
+  OBSERVED: 'Observado',
+}
+
+// Fallback estático para mostrar el label de un tipo de documento en contextos
+// que no consultan documentsApi.getTypes() (fichas PDF, tarjetas de póliza).
+// Debe mantenerse en sync con backend/src/modules/documents/document-types.ts
+export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  INVOICE: 'Factura',
+  CREDIT_NOTE: 'Nota de Crédito',
+  DEBIT_NOTE: 'Nota de Débito',
+  ENDORSEMENT: 'Endoso',
+  REBILLING: 'Refacturación',
+  ADJUSTMENT_ENTRY: 'Asiento de Ajuste',
 }
 
 export const POLICY_STATUS_LABELS: Record<string, string> = {

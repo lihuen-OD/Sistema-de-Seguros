@@ -9,6 +9,11 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  CheckCheck,
+  Ban,
+  PlusCircle,
+  Pencil,
+  DollarSign,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -17,6 +22,7 @@ import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
+import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import {
   formatCurrencyFull,
   formatCurrencyCompact,
@@ -24,15 +30,64 @@ import {
 } from '../../../shared/utils/format'
 import { documentsApi } from '../../../shared/api/documents.api'
 import { policiesApi } from '../../../shared/api/policies.api'
+import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
-import type { DocumentPolicyAllocation, Installment, InstallmentUpdate, TableColumn } from '../../../shared/types'
+import type { DocumentPolicyAllocation, Installment, InstallmentUpdate, TableColumn, RelatedDocSummary, DocumentAuditLog, DocumentAuditLogAction } from '../../../shared/types'
+
+// ── Historial de auditoría ────────────────────────────────────────────────────
+
+type AuditStyle = { dot: string; icon: string; labelCls: string; label: string; Icon: React.ElementType }
+
+const AUDIT_CONFIG: Record<DocumentAuditLogAction, AuditStyle> = {
+  CREATE: { Icon: PlusCircle, dot: 'bg-blue-50', icon: 'text-blue-500', labelCls: 'text-blue-600', label: 'Creación' },
+  UPDATE: { Icon: Pencil, dot: 'bg-slate-100', icon: 'text-slate-400', labelCls: 'text-slate-500', label: 'Edición' },
+  APPLY: { Icon: CheckCheck, dot: 'bg-emerald-50', icon: 'text-emerald-500', labelCls: 'text-emerald-600', label: 'Aplicación' },
+  CANCEL: { Icon: Ban, dot: 'bg-red-50', icon: 'text-red-500', labelCls: 'text-red-600', label: 'Anulación' },
+  PAYMENT_CHANGE: { Icon: DollarSign, dot: 'bg-violet-50', icon: 'text-violet-500', labelCls: 'text-violet-600', label: 'Pago' },
+}
+
+function AuditLogRow({ entry, isLast }: { entry: DocumentAuditLog; isLast: boolean }) {
+  const cfg = AUDIT_CONFIG[entry.action] ?? AUDIT_CONFIG.UPDATE
+  const Icon = cfg.Icon
+  return (
+    <div className="flex gap-4">
+      <div className="flex flex-col items-center">
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border border-white ring-1 ring-slate-100 ${cfg.dot}`}>
+          <Icon size={13} className={cfg.icon} />
+        </div>
+        {!isLast && <div className="w-px flex-1 bg-slate-100 mt-1 mb-1" />}
+      </div>
+      <div className={`flex-1 ${isLast ? 'pb-0' : 'pb-5'} pt-0.5`}>
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <span className={`text-[10px] font-bold uppercase tracking-wider ${cfg.labelCls}`}>
+            {cfg.label}
+          </span>
+          <span className="text-[11px] text-slate-400 whitespace-nowrap tabular-nums flex-shrink-0">
+            {formatDate(entry.createdAt)}
+          </span>
+        </div>
+        <p className="text-sm text-slate-700 leading-relaxed">{entry.description}</p>
+        {entry.reason && (
+          <p className="mt-1 text-xs text-slate-500 italic">Motivo: {entry.reason}</p>
+        )}
+        {entry.performedBy && (
+          <p className="mt-1 text-[11px] text-slate-400">{entry.performedBy}</p>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const [applyConfirmOpen, setApplyConfirmOpen] = useState(false)
+  const [cancelDocConfirmOpen, setCancelDocConfirmOpen] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
 
   const { data: doc, isLoading: docLoading } = useQuery({
     queryKey: ['documents', id],
@@ -45,13 +100,33 @@ export default function DocumentDetailPage() {
     queryFn: () => policiesApi.findAll(),
   })
 
+  const { data: documentTypesData } = useQuery({
+    queryKey: ['documents', 'types'],
+    queryFn: () => documentsApi.getTypes(),
+  })
+
+  const { data: balance } = useQuery({
+    queryKey: ['documents', id, 'balance'],
+    queryFn: () => documentsApi.getBalance(id!),
+    enabled: !!id,
+  })
+
   const { data: allocations = [] } = useQuery({
     queryKey: ['documents', id, 'allocations'],
     queryFn: () => documentsApi.findAllocations(id!),
     enabled: !!id,
   })
 
-  const { data: fetchedInstallments = [] } = useQuery({
+  const { data: auditLog = [] } = useQuery({
+    queryKey: ['documents', id, 'audit-log'],
+    queryFn: () => documentsApi.getAuditLog(id!),
+    enabled: !!id,
+  })
+
+  // Sin default `= []` a propósito: mientras carga, data es `undefined` (valor
+  // estable), no un array nuevo en cada render — evita un loop de renders en
+  // el efecto de abajo.
+  const { data: fetchedInstallments } = useQuery({
     queryKey: ['documents', id, 'installments'],
     queryFn: () => documentsApi.findInstallments(id!),
     enabled: !!id,
@@ -59,8 +134,13 @@ export default function DocumentDetailPage() {
 
   const [installments, setInstallments] = useState<Installment[]>([])
 
+  // Sincroniza en cuanto la query resuelve, incluso a array vacío — de lo
+  // contrario, al navegar de un documento con cuotas a otro sin cuotas (ej.
+  // desde "Documentos relacionados") quedan pegadas en pantalla las cuotas del
+  // documento anterior, porque el componente no se desmonta entre
+  // navegaciones (misma ruta con distinto :id).
   useEffect(() => {
-    if (fetchedInstallments.length > 0) {
+    if (fetchedInstallments) {
       setInstallments(
         fetchedInstallments.map((i) => ({
           id: i.id,
@@ -100,20 +180,55 @@ export default function DocumentDetailPage() {
   const today = new Date().toISOString().slice(0, 10)
   const computedTotal = doc.netAmount + doc.vatAmount + doc.otherTaxesAmount
 
-  const paidCount = installments.filter((i) => i.paymentStatus === 'pagado').length
-  const pendingCount = installments.filter((i) => i.paymentStatus === 'pendiente').length
-  const partialCount = installments.filter((i) => i.paymentStatus === 'parcial').length
+  const paidCount = installments.filter((i) => i.paymentStatus === 'PAID').length
+  const pendingCount = installments.filter((i) => i.paymentStatus === 'PENDING').length
+  const partialCount = installments.filter((i) => i.paymentStatus === 'PARTIALLY_PAID').length
 
-  const saldo = installments
-    .filter((i) => i.paymentStatus !== 'pagado')
+  const saldo = balance?.outstandingBalance ?? installments
+    .filter((i) => i.paymentStatus !== 'PAID')
     .reduce((sum, i) => sum + Math.abs(i.amount), 0)
 
   const derivedDocStatus: string =
-    installments.length > 0 && installments.every((i) => i.paymentStatus === 'pagado')
-      ? 'pagado'
-      : installments.some((i) => i.paymentStatus === 'pagado' || i.paymentStatus === 'parcial')
-        ? 'parcial'
+    installments.length > 0 && installments.every((i) => i.paymentStatus === 'PAID')
+      ? 'PAID'
+      : installments.some((i) => i.paymentStatus === 'PAID' || i.paymentStatus === 'PARTIALLY_PAID')
+        ? 'PARTIALLY_PAID'
         : doc.paymentStatus
+
+  const typeDef = documentTypesData?.types.find((t) => t.key === doc.documentType)
+  const canApply = doc.documentStatus === 'ISSUED' && !!typeDef?.documentStatusOptions.includes('APPLIED')
+  const canCancel = doc.documentStatus !== 'CANCELLED'
+
+  function invalidateAfterStatusChange() {
+    queryClient.invalidateQueries({ queryKey: ['documents', id] })
+    queryClient.invalidateQueries({ queryKey: ['documents', id, 'balance'] })
+    queryClient.invalidateQueries({ queryKey: ['documents', id, 'audit-log'] })
+    queryClient.invalidateQueries({ queryKey: ['documents'] })
+    if (doc?.linkedDocumentId) {
+      queryClient.invalidateQueries({ queryKey: ['documents', doc.linkedDocumentId, 'balance'] })
+    }
+  }
+
+  async function handleApply() {
+    setApplyConfirmOpen(false)
+    try {
+      await documentsApi.apply(doc!.id)
+      invalidateAfterStatusChange()
+    } catch {
+      // El interceptor global de apiClient ya muestra el error con un toast
+    }
+  }
+
+  async function handleCancelDocument() {
+    setCancelDocConfirmOpen(false)
+    try {
+      await documentsApi.cancel(doc!.id, cancelReason.trim() || undefined)
+      setCancelReason('')
+      invalidateAfterStatusChange()
+    } catch {
+      // El interceptor global de apiClient ya muestra el error con un toast
+    }
+  }
 
   async function handleInstallmentUpdate(instId: string, updates: InstallmentUpdate) {
     setInstallments((prev) =>
@@ -152,7 +267,7 @@ export default function DocumentDetailPage() {
       key: 'allocatedAmount',
       label: 'Importe Asignado',
       render: (v) => (
-        <span className="tabular-nums font-semibold text-slate-800 text-sm">
+        <span className={`tabular-nums font-semibold text-sm ${(v as number) < 0 ? 'text-red-600' : 'text-slate-800'}`}>
           {formatCurrencyFull(v as number, doc.currency)}
         </span>
       ),
@@ -191,9 +306,10 @@ export default function DocumentDetailPage() {
         badge={
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
-              {doc.documentType}
+              {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType}
             </span>
-            <StatusPill status={derivedDocStatus} />
+            <StatusPill status={doc.documentStatus} />
+            {typeDef?.hasPaymentStatus && <StatusPill status={derivedDocStatus} />}
           </div>
         }
         actions={
@@ -212,6 +328,24 @@ export default function DocumentDetailPage() {
               <FileDown size={15} />
               Ficha PDF
             </button>
+            {canApply && (
+              <button
+                onClick={() => setApplyConfirmOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <CheckCheck size={15} />
+                Aplicar documento
+              </button>
+            )}
+            {canCancel && (
+              <button
+                onClick={() => setCancelDocConfirmOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+              >
+                <Ban size={15} />
+                Cancelar documento
+              </button>
+            )}
             {confirmDelete ? (
               <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50">
                 <span className="text-xs font-medium text-red-700">¿Eliminar documento?</span>
@@ -384,6 +518,95 @@ export default function DocumentDetailPage() {
         </SectionCard>
       </div>
 
+      {/* Saldo + Documentos relacionados */}
+      {balance && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mt-5">
+          <SectionCard title="Saldo" subtitle="Efecto de Notas de Crédito/Débito y Ajustes aplicados">
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Monto original</span>
+                <span className="font-medium text-slate-800 tabular-nums">{formatCurrencyFull(balance.originalAmount, doc.currency)}</span>
+              </div>
+              {balance.appliedCredits !== 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Notas de Crédito aplicadas</span>
+                  <span className="font-medium text-red-600 tabular-nums">-{formatCurrencyFull(balance.appliedCredits, doc.currency)}</span>
+                </div>
+              )}
+              {balance.appliedDebits !== 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Notas de Débito aplicadas</span>
+                  <span className="font-medium text-emerald-600 tabular-nums">+{formatCurrencyFull(balance.appliedDebits, doc.currency)}</span>
+                </div>
+              )}
+              {balance.appliedAdjustments !== 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Ajustes aplicados</span>
+                  <span className={`font-medium tabular-nums ${balance.appliedAdjustments < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {balance.appliedAdjustments > 0 ? '+' : ''}{formatCurrencyFull(balance.appliedAdjustments, doc.currency)}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <span className="font-semibold text-slate-700">Monto efectivo</span>
+                <span className="font-bold text-slate-900 tabular-nums">{formatCurrencyFull(balance.effectiveAmount, doc.currency)}</span>
+              </div>
+              {typeDef?.hasPaymentStatus && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Pagado</span>
+                    <span className="font-medium text-slate-800 tabular-nums">{formatCurrencyFull(balance.paidAmount, doc.currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                    <span className="font-semibold text-slate-700">Saldo pendiente</span>
+                    <span className="font-bold text-amber-700 tabular-nums">{formatCurrencyFull(balance.outstandingBalance, doc.currency)}</span>
+                  </div>
+                  {balance.creditBalance > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-700">Saldo a favor</span>
+                      <span className="font-bold text-emerald-700 tabular-nums">{formatCurrencyFull(balance.creditBalance, doc.currency)}</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Documentos Relacionados"
+            subtitle={`${balance.relatedDocs.length} documento${balance.relatedDocs.length !== 1 ? 's' : ''} vinculado${balance.relatedDocs.length !== 1 ? 's' : ''}`}
+            noPadding
+          >
+            {balance.relatedDocs.length === 0 ? (
+              <div className="px-5 py-8 text-center">
+                <p className="text-sm text-slate-400">Sin documentos relacionados</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {balance.relatedDocs.map((r: RelatedDocSummary) => (
+                  <button
+                    key={r.id}
+                    onClick={() => navigate(`/insurance/documents/${r.id}`)}
+                    className="w-full flex items-center justify-between gap-3 px-5 py-2.5 text-left hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-mono font-semibold text-slate-700 truncate">{r.documentNumber}</p>
+                      <p className="text-xs text-slate-400">{DOCUMENT_TYPE_LABELS[r.documentType] ?? r.documentType}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs font-semibold text-slate-700 tabular-nums">
+                        {formatCurrencyCompact(Math.abs(r.totalAmount), doc.currency)}
+                      </span>
+                      <StatusPill status={r.documentStatus} size="sm" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        </div>
+      )}
+
       {/* Adjuntos */}
       <SectionCard
         title="Archivos Adjuntos"
@@ -392,6 +615,67 @@ export default function DocumentDetailPage() {
       >
         <DocumentAttachmentsSection documentId={doc.id} />
       </SectionCard>
+
+      {/* Historial de auditoría */}
+      <SectionCard
+        title="Historial"
+        actions={
+          <span className="text-xs text-slate-400 font-medium">
+            {auditLog.length} {auditLog.length === 1 ? 'evento' : 'eventos'}
+          </span>
+        }
+      >
+        {auditLog.length === 0 ? (
+          <div className="py-8 text-center">
+            <p className="text-sm text-slate-400">Sin eventos registrados aún.</p>
+          </div>
+        ) : (
+          <div>
+            {auditLog.map((entry, idx) => (
+              <AuditLogRow key={entry.id} entry={entry} isLast={idx === auditLog.length - 1} />
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <ConfirmDialog
+        open={applyConfirmOpen}
+        title="¿Aplicar este documento?"
+        description="Al aplicarlo, su efecto sobre el saldo del documento vinculado pasa a contabilizarse. Esta acción se puede revertir cancelando el documento."
+        confirmLabel="Sí, aplicar"
+        cancelLabel="Cancelar"
+        danger={false}
+        onConfirm={handleApply}
+        onCancel={() => setApplyConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={cancelDocConfirmOpen}
+        title="¿Anular este documento?"
+        description="El documento quedará anulado y dejará de afectar cualquier saldo. No se elimina físicamente ni se pierde su historial."
+        confirmLabel="Sí, anular"
+        cancelLabel="Volver"
+        danger
+        onConfirm={handleCancelDocument}
+        onCancel={() => {
+          setCancelDocConfirmOpen(false)
+          setCancelReason('')
+        }}
+      >
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">
+            Motivo de la anulación (opcional)
+          </label>
+          <textarea
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            maxLength={500}
+            rows={2}
+            placeholder="Ej: Error en el monto, duplicado, etc."
+            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none"
+          />
+        </div>
+      </ConfirmDialog>
     </PageContent>
   )
 }

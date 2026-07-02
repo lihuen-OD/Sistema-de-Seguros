@@ -39,12 +39,12 @@ export const dashboardService = {
       prisma.accountingDocument.aggregate({
         _sum: { netAmount: true, vatAmount: true, otherTaxesAmount: true },
         _count: { id: true },
-        where: { paymentStatus: { not: 'pagado' } },
+        where: { paymentStatus: { not: 'PAID' } },
       }),
       prisma.documentInstallment.aggregate({
         _sum: { amount: true },
         _count: { id: true },
-        where: { paymentStatus: { not: 'pagado' } },
+        where: { paymentStatus: { not: 'PAID' } },
       }),
       prisma.fireExtinguisher.count({ where: { isActive: true } }),
       prisma.fireExtinguisher.count({
@@ -140,7 +140,7 @@ export const dashboardService = {
 
     const installments = await prisma.documentInstallment.findMany({
       where: {
-        paymentStatus: { not: 'pagado' },
+        paymentStatus: { not: 'PAID' },
         dueDate: { gte: today, lte: limit },
       },
       orderBy: { dueDate: 'asc' },

@@ -10,6 +10,7 @@ import {
   Mail,
   CheckCircle2,
   ArrowLeftRight,
+  Info,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -54,6 +55,8 @@ interface DocumentForm {
   vatAmount: string
   otherTaxesAmount: string
   linkedDocumentId: string
+  adjustmentReason: string
+  adjustmentSign: string
 }
 
 type FormErrors = Partial<Record<keyof DocumentForm | 'policies', string>>
@@ -82,9 +85,11 @@ export default function DocumentEditPage() {
   })
 
   const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
-  const { data: documentTypes = [] } = useQuery({ queryKey: ['catalogs', 'document_type'], queryFn: () => catalogsApi.findByCategory('document_type') })
   const { data: paymentMethods = [] } = useQuery({ queryKey: ['catalogs', 'document_payment_method'], queryFn: () => catalogsApi.findByCategory('document_payment_method') })
   const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+  const { data: documentTypesData } = useQuery({ queryKey: ['documents', 'types'], queryFn: () => documentsApi.getTypes() })
+  const documentTypes = documentTypesData?.types ?? []
+  const adjustmentReasons = documentTypesData?.adjustmentReasons ?? []
   const { data: existingAllocations = [], isSuccess: allocationsLoaded } = useQuery({
     queryKey: ['documents', id, 'allocations'],
     queryFn: () => documentsApi.findAllocations(id!),
@@ -95,11 +100,6 @@ export default function DocumentEditPage() {
     queryFn: () => documentsApi.findInstallments(id!),
     enabled: !!id,
   })
-
-  const existingFacturas = useMemo(
-    () => allDocuments.filter((f) => f.documentType === 'Factura' && f.id !== id),
-    [allDocuments, id],
-  )
 
   // All useState hooks must be declared before any early returns
   const [form, setForm] = useState<DocumentForm>({
@@ -114,6 +114,8 @@ export default function DocumentEditPage() {
     vatAmount: '',
     otherTaxesAmount: '',
     linkedDocumentId: '',
+    adjustmentReason: '',
+    adjustmentSign: '',
   })
   const [formInitialized, setFormInitialized] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
@@ -133,6 +135,55 @@ export default function DocumentEditPage() {
   const [allocationsInitialized, setAllocationsInitialized] = useState(false)
   const [installmentsInitialized, setInstallmentsInitialized] = useState(false)
 
+  const selectedTypeDef = useMemo(
+    () => documentTypes.find((t) => t.key === form.documentType),
+    [documentTypes, form.documentType],
+  )
+
+  const linkableDocuments = useMemo(() => {
+    const others = allDocuments.filter((d) => d.id !== id)
+    if (!selectedTypeDef?.linkedDocumentType) return others
+    return others.filter((d) => d.documentType === selectedTypeDef.linkedDocumentType)
+  }, [allDocuments, id, selectedTypeDef])
+
+  const totalAllocated = useMemo(
+    () => policyRows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0),
+    [policyRows],
+  )
+
+  // All policies for selected company (no status filter — edit must show existing allocations)
+  const availablePolicies = useMemo(() => {
+    if (!form.insuranceCompany) return []
+    return allPolicies.filter((p) => p.insuranceCompany === form.insuranceCompany)
+  }, [allPolicies, form.insuranceCompany])
+
+  const distribution = useMemo(
+    () =>
+      policyRows
+        .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
+        .map((r) => {
+          const policy = allPolicies.find((p) => p.id === r.policyId)
+          const amount = parseFloat(r.allocatedAmount) || 0
+          const pct = totalAllocated > 0 ? (amount / totalAllocated) * 100 : 0
+          return { policy, amount, pct }
+        }),
+    [policyRows, allPolicies, totalAllocated],
+  )
+
+  const rebuildInstallments = useCallback(
+    (count: number, total: number) => {
+      const per = count > 0 && total > 0 ? total / count : 0
+      const rows: InstallmentRowData[] = Array.from({ length: count }, (_, i) => ({
+        installmentNumber: i + 1,
+        dueDate: installmentRows[i]?.dueDate ?? '',
+        amount: per > 0 ? per.toFixed(2) : '',
+      }))
+      setInstallmentRows(rows)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [installmentRows],
+  )
+
   // Initialize form once doc loads
   if (doc && !formInitialized) {
     setFormInitialized(true)
@@ -148,6 +199,8 @@ export default function DocumentEditPage() {
       vatAmount: String(doc.vatAmount),
       otherTaxesAmount: String(doc.otherTaxesAmount),
       linkedDocumentId: doc.linkedDocumentId ?? '',
+      adjustmentReason: doc.adjustmentReason ?? '',
+      adjustmentSign: doc.adjustmentSign ?? '',
     })
   }
   if (allocationsLoaded && !allocationsInitialized) {
@@ -213,32 +266,6 @@ export default function DocumentEditPage() {
   const mainPrefix = form.currency === 'USD' ? 'US$' : 'AR$'
   const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
 
-  const totalAllocated = useMemo(
-    () => policyRows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0),
-    [policyRows],
-  )
-
-  // All policies for selected company (no status filter — edit must show existing allocations)
-  const availablePolicies = useMemo(() => {
-    if (!form.insuranceCompany) return []
-    return allPolicies.filter((p) => p.insuranceCompany === form.insuranceCompany)
-  }, [allPolicies, form.insuranceCompany])
-
-  const isRefDoc = form.documentType === 'Nota de Crédito' || form.documentType === 'Endoso'
-
-  const distribution = useMemo(
-    () =>
-      policyRows
-        .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
-        .map((r) => {
-          const policy = allPolicies.find((p) => p.id === r.policyId)
-          const amount = parseFloat(r.allocatedAmount) || 0
-          const pct = totalAllocated > 0 ? (amount / totalAllocated) * 100 : 0
-          return { policy, amount, pct }
-        }),
-    [policyRows, allPolicies, totalAllocated],
-  )
-
   // ─── Setters ─────────────────────────────────────────────────────────────────
 
   const markUnsaved = () => { if (isSaved) setIsSaved(false) }
@@ -280,20 +307,6 @@ export default function DocumentEditPage() {
 
   // ─── Installments ────────────────────────────────────────────────────────────
 
-  const rebuildInstallments = useCallback(
-    (count: number, total: number) => {
-      const per = count > 0 && total > 0 ? total / count : 0
-      const rows: InstallmentRowData[] = Array.from({ length: count }, (_, i) => ({
-        installmentNumber: i + 1,
-        dueDate: installmentRows[i]?.dueDate ?? '',
-        amount: per > 0 ? per.toFixed(2) : '',
-      }))
-      setInstallmentRows(rows)
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [installmentRows],
-  )
-
   const handleInstallmentCountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const count = Math.max(1, Math.min(60, parseInt(e.target.value) || 1))
     setInstallmentCount(count)
@@ -324,8 +337,17 @@ export default function DocumentEditPage() {
     if (!form.netAmount || isNaN(parseFloat(form.netAmount))) next.netAmount = 'Requerido'
     if (!form.vatAmount || isNaN(parseFloat(form.vatAmount))) next.vatAmount = 'Requerido'
     if (!form.otherTaxesAmount || isNaN(parseFloat(form.otherTaxesAmount))) next.otherTaxesAmount = 'Requerido'
-    if (policyRows.length === 0 || policyRows.every((r) => !r.policyId))
+    if (
+      selectedTypeDef?.key !== 'CREDIT_NOTE' &&
+      (policyRows.length === 0 || policyRows.every((r) => !r.policyId))
+    )
       next.policies = 'Asociá al menos una póliza'
+    if (selectedTypeDef?.requiresLinkedDocument && !form.linkedDocumentId)
+      next.linkedDocumentId = 'Requerido'
+    if (selectedTypeDef?.requiresAdjustmentReason && !form.adjustmentReason)
+      next.adjustmentReason = 'Requerido'
+    if (selectedTypeDef?.requiresAdjustmentSign && !form.adjustmentSign)
+      next.adjustmentSign = 'Requerido'
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -346,29 +368,40 @@ export default function DocumentEditPage() {
       otherTaxesAmount: parsedOther,
       insuranceCompany: form.insuranceCompany,
       paymentMethod: form.paymentMethod,
-      linkedDocumentId: isRefDoc && form.linkedDocumentId ? form.linkedDocumentId : undefined,
+      linkedDocumentId: form.linkedDocumentId || undefined,
+      adjustmentReason: selectedTypeDef?.requiresAdjustmentReason ? form.adjustmentReason : undefined,
+      adjustmentSign: selectedTypeDef?.requiresAdjustmentSign ? (form.adjustmentSign as 'POSITIVE' | 'NEGATIVE') : undefined,
     })
 
-    const validAllocRows = policyRows.filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
-    const totalAlloc = validAllocRows.reduce((s, r) => s + parseFloat(r.allocatedAmount), 0)
-    await documentsApi.replaceAllocations(
-      doc.id,
-      validAllocRows.map((r) => ({
-        policyId: r.policyId,
-        allocatedAmount: parseFloat(r.allocatedAmount),
-        allocationPercentage: totalAlloc > 0 ? (parseFloat(r.allocatedAmount) / totalAlloc) * 100 : 0,
-      })),
-    )
+    // La Nota de Crédito no admite asignación manual — sus asignaciones las
+    // genera el backend al aplicarla, así que nunca se pisan desde acá (de lo
+    // contrario, editar una NC ya aplicada borraría sus asignaciones negativas).
+    if (selectedTypeDef?.key !== 'CREDIT_NOTE') {
+      const validAllocRows = policyRows.filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
+      const totalAlloc = validAllocRows.reduce((s, r) => s + parseFloat(r.allocatedAmount), 0)
+      await documentsApi.replaceAllocations(
+        doc.id,
+        validAllocRows.map((r) => ({
+          policyId: r.policyId,
+          allocatedAmount: parseFloat(r.allocatedAmount),
+          allocationPercentage: totalAlloc > 0 ? (parseFloat(r.allocatedAmount) / totalAlloc) * 100 : 0,
+        })),
+      )
+    }
 
-    const validInstRows = installmentRows.filter((r) => r.dueDate && parseFloat(r.amount) > 0)
-    await documentsApi.replaceInstallments(
-      doc.id,
-      validInstRows.map((r) => ({
-        installmentNumber: r.installmentNumber,
-        dueDate: r.dueDate,
-        amount: parseFloat(r.amount),
-      })),
-    )
+    // Si el tipo no admite cuotas, no tocamos las cuotas existentes (limitación
+    // conocida de Fase 1 — cambiar de tipo no borra cuotas automáticamente).
+    if (selectedTypeDef?.hasInstallments) {
+      const validInstRows = installmentRows.filter((r) => r.dueDate && parseFloat(r.amount) > 0)
+      await documentsApi.replaceInstallments(
+        doc.id,
+        validInstRows.map((r) => ({
+          installmentNumber: r.installmentNumber,
+          dueDate: r.dueDate,
+          amount: parseFloat(r.amount),
+        })),
+      )
+    }
 
     queryClient.invalidateQueries({ queryKey: ['documents'] })
     setIsSaved(true)
@@ -394,7 +427,7 @@ export default function DocumentEditPage() {
     <PageContent>
       <PageHeader
         title={`Editar ${doc.documentNumber}`}
-        subtitle={`${doc.documentType} · Emisión: ${doc.issueDate}`}
+        subtitle={`${documentTypes.find((t) => t.key === doc.documentType)?.label ?? doc.documentType} · Emisión: ${doc.issueDate}`}
         backTo={ROUTES.DOCUMENTS_DETAIL(doc.id)}
         backLabel="Volver al documento"
       />
@@ -417,7 +450,7 @@ export default function DocumentEditPage() {
               <FormSelect value={form.documentType} onChange={set('documentType')} required>
                 <option value="">Seleccionar tipo…</option>
                 {documentTypes.map((t) => (
-                  <option key={t.id} value={t.label}>{t.label}</option>
+                  <option key={t.key} value={t.key}>{t.label}</option>
                 ))}
               </FormSelect>
             </FormField>
@@ -436,11 +469,16 @@ export default function DocumentEditPage() {
               <FormInput type="date" value={form.issueDate} onChange={set('issueDate')} required />
             </FormField>
 
-            {isRefDoc && (
-              <FormField label="Factura de referencia" fullWidth>
+            {selectedTypeDef?.linkedDocumentLabel && (
+              <FormField
+                label={selectedTypeDef.linkedDocumentLabel}
+                required={selectedTypeDef.requiresLinkedDocument}
+                error={errors.linkedDocumentId}
+                fullWidth
+              >
                 <FormSelect value={form.linkedDocumentId} onChange={set('linkedDocumentId')}>
-                  <option value="">Seleccionar factura base…</option>
-                  {existingFacturas.map((f) => (
+                  <option value="">Seleccionar documento…</option>
+                  {linkableDocuments.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.documentNumber} — {f.issueDate} — {f.currency === 'USD' ? 'US$' : 'AR$'}{' '}
                       {f.totalAmount.toLocaleString('es-AR')}
@@ -448,8 +486,29 @@ export default function DocumentEditPage() {
                   ))}
                 </FormSelect>
                 <p className="text-xs text-slate-400 mt-1">
-                  Una {form.documentType} siempre está asociada a una factura preexistente.
+                  Este tipo de documento ({selectedTypeDef.label}) {selectedTypeDef.requiresLinkedDocument ? 'siempre está asociado' : 'puede estar asociado'} a un documento preexistente.
                 </p>
+              </FormField>
+            )}
+
+            {selectedTypeDef?.requiresAdjustmentReason && (
+              <FormField label="Motivo del ajuste" required error={errors.adjustmentReason}>
+                <FormSelect value={form.adjustmentReason} onChange={set('adjustmentReason')} required>
+                  <option value="">Seleccionar motivo…</option>
+                  {adjustmentReasons.map((r) => (
+                    <option key={r.key} value={r.key}>{r.label}</option>
+                  ))}
+                </FormSelect>
+              </FormField>
+            )}
+
+            {selectedTypeDef?.requiresAdjustmentSign && (
+              <FormField label="Signo del ajuste" required error={errors.adjustmentSign}>
+                <FormSelect value={form.adjustmentSign} onChange={set('adjustmentSign')} required>
+                  <option value="">Seleccionar signo…</option>
+                  <option value="POSITIVE">Positivo (suma al saldo)</option>
+                  <option value="NEGATIVE">Negativo (resta al saldo)</option>
+                </FormSelect>
               </FormField>
             )}
           </FormSection>
@@ -550,7 +609,17 @@ export default function DocumentEditPage() {
           )}
         </SectionCard>
 
-        {/* ── Sección 3: Pólizas Asociadas ─────────────────────────────────── */}
+        {/* ── Sección 3: Pólizas Asociadas — no aplica a Nota de Crédito ────── */}
+        {selectedTypeDef?.key === 'CREDIT_NOTE' ? (
+          <SectionCard title="Pólizas Asociadas" subtitle="Distribución automática al aplicar">
+            <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
+              <Info size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-800 leading-snug">
+                La distribución por póliza de esta Nota de Crédito se calcula automáticamente, proporcional a la de la factura de referencia, en el momento en que se aplique.
+              </p>
+            </div>
+          </SectionCard>
+        ) : (
         <SectionCard
           title="Pólizas Asociadas"
           subtitle={
@@ -664,8 +733,10 @@ export default function DocumentEditPage() {
             </div>
           )}
         </SectionCard>
+        )}
 
-        {/* ── Sección 4: Cuotas ────────────────────────────────────────────── */}
+        {/* ── Sección 4: Cuotas — solo para tipos que admiten cuotas ────────── */}
+        {selectedTypeDef?.hasInstallments && (
         <SectionCard
           title="Cuotas"
           subtitle="Cantidad, fechas e importes. El estado de pago se mantiene para cuotas existentes."
@@ -733,6 +804,7 @@ export default function DocumentEditPage() {
             ))}
           </div>
         </SectionCard>
+        )}
 
         {/* ── Sección 5: Adjuntos ──────────────────────────────────────────── */}
         <SectionCard title="Documentación Adjunta" subtitle="Factura PDF, endosos o documentación relacionada" noPadding>

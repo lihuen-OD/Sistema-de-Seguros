@@ -9,7 +9,7 @@ import { formatCurrencyFull, formatDate } from '../../../shared/utils/format'
 import { downloadAsPdf } from '../../../shared/utils/downloadAsPdf'
 import { documentsApi } from '../../../shared/api/documents.api'
 import { policiesApi } from '../../../shared/api/policies.api'
-import { PAYMENT_STATUS_LABELS } from '../../../shared/constants'
+import { PAYMENT_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 
 const EMISSION_DATE = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
@@ -54,6 +54,7 @@ export default function DocumentFichaPage() {
   }
 
   const paymentLabel = PAYMENT_STATUS_LABELS[doc.paymentStatus] ?? doc.paymentStatus
+  const documentTypeLabel = DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType
 
   return (
     <PageContent>
@@ -100,7 +101,7 @@ export default function DocumentFichaPage() {
               </span>
               <StatusPill status={doc.paymentStatus} />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 leading-tight">{doc.documentType}</h1>
+            <h1 className="text-2xl font-bold text-slate-900 leading-tight">{documentTypeLabel}</h1>
             {doc.insuranceCompany && (
               <p className="text-sm text-slate-500 mt-1">{doc.insuranceCompany}</p>
             )}
@@ -123,7 +124,7 @@ export default function DocumentFichaPage() {
               <SectionHeading>Datos del Documento</SectionHeading>
               <div className="space-y-2.5">
                 <FichaRow label="N° de documento" value={doc.documentNumber} mono />
-                <FichaRow label="Tipo de documento" value={doc.documentType} />
+                <FichaRow label="Tipo de documento" value={documentTypeLabel} />
                 <FichaRow label="Fecha de emisión" value={formatDate(doc.issueDate)} />
                 <FichaRow label="Estado de pago" value={paymentLabel} />
                 {doc.paymentMethod && <FichaRow label="Método de pago" value={doc.paymentMethod} />}

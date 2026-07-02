@@ -12,6 +12,7 @@ import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
+import { getDocumentEconomicEffect } from '../../../shared/utils/documentEconomicEffect'
 import {
   downloadXLSX, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
@@ -86,11 +87,16 @@ function buildPolicyContext(policies: Policy[], assets: Asset[]) {
   return map
 }
 
+// Mapea documento → póliza → allocatedAmount (en la moneda propia del
+// documento, con signo). Usar el monto asignado directamente en vez de
+// recalcularlo desde el porcentaje es lo que hace que las asignaciones
+// negativas de una Nota de Crédito aplicada compensen correctamente a las de
+// la factura vinculada.
 function buildDocumentAllocMap(allocations: DocumentPolicyAllocation[]): Map<string, Map<string, number>> {
   const map = new Map<string, Map<string, number>>()
   allocations.forEach((alloc) => {
     if (!map.has(alloc.accountingDocumentId)) map.set(alloc.accountingDocumentId, new Map())
-    map.get(alloc.accountingDocumentId)!.set(alloc.policyId, alloc.allocationPercentage / 100)
+    map.get(alloc.accountingDocumentId)!.set(alloc.policyId, alloc.allocatedAmount)
   })
   return map
 }
@@ -149,12 +155,11 @@ function buildEconomicMatrix(
     const key = granularity === 'week'
       ? getISOWeekKey(doc.issueDate)
       : doc.issueDate.substring(0, 7)
-    const docAmount = convertAmount(doc.totalAmount, doc.currency, displayCurrency)
     const docAllocs = allocMap.get(doc.id)
     if (!docAllocs || docAllocs.size === 0) return
 
-    docAllocs.forEach((pctOfDoc, policyId) => {
-      const policyAmount = docAmount * pctOfDoc
+    docAllocs.forEach((allocatedAmount, policyId) => {
+      const policyAmount = convertAmount(allocatedAmount, doc.currency, displayCurrency)
       const ctx = policyCtx.get(policyId)
       if (!ctx) return
 
@@ -352,15 +357,15 @@ export default function EconomicAnalysisPage() {
     allDocuments.forEach((doc) => {
       const monthKey = doc.issueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
-      const docAmount = convertAmount(doc.totalAmount, doc.currency, currency)
-      totalCost += docAmount
+      totalCost += convertAmount(getDocumentEconomicEffect(doc), doc.currency, currency)
       const docAllocs = allocMap.get(doc.id)
       if (!docAllocs) return
-      docAllocs.forEach((pct, policyId) => {
+      docAllocs.forEach((allocatedAmount, policyId) => {
         allocedPolicies.add(policyId)
         const ctx = policyCtx.get(policyId)
         if (!ctx) return
-        byInsurer.set(ctx.insuranceCompany, (byInsurer.get(ctx.insuranceCompany) ?? 0) + docAmount * pct)
+        const policyAmount = convertAmount(allocatedAmount, doc.currency, currency)
+        byInsurer.set(ctx.insuranceCompany, (byInsurer.get(ctx.insuranceCompany) ?? 0) + policyAmount)
       })
     })
 
@@ -381,7 +386,7 @@ export default function EconomicAnalysisPage() {
       let total = 0
       allDocuments.forEach((doc) => {
         if (doc.issueDate.substring(0, 7) === key) {
-          total += convertAmount(doc.totalAmount, doc.currency, currency)
+          total += convertAmount(getDocumentEconomicEffect(doc), doc.currency, currency)
         }
       })
       return { label, total }

@@ -9,9 +9,47 @@ export type PolicyStatus =
   | 'pendiente_documentacion'
   | 'sin_factura'
 
-export type DocumentType = 'factura' | 'endoso' | 'nota_credito' | 'nota_debito' | 'refacturacion'
+export type DocumentType =
+  | 'INVOICE'
+  | 'CREDIT_NOTE'
+  | 'DEBIT_NOTE'
+  | 'ENDORSEMENT'
+  | 'REBILLING'
+  | 'ADJUSTMENT_ENTRY'
 
-export type PaymentStatus = 'pendiente' | 'parcial' | 'pagado'
+export type DocumentStatus = 'ISSUED' | 'APPLIED' | 'CANCELLED' | 'OBSERVED'
+
+export type PaymentStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'NOT_APPLICABLE'
+
+export type RelationType = 'CREDITS' | 'DEBITS' | 'REPLACES' | 'ADJUSTS' | 'ENDORSES'
+
+export type AdjustmentSign = 'POSITIVE' | 'NEGATIVE'
+
+// Definición de comportamiento de un tipo de documento contable, obtenida del
+// backend vía documentsApi.getTypes() — reemplaza el catálogo editable
+// "Tipos de Documento" que existía en Configuración.
+export interface DocumentTypeDef {
+  key: DocumentType
+  label: string
+  requiresLinkedDocument: boolean
+  linkedDocumentType?: DocumentType
+  linkedDocumentLabel?: string
+  hasInstallments: boolean
+  hasPaymentStatus: boolean
+  affectsLinkedBalance: boolean
+  affectsLinkedDirection?: 'credit' | 'debit' | 'adjusts' | 'replaces'
+  relationType?: RelationType
+  requiresAdjustmentReason: boolean
+  requiresAdjustmentSign: boolean
+  documentStatusOptions: DocumentStatus[]
+  paymentStatusOptions: PaymentStatus[]
+  isInternal: boolean
+}
+
+export interface AdjustmentReasonOption {
+  key: string
+  label: string
+}
 
 export type TaskStatus = 'pendiente' | 'en_curso' | 'finalizada' | 'vencida'
 
@@ -244,7 +282,8 @@ export interface Policy {
 
 export interface AccountingDocument {
   id: string
-  documentType: string
+  documentType: DocumentType
+  documentStatus: DocumentStatus
   documentNumber: string
   issueDate: string
   currency: string
@@ -257,6 +296,9 @@ export interface AccountingDocument {
   insuranceCompany?: string
   paymentMethod?: string
   linkedDocumentId?: string
+  relationType?: RelationType
+  adjustmentReason?: string
+  adjustmentSign?: AdjustmentSign
   policyIds: string[]
   attachmentsCount?: number
   createdAt: string
@@ -269,6 +311,47 @@ export interface DocumentPolicyAllocation {
   policyId: string
   allocatedAmount: number
   allocationPercentage: number
+}
+
+// Fase 2 — saldo neto de un documento (normalmente una Factura) considerando
+// las Notas de Crédito/Débito y Ajustes aplicados. Ver documents-balance.service.ts.
+export interface RelatedDocSummary {
+  id: string
+  documentNumber: string
+  documentType: DocumentType
+  documentStatus: DocumentStatus
+  totalAmount: number
+  adjustmentSign: AdjustmentSign | null
+}
+
+export interface DocumentBalance {
+  documentId: string
+  documentType: DocumentType
+  documentStatus: DocumentStatus
+  originalAmount: number
+  appliedCredits: number
+  appliedDebits: number
+  appliedAdjustments: number
+  effectiveAmount: number
+  paidAmount: number
+  outstandingBalance: number
+  creditBalance: number
+  relatedDocs: RelatedDocSummary[]
+}
+
+// Fase 4 — auditoría por documento (quién/cuándo/qué cambió y por qué).
+export type DocumentAuditLogAction = 'CREATE' | 'UPDATE' | 'APPLY' | 'CANCEL' | 'PAYMENT_CHANGE'
+
+export interface DocumentAuditLog {
+  id: string
+  accountingDocumentId: string
+  action: DocumentAuditLogAction
+  description: string
+  previousData?: Record<string, unknown> | null
+  newData?: Record<string, unknown> | null
+  performedBy?: string | null
+  reason?: string | null
+  createdAt: string
 }
 
 export interface Installment {

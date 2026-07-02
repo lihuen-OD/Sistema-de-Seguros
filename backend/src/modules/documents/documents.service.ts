@@ -1,9 +1,19 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { detectFileType, formatFileSize, isAllowedMimetype } from '../../shared/utils/files'
 import { toDateStr } from '../../shared/utils/dates'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
+import {
+  DOCUMENT_TYPES,
+  ADJUSTMENT_REASONS,
+  getDocumentTypeDef,
+  isValidAdjustmentReason,
+  type DocumentTypeDef,
+} from './document-types'
+import { computeTotalAmount } from './document-amounts'
+import { documentsBalanceService } from './documents-balance.service'
 import type {
   CreateDocumentDTO,
   UpdateDocumentDTO,
@@ -15,6 +25,14 @@ import type {
 } from './documents.schemas'
 
 // ── Include shapes ────────────────────────────────────────────────────────────
+
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Pendiente',
+  PARTIALLY_PAID: 'Parcialmente Pagada',
+  PAID: 'Pagada',
+  OVERDUE: 'Vencida',
+  NOT_APPLICABLE: 'No Aplica',
+}
 
 const DOCUMENT_LIST_INCLUDE = {
   _count: { select: { installments: true, allocations: true, attachments: true } },
@@ -56,7 +74,7 @@ function withTotalAmount<T extends { netAmount: number; vatAmount: number; other
 ) {
   return {
     ...doc,
-    totalAmount: +(doc.netAmount + doc.vatAmount + doc.otherTaxesAmount).toFixed(2),
+    totalAmount: computeTotalAmount(doc),
   }
 }
 
@@ -73,6 +91,13 @@ function mapInstallment(inst: Record<string, unknown>) {
 // ── Service ───────────────────────────────────────────────────────────────────
 
 export const documentsService = {
+  getTypes() {
+    return {
+      types: Object.values(DOCUMENT_TYPES),
+      adjustmentReasons: Object.entries(ADJUSTMENT_REASONS).map(([key, label]) => ({ key, label })),
+    }
+  },
+
   async findAll(query: ListDocumentsQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
 
@@ -110,7 +135,10 @@ export const documentsService = {
   },
 
   async findAllForFinancial(params?: { from?: string; to?: string }) {
-    const where: Record<string, unknown> = {}
+    // Excluye documentos anulados — este endpoint solo lo consumen Análisis
+    // Financiero y Análisis Económico, y un documento CANCELLED nunca debe
+    // impactar esos reportes.
+    const where: Record<string, unknown> = { documentStatus: { not: 'CANCELLED' } }
     if (params?.from || params?.to) {
       where.issueDate = {
         ...(params.from && { gte: new Date(`${params.from}-01T00:00:00.000Z`) }),
@@ -142,21 +170,29 @@ export const documentsService = {
     }
   },
 
-  async create(data: CreateDocumentDTO) {
+  async create(data: CreateDocumentDTO, performedBy?: string) {
     const { installments, allocations, ...docData } = data
 
     if (allocations.length > 0) {
       await this.validatePolicyRefs(allocations.map((a) => a.policyId))
     }
 
-    if (docData.linkedDocumentId) {
-      await this.assertDocumentExists(docData.linkedDocumentId)
+    const typeDef = getDocumentTypeDef(docData.documentType)
+    if (!typeDef) throw new AppError(400, 'Tipo de documento inválido', 'BAD_REQUEST')
+
+    await this.validateTypeConstraints(typeDef, docData)
+
+    const documentStatus = docData.documentStatus ?? 'ISSUED'
+    if (!typeDef.documentStatusOptions.includes(documentStatus)) {
+      throw new AppError(400, 'Estado de documento inválido para este tipo', 'BAD_REQUEST')
     }
 
     const doc = await prisma.accountingDocument.create({
       data: {
         ...docData,
-        ...(installments.length > 0 && {
+        documentStatus,
+        paymentStatus: typeDef.hasPaymentStatus ? 'PENDING' : 'NOT_APPLICABLE',
+        ...(installments.length > 0 && typeDef.hasInstallments && {
           installments: {
             create: installments.map((inst) => ({
               installmentNumber: inst.installmentNumber,
@@ -179,28 +215,94 @@ export const documentsService = {
       include: DOCUMENT_DETAIL_INCLUDE,
     })
 
+    await this.recordAudit(doc.id, {
+      action: 'CREATE',
+      description: `${typeDef.label} creada`,
+      newData: {
+        documentType: doc.documentType,
+        documentStatus: doc.documentStatus,
+        paymentStatus: doc.paymentStatus,
+        netAmount: doc.netAmount,
+        vatAmount: doc.vatAmount,
+        otherTaxesAmount: doc.otherTaxesAmount,
+        currency: doc.currency,
+        linkedDocumentId: doc.linkedDocumentId,
+      },
+      performedBy,
+    })
+
     return {
       ...withTotalAmount(doc),
       installments: doc.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
     }
   },
 
-  async update(id: string, data: UpdateDocumentDTO) {
+  async update(id: string, data: UpdateDocumentDTO, performedBy?: string) {
     const { installments: _i, allocations: _a, ...docData } = data
 
-    await this.assertDocumentExists(id)
+    const existing = await this.assertDocumentExists(id)
 
-    if (docData.linkedDocumentId) {
-      if (docData.linkedDocumentId === id) {
-        throw new AppError(400, 'Un documento no puede vincularse a sí mismo', 'BAD_REQUEST')
-      }
-      await this.assertDocumentExists(docData.linkedDocumentId)
+    if (existing.documentStatus === 'APPLIED') {
+      throw new AppError(
+        400,
+        'No se puede editar un documento aplicado. Cancelalo primero si necesitás corregirlo.',
+        'BAD_REQUEST',
+      )
+    }
+
+    const effectiveType = docData.documentType ?? existing.documentType
+    const typeDef = getDocumentTypeDef(effectiveType)
+    if (!typeDef) throw new AppError(400, 'Tipo de documento inválido', 'BAD_REQUEST')
+
+    const effectiveLinkedId =
+      docData.linkedDocumentId !== undefined ? docData.linkedDocumentId : existing.linkedDocumentId
+    const effectiveAdjustmentReason =
+      docData.adjustmentReason !== undefined ? docData.adjustmentReason : existing.adjustmentReason
+    const effectiveAdjustmentSign =
+      docData.adjustmentSign !== undefined ? docData.adjustmentSign : existing.adjustmentSign
+
+    await this.validateTypeConstraints(
+      typeDef,
+      {
+        linkedDocumentId: effectiveLinkedId,
+        adjustmentReason: effectiveAdjustmentReason,
+        adjustmentSign: effectiveAdjustmentSign,
+      },
+      id,
+    )
+
+    const documentStatus = docData.documentStatus ?? existing.documentStatus
+    if (!typeDef.documentStatusOptions.includes(documentStatus as (typeof typeDef.documentStatusOptions)[number])) {
+      throw new AppError(400, 'Estado de documento inválido para este tipo', 'BAD_REQUEST')
     }
 
     const updated = await prisma.accountingDocument.update({
       where: { id },
-      data: docData,
+      data: {
+        ...docData,
+        ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
+      },
       include: DOCUMENT_DETAIL_INCLUDE,
+    })
+
+    await this.recordAudit(id, {
+      action: 'UPDATE',
+      description: 'Documento actualizado',
+      previousData: {
+        documentType: existing.documentType,
+        linkedDocumentId: existing.linkedDocumentId,
+        netAmount: existing.netAmount,
+        vatAmount: existing.vatAmount,
+        otherTaxesAmount: existing.otherTaxesAmount,
+      },
+      newData: {
+        documentType: updated.documentType,
+        linkedDocumentId: updated.linkedDocumentId,
+        netAmount: updated.netAmount,
+        vatAmount: updated.vatAmount,
+        otherTaxesAmount: updated.otherTaxesAmount,
+      },
+      performedBy,
     })
 
     return {
@@ -213,6 +315,107 @@ export const documentsService = {
     await this.assertDocumentExists(id)
     // Cascade handled by Prisma (onDelete: Cascade on installments, allocations, attachments)
     await prisma.accountingDocument.delete({ where: { id } })
+  },
+
+  // ── Ciclo de aplicación (Fase 2) ─────────────────────────────────────────────
+
+  async apply(id: string, performedBy?: string) {
+    const doc = await this.assertDocumentExists(id)
+    const typeDef = getDocumentTypeDef(doc.documentType)
+    if (!typeDef) throw new AppError(400, 'Tipo de documento inválido', 'BAD_REQUEST')
+
+    if (!typeDef.documentStatusOptions.includes('APPLIED')) {
+      throw new AppError(400, 'Este tipo de documento no admite ser aplicado', 'BAD_REQUEST')
+    }
+    if (doc.documentStatus === 'APPLIED') {
+      throw new AppError(409, 'El documento ya está aplicado', 'CONFLICT')
+    }
+    if (doc.documentStatus === 'CANCELLED') {
+      throw new AppError(400, 'No se puede aplicar un documento anulado', 'BAD_REQUEST')
+    }
+
+    let negativeAllocations: { policyId: string; allocatedAmount: number; allocationPercentage: number }[] = []
+
+    if (doc.documentType === 'CREDIT_NOTE' && doc.linkedDocumentId) {
+      const balance = await documentsBalanceService.getBalance(doc.linkedDocumentId)
+      const creditAmount = Math.abs(computeTotalAmount(doc))
+      if (creditAmount > balance.effectiveAmount) {
+        throw new AppError(400, 'La Nota de Crédito supera el saldo disponible de la factura', 'BAD_REQUEST')
+      }
+
+      // Genera asignaciones negativas proporcionales a la distribución de la
+      // factura vinculada, para que los reportes por póliza reflejen el neto.
+      // Si la factura no tiene asignaciones, se aplica igual sin crear ninguna
+      // (queda pendiente de distribución manual — limitación conocida de Fase 3).
+      const invoiceAllocations = await prisma.documentPolicyAllocation.findMany({
+        where: { accountingDocumentId: doc.linkedDocumentId },
+      })
+      negativeAllocations = invoiceAllocations.map((a) => ({
+        policyId: a.policyId,
+        allocatedAmount: -(creditAmount * (a.allocationPercentage / 100)),
+        allocationPercentage: a.allocationPercentage,
+      }))
+    }
+
+    if (doc.documentType === 'CREDIT_NOTE') {
+      await prisma.$transaction([
+        prisma.documentPolicyAllocation.deleteMany({ where: { accountingDocumentId: id } }),
+        ...(negativeAllocations.length > 0
+          ? [
+              prisma.documentPolicyAllocation.createMany({
+                data: negativeAllocations.map((a) => ({ ...a, accountingDocumentId: id })),
+              }),
+            ]
+          : []),
+      ])
+    }
+
+    const updated = await prisma.accountingDocument.update({
+      where: { id },
+      data: { documentStatus: 'APPLIED' },
+      include: DOCUMENT_DETAIL_INCLUDE,
+    })
+
+    await this.recordAudit(id, {
+      action: 'APPLY',
+      description: `${typeDef.label} aplicada`,
+      previousData: { documentStatus: 'ISSUED' },
+      newData: { documentStatus: 'APPLIED' },
+      performedBy,
+    })
+
+    return {
+      ...withTotalAmount(updated),
+      installments: updated.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
+    }
+  },
+
+  async cancel(id: string, performedBy?: string, reason?: string) {
+    const doc = await this.assertDocumentExists(id)
+
+    if (doc.documentStatus === 'CANCELLED') {
+      throw new AppError(409, 'El documento ya está anulado', 'CONFLICT')
+    }
+
+    const updated = await prisma.accountingDocument.update({
+      where: { id },
+      data: { documentStatus: 'CANCELLED' },
+      include: DOCUMENT_DETAIL_INCLUDE,
+    })
+
+    await this.recordAudit(id, {
+      action: 'CANCEL',
+      description: reason ? `Documento anulado: ${reason}` : 'Documento anulado',
+      previousData: { documentStatus: doc.documentStatus },
+      newData: { documentStatus: 'CANCELLED' },
+      performedBy,
+      reason,
+    })
+
+    return {
+      ...withTotalAmount(updated),
+      installments: updated.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
+    }
   },
 
   // ── Installments ──────────────────────────────────────────────────────────────
@@ -254,10 +457,10 @@ export const documentsService = {
         : []),
     ])
 
-    // When all installments are replaced, reset document to pendiente
+    // When all installments are replaced, reset document to pending
     await prisma.accountingDocument.update({
       where: { id: documentId },
-      data: { paymentStatus: 'pendiente' },
+      data: { paymentStatus: 'PENDING' },
     })
 
     const installments = await prisma.documentInstallment.findMany({
@@ -267,7 +470,7 @@ export const documentsService = {
     return installments.map((i) => mapInstallment(i as Record<string, unknown>))
   },
 
-  async updateInstallment(documentId: string, installmentId: string, data: UpdateInstallmentDTO) {
+  async updateInstallment(documentId: string, installmentId: string, data: UpdateInstallmentDTO, performedBy?: string) {
     const installment = await prisma.documentInstallment.findFirst({
       where: { id: installmentId, accountingDocumentId: documentId },
     })
@@ -280,6 +483,16 @@ export const documentsService = {
 
     await this.recalculateDocumentStatus(documentId)
 
+    if (data.paymentStatus && data.paymentStatus !== installment.paymentStatus) {
+      await this.recordAudit(documentId, {
+        action: 'PAYMENT_CHANGE',
+        description: `Cuota ${installment.installmentNumber} marcada como ${PAYMENT_STATUS_LABELS[data.paymentStatus] ?? data.paymentStatus}`,
+        previousData: { paymentStatus: installment.paymentStatus },
+        newData: { paymentStatus: data.paymentStatus },
+        performedBy,
+      })
+    }
+
     return mapInstallment(updated as Record<string, unknown>)
   },
 
@@ -291,9 +504,9 @@ export const documentsService = {
 
     if (installments.length === 0) return
 
-    const paid = installments.filter((i) => i.paymentStatus === 'pagado').length
+    const paid = installments.filter((i) => i.paymentStatus === 'PAID').length
     const paymentStatus =
-      paid === 0 ? 'pendiente' : paid === installments.length ? 'pagado' : 'parcial'
+      paid === 0 ? 'PENDING' : paid === installments.length ? 'PAID' : 'PARTIALLY_PAID'
 
     await prisma.accountingDocument.update({
       where: { id: documentId },
@@ -421,12 +634,101 @@ export const documentsService = {
     await prisma.documentAttachment.delete({ where: { id: attachmentId } })
   },
 
+  // ── Auditoría (Fase 4) ────────────────────────────────────────────────────────
+
+  async getAuditLog(documentId: string) {
+    await this.assertDocumentExists(documentId)
+    return prisma.documentAuditLog.findMany({
+      where: { accountingDocumentId: documentId },
+      orderBy: { createdAt: 'desc' },
+    })
+  },
+
+  async recordAudit(
+    accountingDocumentId: string,
+    entry: {
+      action: string
+      description: string
+      previousData?: Record<string, unknown>
+      newData?: Record<string, unknown>
+      performedBy?: string
+      reason?: string
+    },
+  ) {
+    await prisma.documentAuditLog.create({
+      data: {
+        accountingDocumentId,
+        action: entry.action,
+        description: entry.description,
+        previousData: entry.previousData as Prisma.InputJsonValue | undefined,
+        newData: entry.newData as Prisma.InputJsonValue | undefined,
+        performedBy: entry.performedBy ?? null,
+        reason: entry.reason ?? null,
+      },
+    })
+  },
+
   // ── Private ───────────────────────────────────────────────────────────────────
 
   async assertDocumentExists(id: string) {
-    const doc = await prisma.accountingDocument.findUnique({ where: { id }, select: { id: true, currency: true } })
+    const doc = await prisma.accountingDocument.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        documentNumber: true,
+        currency: true,
+        documentType: true,
+        documentStatus: true,
+        linkedDocumentId: true,
+        adjustmentReason: true,
+        adjustmentSign: true,
+        netAmount: true,
+        vatAmount: true,
+        otherTaxesAmount: true,
+      },
+    })
     if (!doc) throw new AppError(404, 'Documento no encontrado', 'NOT_FOUND')
     return doc
+  },
+
+  async validateTypeConstraints(
+    typeDef: DocumentTypeDef,
+    input: { linkedDocumentId?: string | null; adjustmentReason?: string | null; adjustmentSign?: string | null },
+    selfId?: string,
+  ) {
+    if (typeDef.requiresLinkedDocument && !input.linkedDocumentId) {
+      throw new AppError(
+        400,
+        `${typeDef.linkedDocumentLabel ?? 'El documento vinculado'} es requerido para este tipo de documento`,
+        'BAD_REQUEST',
+      )
+    }
+
+    if (input.linkedDocumentId) {
+      if (selfId && input.linkedDocumentId === selfId) {
+        throw new AppError(400, 'Un documento no puede vincularse a sí mismo', 'BAD_REQUEST')
+      }
+      const linked = await this.assertDocumentExists(input.linkedDocumentId)
+      if (linked.documentStatus === 'CANCELLED') {
+        throw new AppError(400, 'El documento vinculado está anulado', 'BAD_REQUEST')
+      }
+      if (typeDef.linkedDocumentType && linked.documentType !== typeDef.linkedDocumentType) {
+        const expectedLabel = DOCUMENT_TYPES[typeDef.linkedDocumentType]?.label ?? typeDef.linkedDocumentType
+        throw new AppError(400, `El documento vinculado debe ser de tipo ${expectedLabel}`, 'BAD_REQUEST')
+      }
+    }
+
+    if (typeDef.requiresAdjustmentReason) {
+      if (!input.adjustmentReason || !isValidAdjustmentReason(input.adjustmentReason)) {
+        throw new AppError(400, 'El motivo de ajuste es requerido y debe ser válido', 'BAD_REQUEST')
+      }
+    }
+
+    if (typeDef.requiresAdjustmentSign) {
+      if (input.adjustmentSign !== 'POSITIVE' && input.adjustmentSign !== 'NEGATIVE') {
+        throw new AppError(400, 'El signo de ajuste es requerido para este tipo de documento', 'BAD_REQUEST')
+      }
+    }
   },
 
   async checkDocumentNumber(documentNumber: string) {
