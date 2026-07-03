@@ -1008,6 +1008,12 @@ async function main() {
       },
     }),
   ])
+
+  // Los matafuegos de arriba usan code hardcodeado (no pasan por fire_ext_code_seq).
+  // Resincronizamos la secuencia para que la próxima alta desde la app no colisione con estos.
+  await prisma.$executeRawUnsafe(
+    `SELECT setval('fire_ext_code_seq', (SELECT COALESCE(MAX(CAST(SUBSTRING(code FROM '(\\d+)-A$') AS INTEGER)), 0) FROM fire_extinguishers))`,
+  )
   console.log('  OK Matafuegos (5). FireExtinguisher.assetId campo simple correcto')
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1098,6 +1104,12 @@ async function main() {
       },
     }),
   ])
+
+  // Los siniestros de arriba usan claimNumber hardcodeado (no pasan por claim_number_seq).
+  // Resincronizamos la secuencia para que la próxima alta desde la app no colisione con estos.
+  await prisma.$executeRawUnsafe(
+    `SELECT setval('claim_number_seq', (SELECT COALESCE(MAX(CAST(SUBSTRING("claimNumber" FROM '(\\d+)$') AS INTEGER)), 0) FROM claims))`,
+  )
   console.log('  OK Siniestros (3) + Eventos (8). Claim.assetId campo simple correcto')
 
   // ─────────────────────────────────────────────────────────────────────────
