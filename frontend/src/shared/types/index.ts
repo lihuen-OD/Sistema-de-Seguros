@@ -25,6 +25,8 @@ export type RelationType = 'CREDITS' | 'DEBITS' | 'REPLACES' | 'ADJUSTS' | 'ENDO
 
 export type AdjustmentSign = 'POSITIVE' | 'NEGATIVE'
 
+export type EconomicImpactType = 'NO_IMPACT' | 'INCREASES_COST' | 'DECREASES_COST' | 'PENDING_DEFINITION'
+
 // Definición de comportamiento de un tipo de documento contable, obtenida del
 // backend vía documentsApi.getTypes() — reemplaza el catálogo editable
 // "Tipos de Documento" que existía en Configuración.
@@ -41,6 +43,11 @@ export interface DocumentTypeDef {
   relationType?: RelationType
   requiresAdjustmentReason: boolean
   requiresAdjustmentSign: boolean
+  // Endoso: se asocia a una póliza propia y no tiene importes propios — ver
+  // document-types.ts (backend) para el detalle de esta excepción deliberada.
+  requiresPolicy: boolean
+  hasOwnAmounts: boolean
+  requiresEconomicImpactType: boolean
   documentStatusOptions: DocumentStatus[]
   paymentStatusOptions: PaymentStatus[]
   isInternal: boolean
@@ -48,6 +55,16 @@ export interface DocumentTypeDef {
 
 export interface AdjustmentReasonOption {
   key: string
+  label: string
+}
+
+export interface EndorsementTypeOption {
+  key: string
+  label: string
+}
+
+export interface EconomicImpactTypeOption {
+  key: EconomicImpactType
   label: string
 }
 
@@ -295,10 +312,17 @@ export interface AccountingDocument {
   paymentStatus: PaymentStatus
   insuranceCompany?: string
   paymentMethod?: string
+  description?: string | null
   linkedDocumentId?: string
   relationType?: RelationType
   adjustmentReason?: string
   adjustmentSign?: AdjustmentSign
+  // Endoso: póliza a la que modifica (asociación principal, distinta de
+  // policyIds que viene de las allocations financieras).
+  policyId?: string | null
+  economicImpactType?: EconomicImpactType | null
+  endorsementType?: string | null
+  endorsementEffectiveDate?: string | null
   policyIds: string[]
   attachmentsCount?: number
   createdAt: string
@@ -322,6 +346,9 @@ export interface RelatedDocSummary {
   documentStatus: DocumentStatus
   totalAmount: number
   adjustmentSign: AdjustmentSign | null
+  // true cuando este es el documento al que el documento consultado fue
+  // aplicado (su propio linkedDocumentId), no uno de los que lo afectan a él.
+  isOrigin: boolean
 }
 
 export interface DocumentBalance {

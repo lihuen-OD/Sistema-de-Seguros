@@ -250,6 +250,7 @@ model Policy {
   producer      Producer?                  @relation(fields: [producerId], references: [id])
   attachments   PolicyAttachment[]
   allocations   DocumentPolicyAllocation[]
+  endorsements  AccountingDocument[]
   claims        Claim[]
 
   @@index([isActive, endDate])
@@ -304,6 +305,12 @@ model AccountingDocument {
   adjustmentReason String?
   adjustmentSign   String?
 
+  // Fase 7 — Endoso: se asocia principalmente a una póliza, no a otro documento.
+  policyId                 String?
+  economicImpactType       String?
+  endorsementType          String?
+  endorsementEffectiveDate DateTime? @db.Date
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -311,11 +318,13 @@ model AccountingDocument {
   allocations  DocumentPolicyAllocation[]
   attachments  DocumentAttachment[]
   auditLogs    DocumentAuditLog[]
+  policy       Policy?                    @relation(fields: [policyId], references: [id])
 
   @@index([paymentStatus])
   @@index([issueDate])
   @@index([documentType])
   @@index([documentStatus])
+  @@index([policyId])
   @@map("accounting_documents")
 }
 

@@ -69,7 +69,7 @@ const modules: ModuleCardProps[] = [
     iconColor: 'text-emerald-600',
     iconBg: 'bg-emerald-50',
     title: 'Pólizas y Documentos',
-    catalogs: ['Compañías Aseguradoras', 'Tipos de Documento', 'Formas de Pago', 'Monedas'],
+    catalogs: ['Compañías Aseguradoras', 'Formas de Pago', 'Monedas'],
     to: '/settings/module-config/policies',
   },
   {

@@ -55,9 +55,10 @@ const db = prisma as any
 const BASE_DATE = new Date('2026-01-01T00:00:00.000Z')
 
 // Proper UUID format required by Zod .uuid() validation
-const DOC_ID   = '10000000-0000-0000-0000-000000000001'
-const INST_ID  = '10000000-0000-0000-0000-000000000002'
-const OTHER_ID = '10000000-0000-0000-0000-000000000099'
+const DOC_ID     = '10000000-0000-0000-0000-000000000001'
+const INST_ID    = '10000000-0000-0000-0000-000000000002'
+const OTHER_ID   = '10000000-0000-0000-0000-000000000099'
+const POLICY_ID  = '20000000-0000-0000-0000-000000000010'
 
 const fakeDocument = {
   id: DOC_ID,
@@ -78,6 +79,10 @@ const fakeDocument = {
   relationType: null,
   adjustmentReason: null,
   adjustmentSign: null,
+  policyId: null,
+  economicImpactType: null,
+  endorsementType: null,
+  endorsementEffectiveDate: null,
   createdAt: BASE_DATE,
   updatedAt: BASE_DATE,
   installments: [],
@@ -353,6 +358,191 @@ describe('Documents API', () => {
       expect(res.status).toBe(400)
       expect(res.body.error.code).toBe('BAD_REQUEST')
     })
+
+    it('returns 400 when ENDORSEMENT is created without policyId', async () => {
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          documentType: 'ENDORSEMENT',
+          documentNumber: 'END-001',
+          netAmount: 0,
+          vatAmount: 0,
+          otherTaxesAmount: 0,
+          economicImpactType: 'NO_IMPACT',
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('BAD_REQUEST')
+    })
+
+    it('returns 400 when ENDORSEMENT policyId references an inactive or missing policy', async () => {
+      db.policy.findMany.mockResolvedValue([]) // policyId not found among active policies
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          documentType: 'ENDORSEMENT',
+          documentNumber: 'END-001',
+          netAmount: 0,
+          vatAmount: 0,
+          otherTaxesAmount: 0,
+          policyId: POLICY_ID,
+          economicImpactType: 'NO_IMPACT',
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('INVALID_REFERENCE')
+    })
+
+    it('returns 400 when ENDORSEMENT is created without economicImpactType', async () => {
+      db.policy.findMany.mockResolvedValue([{ id: POLICY_ID }])
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          documentType: 'ENDORSEMENT',
+          documentNumber: 'END-001',
+          netAmount: 0,
+          vatAmount: 0,
+          otherTaxesAmount: 0,
+          policyId: POLICY_ID,
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('BAD_REQUEST')
+    })
+
+    it('returns 400 when ENDORSEMENT has non-zero amounts (hasOwnAmounts is false)', async () => {
+      db.policy.findMany.mockResolvedValue([{ id: POLICY_ID }])
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          documentType: 'ENDORSEMENT',
+          documentNumber: 'END-001',
+          policyId: POLICY_ID,
+          economicImpactType: 'NO_IMPACT',
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('BAD_REQUEST')
+    })
+
+    it('returns 400 when ENDORSEMENT with INCREASES_COST links to a CREDIT_NOTE', async () => {
+      db.policy.findMany.mockResolvedValue([{ id: POLICY_ID }])
+      db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, documentType: 'CREDIT_NOTE' })
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          documentType: 'ENDORSEMENT',
+          documentNumber: 'END-001',
+          netAmount: 0,
+          vatAmount: 0,
+          otherTaxesAmount: 0,
+          policyId: POLICY_ID,
+          economicImpactType: 'INCREASES_COST',
+          linkedDocumentId: OTHER_ID,
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('BAD_REQUEST')
+    })
+
+    it('returns 400 when ENDORSEMENT with DECREASES_COST links to an INVOICE', async () => {
+      db.policy.findMany.mockResolvedValue([{ id: POLICY_ID }])
+      db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, documentType: 'INVOICE' })
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          documentType: 'ENDORSEMENT',
+          documentNumber: 'END-001',
+          netAmount: 0,
+          vatAmount: 0,
+          otherTaxesAmount: 0,
+          policyId: POLICY_ID,
+          economicImpactType: 'DECREASES_COST',
+          linkedDocumentId: OTHER_ID,
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('BAD_REQUEST')
+    })
+
+    it('returns 201 when ENDORSEMENT with INCREASES_COST links to a DEBIT_NOTE', async () => {
+      db.policy.findMany.mockResolvedValue([{ id: POLICY_ID }])
+      db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, documentType: 'DEBIT_NOTE' })
+      db.accountingDocument.create.mockResolvedValue({
+        ...fakeDocument,
+        documentType: 'ENDORSEMENT',
+        netAmount: 0,
+        vatAmount: 0,
+        otherTaxesAmount: 0,
+        paymentStatus: 'NOT_APPLICABLE',
+        policyId: POLICY_ID,
+        economicImpactType: 'INCREASES_COST',
+        linkedDocumentId: OTHER_ID,
+      })
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          documentType: 'ENDORSEMENT',
+          documentNumber: 'END-001',
+          netAmount: 0,
+          vatAmount: 0,
+          otherTaxesAmount: 0,
+          policyId: POLICY_ID,
+          economicImpactType: 'INCREASES_COST',
+          linkedDocumentId: OTHER_ID,
+        })
+
+      expect(res.status).toBe(201)
+    })
+
+    it('forces relationType from the type definition, ignoring a mismatched client-sent value', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(null)
+      db.accountingDocument.create.mockResolvedValue(fakeDocument)
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        // INVOICE has no relationType — sending one should be ignored, not persisted.
+        .send({ ...validDocumentBody, relationType: 'ADJUSTS' })
+
+      expect(res.status).toBe(201)
+      const createCall = db.accountingDocument.create.mock.calls[0][0]
+      expect(createCall.data.relationType).toBeNull()
+    })
+
+    it('forces documentStatus to ISSUED on create, ignoring a client-sent value', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(null)
+      db.accountingDocument.create.mockResolvedValue(fakeDocument)
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ ...validDocumentBody, documentStatus: 'APPLIED' })
+
+      expect(res.status).toBe(201)
+      const createCall = db.accountingDocument.create.mock.calls[0][0]
+      expect(createCall.data.documentStatus).toBe('ISSUED')
+    })
   })
 
   // ── PUT /api/v1/documents/:id ───────────────────────────────────────────────
@@ -584,7 +774,7 @@ describe('Documents API', () => {
       expect(res.body.data.effectiveAmount).toBe(1260)
     })
 
-    it('adds a DEBIT_NOTE that is not CANCELLED, without requiring APPLIED', async () => {
+    it('does not add an ISSUED DEBIT_NOTE to appliedDebits', async () => {
       db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
       db.accountingDocument.findMany.mockResolvedValue([
         { id: OTHER_ID, documentNumber: 'ND-001', documentType: 'DEBIT_NOTE', documentStatus: 'ISSUED', netAmount: 200, vatAmount: 0, otherTaxesAmount: 0, adjustmentSign: null },
@@ -596,8 +786,40 @@ describe('Documents API', () => {
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(200)
+      expect(res.body.data.appliedDebits).toBe(0)
+      expect(res.body.data.effectiveAmount).toBe(1260)
+    })
+
+    it('adds an APPLIED DEBIT_NOTE to appliedDebits', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
+      db.accountingDocument.findMany.mockResolvedValue([
+        { id: OTHER_ID, documentNumber: 'ND-001', documentType: 'DEBIT_NOTE', documentStatus: 'APPLIED', netAmount: 200, vatAmount: 0, otherTaxesAmount: 0, adjustmentSign: null },
+      ])
+      db.documentInstallment.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .get(`/api/v1/documents/${DOC_ID}/balance`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
       expect(res.body.data.appliedDebits).toBe(200)
       expect(res.body.data.effectiveAmount).toBe(1460)
+    })
+
+    it('ignores a CANCELLED DEBIT_NOTE even if it were somehow marked APPLIED', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
+      db.accountingDocument.findMany.mockResolvedValue([
+        { id: OTHER_ID, documentNumber: 'ND-001', documentType: 'DEBIT_NOTE', documentStatus: 'CANCELLED', netAmount: 200, vatAmount: 0, otherTaxesAmount: 0, adjustmentSign: null },
+      ])
+      db.documentInstallment.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .get(`/api/v1/documents/${DOC_ID}/balance`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.appliedDebits).toBe(0)
+      expect(res.body.data.effectiveAmount).toBe(1260)
     })
 
     it('ignores a CANCELLED DEBIT_NOTE', async () => {
@@ -746,6 +968,18 @@ describe('Documents API', () => {
       expect(db.accountingDocument.update.mock.calls[0][0].data.documentStatus).toBe('APPLIED')
       const auditCall = db.documentAuditLog.create.mock.calls[0][0]
       expect(auditCall.data.action).toBe('APPLY')
+    })
+
+    it('applies a DEBIT_NOTE successfully (generic status flip, no balance check)', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, documentType: 'DEBIT_NOTE', documentStatus: 'ISSUED', linkedDocumentId: OTHER_ID })
+      db.accountingDocument.update.mockResolvedValue({ ...fakeDocument, documentType: 'DEBIT_NOTE', documentStatus: 'APPLIED', installments: [], allocations: [], attachments: [] })
+
+      const res = await request(app)
+        .post(`/api/v1/documents/${DOC_ID}/apply`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.accountingDocument.update.mock.calls[0][0].data.documentStatus).toBe('APPLIED')
     })
 
     it('returns 400 when a CREDIT_NOTE exceeds the linked invoice available balance', async () => {

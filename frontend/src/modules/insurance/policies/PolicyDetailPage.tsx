@@ -4,7 +4,7 @@ import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Building2, User, Tag, Calendar, Hash, Link2,
-  Receipt, TrendingUp, TrendingDown, CheckCircle2, Plus, ChevronDown, ChevronUp, ArrowUpRight,
+  Receipt, TrendingUp, TrendingDown, CheckCircle2, Plus, ChevronDown, ChevronUp, ArrowUpRight, FileEdit,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -24,7 +24,7 @@ import { producersApi } from '../../../shared/api/producers.api'
 import { companiesApi } from '../../../shared/api/companies.api'
 import { costCentersApi } from '../../../shared/api/cost-centers.api'
 import { documentsApi } from '../../../shared/api/documents.api'
-import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
+import { DOCUMENT_TYPE_LABELS, ECONOMIC_IMPACT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
@@ -163,9 +163,15 @@ export default function PolicyDetailPage() {
     }
   }
 
-  // Separate facturas from modifications (NC / Endoso)
+  // Facturas, modificaciones financieras (NC/ND/Refacturación, se muestran
+  // anidadas bajo la factura que afectan) y Endosos (se asocian a la póliza
+  // directamente, sin importe/cuotas — se muestran en su propio bloque, no
+  // mezclados con las modificaciones financieras).
   const facturas = documents.filter((d) => d.documentType === 'INVOICE')
-  const docModifications = documents.filter((d) => d.documentType !== 'INVOICE')
+  const docModifications = documents.filter(
+    (d) => d.documentType === 'CREDIT_NOTE' || d.documentType === 'DEBIT_NOTE' || d.documentType === 'REBILLING',
+  )
+  const endorsements = documents.filter((d) => d.documentType === 'ENDORSEMENT')
 
   const daysLeft = daysUntil(policy.endDate)
   const isExpired = daysLeft < 0
@@ -430,7 +436,7 @@ export default function PolicyDetailPage() {
         {/* Documentos tab */}
         {activeDocTab === 'documentos' && (
           <div className="space-y-4">
-            {facturas.length === 0 && docModifications.length === 0 ? (
+            {facturas.length === 0 && docModifications.length === 0 && endorsements.length === 0 ? (
               <div className="rounded-xl border-2 border-dashed border-slate-200 py-12 text-center">
                 <FileText size={24} className="mx-auto text-slate-300 mb-3" />
                 <p className="text-sm font-medium text-slate-500 mb-1">Sin documentos contables</p>
@@ -476,6 +482,18 @@ export default function PolicyDetailPage() {
                       onInstallmentUpdate={handleInstallmentUpdate}
                     />
                   ))}
+                {/* Endosos — se asocian a la póliza directamente, sin importe ni
+                    cuotas, así que se muestran aparte de las tarjetas financieras */}
+                {endorsements.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-2">
+                      Endosos ({endorsements.length})
+                    </p>
+                    {endorsements.map((end) => (
+                      <EndorsementCard key={end.id} doc={end} />
+                    ))}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -804,6 +822,47 @@ function StandaloneDocCard({
         </div>
       )}
     </div>
+  )
+}
+
+const ENDORSEMENT_IMPACT_STYLE: Record<string, string> = {
+  NO_IMPACT: 'bg-slate-100 text-slate-600',
+  INCREASES_COST: 'bg-red-100 text-red-600',
+  DECREASES_COST: 'bg-emerald-100 text-emerald-700',
+  PENDING_DEFINITION: 'bg-amber-100 text-amber-700',
+}
+
+function EndorsementCard({ doc }: { doc: AccountingDocument }) {
+  const navigate = useNavigate()
+  const impactStyle = ENDORSEMENT_IMPACT_STYLE[doc.economicImpactType ?? ''] ?? 'bg-slate-100 text-slate-600'
+
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(ROUTES.DOCUMENTS_DETAIL(doc.id))}
+      className="w-full flex items-center justify-between gap-3 px-5 py-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-colors text-left"
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
+          <FileEdit size={15} className="text-violet-600" />
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-bold text-slate-800 font-mono">{doc.documentNumber}</p>
+            <span className="text-xs text-slate-400">·</span>
+            <p className="text-xs text-slate-500">{formatDate(doc.issueDate)}</p>
+          </div>
+          {doc.endorsementEffectiveDate && (
+            <p className="text-xs text-slate-400 mt-0.5">
+              Vigencia: {formatDate(doc.endorsementEffectiveDate)}
+            </p>
+          )}
+        </div>
+      </div>
+      <span className={clsx('text-[10px] px-2 py-1 rounded-full font-semibold flex-shrink-0', impactStyle)}>
+        {ECONOMIC_IMPACT_TYPE_LABELS[doc.economicImpactType ?? ''] ?? 'Sin impacto'}
+      </span>
+    </button>
   )
 }
 

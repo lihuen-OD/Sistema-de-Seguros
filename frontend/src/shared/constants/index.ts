@@ -42,6 +42,15 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   ADJUSTMENT_ENTRY: 'Asiento de Ajuste',
 }
 
+// Mismo criterio que DOCUMENT_TYPE_LABELS — fallback estático, la fuente de
+// verdad es documentsApi.getTypes().economicImpactTypes.
+export const ECONOMIC_IMPACT_TYPE_LABELS: Record<string, string> = {
+  NO_IMPACT: 'No tiene impacto económico',
+  INCREASES_COST: 'Aumenta costo',
+  DECREASES_COST: 'Reduce costo',
+  PENDING_DEFINITION: 'Pendiente de definir',
+}
+
 export const POLICY_STATUS_LABELS: Record<string, string> = {
   vigente: 'Vigente',
   proximo_vencer: 'Próx. a Vencer',

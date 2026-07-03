@@ -8,8 +8,13 @@ import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from
 import {
   DOCUMENT_TYPES,
   ADJUSTMENT_REASONS,
+  ENDORSEMENT_TYPES,
+  ECONOMIC_IMPACT_TYPES,
+  ENDORSEMENT_ALLOWED_LINKED_TYPES,
   getDocumentTypeDef,
   isValidAdjustmentReason,
+  isValidEndorsementType,
+  isValidEconomicImpactType,
   type DocumentTypeDef,
 } from './document-types'
 import { computeTotalAmount } from './document-amounts'
@@ -95,6 +100,8 @@ export const documentsService = {
     return {
       types: Object.values(DOCUMENT_TYPES),
       adjustmentReasons: Object.entries(ADJUSTMENT_REASONS).map(([key, label]) => ({ key, label })),
+      endorsementTypes: Object.entries(ENDORSEMENT_TYPES).map(([key, label]) => ({ key, label })),
+      economicImpactTypes: Object.entries(ECONOMIC_IMPACT_TYPES).map(([key, label]) => ({ key, label })),
     }
   },
 
@@ -182,15 +189,14 @@ export const documentsService = {
 
     await this.validateTypeConstraints(typeDef, docData)
 
-    const documentStatus = docData.documentStatus ?? 'ISSUED'
-    if (!typeDef.documentStatusOptions.includes(documentStatus)) {
-      throw new AppError(400, 'Estado de documento inválido para este tipo', 'BAD_REQUEST')
-    }
-
+    // El estado inicial y la relación con el documento vinculado los define
+    // el tipo, no el cliente — evita que se puedan crear documentos que
+    // arrancan ya APPLIED/CANCELLED o con un relationType inconsistente.
     const doc = await prisma.accountingDocument.create({
       data: {
         ...docData,
-        documentStatus,
+        documentStatus: 'ISSUED',
+        relationType: typeDef.relationType ?? null,
         paymentStatus: typeDef.hasPaymentStatus ? 'PENDING' : 'NOT_APPLICABLE',
         ...(installments.length > 0 && typeDef.hasInstallments && {
           installments: {
@@ -260,6 +266,16 @@ export const documentsService = {
       docData.adjustmentReason !== undefined ? docData.adjustmentReason : existing.adjustmentReason
     const effectiveAdjustmentSign =
       docData.adjustmentSign !== undefined ? docData.adjustmentSign : existing.adjustmentSign
+    const effectivePolicyId =
+      docData.policyId !== undefined ? docData.policyId : existing.policyId
+    const effectiveEconomicImpactType =
+      docData.economicImpactType !== undefined ? docData.economicImpactType : existing.economicImpactType
+    const effectiveEndorsementType =
+      docData.endorsementType !== undefined ? docData.endorsementType : existing.endorsementType
+    const effectiveNetAmount = docData.netAmount !== undefined ? docData.netAmount : existing.netAmount
+    const effectiveVatAmount = docData.vatAmount !== undefined ? docData.vatAmount : existing.vatAmount
+    const effectiveOtherTaxesAmount =
+      docData.otherTaxesAmount !== undefined ? docData.otherTaxesAmount : existing.otherTaxesAmount
 
     await this.validateTypeConstraints(
       typeDef,
@@ -267,6 +283,12 @@ export const documentsService = {
         linkedDocumentId: effectiveLinkedId,
         adjustmentReason: effectiveAdjustmentReason,
         adjustmentSign: effectiveAdjustmentSign,
+        policyId: effectivePolicyId,
+        economicImpactType: effectiveEconomicImpactType,
+        endorsementType: effectiveEndorsementType,
+        netAmount: effectiveNetAmount,
+        vatAmount: effectiveVatAmount,
+        otherTaxesAmount: effectiveOtherTaxesAmount,
       },
       id,
     )
@@ -280,6 +302,7 @@ export const documentsService = {
       where: { id },
       data: {
         ...docData,
+        relationType: typeDef.relationType ?? null,
         ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
       },
       include: DOCUMENT_DETAIL_INCLUDE,
@@ -685,6 +708,9 @@ export const documentsService = {
         netAmount: true,
         vatAmount: true,
         otherTaxesAmount: true,
+        policyId: true,
+        economicImpactType: true,
+        endorsementType: true,
       },
     })
     if (!doc) throw new AppError(404, 'Documento no encontrado', 'NOT_FOUND')
@@ -693,7 +719,17 @@ export const documentsService = {
 
   async validateTypeConstraints(
     typeDef: DocumentTypeDef,
-    input: { linkedDocumentId?: string | null; adjustmentReason?: string | null; adjustmentSign?: string | null },
+    input: {
+      linkedDocumentId?: string | null
+      adjustmentReason?: string | null
+      adjustmentSign?: string | null
+      policyId?: string | null
+      economicImpactType?: string | null
+      endorsementType?: string | null
+      netAmount?: number
+      vatAmount?: number
+      otherTaxesAmount?: number
+    },
     selfId?: string,
   ) {
     if (typeDef.requiresLinkedDocument && !input.linkedDocumentId) {
@@ -716,6 +752,16 @@ export const documentsService = {
         const expectedLabel = DOCUMENT_TYPES[typeDef.linkedDocumentType]?.label ?? typeDef.linkedDocumentType
         throw new AppError(400, `El documento vinculado debe ser de tipo ${expectedLabel}`, 'BAD_REQUEST')
       }
+      // Excepción deliberada para Endoso: el tipo admitido del documento
+      // asociado depende del impacto económico elegido (aumenta → Factura/ND,
+      // reduce → NC), no de un linkedDocumentType fijo como el resto de tipos.
+      if (typeDef.key === 'ENDORSEMENT' && input.economicImpactType) {
+        const allowed = ENDORSEMENT_ALLOWED_LINKED_TYPES[input.economicImpactType]
+        if (allowed && !allowed.includes(linked.documentType)) {
+          const labels = allowed.map((t) => DOCUMENT_TYPES[t]?.label ?? t).join(' o ')
+          throw new AppError(400, `El documento asociado debe ser ${labels}`, 'BAD_REQUEST')
+        }
+      }
     }
 
     if (typeDef.requiresAdjustmentReason) {
@@ -728,6 +774,28 @@ export const documentsService = {
       if (input.adjustmentSign !== 'POSITIVE' && input.adjustmentSign !== 'NEGATIVE') {
         throw new AppError(400, 'El signo de ajuste es requerido para este tipo de documento', 'BAD_REQUEST')
       }
+    }
+
+    if (typeDef.requiresPolicy && !input.policyId) {
+      throw new AppError(400, 'La póliza asociada es requerida para este tipo de documento', 'BAD_REQUEST')
+    }
+    if (input.policyId) {
+      await this.validatePolicyRefs([input.policyId])
+    }
+
+    if (typeDef.requiresEconomicImpactType && !isValidEconomicImpactType(input.economicImpactType ?? '')) {
+      throw new AppError(400, 'El impacto económico es requerido y debe ser válido', 'BAD_REQUEST')
+    }
+
+    if (input.endorsementType && !isValidEndorsementType(input.endorsementType)) {
+      throw new AppError(400, 'Tipo de endoso inválido', 'BAD_REQUEST')
+    }
+
+    if (
+      !typeDef.hasOwnAmounts &&
+      ((input.netAmount ?? 0) !== 0 || (input.vatAmount ?? 0) !== 0 || (input.otherTaxesAmount ?? 0) !== 0)
+    ) {
+      throw new AppError(400, 'Este tipo de documento no admite importes propios', 'BAD_REQUEST')
     }
   },
 

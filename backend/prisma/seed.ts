@@ -661,7 +661,7 @@ async function main() {
   // PASO 8 — Documentos Contables
   // ─────────────────────────────────────────────────────────────────────────
 
-  const [facturaIncendio] = await Promise.all([
+  const [facturaIncendio, facturaAuto, notaDebitoRC, facturaMultiRiesgo, facturaTransporte] = await Promise.all([
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00001234',
@@ -824,7 +824,107 @@ async function main() {
     },
   })
 
-  console.log('  OK Documentos (6) + Cuotas (10) + Imputaciones (5)')
+  // Nota de Crédito de ejemplo, aplicada — reduce el saldo de facturaAuto.
+  // Se seedea ya APPLIED con su asignación negativa proporcional (100% a
+  // polAuto, la misma distribución que tiene la factura original), tal como
+  // quedaría si se hubiera aplicado vía POST /documents/:id/apply.
+  await prisma.accountingDocument.create({
+    data: {
+      documentNumber: '0001-00005678-NC1',
+      documentType: 'CREDIT_NOTE',
+      documentStatus: 'APPLIED',
+      issueDate: d('2026-02-10'),
+      netAmount: 50000,
+      vatAmount: 10500,
+      otherTaxesAmount: 0,
+      currency: 'ARS',
+      exchangeRate: 1,
+      description: 'Nota de crédito por corrección de prima',
+      insuranceCompany: 'Federación Patronal',
+      paymentStatus: 'NOT_APPLICABLE',
+      relationType: 'CREDITS',
+      linkedDocumentId: facturaAuto.id,
+      allocations: {
+        create: { policyId: polAuto.id, allocatedAmount: -60500, allocationPercentage: 100 },
+      },
+    },
+  })
+
+  // Refacturación de ejemplo — corrige la factura de la póliza de transporte.
+  await prisma.accountingDocument.create({
+    data: {
+      documentNumber: '0001-00015000-RF1',
+      documentType: 'REBILLING',
+      documentStatus: 'ISSUED',
+      issueDate: d('2026-07-02'),
+      netAmount: 180000,
+      vatAmount: 37800,
+      otherTaxesAmount: 0,
+      currency: 'ARS',
+      exchangeRate: 1,
+      description: 'Refacturación por corrección de importe de la factura original',
+      insuranceCompany: 'La Segunda',
+      paymentStatus: 'PENDING',
+      relationType: 'REPLACES',
+      linkedDocumentId: facturaTransporte.id,
+      installments: {
+        createMany: {
+          data: [
+            { installmentNumber: 1, dueDate: d('2026-08-02'), amount: 217800, paymentStatus: 'PENDING' },
+          ],
+        },
+      },
+    },
+  })
+
+  // Endosos de ejemplo — se asocian principalmente a una póliza, no a una
+  // factura (ver document-types.ts: ENDORSEMENT.requiresPolicy).
+  await prisma.accountingDocument.create({
+    data: {
+      documentNumber: 'END-2026-000001',
+      documentType: 'ENDORSEMENT',
+      documentStatus: 'ISSUED',
+      issueDate: d('2026-06-15'),
+      netAmount: 0,
+      vatAmount: 0,
+      otherTaxesAmount: 0,
+      currency: 'ARS',
+      exchangeRate: 1,
+      description: 'Corrección de datos del asegurado en la póliza',
+      insuranceCompany: 'Sancor Seguros',
+      paymentStatus: 'NOT_APPLICABLE',
+      relationType: 'ENDORSES',
+      policyId: polMultiRiesgo.id,
+      endorsementType: 'ADMIN_CORRECTION',
+      economicImpactType: 'NO_IMPACT',
+      endorsementEffectiveDate: d('2026-06-15'),
+    },
+  })
+
+  await prisma.accountingDocument.create({
+    data: {
+      documentNumber: 'END-2026-000002',
+      documentType: 'ENDORSEMENT',
+      documentStatus: 'ISSUED',
+      issueDate: d('2025-07-20'),
+      netAmount: 0,
+      vatAmount: 0,
+      otherTaxesAmount: 0,
+      currency: 'ARS',
+      exchangeRate: 1,
+      description: 'Aumento de suma asegurada — respaldado por la nota de débito emitida',
+      insuranceCompany: 'Zurich Argentina',
+      paymentStatus: 'NOT_APPLICABLE',
+      relationType: 'ENDORSES',
+      policyId: polRC.id,
+      endorsementType: 'SUM_INSURED_CHANGE',
+      economicImpactType: 'INCREASES_COST',
+      linkedDocumentId: notaDebitoRC.id,
+      endorsementEffectiveDate: d('2025-07-20'),
+    },
+  })
+
+  console.log('  OK Documentos (10) + Cuotas (11) + Imputaciones (6)')
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 9 — Matafuegos

@@ -42,6 +42,13 @@ const DocumentBaseSchema = z.object({
   relationType: z.enum(['CREDITS', 'DEBITS', 'REPLACES', 'ADJUSTS', 'ENDORSES']).optional().nullable(),
   adjustmentReason: z.string().max(100).optional().nullable(),
   adjustmentSign: z.enum(['POSITIVE', 'NEGATIVE']).optional().nullable(),
+  policyId: z.string().uuid('ID de póliza inválido').optional().nullable(),
+  economicImpactType: z
+    .enum(['NO_IMPACT', 'INCREASES_COST', 'DECREASES_COST', 'PENDING_DEFINITION'])
+    .optional()
+    .nullable(),
+  endorsementType: z.string().max(100).optional().nullable(),
+  endorsementEffectiveDate: ISODate.optional().nullable(),
   installments: z.array(InstallmentInputSchema).default([]),
   allocations: z.array(AllocationInputSchema).default([]),
 })

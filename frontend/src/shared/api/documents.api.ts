@@ -6,8 +6,11 @@ import type {
   DocumentStatus,
   RelationType,
   AdjustmentSign,
+  EconomicImpactType,
   DocumentTypeDef,
   AdjustmentReasonOption,
+  EndorsementTypeOption,
+  EconomicImpactTypeOption,
   AccountingDocumentAttachment,
   Installment,
   DocumentPolicyAllocation,
@@ -27,6 +30,8 @@ interface BackendDocument {
   paymentStatus: string; insuranceCompany: string | null; paymentMethod: string | null
   linkedDocumentId: string | null; relationType: string | null
   adjustmentReason: string | null; adjustmentSign: string | null
+  policyId: string | null; economicImpactType: string | null
+  endorsementType: string | null; endorsementEffectiveDate: string | null
   createdAt: string; updatedAt: string
   allocations?: { policyId: string }[]
   _count?: { attachments: number }
@@ -72,11 +77,21 @@ function mapDocument(b: BackendDocument): AccountingDocument {
     paymentStatus: b.paymentStatus as PaymentStatus,
     insuranceCompany: b.insuranceCompany ?? undefined,
     paymentMethod: b.paymentMethod ?? undefined,
+    description: b.description ?? null,
     linkedDocumentId: b.linkedDocumentId ?? undefined,
     relationType: (b.relationType as RelationType) ?? undefined,
     adjustmentReason: b.adjustmentReason ?? undefined,
     adjustmentSign: (b.adjustmentSign as AdjustmentSign) ?? undefined,
-    policyIds: b.allocations?.map((a) => a.policyId) ?? [],
+    policyId: b.policyId ?? null,
+    economicImpactType: (b.economicImpactType as EconomicImpactType) ?? null,
+    endorsementType: b.endorsementType ?? null,
+    endorsementEffectiveDate: b.endorsementEffectiveDate?.slice(0, 10) ?? null,
+    // Incluye tanto las pólizas asignadas financieramente (allocations) como la
+    // póliza propia del Endoso — sin esto, los Endosos no aparecerían en
+    // ninguna vista que filtre "documentos de esta póliza" por policyIds.
+    policyIds: [
+      ...new Set([...(b.allocations?.map((a) => a.policyId) ?? []), ...(b.policyId ? [b.policyId] : [])]),
+    ],
     attachmentsCount: b._count?.attachments ?? 0,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
@@ -101,15 +116,22 @@ export interface DocumentCreateInput {
   currency?: string; exchangeRate?: number; description?: string
   insuranceCompany?: string; paymentMethod?: string; linkedDocumentId?: string
   documentStatus?: DocumentStatus; adjustmentReason?: string; adjustmentSign?: AdjustmentSign
+  policyId?: string; economicImpactType?: EconomicImpactType
+  endorsementType?: string; endorsementEffectiveDate?: string
   allocations?: AllocationInput[]
   installments?: InstallmentInput[]
 }
 
+export interface DocumentTypesResponse {
+  types: DocumentTypeDef[]
+  adjustmentReasons: AdjustmentReasonOption[]
+  endorsementTypes: EndorsementTypeOption[]
+  economicImpactTypes: EconomicImpactTypeOption[]
+}
+
 export const documentsApi = {
-  async getTypes(): Promise<{ types: DocumentTypeDef[]; adjustmentReasons: AdjustmentReasonOption[] }> {
-    const res = await apiClient.get<{ data: { types: DocumentTypeDef[]; adjustmentReasons: AdjustmentReasonOption[] } }>(
-      '/documents/types',
-    )
+  async getTypes(): Promise<DocumentTypesResponse> {
+    const res = await apiClient.get<{ data: DocumentTypesResponse }>('/documents/types')
     return res.data.data
   },
 

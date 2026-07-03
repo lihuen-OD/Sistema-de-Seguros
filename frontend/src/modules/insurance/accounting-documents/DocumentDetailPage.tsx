@@ -33,6 +33,7 @@ import { policiesApi } from '../../../shared/api/policies.api'
 import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
+import { DocumentBalanceSummary } from './components/DocumentBalanceSummary'
 import type { DocumentPolicyAllocation, Installment, InstallmentUpdate, TableColumn, RelatedDocSummary, DocumentAuditLog, DocumentAuditLogAction } from '../../../shared/types'
 
 // ── Historial de auditoría ────────────────────────────────────────────────────
@@ -199,8 +200,16 @@ export default function DocumentDetailPage() {
         : doc.paymentStatus
 
   const typeDef = documentTypesData?.types.find((t) => t.key === doc.documentType)
-  const canApply = doc.documentStatus === 'ISSUED' && !!typeDef?.documentStatusOptions.includes('APPLIED')
+  // Una Nota de Débito sin factura vinculada funciona como documento propio —
+  // "aplicar" no tiene efecto real porque nunca entra en el relatedDocs de
+  // otro documento, así que no tiene sentido ofrecer el botón.
+  const canApply =
+    doc.documentStatus === 'ISSUED' &&
+    !!typeDef?.documentStatusOptions.includes('APPLIED') &&
+    (doc.documentType !== 'DEBIT_NOTE' || !!doc.linkedDocumentId)
   const canCancel = doc.documentStatus !== 'CANCELLED'
+  const hasOwnAmounts = typeDef?.hasOwnAmounts ?? true
+  const linkedDocBadgeLabel = doc.relationType === 'ENDORSES' ? 'Respalda impacto económico' : 'Aplicado a'
 
   function invalidateAfterStatusChange() {
     queryClient.invalidateQueries({ queryKey: ['documents', id] })
@@ -252,7 +261,7 @@ export default function DocumentDetailPage() {
       render: (v) => {
         const policy = allPolicies.find((p) => p.id === (v as string))
         return (
-          <span className="font-mono text-xs text-slate-600">
+          <span className="font-mono text-xs text-blue-600 hover:text-blue-700 hover:underline">
             {policy?.policyNumber ?? (v as string)}
           </span>
         )
@@ -382,7 +391,9 @@ export default function DocumentDetailPage() {
         }
       />
 
-      {/* KPI row: amounts */}
+      {/* KPI row: amounts — el Endoso no tiene importes propios (hasOwnAmounts: false) */}
+      {hasOwnAmounts && (
+      <>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
         <div className="card p-4">
           <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Neto</p>
@@ -458,8 +469,59 @@ export default function DocumentDetailPage() {
           {installments.length} cuota{installments.length !== 1 ? 's' : ''} en total
         </span>
       </div>
+      </>
+      )}
 
-      {/* 2-column: Allocations + Installments */}
+      {/* Detalle de Endoso — se asocia a una póliza y no mueve saldo directamente */}
+      {doc.documentType === 'ENDORSEMENT' && (
+        <SectionCard title="Detalle del Endoso" className="mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <div>
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Póliza Asociada</p>
+              {doc.policyId ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(ROUTES.POLICIES_DETAIL(doc.policyId!))}
+                  className="font-mono text-sm text-blue-600 hover:text-blue-700 hover:underline"
+                >
+                  {allPolicies.find((p) => p.id === doc.policyId)?.policyNumber ?? doc.policyId}
+                </button>
+              ) : (
+                <span className="text-slate-400">—</span>
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Tipo de Endoso</p>
+              <p className="text-slate-800 font-medium">
+                {documentTypesData?.endorsementTypes.find((t) => t.key === doc.endorsementType)?.label ?? doc.endorsementType ?? '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Fecha de Vigencia</p>
+              <p className="text-slate-800 font-medium">
+                {doc.endorsementEffectiveDate ? formatDate(doc.endorsementEffectiveDate) : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Impacto Económico</p>
+              <p className="text-slate-800 font-medium">
+                {documentTypesData?.economicImpactTypes.find((t) => t.key === doc.economicImpactType)?.label ?? doc.economicImpactType ?? '—'}
+              </p>
+            </div>
+            {doc.description && (
+              <div className="sm:col-span-2">
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Descripción / Motivo</p>
+                <p className="text-slate-700">{doc.description}</p>
+              </div>
+            )}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* 2-column: Allocations + Installments — el Endoso ya muestra su póliza
+          en "Detalle del Endoso" arriba (no usa allocations) y no tiene cuotas,
+          así que esta grilla completa no aplica para ese tipo. */}
+      {doc.documentType !== 'ENDORSEMENT' && (
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         {/* LEFT: Policies */}
         <SectionCard
@@ -471,12 +533,14 @@ export default function DocumentDetailPage() {
             columns={allocationColumns}
             data={allocations}
             rowKey="id"
+            onRowClick={(row) => navigate(ROUTES.POLICIES_DETAIL(row.policyId))}
             emptyTitle="Sin pólizas"
             emptyDescription="Este documento no tiene pólizas asociadas."
           />
         </SectionCard>
 
-        {/* RIGHT: Installments */}
+        {/* RIGHT: Installments — no aplica a tipos sin importes propios (Endoso) */}
+        {hasOwnAmounts && (
         <SectionCard
           title="Cuotas"
           subtitle={`${installments.length} cuota${installments.length !== 1 ? 's' : ''} registrada${installments.length !== 1 ? 's' : ''}`}
@@ -519,60 +583,15 @@ export default function DocumentDetailPage() {
             </div>
           )}
         </SectionCard>
+        )}
       </div>
+      )}
 
       {/* Saldo + Documentos relacionados */}
       {balance && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mt-5">
           <SectionCard title="Saldo" subtitle="Efecto de Notas de Crédito/Débito y Ajustes aplicados">
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Monto original</span>
-                <span className="font-medium text-slate-800 tabular-nums">{formatCurrencyFull(balance.originalAmount, doc.currency)}</span>
-              </div>
-              {balance.appliedCredits !== 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Notas de Crédito aplicadas</span>
-                  <span className="font-medium text-red-600 tabular-nums">-{formatCurrencyFull(balance.appliedCredits, doc.currency)}</span>
-                </div>
-              )}
-              {balance.appliedDebits !== 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Notas de Débito aplicadas</span>
-                  <span className="font-medium text-emerald-600 tabular-nums">+{formatCurrencyFull(balance.appliedDebits, doc.currency)}</span>
-                </div>
-              )}
-              {balance.appliedAdjustments !== 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Ajustes aplicados</span>
-                  <span className={`font-medium tabular-nums ${balance.appliedAdjustments < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {balance.appliedAdjustments > 0 ? '+' : ''}{formatCurrencyFull(balance.appliedAdjustments, doc.currency)}
-                  </span>
-                </div>
-              )}
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                <span className="font-semibold text-slate-700">Monto efectivo</span>
-                <span className="font-bold text-slate-900 tabular-nums">{formatCurrencyFull(balance.effectiveAmount, doc.currency)}</span>
-              </div>
-              {typeDef?.hasPaymentStatus && (
-                <>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Pagado</span>
-                    <span className="font-medium text-slate-800 tabular-nums">{formatCurrencyFull(balance.paidAmount, doc.currency)}</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                    <span className="font-semibold text-slate-700">Saldo pendiente</span>
-                    <span className="font-bold text-amber-700 tabular-nums">{formatCurrencyFull(balance.outstandingBalance, doc.currency)}</span>
-                  </div>
-                  {balance.creditBalance > 0 && (
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-700">Saldo a favor</span>
-                      <span className="font-bold text-emerald-700 tabular-nums">{formatCurrencyFull(balance.creditBalance, doc.currency)}</span>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+            <DocumentBalanceSummary balance={balance} currency={doc.currency} hasPaymentStatus={!!typeDef?.hasPaymentStatus} />
           </SectionCard>
 
           <SectionCard
@@ -593,7 +612,14 @@ export default function DocumentDetailPage() {
                     className="w-full flex items-center justify-between gap-3 px-5 py-2.5 text-left hover:bg-slate-50 transition-colors"
                   >
                     <div className="min-w-0">
-                      <p className="text-xs font-mono font-semibold text-slate-700 truncate">{r.documentNumber}</p>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <p className="text-xs font-mono font-semibold text-slate-700 truncate">{r.documentNumber}</p>
+                        {r.isOrigin && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full flex-shrink-0">
+                            {linkedDocBadgeLabel}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-400">{DOCUMENT_TYPE_LABELS[r.documentType] ?? r.documentType}</p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">

@@ -10,6 +10,9 @@ export interface RelatedDocSummary {
   documentStatus: string
   totalAmount: number
   adjustmentSign: string | null
+  // true cuando este es el documento al que el documento consultado fue
+  // aplicado (su propio linkedDocumentId), no uno de los que lo afectan a él.
+  isOrigin: boolean
 }
 
 export interface DocumentBalance {
@@ -42,9 +45,26 @@ export const documentsBalanceService = {
         netAmount: true,
         vatAmount: true,
         otherTaxesAmount: true,
+        linkedDocumentId: true,
       },
     })
     if (!base) throw new AppError(404, 'Documento no encontrado', 'NOT_FOUND')
+
+    const origin = base.linkedDocumentId
+      ? await prisma.accountingDocument.findUnique({
+          where: { id: base.linkedDocumentId },
+          select: {
+            id: true,
+            documentNumber: true,
+            documentType: true,
+            documentStatus: true,
+            netAmount: true,
+            vatAmount: true,
+            otherTaxesAmount: true,
+            adjustmentSign: true,
+          },
+        })
+      : null
 
     const typeDef = getDocumentTypeDef(base.documentType)
     const originalAmount = computeTotalAmount(base)
@@ -67,16 +87,32 @@ export const documentsBalanceService = {
     let appliedDebits = 0
     let appliedAdjustments = 0
 
+    // Dirigido por typeDef.affectsLinkedDirection en vez de comparar
+    // documentType literal por literal — Nota de Débito ahora requiere
+    // APPLIED igual que Nota de Crédito y Ajuste (antes contaba con solo
+    // no estar CANCELLED); Endoso queda afuera automáticamente porque
+    // affectsLinkedBalance es false; Refacturación ('replaces') todavía no
+    // tiene efecto numérico (Fase 2), solo aparece listada en relatedDocs.
     for (const doc of related) {
+      const relatedTypeDef = getDocumentTypeDef(doc.documentType)
+      if (!relatedTypeDef?.affectsLinkedBalance) continue
+
+      const isApplied = doc.documentStatus === 'APPLIED'
       const amount = Math.abs(computeTotalAmount(doc))
-      if (doc.documentType === 'CREDIT_NOTE' && doc.documentStatus === 'APPLIED') {
-        appliedCredits += amount
-      } else if (doc.documentType === 'DEBIT_NOTE' && doc.documentStatus !== 'CANCELLED') {
-        appliedDebits += amount
-      } else if (doc.documentType === 'ADJUSTMENT_ENTRY' && doc.documentStatus === 'APPLIED') {
-        appliedAdjustments += amount * (doc.adjustmentSign === 'NEGATIVE' ? -1 : 1)
+
+      switch (relatedTypeDef.affectsLinkedDirection) {
+        case 'credit':
+          if (isApplied) appliedCredits += amount
+          break
+        case 'debit':
+          if (isApplied) appliedDebits += amount
+          break
+        case 'adjusts':
+          if (isApplied) appliedAdjustments += amount * (doc.adjustmentSign === 'NEGATIVE' ? -1 : 1)
+          break
+        case 'replaces':
+          break
       }
-      // REBILLING: sin efecto numérico en Fase 2, solo aparece en relatedDocs.
     }
 
     const effectiveAmount = +(originalAmount - appliedCredits + appliedDebits + appliedAdjustments).toFixed(2)
@@ -109,14 +145,30 @@ export const documentsBalanceService = {
       paidAmount: +paidAmount.toFixed(2),
       outstandingBalance,
       creditBalance,
-      relatedDocs: related.map((r) => ({
-        id: r.id,
-        documentNumber: r.documentNumber,
-        documentType: r.documentType,
-        documentStatus: r.documentStatus,
-        totalAmount: computeTotalAmount(r),
-        adjustmentSign: r.adjustmentSign,
-      })),
+      relatedDocs: [
+        ...(origin
+          ? [
+              {
+                id: origin.id,
+                documentNumber: origin.documentNumber,
+                documentType: origin.documentType,
+                documentStatus: origin.documentStatus,
+                totalAmount: computeTotalAmount(origin),
+                adjustmentSign: origin.adjustmentSign,
+                isOrigin: true,
+              },
+            ]
+          : []),
+        ...related.map((r) => ({
+          id: r.id,
+          documentNumber: r.documentNumber,
+          documentType: r.documentType,
+          documentStatus: r.documentStatus,
+          totalAmount: computeTotalAmount(r),
+          adjustmentSign: r.adjustmentSign,
+          isOrigin: false,
+        })),
+      ],
     }
   },
 }

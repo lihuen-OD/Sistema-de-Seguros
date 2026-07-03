@@ -20,6 +20,7 @@ export default function DocumentFichaPage() {
   const [downloading, setDownloading] = useState(false)
 
   const { data: doc } = useQuery({ queryKey: ['documents', id], queryFn: () => documentsApi.findById(id!) })
+  const { data: documentTypesData } = useQuery({ queryKey: ['documents', 'types'], queryFn: () => documentsApi.getTypes() })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
   const { data: rawInstallments = [] } = useQuery({
     queryKey: ['documents', id, 'installments'],
@@ -41,6 +42,8 @@ export default function DocumentFichaPage() {
   }
 
   const linkedPolicies = allPolicies.filter(p => doc.policyIds?.includes(p.id))
+  const typeDef = documentTypesData?.types.find((t) => t.key === doc.documentType)
+  const hasOwnAmounts = typeDef?.hasOwnAmounts ?? true
 
   async function handleDownload() {
     if (!fichaRef.current) return
@@ -107,11 +110,22 @@ export default function DocumentFichaPage() {
             )}
           </div>
           <div className="flex-shrink-0 text-right">
-            <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Total</p>
-            <p className="text-xl font-bold text-blue-700 tabular-nums">
-              {formatCurrencyFull(doc.totalAmount, doc.currency)}
-            </p>
-            <p className="text-xs text-slate-400 mt-0.5">{paymentLabel}</p>
+            {hasOwnAmounts ? (
+              <>
+                <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Total</p>
+                <p className="text-xl font-bold text-blue-700 tabular-nums">
+                  {formatCurrencyFull(doc.totalAmount, doc.currency)}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">{paymentLabel}</p>
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Impacto Económico</p>
+                <p className="text-lg font-bold text-blue-700">
+                  {documentTypesData?.economicImpactTypes.find((t) => t.key === doc.economicImpactType)?.label ?? doc.economicImpactType ?? '—'}
+                </p>
+              </>
+            )}
           </div>
         </div>
 
@@ -152,25 +166,47 @@ export default function DocumentFichaPage() {
 
           {/* Right */}
           <div className="p-8 space-y-6">
-            <div>
-              <SectionHeading>Importes</SectionHeading>
-              <div className="space-y-2.5">
-                <FichaRow label="Moneda" value={doc.currency} />
-                {doc.exchangeRate > 1 && (
-                  <FichaRow label="Tipo de cambio" value={`$ ${doc.exchangeRate.toLocaleString('es-AR')}`} />
-                )}
-                {doc.netAmount > 0 && (
-                  <FichaRow label="Neto" value={formatCurrencyFull(doc.netAmount, doc.currency)} />
-                )}
-                {doc.vatAmount > 0 && (
-                  <FichaRow label="IVA" value={formatCurrencyFull(doc.vatAmount, doc.currency)} />
-                )}
-                {doc.otherTaxesAmount > 0 && (
-                  <FichaRow label="Otros impuestos" value={formatCurrencyFull(doc.otherTaxesAmount, doc.currency)} />
-                )}
-                <FichaRow label="Total" value={formatCurrencyFull(doc.totalAmount, doc.currency)} highlight />
+            {hasOwnAmounts ? (
+              <div>
+                <SectionHeading>Importes</SectionHeading>
+                <div className="space-y-2.5">
+                  <FichaRow label="Moneda" value={doc.currency} />
+                  {doc.exchangeRate > 1 && (
+                    <FichaRow label="Tipo de cambio" value={`$ ${doc.exchangeRate.toLocaleString('es-AR')}`} />
+                  )}
+                  {doc.netAmount > 0 && (
+                    <FichaRow label="Neto" value={formatCurrencyFull(doc.netAmount, doc.currency)} />
+                  )}
+                  {doc.vatAmount > 0 && (
+                    <FichaRow label="IVA" value={formatCurrencyFull(doc.vatAmount, doc.currency)} />
+                  )}
+                  {doc.otherTaxesAmount > 0 && (
+                    <FichaRow label="Otros impuestos" value={formatCurrencyFull(doc.otherTaxesAmount, doc.currency)} />
+                  )}
+                  <FichaRow label="Total" value={formatCurrencyFull(doc.totalAmount, doc.currency)} highlight />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <SectionHeading>Datos del Endoso</SectionHeading>
+                <div className="space-y-2.5">
+                  <FichaRow
+                    label="Tipo de endoso"
+                    value={documentTypesData?.endorsementTypes.find((t) => t.key === doc.endorsementType)?.label ?? doc.endorsementType ?? '—'}
+                  />
+                  <FichaRow
+                    label="Fecha de vigencia"
+                    value={doc.endorsementEffectiveDate ? formatDate(doc.endorsementEffectiveDate) : '—'}
+                  />
+                  <FichaRow
+                    label="Impacto económico"
+                    value={documentTypesData?.economicImpactTypes.find((t) => t.key === doc.economicImpactType)?.label ?? doc.economicImpactType ?? '—'}
+                    highlight
+                  />
+                  {doc.description && <FichaRow label="Descripción / motivo" value={doc.description} />}
+                </div>
+              </div>
+            )}
 
             {rawInstallments.length > 0 && (
               <div>
