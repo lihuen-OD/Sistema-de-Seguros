@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Save,
   X,
@@ -322,51 +322,94 @@ export default function DocumentNewPage() {
 
   // ─── Submit ──────────────────────────────────────────────────────────────────
 
+  const allocationsInput = selectedTypeDef?.key === 'CREDIT_NOTE' ? [] : policyRows
+    .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
+    .map((r) => ({
+      policyId: r.policyId,
+      allocatedAmount: parseFloat(r.allocatedAmount),
+      allocationPercentage: totalAllocated > 0 ? (parseFloat(r.allocatedAmount) / totalAllocated) * 100 : 0,
+    }))
+
+  const installmentsInput = selectedTypeDef?.hasInstallments
+    ? installmentRows
+        .filter((r) => r.dueDate && parseFloat(r.amount) > 0)
+        .map((r) => ({
+          installmentNumber: r.installmentNumber,
+          dueDate: r.dueDate,
+          amount: parseFloat(r.amount),
+        }))
+    : []
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      documentsApi.create({
+        documentType: form.documentType,
+        documentNumber: form.documentNumber.trim(),
+        issueDate: form.issueDate,
+        currency: form.currency,
+        exchangeRate: tc,
+        netAmount: parsedNet,
+        vatAmount: parsedVat,
+        otherTaxesAmount: parsedOther,
+        insuranceCompany: form.insuranceCompany,
+        paymentMethod: form.paymentMethod,
+        linkedDocumentId: form.linkedDocumentId || undefined,
+        adjustmentReason: selectedTypeDef?.requiresAdjustmentReason ? form.adjustmentReason : undefined,
+        adjustmentSign: selectedTypeDef?.requiresAdjustmentSign ? (form.adjustmentSign as 'POSITIVE' | 'NEGATIVE') : undefined,
+        // La Nota de Crédito no admite asignación manual — el backend genera sus
+        // propias asignaciones (negativas) al aplicarla.
+        allocations: allocationsInput,
+        installments: installmentsInput,
+      }),
+  })
+
+  // Una vez guardado el documento, volver a tocar "Guardar" no debe crear un
+  // segundo documento — pasa a actualizar el que ya existe (mismo patrón que
+  // DocumentEditPage: update() + replaceAllocations/replaceInstallments).
+  const updateMutation = useMutation({
+    mutationFn: async (docId: string) => {
+      await documentsApi.update(docId, {
+        documentType: form.documentType,
+        issueDate: form.issueDate,
+        currency: form.currency,
+        exchangeRate: tc,
+        netAmount: parsedNet,
+        vatAmount: parsedVat,
+        otherTaxesAmount: parsedOther,
+        insuranceCompany: form.insuranceCompany,
+        paymentMethod: form.paymentMethod,
+        linkedDocumentId: form.linkedDocumentId || undefined,
+        adjustmentReason: selectedTypeDef?.requiresAdjustmentReason ? form.adjustmentReason : undefined,
+        adjustmentSign: selectedTypeDef?.requiresAdjustmentSign ? (form.adjustmentSign as 'POSITIVE' | 'NEGATIVE') : undefined,
+      })
+      if (selectedTypeDef?.key !== 'CREDIT_NOTE') {
+        await documentsApi.replaceAllocations(docId, allocationsInput)
+      }
+      if (selectedTypeDef?.hasInstallments) {
+        await documentsApi.replaceInstallments(docId, installmentsInput)
+      }
+    },
+  })
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!validate()) return
+    if (!validate() || isSubmitting) return
 
     const validRows = policyRows.filter((r) => r.policyId)
     const policyNumbers = validRows
       .map((r) => allPolicies.find((p) => p.id === r.policyId)?.policyNumber)
       .filter(Boolean) as string[]
 
-    const newDoc = await documentsApi.create({
-      documentType: form.documentType,
-      documentNumber: form.documentNumber.trim(),
-      issueDate: form.issueDate,
-      currency: form.currency,
-      exchangeRate: tc,
-      netAmount: parsedNet,
-      vatAmount: parsedVat,
-      otherTaxesAmount: parsedOther,
-      insuranceCompany: form.insuranceCompany,
-      paymentMethod: form.paymentMethod,
-      linkedDocumentId: form.linkedDocumentId || undefined,
-      adjustmentReason: selectedTypeDef?.requiresAdjustmentReason ? form.adjustmentReason : undefined,
-      adjustmentSign: selectedTypeDef?.requiresAdjustmentSign ? (form.adjustmentSign as 'POSITIVE' | 'NEGATIVE') : undefined,
-      // La Nota de Crédito no admite asignación manual — el backend genera sus
-      // propias asignaciones (negativas) al aplicarla.
-      allocations: selectedTypeDef?.key === 'CREDIT_NOTE' ? [] : policyRows
-        .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
-        .map((r) => ({
-          policyId: r.policyId,
-          allocatedAmount: parseFloat(r.allocatedAmount),
-          allocationPercentage: totalAllocated > 0 ? (parseFloat(r.allocatedAmount) / totalAllocated) * 100 : 0,
-        })),
-      installments: selectedTypeDef?.hasInstallments
-        ? installmentRows
-            .filter((r) => r.dueDate && parseFloat(r.amount) > 0)
-            .map((r) => ({
-              installmentNumber: r.installmentNumber,
-              dueDate: r.dueDate,
-              amount: parseFloat(r.amount),
-            }))
-        : [],
-    })
+    if (savedDocId) {
+      await updateMutation.mutateAsync(savedDocId)
+    } else {
+      const newDoc = await createMutation.mutateAsync()
+      setSavedDocId(newDoc.id)
+    }
 
     queryClient.invalidateQueries({ queryKey: ['documents'] })
-    setSavedDocId(newDoc.id)
     setSavedPolicyNumbers(policyNumbers)
     setIsSaved(true)
   }
@@ -876,10 +919,11 @@ export default function DocumentNewPage() {
         <div className="flex items-center gap-3 pt-2 pb-6 flex-wrap">
           <button
             type="submit"
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            disabled={isSubmitting}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Save size={15} />
-            Guardar Documento
+            {isSubmitting ? 'Guardando…' : savedDocId ? 'Guardar cambios' : 'Guardar Documento'}
           </button>
 
           <button
@@ -895,17 +939,31 @@ export default function DocumentNewPage() {
 
           <button
             type="button"
-            onClick={() => setCancelConfirmOpen(true)}
+            onClick={() => {
+              // Ya guardado y sin cambios pendientes: no hay nada que descartar,
+              // así que se vuelve directo sin pedir confirmación.
+              if (savedDocId && isSaved) {
+                navigate('/insurance/documents')
+                return
+              }
+              setCancelConfirmOpen(true)
+            }}
             className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
           >
             <X size={15} />
-            Cancelar
+            {savedDocId && isSaved ? 'Volver a documentos' : 'Cancelar'}
           </button>
 
           {isSaved && (
             <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
               <CheckCircle2 size={14} />
               Guardado
+            </span>
+          )}
+          {savedDocId && !isSaved && !isSubmitting && (
+            <span className="flex items-center gap-1.5 text-xs font-medium text-amber-600">
+              <Info size={14} />
+              Cambios sin guardar
             </span>
           )}
         </div>
@@ -1057,9 +1115,13 @@ export default function DocumentNewPage() {
       )}
       <ConfirmDialog
         open={cancelConfirmOpen}
-        title="¿Cancelar la creación?"
-        description="Si salís ahora, perderás todos los datos ingresados. Esta acción no se puede deshacer."
-        confirmLabel="Sí, descartar"
+        title={savedDocId ? '¿Salir sin guardar los cambios?' : '¿Cancelar la creación?'}
+        description={
+          savedDocId
+            ? 'El documento ya guardado no se elimina, pero los cambios que hiciste después de guardarlo se van a perder.'
+            : 'Si salís ahora, perderás todos los datos ingresados. Esta acción no se puede deshacer.'
+        }
+        confirmLabel={savedDocId ? 'Salir sin guardar' : 'Sí, descartar'}
         cancelLabel="Seguir editando"
         onConfirm={() => navigate('/insurance/documents')}
         onCancel={() => setCancelConfirmOpen(false)}
