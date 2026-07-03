@@ -186,6 +186,15 @@ export default function AssetDetailPage() {
     () => allAttachments.filter(a => a.fileType === 'image'),
     [allAttachments],
   )
+  // El resto de los adjuntos (PDF, Excel, etc.) — separado de las fotos para
+  // que el tab "Adjuntos" no las duplique ni las cuente dos veces. Se deriva
+  // de la misma query en vivo que usa AssetAttachmentsTab (mismo query key),
+  // en vez de asset.attachmentsCount, que queda desactualizado porque las
+  // mutations de adjuntos/fotos no invalidan la query del Asset.
+  const docAttachments = useMemo(
+    () => allAttachments.filter(a => a.fileType !== 'image'),
+    [allAttachments],
+  )
   const photos = useMemo(
     () => [...photoAttachments.map(a => a.fileUrl).filter((u): u is string => !!u), ...pendingPreviews],
     [photoAttachments, pendingPreviews],
@@ -757,7 +766,7 @@ export default function AssetDetailPage() {
               : tab === 'Matafuegos' ? fireExtinguishers.length
               : tab === 'Siniestros' ? claimsCount
               : tab === 'Valuaciones' ? (asset.valueHistory?.length ?? 0)
-              : tab === 'Adjuntos' ? (asset.attachmentsCount ?? 0)
+              : tab === 'Adjuntos' ? docAttachments.length
               : 0
             const isActive = activeTab === tab
             return (

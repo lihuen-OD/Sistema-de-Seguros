@@ -154,6 +154,9 @@ function AddAttachmentModal({ assetId, onClose, onSuccess }: AddModalProps) {
   const validate = (): boolean => {
     const e: Record<string, string> = {}
     if (!selectedFile) e.file = 'Seleccioná un archivo.'
+    else if (detectFileType(selectedFile.name) === 'image') {
+      e.file = 'Las imágenes van en "Fotografías", no en Adjuntos. Subila desde la galería de fotos del activo.'
+    }
     if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
     if (hasNotification && !notifyEmail.trim()) e.email = 'Ingresá el email para la notificación.'
     if (hasNotification && notifyEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notifyEmail.trim())) {
@@ -228,8 +231,8 @@ function AddAttachmentModal({ assetId, onClose, onSuccess }: AddModalProps) {
                   Arrastrá el archivo o{' '}
                   <span className="text-blue-600 font-medium">hacé clic para seleccionar</span>
                 </p>
-                <p className="text-xs text-slate-400 mt-1">PDF, Excel, imágenes — máx. 20 MB</p>
-                <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls" className="hidden" onChange={handleFileChange} />
+                <p className="text-xs text-slate-400 mt-1">PDF, Excel — máx. 20 MB. Para fotos, usá la galería "Fotografías".</p>
+                <input ref={inputRef} type="file" accept=".pdf,.xlsx,.xls" className="hidden" onChange={handleFileChange} />
               </div>
             ) : (
               <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -392,11 +395,16 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
   const queryClient = useQueryClient()
   const attachmentsKey = ['assets', assetId, 'attachments'] as const
 
-  const { data: attachments = [] } = useQuery({
+  const { data: allAttachments = [] } = useQuery({
     queryKey: attachmentsKey,
     queryFn: () => assetsApi.findAttachments(assetId),
     enabled: !!assetId,
   })
+
+  // Las fotos (fileType === 'image') tienen su propia galería en la ficha del
+  // activo — acá solo van documentos (PDF, Excel, etc.), para no duplicarlas
+  // ni contarlas dos veces.
+  const attachments = allAttachments.filter((a) => a.fileType !== 'image')
 
   const [showModal, setShowModal] = useState(false)
 
