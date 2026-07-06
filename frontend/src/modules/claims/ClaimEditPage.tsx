@@ -11,7 +11,9 @@ import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
 import { claimsApi } from '../../shared/api/claims.api'
 import { catalogsApi } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
-import type { ClaimAttachment } from '../../shared/types'
+import type { ClaimAttachment, ClaimOwnershipType } from '../../shared/types'
+import { OwnershipTypeFields } from './OwnershipTypeFields'
+import { ClaimExpensesCard } from './ClaimExpensesCard'
 
 function Field({
   label,
@@ -72,6 +74,12 @@ export default function ClaimEditPage() {
 
   // ── Form state ──────────────────────────────────────────────────────────────
 
+  const [ownershipType, setOwnershipType] = useState<ClaimOwnershipType | ''>('')
+  const [responsiblePersonName, setResponsiblePersonName] = useState('')
+  const [thirdPartyInsuranceCompany, setThirdPartyInsuranceCompany] = useState('')
+  const [thirdPartyContact, setThirdPartyContact] = useState('')
+  const [thirdPartyInsurerContact, setThirdPartyInsurerContact] = useState('')
+
   const [claimNumber, setClaimNumber] = useState('')
   const [status, setStatus] = useState('')
   const [claimType, setClaimType] = useState('')
@@ -93,6 +101,11 @@ export default function ClaimEditPage() {
   // Seed form once data loads
   useEffect(() => {
     if (!original) return
+    setOwnershipType(original.ownershipType ?? 'propio')
+    setResponsiblePersonName(original.responsiblePersonName ?? '')
+    setThirdPartyInsuranceCompany(original.thirdPartyInsuranceCompany ?? '')
+    setThirdPartyContact(original.thirdPartyContact ?? '')
+    setThirdPartyInsurerContact(original.thirdPartyInsurerContact ?? '')
     setClaimNumber(original.claimNumber ?? '')
     setStatus(original.status)
     setClaimType(original.claimType)
@@ -143,6 +156,12 @@ export default function ClaimEditPage() {
 
   const validate = () => {
     const e: Record<string, string> = {}
+    if (!ownershipType) e.ownershipType = 'Indicá si el siniestro es propio o de terceros.'
+    if (ownershipType === 'terceros') {
+      if (!thirdPartyInsuranceCompany.trim()) e.thirdPartyInsuranceCompany = 'Ingresá la aseguradora del tercero.'
+      if (!thirdPartyContact.trim()) e.thirdPartyContact = 'Ingresá el contacto del tercero.'
+      if (!thirdPartyInsurerContact.trim()) e.thirdPartyInsurerContact = 'Ingresá el contacto de su aseguradora.'
+    }
     if (!occurrenceDate) e.occurrenceDate = 'Requerido'
     if (!reportDate) e.reportDate = 'Requerido'
     if (!claimedAmount || isNaN(parseFloat(claimedAmount))) e.claimedAmount = 'Ingresá un monto válido'
@@ -164,6 +183,11 @@ export default function ClaimEditPage() {
     try {
       await claimsApi.update(original.id, {
         claimNumber: claimNumber.trim() || undefined,
+        ownershipType: ownershipType as 'propio' | 'terceros',
+        responsiblePersonName: ownershipType === 'propio' ? (responsiblePersonName.trim() || undefined) : undefined,
+        thirdPartyInsuranceCompany: ownershipType === 'terceros' ? thirdPartyInsuranceCompany.trim() : undefined,
+        thirdPartyContact: ownershipType === 'terceros' ? thirdPartyContact.trim() : undefined,
+        thirdPartyInsurerContact: ownershipType === 'terceros' ? thirdPartyInsurerContact.trim() : undefined,
         status,
         claimType,
         occurrenceDate,
@@ -200,6 +224,23 @@ export default function ClaimEditPage() {
 
       <form onSubmit={handleSubmit} noValidate>
         <div className="space-y-5">
+
+          {/* Titularidad */}
+          <SectionCard title="Titularidad del Siniestro" subtitle="¿De quién es este siniestro?">
+            <OwnershipTypeFields
+              ownershipType={ownershipType}
+              onOwnershipTypeChange={setOwnershipType}
+              responsiblePersonName={responsiblePersonName}
+              onResponsiblePersonNameChange={setResponsiblePersonName}
+              thirdPartyInsuranceCompany={thirdPartyInsuranceCompany}
+              onThirdPartyInsuranceCompanyChange={setThirdPartyInsuranceCompany}
+              thirdPartyContact={thirdPartyContact}
+              onThirdPartyContactChange={setThirdPartyContact}
+              thirdPartyInsurerContact={thirdPartyInsurerContact}
+              onThirdPartyInsurerContactChange={setThirdPartyInsurerContact}
+              errors={errors}
+            />
+          </SectionCard>
 
           {/* Estado y tipo */}
           <SectionCard title="Estado y clasificación">
@@ -396,6 +437,12 @@ export default function ClaimEditPage() {
               </Field>
             </div>
           </SectionCard>
+
+          {/* Gastos del siniestro */}
+          <ClaimExpensesCard
+            claimId={original.id}
+            claimedAmountArs={parseFloat(claimedAmount) || original.claimedAmountArs}
+          />
 
           {/* Descripción */}
           <SectionCard title="Descripción y observaciones">

@@ -4,12 +4,15 @@ import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/
 import { toDateStr } from '../../shared/utils/dates'
 import { detectFileType, formatFileSize, isAllowedMimetype } from '../../shared/utils/files'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
+import { computeTotalAmount } from '../documents/document-amounts'
 import type {
   CreateClaimDTO,
   UpdateClaimDTO,
   ListClaimsQueryDTO,
   AddEventDTO,
   AddClaimAttachmentDTO,
+  CreateExpenseDTO,
+  UpdateExpenseDTO,
 } from './claims.schemas'
 
 // ── Includes ──────────────────────────────────────────────────────────────────
@@ -17,13 +20,14 @@ import type {
 const CLAIM_LIST_INCLUDE = {
   asset: { select: { id: true, name: true } },
   policy: { select: { id: true, policyNumber: true } },
-  _count: { select: { events: true } },
+  _count: { select: { events: true, expenses: true } },
 }
 
 const CLAIM_DETAIL_INCLUDE = {
   asset: { select: { id: true, name: true, assetType: true } },
   policy: { select: { id: true, policyNumber: true, insuredName: true } },
   events: { orderBy: { date: 'desc' as const }, take: 100 },
+  expenses: { orderBy: { date: 'desc' as const } },
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -41,6 +45,25 @@ function mapEvent(e: Record<string, unknown>) {
     previousAmount: e.previousAmount ?? null,
     newAmount: e.newAmount ?? null,
     author: e.createdBy ?? null,
+    createdAt: e.createdAt,
+  }
+}
+
+function mapExpense(e: Record<string, unknown>) {
+  const netAmount = e.netAmount as number
+  const vatAmount = e.vatAmount as number
+  const otherTaxesAmount = e.otherTaxesAmount as number
+  return {
+    id: e.id,
+    claimId: e.claimId,
+    date: toDateStr(e.date as Date | string),
+    provider: e.provider,
+    receiptNumber: e.receiptNumber ?? null,
+    netAmount,
+    vatAmount,
+    otherTaxesAmount,
+    totalAmount: computeTotalAmount({ netAmount, vatAmount, otherTaxesAmount }),
+    createdBy: e.createdBy ?? null,
     createdAt: e.createdAt,
   }
 }
@@ -100,6 +123,7 @@ export const claimsService = {
     return {
       ...claim,
       events: claim.events.map((e) => mapEvent(e as unknown as Record<string, unknown>)),
+      expenses: claim.expenses.map((e) => mapExpense(e as unknown as Record<string, unknown>)),
     }
   },
 
@@ -126,6 +150,11 @@ export const claimsService = {
         reportDate: data.reportDate,
         description: data.description,
         insuranceCompany: data.insuranceCompany ?? null,
+        ownershipType: data.ownershipType,
+        responsiblePersonName: data.responsiblePersonName ?? null,
+        thirdPartyInsuranceCompany: data.thirdPartyInsuranceCompany ?? null,
+        thirdPartyContact: data.thirdPartyContact ?? null,
+        thirdPartyInsurerContact: data.thirdPartyInsurerContact ?? null,
         status: data.status,
         claimedAmountArs: data.claimedAmountArs,
         realAmountArs: data.realAmountArs ?? null,
@@ -150,6 +179,7 @@ export const claimsService = {
     return {
       ...claim,
       events: claim.events.map((e) => mapEvent(e as unknown as Record<string, unknown>)),
+      expenses: claim.expenses.map((e) => mapExpense(e as unknown as Record<string, unknown>)),
     }
   },
 
@@ -175,6 +205,11 @@ export const claimsService = {
         ...(data.reportDate && { reportDate: data.reportDate }),
         ...(data.description && { description: data.description }),
         ...(data.insuranceCompany !== undefined && { insuranceCompany: data.insuranceCompany }),
+        ...(data.ownershipType && { ownershipType: data.ownershipType }),
+        ...(data.responsiblePersonName !== undefined && { responsiblePersonName: data.responsiblePersonName }),
+        ...(data.thirdPartyInsuranceCompany !== undefined && { thirdPartyInsuranceCompany: data.thirdPartyInsuranceCompany }),
+        ...(data.thirdPartyContact !== undefined && { thirdPartyContact: data.thirdPartyContact }),
+        ...(data.thirdPartyInsurerContact !== undefined && { thirdPartyInsurerContact: data.thirdPartyInsurerContact }),
         ...(data.status && { status: data.status }),
         ...(data.claimedAmountArs !== undefined && { claimedAmountArs: data.claimedAmountArs }),
         ...(data.realAmountArs !== undefined && { realAmountArs: data.realAmountArs }),
@@ -192,6 +227,7 @@ export const claimsService = {
     return {
       ...updated,
       events: updated.events.map((e) => mapEvent(e as unknown as Record<string, unknown>)),
+      expenses: updated.expenses.map((e) => mapExpense(e as unknown as Record<string, unknown>)),
     }
   },
 
@@ -236,6 +272,107 @@ export const claimsService = {
     const event = await prisma.claimEvent.findFirst({ where: { id: eventId, claimId } })
     if (!event) throw new AppError(404, 'Evento no encontrado', 'NOT_FOUND')
     await prisma.claimEvent.delete({ where: { id: eventId } })
+  },
+
+  // ── Expenses ──────────────────────────────────────────────────────────────────
+
+  async findExpenses(claimId: string) {
+    await this.assertExists(claimId)
+    const expenses = await prisma.claimExpense.findMany({
+      where: { claimId },
+      orderBy: { date: 'desc' },
+    })
+    return expenses.map((e) => mapExpense(e as unknown as Record<string, unknown>))
+  },
+
+  async addExpense(claimId: string, data: CreateExpenseDTO, createdBy?: string) {
+    await this.assertExists(claimId)
+
+    const total = computeTotalAmount({
+      netAmount: data.netAmount,
+      vatAmount: data.vatAmount,
+      otherTaxesAmount: data.otherTaxesAmount,
+    })
+
+    const [expense] = await prisma.$transaction([
+      prisma.claimExpense.create({
+        data: {
+          claimId,
+          date: data.date,
+          provider: data.provider,
+          receiptNumber: data.receiptNumber ?? null,
+          netAmount: data.netAmount,
+          vatAmount: data.vatAmount,
+          otherTaxesAmount: data.otherTaxesAmount,
+          createdBy: createdBy ?? null,
+        },
+      }),
+      prisma.claimEvent.create({
+        data: {
+          claimId,
+          type: 'gasto_agregado',
+          description: `Gasto registrado: ${data.provider} — $${total.toFixed(2)}`,
+          date: data.date,
+          createdBy: createdBy ?? 'Sistema',
+        },
+      }),
+    ])
+
+    return mapExpense(expense as unknown as Record<string, unknown>)
+  },
+
+  async updateExpense(claimId: string, expenseId: string, data: UpdateExpenseDTO, updatedBy?: string) {
+    const existing = await prisma.claimExpense.findFirst({ where: { id: expenseId, claimId } })
+    if (!existing) throw new AppError(404, 'Gasto no encontrado', 'NOT_FOUND')
+
+    const total = computeTotalAmount({
+      netAmount: data.netAmount ?? existing.netAmount,
+      vatAmount: data.vatAmount ?? existing.vatAmount,
+      otherTaxesAmount: data.otherTaxesAmount ?? existing.otherTaxesAmount,
+    })
+
+    const [expense] = await prisma.$transaction([
+      prisma.claimExpense.update({
+        where: { id: expenseId },
+        data: {
+          ...(data.date && { date: data.date }),
+          ...(data.provider !== undefined && { provider: data.provider }),
+          ...(data.receiptNumber !== undefined && { receiptNumber: data.receiptNumber }),
+          ...(data.netAmount !== undefined && { netAmount: data.netAmount }),
+          ...(data.vatAmount !== undefined && { vatAmount: data.vatAmount }),
+          ...(data.otherTaxesAmount !== undefined && { otherTaxesAmount: data.otherTaxesAmount }),
+        },
+      }),
+      prisma.claimEvent.create({
+        data: {
+          claimId,
+          type: 'gasto_editado',
+          description: `Gasto editado: ${data.provider ?? existing.provider} — $${total.toFixed(2)}`,
+          date: new Date(),
+          createdBy: updatedBy ?? 'Sistema',
+        },
+      }),
+    ])
+
+    return mapExpense(expense as unknown as Record<string, unknown>)
+  },
+
+  async deleteExpense(claimId: string, expenseId: string, deletedBy?: string) {
+    const expense = await prisma.claimExpense.findFirst({ where: { id: expenseId, claimId } })
+    if (!expense) throw new AppError(404, 'Gasto no encontrado', 'NOT_FOUND')
+
+    await prisma.$transaction([
+      prisma.claimExpense.delete({ where: { id: expenseId } }),
+      prisma.claimEvent.create({
+        data: {
+          claimId,
+          type: 'gasto_eliminado',
+          description: `Gasto eliminado: ${expense.provider} — $${expense.netAmount.toFixed(2)} (neto)`,
+          date: new Date(),
+          createdBy: deletedBy ?? 'Sistema',
+        },
+      }),
+    ])
   },
 
   // ── Attachments ───────────────────────────────────────────────────────────────

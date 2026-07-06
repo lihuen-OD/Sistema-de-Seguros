@@ -21,7 +21,15 @@ jest.mock('../../../config/database', () => ({
       create:     jest.fn(),
       delete:     jest.fn(),
     },
+    claimExpense: {
+      findMany:  jest.fn(),
+      findFirst: jest.fn(),
+      create:    jest.fn(),
+      update:    jest.fn(),
+      delete:    jest.fn(),
+    },
     $queryRaw: jest.fn(),
+    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   },
 }))
 
@@ -42,6 +50,11 @@ const fakeClaim = {
   reportDate: BASE_DATE,
   description: 'Siniestro de prueba',
   insuranceCompany: 'MAPFRE',
+  ownershipType: 'propio',
+  responsiblePersonName: null,
+  thirdPartyInsuranceCompany: null,
+  thirdPartyContact: null,
+  thirdPartyInsurerContact: null,
   status: 'denunciado',
   claimedAmountArs: 100000,
   realAmountArs: null,
@@ -71,7 +84,8 @@ const fakeClaim = {
       createdAt: BASE_DATE,
     },
   ],
-  _count: { events: 1 },
+  expenses: [],
+  _count: { events: 1, expenses: 0 },
 }
 
 const validClaimBody = {
@@ -251,6 +265,58 @@ describe('Claims API', () => {
       const createCall = db.claim.create.mock.calls[0][0]
       expect(createCall.data.events.create.type).toBe('siniestro_creado')
     })
+
+    it('returns 201 with ownershipType "propio" by default (no third-party fields required)', async () => {
+      db.$queryRaw.mockResolvedValue([{ nextval: BigInt(4) }])
+      db.claim.create.mockResolvedValue(fakeClaim)
+
+      const res = await request(app)
+        .post('/api/v1/claims')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validClaimBody)
+
+      expect(res.status).toBe(201)
+      const createCall = db.claim.create.mock.calls[0][0]
+      expect(createCall.data.ownershipType).toBe('propio')
+    })
+
+    it('returns 422 when ownershipType is "terceros" without the required third-party fields', async () => {
+      const res = await request(app)
+        .post('/api/v1/claims')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ ...validClaimBody, ownershipType: 'terceros' })
+
+      expect(res.status).toBe(422)
+      const fields = res.body.error.details.map((d: { field: string }) => d.field)
+      expect(fields).toEqual(expect.arrayContaining([
+        'thirdPartyInsuranceCompany', 'thirdPartyContact', 'thirdPartyInsurerContact',
+      ]))
+    })
+
+    it('returns 201 when ownershipType is "terceros" with all required third-party fields', async () => {
+      db.$queryRaw.mockResolvedValue([{ nextval: BigInt(5) }])
+      db.claim.create.mockResolvedValue({
+        ...fakeClaim,
+        ownershipType: 'terceros',
+        thirdPartyInsuranceCompany: 'Provincia Seguros',
+        thirdPartyContact: 'Juan Vecino',
+        thirdPartyInsurerContact: 'Sofia Ramirez',
+      })
+
+      const res = await request(app)
+        .post('/api/v1/claims')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validClaimBody,
+          ownershipType: 'terceros',
+          thirdPartyInsuranceCompany: 'Provincia Seguros',
+          thirdPartyContact: 'Juan Vecino',
+          thirdPartyInsurerContact: 'Sofia Ramirez',
+        })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.ownershipType).toBe('terceros')
+    })
   })
 
   // ── PUT /api/v1/claims/:id ──────────────────────────────────────────────────
@@ -367,6 +433,167 @@ describe('Claims API', () => {
         .send({ type: 'tipo_invalido', description: 'Nota', date: '2026-01-15' })
 
       expect(res.status).toBe(422)
+    })
+  })
+
+  // ── POST /api/v1/claims/:id/expenses ───────────────────────────────────────
+
+  describe('POST /api/v1/claims/:id/expenses', () => {
+    const fakeExpense = {
+      id: 'expense-uuid-1',
+      claimId: 'claim-uuid-1',
+      date: BASE_DATE,
+      provider: 'Taller Scania Cordoba',
+      receiptNumber: 'FC-0001-00023456',
+      netAmount: 210000,
+      vatAmount: 44100,
+      otherTaxesAmount: 0,
+      createdBy: 'test@losodwyer.com',
+      createdAt: BASE_DATE,
+    }
+
+    it('returns 201 when ADMIN adds an expense', async () => {
+      db.claim.findUnique.mockResolvedValue(fakeClaim) // assertExists
+      db.claimExpense.create.mockResolvedValue(fakeExpense)
+      db.claimEvent.create.mockResolvedValue({ id: 'event-uuid-3', type: 'gasto_agregado' })
+
+      const res = await request(app)
+        .post('/api/v1/claims/claim-uuid-1/expenses')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          date: '2026-01-15',
+          provider: 'Taller Scania Cordoba',
+          receiptNumber: 'FC-0001-00023456',
+          netAmount: 210000,
+          vatAmount: 44100,
+          otherTaxesAmount: 0,
+        })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.provider).toBe('Taller Scania Cordoba')
+      expect(res.body.data.totalAmount).toBe(254100)
+      expect(db.$transaction).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns 403 when VIEWER tries to add an expense', async () => {
+      const res = await request(app)
+        .post('/api/v1/claims/claim-uuid-1/expenses')
+        .set('Authorization', `Bearer ${viewerToken()}`)
+        .send({ date: '2026-01-15', provider: 'Proveedor', netAmount: 1000 })
+
+      expect(res.status).toBe(403)
+    })
+
+    it('returns 422 when provider is missing', async () => {
+      const res = await request(app)
+        .post('/api/v1/claims/claim-uuid-1/expenses')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ date: '2026-01-15', netAmount: 1000 })
+
+      expect(res.status).toBe(422)
+    })
+
+    it('returns 422 when netAmount is negative', async () => {
+      const res = await request(app)
+        .post('/api/v1/claims/claim-uuid-1/expenses')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ date: '2026-01-15', provider: 'Proveedor', netAmount: -100 })
+
+      expect(res.status).toBe(422)
+    })
+
+    it('returns 404 when claim does not exist', async () => {
+      db.claim.findUnique.mockResolvedValue(null)
+
+      const res = await request(app)
+        .post('/api/v1/claims/non-existent/expenses')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ date: '2026-01-15', provider: 'Proveedor', netAmount: 1000 })
+
+      expect(res.status).toBe(404)
+    })
+  })
+
+  // ── PUT /api/v1/claims/:id/expenses/:expenseId ─────────────────────────────
+
+  describe('PUT /api/v1/claims/:id/expenses/:expenseId', () => {
+    const existingExpense = {
+      id: 'expense-uuid-1', claimId: 'claim-uuid-1', date: BASE_DATE,
+      provider: 'Taller Scania Cordoba', receiptNumber: 'FC-0001-00023456',
+      netAmount: 210000, vatAmount: 44100, otherTaxesAmount: 0,
+    }
+
+    it('returns 200 when ADMIN edits an expense', async () => {
+      db.claimExpense.findFirst.mockResolvedValue(existingExpense)
+      db.claimExpense.update.mockResolvedValue({ ...existingExpense, netAmount: 220000 })
+      db.claimEvent.create.mockResolvedValue({ id: 'event-uuid-5', type: 'gasto_editado' })
+
+      const res = await request(app)
+        .put('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ netAmount: 220000 })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.netAmount).toBe(220000)
+      expect(db.$transaction).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns 403 when VIEWER tries to edit an expense', async () => {
+      const res = await request(app)
+        .put('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1')
+        .set('Authorization', `Bearer ${viewerToken()}`)
+        .send({ netAmount: 220000 })
+
+      expect(res.status).toBe(403)
+    })
+
+    it('returns 404 when the expense does not belong to the claim', async () => {
+      db.claimExpense.findFirst.mockResolvedValue(null)
+
+      const res = await request(app)
+        .put('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-x')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ netAmount: 220000 })
+
+      expect(res.status).toBe(404)
+    })
+
+    it('returns 422 when netAmount is negative', async () => {
+      const res = await request(app)
+        .put('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ netAmount: -100 })
+
+      expect(res.status).toBe(422)
+    })
+  })
+
+  // ── DELETE /api/v1/claims/:id/expenses/:expenseId ──────────────────────────
+
+  describe('DELETE /api/v1/claims/:id/expenses/:expenseId', () => {
+    it('returns 200 when ADMIN deletes an expense', async () => {
+      db.claimExpense.findFirst.mockResolvedValue({
+        id: 'expense-uuid-1', claimId: 'claim-uuid-1', provider: 'Taller Scania Cordoba', netAmount: 210000,
+      })
+      db.claimExpense.delete.mockResolvedValue({})
+      db.claimEvent.create.mockResolvedValue({ id: 'event-uuid-4', type: 'gasto_eliminado' })
+
+      const res = await request(app)
+        .delete('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.$transaction).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns 404 when the expense does not belong to the claim', async () => {
+      db.claimExpense.findFirst.mockResolvedValue(null)
+
+      const res = await request(app)
+        .delete('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-x')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(404)
     })
   })
 })

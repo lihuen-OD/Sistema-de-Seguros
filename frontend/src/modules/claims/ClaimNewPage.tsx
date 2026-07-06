@@ -24,6 +24,8 @@ import { claimsApi } from '../../shared/api/claims.api'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
 import { catalogsApi } from '../../shared/api/catalogs.api'
+import { OwnershipTypeFields } from './OwnershipTypeFields'
+import type { ClaimOwnershipType } from '../../shared/types'
 
 // ─── Claim type icon map (label → icon) ───────────────────────────────────────
 
@@ -54,6 +56,10 @@ interface FormErrors {
   insuranceCompany?: string
   claimedAmount?: string
   exchangeRate?: string
+  ownershipType?: string
+  thirdPartyInsuranceCompany?: string
+  thirdPartyContact?: string
+  thirdPartyInsurerContact?: string
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -76,6 +82,13 @@ export default function ClaimNewPage() {
   const preselectedAsset = preselectedAssetId
     ? (allAssets.find((a) => a.id === preselectedAssetId) ?? null)
     : null
+
+  // Titularidad
+  const [ownershipType, setOwnershipType] = useState<ClaimOwnershipType | ''>('')
+  const [responsiblePersonName, setResponsiblePersonName] = useState('')
+  const [thirdPartyInsuranceCompany, setThirdPartyInsuranceCompany] = useState('')
+  const [thirdPartyContact, setThirdPartyContact] = useState('')
+  const [thirdPartyInsurerContact, setThirdPartyInsurerContact] = useState('')
 
   // Identity
   const [assetId, setAssetId] = useState(preselectedAssetId)
@@ -141,6 +154,12 @@ export default function ClaimNewPage() {
 
   const validate = (): boolean => {
     const e: FormErrors = {}
+    if (!ownershipType) e.ownershipType = 'Indicá si el siniestro es propio o de terceros.'
+    if (ownershipType === 'terceros') {
+      if (!thirdPartyInsuranceCompany.trim()) e.thirdPartyInsuranceCompany = 'Ingresá la aseguradora del tercero.'
+      if (!thirdPartyContact.trim()) e.thirdPartyContact = 'Ingresá el contacto del tercero.'
+      if (!thirdPartyInsurerContact.trim()) e.thirdPartyInsurerContact = 'Ingresá el contacto de su aseguradora.'
+    }
     if (!claimType) e.claimType = 'Seleccioná el tipo de siniestro.'
     if (!occurrenceDate) e.occurrenceDate = 'Ingresá la fecha del hecho.'
     if (!reportDate) e.reportDate = 'Ingresá la fecha de denuncia.'
@@ -167,6 +186,11 @@ export default function ClaimNewPage() {
         reportDate,
         description: description.trim(),
         insuranceCompany: insuranceCompany.trim(),
+        ownershipType: ownershipType as 'propio' | 'terceros',
+        responsiblePersonName: ownershipType === 'propio' ? (responsiblePersonName.trim() || undefined) : undefined,
+        thirdPartyInsuranceCompany: ownershipType === 'terceros' ? thirdPartyInsuranceCompany.trim() : undefined,
+        thirdPartyContact: ownershipType === 'terceros' ? thirdPartyContact.trim() : undefined,
+        thirdPartyInsurerContact: ownershipType === 'terceros' ? thirdPartyInsurerContact.trim() : undefined,
         status: status || claimStatuses[0]?.label || 'Denunciado',
         currency,
         assetId: assetId || undefined,
@@ -208,6 +232,35 @@ export default function ClaimNewPage() {
 
         {/* ── Main: 2/3 ─────────────────────────────────────────────────── */}
         <div className="lg:col-span-2 space-y-5">
+
+          {/* Sección 0: Titularidad */}
+          <SectionCard title="Titularidad del Siniestro" subtitle="¿De quién es este siniestro?">
+            <OwnershipTypeFields
+              ownershipType={ownershipType}
+              onOwnershipTypeChange={(v) => {
+                setOwnershipType(v)
+                if (errors.ownershipType) setErrors((p) => ({ ...p, ownershipType: undefined }))
+              }}
+              responsiblePersonName={responsiblePersonName}
+              onResponsiblePersonNameChange={setResponsiblePersonName}
+              thirdPartyInsuranceCompany={thirdPartyInsuranceCompany}
+              onThirdPartyInsuranceCompanyChange={(v) => {
+                setThirdPartyInsuranceCompany(v)
+                if (errors.thirdPartyInsuranceCompany) setErrors((p) => ({ ...p, thirdPartyInsuranceCompany: undefined }))
+              }}
+              thirdPartyContact={thirdPartyContact}
+              onThirdPartyContactChange={(v) => {
+                setThirdPartyContact(v)
+                if (errors.thirdPartyContact) setErrors((p) => ({ ...p, thirdPartyContact: undefined }))
+              }}
+              thirdPartyInsurerContact={thirdPartyInsurerContact}
+              onThirdPartyInsurerContactChange={(v) => {
+                setThirdPartyInsurerContact(v)
+                if (errors.thirdPartyInsurerContact) setErrors((p) => ({ ...p, thirdPartyInsurerContact: undefined }))
+              }}
+              errors={errors}
+            />
+          </SectionCard>
 
           {/* Sección 1: Activo y Póliza */}
           <SectionCard title="Activo y Póliza" subtitle="Asociá el siniestro a un bien asegurado">
@@ -530,6 +583,10 @@ export default function ClaimNewPage() {
           {/* Resumen */}
           <SectionCard title="Resumen">
             <div className="space-y-3">
+              <SummaryRow
+                label="Titularidad"
+                value={ownershipType === 'terceros' ? 'De Terceros' : ownershipType === 'propio' ? 'Propio' : '—'}
+              />
               <SummaryRow label="Tipo" value={claimType || '—'} />
               <SummaryRow label="Estado" value={status || claimStatuses[0]?.label || '—'} />
               <SummaryRow label="Activo" value={selectedAsset?.internalCode ?? '—'} />

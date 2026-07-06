@@ -6,7 +6,7 @@ import {
   ArrowUpRight, Pencil, ArrowLeft, Package, ShieldCheck,
   Calendar, DollarSign, AlertTriangle, ArrowLeftRight,
   PlusCircle, ArrowRight, MessageSquare, Paperclip, Edit2,
-  TrendingDown, Percent, FileText, ImageIcon, Download, Trash2, FileDown,
+  TrendingDown, Percent, FileText, ImageIcon, Download, Trash2, FileDown, Receipt,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -19,6 +19,7 @@ import type { ClaimAttachment } from '../../shared/types'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
 import { catalogsApi } from '../../shared/api/catalogs.api'
+import { ClaimExpensesCard } from './ClaimExpensesCard'
 import {
   CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
   CLAIM_STATUS_DEFAULT_STYLE, CLAIM_STATUS_DEFAULT_ICON,
@@ -123,6 +124,9 @@ const EVENT_CONFIG: Record<ClaimEventType, { Icon: React.ElementType } & EventSt
   nota_agregada:         { Icon: MessageSquare, dot: 'bg-slate-100',  icon: 'text-slate-500',   labelCls: 'text-slate-500',   label: 'Nota' },
   documento_adjunto:     { Icon: Paperclip,     dot: 'bg-sky-50',     icon: 'text-sky-500',     labelCls: 'text-sky-600',     label: 'Documento' },
   siniestro_editado:     { Icon: Edit2,         dot: 'bg-slate-100',  icon: 'text-slate-400',   labelCls: 'text-slate-400',   label: 'Editado' },
+  gasto_agregado:        { Icon: Receipt,       dot: 'bg-teal-50',    icon: 'text-teal-500',    labelCls: 'text-teal-600',    label: 'Gasto' },
+  gasto_editado:         { Icon: Pencil,        dot: 'bg-amber-50',   icon: 'text-amber-500',   labelCls: 'text-amber-600',   label: 'Gasto editado' },
+  gasto_eliminado:       { Icon: Receipt,       dot: 'bg-slate-100',  icon: 'text-slate-400',   labelCls: 'text-slate-400',   label: 'Gasto eliminado' },
 }
 
 // ── Timeline event row ────────────────────────────────────────────────────────
@@ -256,6 +260,12 @@ export default function ClaimDetailPage() {
     enabled: !!id,
   })
 
+  const { data: expenses = [] } = useQuery({
+    queryKey: ['claims', id, 'expenses'],
+    queryFn: () => claimsApi.findExpenses(id!),
+    enabled: !!id,
+  })
+
   const docs = attachments.filter((a) => a.fileType !== 'image')
   const photos = attachments.filter((a) => a.fileType === 'image')
 
@@ -328,6 +338,8 @@ export default function ClaimDetailPage() {
   // True when settled but real damage wasn't entered → number is an underestimate
   const costoNetoIsEstimate = costoNeto != null && claim.realAmountArs == null
 
+  const totalGastos = expenses.reduce((sum, e) => sum + e.netAmount + e.vatAmount + e.otherTaxesAmount, 0)
+
   // Financial summary stats
   const finStats: FinStat[] = []
   if (claim.realAmountArs != null && claim.realAmountArs > 0) {
@@ -371,6 +383,14 @@ export default function ClaimDetailPage() {
       value: `${recoveryRate}%`,
       sub: 'Liquidado / reclamado',
       highlight: Number(recoveryRate) >= 80 ? 'emerald' : 'amber',
+    })
+  }
+  if (totalGastos > 0) {
+    finStats.push({
+      label: 'Gastos',
+      value: formatCurrencyCompact(totalGastos, 'ARS'),
+      sub: totalGastos > claim.claimedAmountArs ? 'Excede lo reclamado' : 'vs. reclamado',
+      highlight: totalGastos > claim.claimedAmountArs ? 'red' : 'default',
     })
   }
   if (costoNeto != null) {
@@ -502,7 +522,29 @@ export default function ClaimDetailPage() {
               <InfoRow label="Fecha de denuncia" value={formatDate(claim.reportDate)} />
               <InfoRow label="Compañía aseguradora" value={claim.insuranceCompany} />
               <InfoRow label="Estado actual" value={<StatusBadge status={effectiveStatus} />} />
+              <InfoRow
+                label="Titularidad"
+                value={
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                    claim.ownershipType === 'terceros'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                  }`}>
+                    {claim.ownershipType === 'terceros' ? 'De Terceros' : 'Propio'}
+                  </span>
+                }
+              />
+              {claim.ownershipType === 'propio' && claim.responsiblePersonName && (
+                <InfoRow label="Responsable / Conductor" value={claim.responsiblePersonName} />
+              )}
             </div>
+            {claim.ownershipType === 'terceros' && (
+              <div className="mt-5 pt-5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
+                <InfoRow label="Aseguradora del tercero" value={claim.thirdPartyInsuranceCompany || '—'} />
+                <InfoRow label="Contacto del tercero" value={claim.thirdPartyContact || '—'} />
+                <InfoRow label="Contacto de su aseguradora" value={claim.thirdPartyInsurerContact || '—'} />
+              </div>
+            )}
             <div className="mt-5 pt-5 border-t border-slate-100">
               <dt className="text-xs text-slate-500 mb-2">Descripción del hecho</dt>
               <p className="text-sm text-slate-700 leading-relaxed">{claim.description}</p>
@@ -696,6 +738,11 @@ export default function ClaimDetailPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Gastos del siniestro */}
+      <div className="mb-5">
+        <ClaimExpensesCard claimId={claim.id} claimedAmountArs={claim.claimedAmountArs} />
       </div>
 
       {/* Documentación adjunta */}

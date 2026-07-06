@@ -199,7 +199,7 @@ export default function ProducerDetailPage() {
     <PageContent>
       <PageHeader
         title={producer.name}
-        subtitle={`Matrícula ${producer.registrationNumber}`}
+        subtitle={producer.registrationNumber ? `Matrícula ${producer.registrationNumber}` : 'Sin matrícula registrada'}
         category="Productor"
         backTo="/producers"
         backLabel="Volver a Productores"

@@ -90,6 +90,11 @@ export type ClaimEventType =
   | 'nota_agregada'
   | 'documento_adjunto'
   | 'siniestro_editado'
+  | 'gasto_agregado'
+  | 'gasto_editado'
+  | 'gasto_eliminado'
+
+export type ClaimOwnershipType = 'propio' | 'terceros'
 
 export interface ClaimEvent {
   id: string
@@ -470,6 +475,11 @@ export interface Claim {
   reportDate: string
   description: string
   insuranceCompany: string
+  ownershipType: ClaimOwnershipType
+  responsiblePersonName?: string | null
+  thirdPartyInsuranceCompany?: string | null
+  thirdPartyContact?: string | null
+  thirdPartyInsurerContact?: string | null
   status: string
   claimedAmountArs: number
   realAmountArs?: number | null
@@ -492,6 +502,19 @@ export interface ClaimAttachment {
   fileUrl?: string
   uploadedAt: string
   uploadedBy: string
+}
+
+export interface ClaimExpense {
+  id: string
+  claimId: string
+  date: string
+  provider: string
+  receiptNumber?: string | null
+  netAmount: number
+  vatAmount: number
+  otherTaxesAmount: number
+  createdAt: string
+  createdBy?: string | null
 }
 
 export interface FireExtinguisherHistory {

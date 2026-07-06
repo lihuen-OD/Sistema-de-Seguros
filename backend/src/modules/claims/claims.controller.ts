@@ -2,11 +2,12 @@ import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { claimsService } from './claims.service'
 import { AppError } from '../../shared/errors/AppError'
-import type { ListClaimsQueryDTO, AddEventDTO, AddClaimAttachmentDTO } from './claims.schemas'
+import type { ListClaimsQueryDTO, AddEventDTO, AddClaimAttachmentDTO, CreateExpenseDTO, UpdateExpenseDTO } from './claims.schemas'
 
 type IdParam = { id: string }
 type EventParam = { id: string; eventId: string }
 type AttachmentParam = { id: string; attachmentId: string }
+type ExpenseParam = { id: string; expenseId: string }
 
 export const claimsController = {
   list: asyncHandler(async (req: Request, res: Response) => {
@@ -49,6 +50,37 @@ export const claimsController = {
   deleteEvent: asyncHandler(async (req: Request<EventParam>, res: Response) => {
     await claimsService.deleteEvent(req.params.id, req.params.eventId)
     res.json({ data: { message: 'Evento eliminado correctamente' } })
+  }),
+
+  // ── Expenses ──────────────────────────────────────────────────────────────────
+
+  getExpenses: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const expenses = await claimsService.findExpenses(req.params.id)
+    res.json({ data: expenses })
+  }),
+
+  addExpense: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const expense = await claimsService.addExpense(
+      req.params.id,
+      req.body as CreateExpenseDTO,
+      req.user?.email,
+    )
+    res.status(201).json({ data: expense })
+  }),
+
+  updateExpense: asyncHandler(async (req: Request<ExpenseParam>, res: Response) => {
+    const expense = await claimsService.updateExpense(
+      req.params.id,
+      req.params.expenseId,
+      req.body as UpdateExpenseDTO,
+      req.user?.email,
+    )
+    res.json({ data: expense })
+  }),
+
+  deleteExpense: asyncHandler(async (req: Request<ExpenseParam>, res: Response) => {
+    await claimsService.deleteExpense(req.params.id, req.params.expenseId, req.user?.email)
+    res.json({ data: { message: 'Gasto eliminado correctamente' } })
   }),
 
   // ── Attachments ───────────────────────────────────────────────────────────────

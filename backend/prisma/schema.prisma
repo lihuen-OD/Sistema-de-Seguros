@@ -443,31 +443,37 @@ model FireExtinguisherHistory {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Claim {
-  id               String   @id @default(uuid())
-  claimNumber      String   @unique
-  assetId          String?
-  policyId         String?
-  claimType        String
-  occurrenceDate   DateTime @db.Date
-  reportDate       DateTime @db.Date
-  description      String?
-  insuranceCompany String?
-  status           String   @default("denunciado")
-  claimedAmountArs Float    @default(0)
-  realAmountArs    Float?
-  settledAmountArs Float?
-  deductibleArs    Float?
-  currency         String   @default("ARS")
-  exchangeRate     Float    @default(1)
-  observations     String?
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                         String   @id @default(uuid())
+  claimNumber                String   @unique
+  assetId                    String?
+  policyId                   String?
+  claimType                  String
+  occurrenceDate             DateTime @db.Date
+  reportDate                 DateTime @db.Date
+  description                String?
+  insuranceCompany           String?
+  ownershipType              String   @default("propio")
+  responsiblePersonName      String?
+  thirdPartyInsuranceCompany String?
+  thirdPartyContact          String?
+  thirdPartyInsurerContact   String?
+  status                     String   @default("denunciado")
+  claimedAmountArs           Float    @default(0)
+  realAmountArs              Float?
+  settledAmountArs           Float?
+  deductibleArs              Float?
+  currency                   String   @default("ARS")
+  exchangeRate               Float    @default(1)
+  observations               String?
+  isActive                   Boolean  @default(true)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
   asset       Asset?            @relation(fields: [assetId], references: [id])
   policy      Policy?           @relation(fields: [policyId], references: [id])
   events      ClaimEvent[]
   attachments ClaimAttachment[]
+  expenses    ClaimExpense[]
 
   @@index([isActive, status])
   @@index([isActive, occurrenceDate])
@@ -475,6 +481,23 @@ model Claim {
   @@index([assetId])
   @@index([occurrenceDate])
   @@map("claims")
+}
+
+model ClaimExpense {
+  id               String   @id @default(uuid())
+  claimId          String
+  date             DateTime @db.Date
+  provider         String
+  receiptNumber    String?
+  netAmount        Float
+  vatAmount        Float    @default(0)
+  otherTaxesAmount Float    @default(0)
+  createdAt        DateTime @default(now())
+  createdBy        String?
+  claim            Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId])
+  @@map("claim_expenses")
 }
 
 model ClaimAttachment {

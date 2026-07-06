@@ -89,7 +89,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             <ShieldCheck size={15} className="text-white" />
           </div>
           <div className="min-w-0">
-            <span className="text-white font-semibold text-sm leading-tight block">Asset Insurance</span>
+            <span className="text-white font-semibold text-sm leading-tight block">Patrimonio Pro</span>
             <span className="text-slate-500 text-xs leading-tight block">LOS OD</span>
           </div>
         </div>

@@ -182,7 +182,7 @@ function ProducerCard({ producer, policyCount, activeTasks, overdueTasks, onClic
           <h3 className="text-sm font-semibold text-slate-800 group-hover:text-blue-700 transition-colors leading-snug truncate">
             {producer.name}
           </h3>
-          <p className="text-xs text-slate-400 mt-0.5 font-mono">{producer.registrationNumber}</p>
+          <p className="text-xs text-slate-400 mt-0.5 font-mono">{producer.registrationNumber || 'Sin matrícula'}</p>
         </div>
         <StatusPill status={producer.status} size="sm" />
       </div>

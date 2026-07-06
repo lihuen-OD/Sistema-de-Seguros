@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment } from '../types'
+import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment, ClaimExpense } from '../types'
 
 interface BackendClaimEvent {
   id: string; claimId: string; type: string; date: string; description: string
@@ -7,10 +7,22 @@ interface BackendClaimEvent {
   amountLabel: string | null; previousAmount: number | null; newAmount: number | null
   createdBy: string | null; createdAt: string
 }
+interface BackendClaimExpense {
+  id: string; claimId: string; date: string; provider: string
+  receiptNumber: string | null
+  netAmount: number; vatAmount: number; otherTaxesAmount: number
+  createdAt: string; createdBy: string | null
+}
 interface BackendClaim {
   id: string; claimNumber: string; assetId: string | null; policyId: string | null
   claimType: string; occurrenceDate: string; reportDate: string; description: string | null
-  insuranceCompany: string | null; status: string; claimedAmountArs: number
+  insuranceCompany: string | null
+  ownershipType: string | null
+  responsiblePersonName: string | null
+  thirdPartyInsuranceCompany: string | null
+  thirdPartyContact: string | null
+  thirdPartyInsurerContact: string | null
+  status: string; claimedAmountArs: number
   realAmountArs: number | null; settledAmountArs: number | null; deductibleArs: number | null
   currency: string; exchangeRate: number; observations: string | null
   events?: BackendClaimEvent[]; createdAt: string; updatedAt: string
@@ -39,6 +51,11 @@ function mapClaim(b: BackendClaim): Claim {
     reportDate: b.reportDate?.slice(0, 10) ?? '',
     description: b.description ?? '',
     insuranceCompany: b.insuranceCompany ?? '',
+    ownershipType: (b.ownershipType as Claim['ownershipType']) ?? 'propio',
+    responsiblePersonName: b.responsiblePersonName ?? undefined,
+    thirdPartyInsuranceCompany: b.thirdPartyInsuranceCompany ?? undefined,
+    thirdPartyContact: b.thirdPartyContact ?? undefined,
+    thirdPartyInsurerContact: b.thirdPartyInsurerContact ?? undefined,
     status: b.status,
     claimedAmountArs: b.claimedAmountArs,
     realAmountArs: b.realAmountArs ?? null,
@@ -51,12 +68,28 @@ function mapClaim(b: BackendClaim): Claim {
   }
 }
 
+function mapExpense(e: BackendClaimExpense): ClaimExpense {
+  return {
+    id: e.id, claimId: e.claimId,
+    date: e.date?.slice(0, 10) ?? '',
+    provider: e.provider,
+    receiptNumber: e.receiptNumber ?? undefined,
+    netAmount: e.netAmount, vatAmount: e.vatAmount, otherTaxesAmount: e.otherTaxesAmount,
+    createdAt: e.createdAt, createdBy: e.createdBy ?? undefined,
+  }
+}
+
 export interface ClaimCreateInput {
   claimNumber: string; claimType: string; occurrenceDate: string; reportDate: string
   description: string; assetId?: string; policyId?: string; insuranceCompany?: string
   status?: string; claimedAmountArs?: number; currency?: string
   realAmountArs?: number; settledAmountArs?: number; deductibleArs?: number
   observations?: string; exchangeRate?: number
+  ownershipType?: 'propio' | 'terceros'
+  responsiblePersonName?: string
+  thirdPartyInsuranceCompany?: string
+  thirdPartyContact?: string
+  thirdPartyInsurerContact?: string
 }
 
 export const claimsApi = {
@@ -117,5 +150,30 @@ export const claimsApi = {
 
   async deleteAttachment(claimId: string, attachmentId: string): Promise<void> {
     await apiClient.delete(`/claims/${claimId}/attachments/${attachmentId}`)
+  },
+
+  async findExpenses(claimId: string): Promise<ClaimExpense[]> {
+    const res = await apiClient.get<{ data: BackendClaimExpense[] }>(`/claims/${claimId}/expenses`)
+    return res.data.data.map(mapExpense)
+  },
+
+  async addExpense(claimId: string, input: {
+    date: string; provider: string; receiptNumber?: string
+    netAmount: number; vatAmount: number; otherTaxesAmount: number
+  }): Promise<ClaimExpense> {
+    const res = await apiClient.post<{ data: BackendClaimExpense }>(`/claims/${claimId}/expenses`, input)
+    return mapExpense(res.data.data)
+  },
+
+  async updateExpense(claimId: string, expenseId: string, input: {
+    date: string; provider: string; receiptNumber?: string
+    netAmount: number; vatAmount: number; otherTaxesAmount: number
+  }): Promise<ClaimExpense> {
+    const res = await apiClient.put<{ data: BackendClaimExpense }>(`/claims/${claimId}/expenses/${expenseId}`, input)
+    return mapExpense(res.data.data)
+  },
+
+  async deleteExpense(claimId: string, expenseId: string): Promise<void> {
+    await apiClient.delete(`/claims/${claimId}/expenses/${expenseId}`)
   },
 }

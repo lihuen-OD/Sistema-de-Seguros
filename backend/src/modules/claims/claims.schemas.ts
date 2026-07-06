@@ -9,8 +9,10 @@ const ISODate = z
 export const CLAIM_EVENT_TYPES = [
   'siniestro_creado', 'estado_cambiado', 'monto_actualizado',
   'liquidacion_registrada', 'franquicia_aplicada', 'nota_agregada',
-  'documento_adjunto', 'siniestro_editado',
+  'documento_adjunto', 'siniestro_editado', 'gasto_agregado', 'gasto_editado', 'gasto_eliminado',
 ] as const
+
+export const OWNERSHIP_TYPES = ['propio', 'terceros'] as const
 
 const ClaimBaseSchema = z.object({
   claimNumber: z.string().min(1).max(100).optional(),
@@ -21,6 +23,11 @@ const ClaimBaseSchema = z.object({
   reportDate: ISODate,
   description: z.string().min(1, 'La descripción es requerida').max(2000),
   insuranceCompany: z.string().max(300).optional().nullable(),
+  ownershipType: z.enum(OWNERSHIP_TYPES).default('propio'),
+  responsiblePersonName: z.string().max(300).optional().nullable(),
+  thirdPartyInsuranceCompany: z.string().max(300).optional().nullable(),
+  thirdPartyContact: z.string().max(500).optional().nullable(),
+  thirdPartyInsurerContact: z.string().max(500).optional().nullable(),
   status: z.string().min(1).max(100).default('Denunciado'),
   claimedAmountArs: z.number().min(0).default(0),
   realAmountArs: z.number().min(0).optional().nullable(),
@@ -31,9 +38,27 @@ const ClaimBaseSchema = z.object({
   observations: z.string().max(2000).optional().nullable(),
 })
 
-export const CreateClaimSchema = ClaimBaseSchema
+function withOwnershipRefinement<T extends z.ZodTypeAny>(schema: T) {
+  return schema.superRefine((data: any, ctx: z.RefinementCtx) => {
+    if (data.ownershipType === 'terceros') {
+      const required: Array<[string, string]> = [
+        ['thirdPartyInsuranceCompany', 'La compañía de seguros del tercero es requerida'],
+        ['thirdPartyContact', 'El contacto del tercero es requerido'],
+        ['thirdPartyInsurerContact', 'El contacto de la aseguradora del tercero es requerido'],
+      ]
+      for (const [field, message] of required) {
+        const value = data[field]
+        if (value === undefined || value === null || String(value).trim() === '') {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: [field] })
+        }
+      }
+    }
+  })
+}
 
-export const UpdateClaimSchema = ClaimBaseSchema.partial()
+export const CreateClaimSchema = withOwnershipRefinement(ClaimBaseSchema)
+
+export const UpdateClaimSchema = withOwnershipRefinement(ClaimBaseSchema.partial())
 
 export const ListClaimsQuerySchema = PaginationSchema.extend({
   search: z.string().optional(),
@@ -64,8 +89,22 @@ export const AddClaimAttachmentSchema = z.object({
   description: z.string().max(500).optional(),
 })
 
+export const CreateExpenseSchema = z.object({
+  date: ISODate,
+  provider: z.string().min(1, 'El proveedor es requerido').max(300),
+  receiptNumber: z.string().max(100).optional().nullable(),
+  netAmount: z.number().min(0, 'El monto neto no puede ser negativo'),
+  vatAmount: z.number().min(0).default(0),
+  otherTaxesAmount: z.number().min(0).default(0),
+})
+
+export const UpdateExpenseSchema = CreateExpenseSchema.partial()
+
 export type CreateClaimDTO = z.infer<typeof CreateClaimSchema>
 export type UpdateClaimDTO = z.infer<typeof UpdateClaimSchema>
 export type ListClaimsQueryDTO = z.infer<typeof ListClaimsQuerySchema>
 export type AddEventDTO = z.infer<typeof AddEventSchema>
 export type AddClaimAttachmentDTO = z.infer<typeof AddClaimAttachmentSchema>
+export type CreateExpenseDTO = z.infer<typeof CreateExpenseSchema>
+export type UpdateExpenseDTO = z.infer<typeof UpdateExpenseSchema>
+export type OwnershipType = (typeof OWNERSHIP_TYPES)[number]

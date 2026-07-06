@@ -17,6 +17,7 @@ import { TableShell } from '../../shared/components/data-table/TableShell'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { producersApi } from '../../shared/api/producers.api'
+import { policiesApi } from '../../shared/api/policies.api'
 import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { ProducerTask, TableColumn } from '../../shared/types'
@@ -32,6 +33,7 @@ export default function ProducerTasksPage() {
   const [filterPriority, setFilterPriority] = useState('')
 
   const { data: allProducers = [], isError } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
+  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
 
   const taskQueries = useQueries({
     queries: allProducers.map((p) => ({
@@ -113,17 +115,18 @@ export default function ProducerTasksPage() {
     {
       key: 'policyId',
       label: 'Póliza',
-      render: (v) =>
-        v ? (
+      render: (v) => {
+        if (!v) return <span className="text-xs text-slate-400">—</span>
+        const policy = allPolicies.find((p) => p.id === v)
+        return (
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/insurance/policies/${v}`) }}
             className="text-xs font-mono text-blue-600 hover:underline"
           >
-            {String(v).replace('pol-', 'POL-')}
+            {policy?.policyNumber ?? String(v)}
           </button>
-        ) : (
-          <span className="text-xs text-slate-400">—</span>
-        ),
+        )
+      },
     },
     {
       key: 'dueDate',

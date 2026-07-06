@@ -10,6 +10,8 @@ import {
   ListClaimsQuerySchema,
   AddEventSchema,
   AddClaimAttachmentSchema,
+  CreateExpenseSchema,
+  UpdateExpenseSchema,
 } from './claims.schemas'
 
 export const claimsRouter = Router()
@@ -45,6 +47,26 @@ claimsRouter.delete(
   '/:id/events/:eventId',
   requireRole('ADMIN'),
   claimsController.deleteEvent,
+)
+
+// ── Gastos ────────────────────────────────────────────────────────────────────
+claimsRouter.get('/:id/expenses', claimsController.getExpenses)
+claimsRouter.post(
+  '/:id/expenses',
+  requireRole('ADMIN', 'CONTADOR'),
+  validate(CreateExpenseSchema),
+  claimsController.addExpense,
+)
+claimsRouter.put(
+  '/:id/expenses/:expenseId',
+  requireRole('ADMIN', 'CONTADOR'),
+  validate(UpdateExpenseSchema),
+  claimsController.updateExpense,
+)
+claimsRouter.delete(
+  '/:id/expenses/:expenseId',
+  requireRole('ADMIN', 'CONTADOR'),
+  claimsController.deleteExpense,
 )
 
 // ── Attachments ───────────────────────────────────────────────────────────────

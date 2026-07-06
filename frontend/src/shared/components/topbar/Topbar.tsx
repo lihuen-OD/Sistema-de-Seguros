@@ -18,7 +18,8 @@ const breadcrumbMap: Record<string, string> = {
   '/insurance/financial-analysis': 'Análisis Financiero',
   '/insurance/economic-analysis': 'Análisis Económico',
   '/producers': 'Productores',
-  '/producers/tasks': 'Productores / Tareas',
+  '/tasks': 'Tareas',
+  '/tasks/new': 'Tareas / Nueva',
   '/fire-extinguishers': 'Matafuegos',
   '/claims': 'Siniestros',
   '/claims/new': 'Siniestros / Nuevo',
@@ -36,9 +37,11 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/insurance/policies/')) return 'Pólizas / Detalle'
   if (pathname.startsWith('/insurance/documents/')) return 'Documentos / Detalle'
   if (pathname.startsWith('/producers/')) return 'Productores / Detalle'
+  if (pathname.match(/^\/tasks\/[^/]+\/edit$/)) return 'Tareas / Editar'
+  if (pathname.startsWith('/tasks/')) return 'Tareas / Detalle'
   if (pathname.startsWith('/fire-extinguishers/')) return 'Matafuegos / Detalle'
   if (pathname.startsWith('/claims/')) return 'Siniestros / Detalle'
-  return 'Asset Insurance'
+  return 'Panel'
 }
 
 export function Topbar({ onMenuClick }: TopbarProps) {

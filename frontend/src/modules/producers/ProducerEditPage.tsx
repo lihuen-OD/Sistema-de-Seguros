@@ -75,7 +75,6 @@ export default function ProducerEditPage() {
   function validate(): boolean {
     const e: FormErrors = {}
     if (!name.trim()) e.name = 'El nombre es obligatorio'
-    if (!registrationNumber.trim()) e.registrationNumber = 'La matrícula es obligatoria'
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       e.email = 'El email no tiene un formato válido'
     }
@@ -90,7 +89,7 @@ export default function ProducerEditPage() {
     try {
       await producersApi.update(original!.id, {
         name: name.trim(),
-        matricula: registrationNumber.trim(),
+        matricula: registrationNumber.trim() || undefined,
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
         address: address.trim() || undefined,
@@ -107,7 +106,7 @@ export default function ProducerEditPage() {
     <PageContent>
       <PageHeader
         title={`Editar: ${original.name}`}
-        subtitle={`Matrícula ${original.registrationNumber}`}
+        subtitle={original.registrationNumber ? `Matrícula ${original.registrationNumber}` : 'Sin matrícula registrada'}
         category="Productores"
         backTo={ROUTES.PRODUCERS_DETAIL(original.id)}
         backLabel="Volver al Productor"
@@ -129,7 +128,7 @@ export default function ProducerEditPage() {
                 autoFocus
               />
             </FormField>
-            <FormField label="Matrícula" required error={errors.registrationNumber}>
+            <FormField label="Matrícula (opcional)" error={errors.registrationNumber}>
               <FormInput
                 value={registrationNumber}
                 onChange={(e) => setRegistrationNumber(e.target.value)}
