@@ -8,7 +8,7 @@ import type { Role } from '../../shared/types'
 
 export const devRouter = Router()
 
-const VALID_ROLES: Role[] = ['ADMIN', 'CONTADOR', 'PRODUCTOR', 'VIEWER']
+const VALID_ROLES: Role[] = ['ADMIN', 'CONTADOR', 'PRODUCTOR', 'VIEWER', 'AUDITOR_MATAFUEGOS']
 
 devRouter.post('/token', (req: Request, res: Response) => {
   const role: Role = VALID_ROLES.includes(req.body?.role) ? req.body.role : 'ADMIN'

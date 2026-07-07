@@ -9,16 +9,24 @@ import {
   ListFireExtinguishersQuerySchema,
   RechargeSchema,
   AddHistorySchema,
+  BulkRechargeSchema,
 } from './fire-extinguishers.schemas'
 
 export const fireExtinguishersRouter = Router()
 
 fireExtinguishersRouter.use(authMiddleware)
 
-// Ruta estática ANTES de /:id para que Express no la interprete como param
+// Rutas estáticas ANTES de /:id para que Express no las interprete como param
 fireExtinguishersRouter.get(
   '/by-asset/:assetId',
   fireExtinguishersController.getByAsset,
+)
+fireExtinguishersRouter.get('/dashboard/summary', fireExtinguishersController.getDashboardSummary)
+fireExtinguishersRouter.post(
+  '/bulk-recharge',
+  requireRole('ADMIN', 'CONTADOR'),
+  validate(BulkRechargeSchema),
+  fireExtinguishersController.bulkRecharge,
 )
 
 // ── CRUD principal ────────────────────────────────────────────────────────────

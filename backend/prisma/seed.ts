@@ -935,12 +935,16 @@ async function main() {
     prisma.fireExtinguisher.create({
       data: {
         code: 'MAT-INC001-A',
+        internalNumber: 'INT-001',
+        establishment: 'PLANTA',
         assetId: actEdificio.id,
         locationType: 'Edificio',
         location: 'Planta Baja. Pasillo Central',
         type: 'Polvo seco ABC',
         capacity: '10 kg',
         brand: 'Cesa',
+        cylinderNumber: 'CIL-10023',
+        manufacturingYear: 2020,
         expirationDate: d('2027-03-25'),
         lastRechargeDate: d('2026-03-25'),
         history: {
@@ -957,12 +961,16 @@ async function main() {
     prisma.fireExtinguisher.create({
       data: {
         code: 'MAT-INC002-A',
+        internalNumber: 'INT-002',
+        establishment: 'PLANTA',
         assetId: actEdificio.id,
         locationType: 'Edificio',
         location: 'Primer Piso. Sala de Servidores',
         type: 'CO2',
         capacity: '6 kg',
         brand: 'Amerex',
+        cylinderNumber: 'CIL-20087',
+        manufacturingYear: 2019,
         expirationDate: d('2026-09-20'),
         lastRechargeDate: d('2025-09-20'),
       },
@@ -997,12 +1005,16 @@ async function main() {
     prisma.fireExtinguisher.create({
       data: {
         code: 'MAT-MAQ001-A',
+        internalNumber: 'INT-003',
+        establishment: 'TALLER',
         assetId: actCosechadora.id,
         locationType: 'Maquinaria',
         location: 'Cosechadora John Deere S770. Cabina del operador',
         type: 'Polvo seco ABC',
         capacity: '2 kg',
         brand: 'Cesa',
+        cylinderNumber: 'CIL-30045',
+        manufacturingYear: 2015,
         expirationDate: d('2027-01-10'),
         lastRechargeDate: d('2026-01-10'),
       },

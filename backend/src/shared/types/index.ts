@@ -1,6 +1,6 @@
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export type Role = 'ADMIN' | 'CONTADOR' | 'PRODUCTOR' | 'VIEWER'
+export type Role = 'ADMIN' | 'CONTADOR' | 'PRODUCTOR' | 'VIEWER' | 'AUDITOR_MATAFUEGOS'
 
 // Payload que viene del JWT (emitido por la plataforma externa)
 export interface RequestUser {
@@ -51,6 +51,6 @@ export interface ApiErrorBody {
 
 // ─── Shared domain types ──────────────────────────────────────────────────────
 
-export type ExpirationStatus = 'vigente' | 'proximo_a_vencer' | 'vencido'
+export type ExpirationStatus = 'vigente' | 'proximo_vencer' | 'vencido'
 export type PaymentStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'NOT_APPLICABLE'
 export type Currency = 'ARS' | 'USD' | 'EUR'

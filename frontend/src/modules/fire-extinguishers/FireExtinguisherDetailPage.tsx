@@ -10,46 +10,49 @@ import {
   ArrowLeft,
   Clock,
   FileDown,
+  AlertTriangle,
+  Info,
+  MapPin,
+  Plus,
+  Trash2,
+  ClipboardCheck,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
+import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
+import { Tabs, type TabItem } from '../../shared/components/tabs/Tabs'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { ROUTES } from '../../app/routes'
-import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
+import { fireExtinguishersApi, fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
 import { assetsApi } from '../../shared/api/assets.api'
 import { LOCATION_TYPES, FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import type { FireExtinguisherHistory } from '../../shared/types'
 
+const EVENT_ICON_CONFIG: Record<string, { bg: string; text: string; Icon: typeof RefreshCw }> = {
+  Recarga: { bg: 'bg-emerald-100', text: 'text-emerald-600', Icon: RefreshCw },
+  Vencimiento: { bg: 'bg-red-100', text: 'text-red-600', Icon: Flame },
+  Alta: { bg: 'bg-blue-100', text: 'text-blue-600', Icon: Plus },
+  Actualización: { bg: 'bg-amber-100', text: 'text-amber-600', Icon: Pencil },
+  Baja: { bg: 'bg-slate-200', text: 'text-slate-600', Icon: Trash2 },
+  Auditoría: { bg: 'bg-indigo-100', text: 'text-indigo-600', Icon: ClipboardCheck },
+}
+
 function TimelineItem({ item }: { item: FireExtinguisherHistory }) {
-  const isCharge = item.eventType === 'Recarga'
-  const isExpiry = item.eventType === 'Vencimiento'
+  const { bg, text, Icon } = EVENT_ICON_CONFIG[item.eventType] ?? { bg: 'bg-blue-100', text: 'text-blue-600', Icon: Clock }
+  const hasChanges = item.changes && item.changes.length > 0
 
   return (
     <div className="flex gap-4 pb-5 last:pb-0">
       <div className="flex flex-col items-center flex-shrink-0">
-        <div
-          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-            isCharge
-              ? 'bg-emerald-100 text-emerald-600'
-              : isExpiry
-                ? 'bg-red-100 text-red-600'
-                : 'bg-blue-100 text-blue-600'
-          }`}
-        >
-          {isCharge ? (
-            <RefreshCw size={14} />
-          ) : isExpiry ? (
-            <Flame size={14} />
-          ) : (
-            <Clock size={14} />
-          )}
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${bg} ${text}`}>
+          <Icon size={14} />
         </div>
         <div className="w-px flex-1 bg-slate-100 mt-1" />
       </div>
@@ -61,23 +64,44 @@ function TimelineItem({ item }: { item: FireExtinguisherHistory }) {
             {formatDate(item.eventDate)}
           </span>
         </div>
-        {(item.previousValue || item.newValue) && (
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            {item.previousValue && (
-              <span className="text-xs text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
-                {item.previousValue}
-              </span>
-            )}
-            {item.previousValue && item.newValue && (
-              <span className="text-xs text-slate-400">→</span>
-            )}
-            {item.newValue && (
-              <span className="text-xs text-slate-700 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-200 font-medium">
-                {item.newValue}
-              </span>
-            )}
+
+        {item.description && <p className="text-xs text-slate-500 mb-1">{item.description}</p>}
+
+        {hasChanges ? (
+          <div className="space-y-1 mb-1">
+            {item.changes!.map((c) => (
+              <div key={c.field} className="flex items-center gap-2 flex-wrap text-xs">
+                <span className="text-slate-500 font-medium">{c.label}:</span>
+                <span className="font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-100 text-slate-500">
+                  {c.previousValue ?? '—'}
+                </span>
+                <span className="text-slate-400">→</span>
+                <span className="font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-200 text-slate-700 font-medium">
+                  {c.newValue ?? '—'}
+                </span>
+              </div>
+            ))}
           </div>
+        ) : (
+          (item.previousValue || item.newValue) && (
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              {item.previousValue && (
+                <span className="text-xs text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                  {item.previousValue}
+                </span>
+              )}
+              {item.previousValue && item.newValue && (
+                <span className="text-xs text-slate-400">→</span>
+              )}
+              {item.newValue && (
+                <span className="text-xs text-slate-700 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-200 font-medium">
+                  {item.newValue}
+                </span>
+              )}
+            </div>
+          )
         )}
+
         {item.observations && (
           <p className="text-xs text-slate-500">{item.observations}</p>
         )}
@@ -87,21 +111,30 @@ function TimelineItem({ item }: { item: FireExtinguisherHistory }) {
   )
 }
 
+const DETAIL_TABS: TabItem[] = [
+  { id: 'resumen', label: 'Resumen', icon: Info },
+  { id: 'tecnico', label: 'Datos técnicos', icon: Flame },
+  { id: 'ubicacion', label: 'Ubicación', icon: MapPin },
+  { id: 'historial', label: 'Historial', icon: History },
+  { id: 'vencimientos', label: 'Vencimientos', icon: AlertTriangle },
+]
+
 export default function FireExtinguisherDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
   const queryClient = useQueryClient()
   const [showRechargeModal, setShowRechargeModal] = useState(false)
+  const [activeTab, setActiveTab] = useState('resumen')
 
   const { data: fe, isLoading } = useQuery({
-    queryKey: ['fire-extinguishers', id],
+    queryKey: fireExtinguisherKeys.detail(id!),
     queryFn: () => fireExtinguishersApi.findById(id!),
     enabled: !!id,
   })
 
   const { data: history = [] } = useQuery({
-    queryKey: ['fire-extinguishers', id, 'history'],
+    queryKey: fireExtinguisherKeys.history(id!),
     queryFn: () => fireExtinguishersApi.findHistory(id!),
     enabled: !!id,
   })
@@ -116,8 +149,7 @@ export default function FireExtinguisherDetailPage() {
     if (!fe) return
     await fireExtinguishersApi.recharge(fe.id, data)
     setShowRechargeModal(false)
-    queryClient.invalidateQueries({ queryKey: ['fire-extinguishers', id] })
-    queryClient.invalidateQueries({ queryKey: ['fire-extinguishers'] })
+    queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
   }
 
   if (isLoading) {
@@ -159,6 +191,24 @@ export default function FireExtinguisherDetailPage() {
     ? `Venció el ${formatDate(fe.expirationDate)}`
     : `Vence el ${formatDate(fe.expirationDate)}`
 
+  const assetField = (
+    <dd className="text-sm">
+      {asset ? (
+        <button
+          onClick={() => navigate(`/assets/${asset.id}`)}
+          className="text-blue-600 hover:underline text-left"
+        >
+          {asset.name}
+          <span className="block text-xs text-slate-400 font-normal">
+            {asset.internalCode} · {asset.assetType}
+          </span>
+        </button>
+      ) : (
+        <span className="text-slate-400">Sin activo asociado</span>
+      )}
+    </dd>
+  )
+
   return (
     <PageContent>
       <PageHeader
@@ -195,7 +245,7 @@ export default function FireExtinguisherDetailPage() {
         }
       />
 
-      {/* Alert banner for expired or expiring soon */}
+      {/* Alert banner for expired or expiring soon (siempre visible, independiente de la pestaña activa) */}
       {(isExpired || isSoon) && (
         <div
           className={`mb-5 flex items-start gap-3 px-4 py-3 rounded-xl text-sm border ${
@@ -213,109 +263,23 @@ export default function FireExtinguisherDetailPage() {
         </div>
       )}
 
-      {/* 2-column layout: LEFT details card, RIGHT KPI cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-        {/* LEFT: ficha técnica */}
-        <SectionCard title="Ficha Técnica" className="lg:col-span-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
-            <div>
-              <dt className="text-xs text-slate-500 mb-0.5">Código</dt>
-              <dd className="text-sm font-mono font-semibold text-slate-800">{fe.code}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500 mb-0.5">Tipo</dt>
-              <dd className="text-sm text-slate-700">{fe.type}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500 mb-0.5">Capacidad</dt>
-              <dd className="text-sm text-slate-700 font-medium">{fe.capacity}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500 mb-0.5">Estado</dt>
-              <dd><StatusPill status={fe.status} size="sm" /></dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500 mb-0.5">Tipo de Ubicación</dt>
-              <dd className="text-sm text-slate-700">
-                {LOCATION_TYPES[fe.associatedLocationType] ?? fe.associatedLocationType}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500 mb-0.5">Activo Asociado</dt>
-              <dd className="text-sm">
-                {asset ? (
-                  <button
-                    onClick={() => navigate(`/assets/${asset.id}`)}
-                    className="text-blue-600 hover:underline text-left"
-                  >
-                    {asset.name}
-                    <span className="block text-xs text-slate-400 font-normal">
-                      {asset.internalCode} · {asset.assetType}
-                    </span>
-                  </button>
-                ) : (
-                  <span className="text-slate-400">Sin activo asociado</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500 mb-0.5">Fecha de Carga</dt>
-              <dd className="text-sm text-slate-700 tabular-nums">{formatDate(fe.chargeDate)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500 mb-0.5">Fecha de Vencimiento</dt>
-              <dd
-                className={`text-sm tabular-nums font-medium ${
-                  isExpired ? 'text-red-600' : isSoon ? 'text-amber-600' : 'text-slate-700'
-                }`}
-              >
-                {formatDate(fe.expirationDate)}
-              </dd>
-            </div>
-            {fe.observations && (
-              <div className="sm:col-span-2 pt-3 border-t border-slate-100">
-                <dt className="text-xs text-slate-500 mb-1">Observaciones</dt>
-                <dd className="text-sm text-slate-600 leading-relaxed">{fe.observations}</dd>
-              </div>
-            )}
-          </div>
-        </SectionCard>
-
-        {/* RIGHT: KPI cards stacked */}
-        <div className="lg:col-span-1 flex flex-col gap-4">
-          <KpiCard
-            label="Días para Vencer"
-            value={daysLabel}
-            description={daysDescription}
-            icon={Calendar}
-            variant={isExpired ? 'danger' : isSoon ? 'warning' : 'success'}
-          />
-          <KpiCard
-            label="Estado"
-            value={FIRE_EXT_STATUS_LABELS[fe.status] ?? fe.status}
-            description="Estado actual del matafuego"
-            icon={Flame}
-            variant={isExpired ? 'danger' : isSoon ? 'warning' : 'success'}
-          />
-          {asset ? (
-            <KpiCard
-              label="Activo Asociado"
-              value={asset.name.length > 22 ? asset.name.slice(0, 22) + '…' : asset.name}
-              description={`${asset.internalCode} · ${asset.assetType}`}
-              icon={Building2}
-              variant="info"
-            />
-          ) : (
-            <KpiCard
-              label="Sin Activo"
-              value="—"
-              description="No asociado a ningún activo"
-              icon={Building2}
-              variant="default"
-            />
-          )}
+      {/* Alert banner for manufacturing life (independent of charge status), siempre visible */}
+      {fe.manufacturingLifeStatus && fe.manufacturingLifeStatus !== 'vigente' && (
+        <div
+          className={`mb-5 flex items-start gap-3 px-4 py-3 rounded-xl text-sm border ${
+            fe.manufacturingLifeStatus === 'vencido'
+              ? 'bg-red-50 border-red-200 text-red-700'
+              : 'bg-amber-50 border-amber-200 text-amber-700'
+          }`}
+        >
+          <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+          <span>
+            {fe.manufacturingLifeStatus === 'vencido'
+              ? `Vida útil vencida (fabricado en ${fe.manufacturingYear}). Requiere reemplazo por antigüedad, más allá del estado de la carga.`
+              : `Vida útil próxima a vencer (fabricado en ${fe.manufacturingYear}, límite ${fe.manufacturingExpirationYear}). Programar reemplazo por antigüedad.`}
+          </span>
         </div>
-      </div>
+      )}
 
       {/* Recharge modal */}
       {showRechargeModal && (
@@ -326,30 +290,198 @@ export default function FireExtinguisherDetailPage() {
         />
       )}
 
-      {/* History as timeline */}
-      <SectionCard
-        title="Historial"
-        subtitle={`${history.length} evento${history.length !== 1 ? 's' : ''} registrado${history.length !== 1 ? 's' : ''}`}
-        actions={
-          <span className="flex items-center gap-1.5 text-xs text-slate-400">
-            <History size={13} />
-            Cargas y cambios
-          </span>
-        }
-      >
-        {history.length === 0 ? (
-          <div className="text-center py-8 text-slate-400">
-            <History size={28} className="mx-auto mb-2 opacity-30" />
-            <p className="text-sm">Sin historial registrado</p>
-            <p className="text-xs mt-1">
-              Los eventos de recarga y cambios aparecerán aquí.
-            </p>
+      <SectionCard noPadding className="mb-5">
+        <Tabs tabs={DETAIL_TABS.map((t) => (t.id === 'historial' ? { ...t, count: history.length } : t))} activeTab={activeTab} onChange={setActiveTab} />
+
+        {activeTab === 'resumen' && (
+          <div className="p-5">
+            <MetricGrid cols={3} className="mb-5">
+              <KpiCard
+                label="Días para Vencer"
+                value={daysLabel}
+                description={daysDescription}
+                icon={Calendar}
+                variant={isExpired ? 'danger' : isSoon ? 'warning' : 'success'}
+              />
+              <KpiCard
+                label="Estado"
+                value={FIRE_EXT_STATUS_LABELS[fe.status] ?? fe.status}
+                description="Estado actual del matafuego"
+                icon={Flame}
+                variant={isExpired ? 'danger' : isSoon ? 'warning' : 'success'}
+              />
+              {asset ? (
+                <KpiCard
+                  label="Activo Asociado"
+                  value={asset.name.length > 22 ? asset.name.slice(0, 22) + '…' : asset.name}
+                  description={`${asset.internalCode} · ${asset.assetType}`}
+                  icon={Building2}
+                  variant="info"
+                />
+              ) : (
+                <KpiCard
+                  label="Sin Activo"
+                  value="—"
+                  description="No asociado a ningún activo"
+                  icon={Building2}
+                  variant="default"
+                />
+              )}
+            </MetricGrid>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+              <div>
+                <dt className="text-xs text-slate-500 mb-0.5">Código</dt>
+                <dd className="text-sm font-mono font-semibold text-slate-800">{fe.code}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500 mb-0.5">Tipo</dt>
+                <dd className="text-sm text-slate-700">{fe.type}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500 mb-0.5">Capacidad</dt>
+                <dd className="text-sm text-slate-700 font-medium">{fe.capacity}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500 mb-0.5">Fecha de Carga</dt>
+                <dd className="text-sm text-slate-700 tabular-nums">{formatDate(fe.chargeDate)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500 mb-0.5">Fecha de Vencimiento</dt>
+                <dd className={`text-sm tabular-nums font-medium ${isExpired ? 'text-red-600' : isSoon ? 'text-amber-600' : 'text-slate-700'}`}>
+                  {formatDate(fe.expirationDate)}
+                </dd>
+              </div>
+              {fe.observations && (
+                <div className="sm:col-span-2 pt-3 border-t border-slate-100">
+                  <dt className="text-xs text-slate-500 mb-1">Observaciones</dt>
+                  <dd className="text-sm text-slate-600 leading-relaxed">{fe.observations}</dd>
+                </div>
+              )}
+            </div>
           </div>
-        ) : (
-          <div className="pt-1">
-            {history.map((item) => (
-              <TimelineItem key={item.id} item={item} />
-            ))}
+        )}
+
+        {activeTab === 'tecnico' && (
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+            <div>
+              <dt className="text-xs text-slate-500 mb-0.5">Tipo</dt>
+              <dd className="text-sm text-slate-700">{fe.type}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500 mb-0.5">Capacidad</dt>
+              <dd className="text-sm text-slate-700 font-medium">{fe.capacity}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500 mb-0.5">Marca</dt>
+              <dd className="text-sm text-slate-700">{fe.brand ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500 mb-0.5">N° de cilindro</dt>
+              <dd className="text-sm font-mono text-slate-700">{fe.cylinderNumber ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500 mb-0.5">Número interno</dt>
+              <dd className="text-sm font-mono text-slate-700">{fe.internalNumber ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500 mb-0.5">Año de fabricación</dt>
+              <dd className="text-sm text-slate-700">
+                {fe.manufacturingYear ?? '—'}
+                {fe.manufacturingExpirationYear && (
+                  <span className="block text-xs text-slate-400 font-normal">
+                    Vencimiento por vida útil: {fe.manufacturingExpirationYear}
+                  </span>
+                )}
+              </dd>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'ubicacion' && (
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+            <div>
+              <dt className="text-xs text-slate-500 mb-0.5">Establecimiento</dt>
+              <dd className="text-sm text-slate-700">{fe.establishment ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500 mb-0.5">Tipo de Ubicación</dt>
+              <dd className="text-sm text-slate-700">
+                {LOCATION_TYPES[fe.associatedLocationType] ?? fe.associatedLocationType}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500 mb-0.5">Activo Asociado</dt>
+              {assetField}
+            </div>
+            {fe.location && (
+              <div className="sm:col-span-2 pt-3 border-t border-slate-100">
+                <dt className="text-xs text-slate-500 mb-1">Detalle de ubicación</dt>
+                <dd className="text-sm text-slate-600 leading-relaxed">{fe.location}</dd>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'historial' && (
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-slate-400">
+                {history.length} evento{history.length !== 1 ? 's' : ''} registrado{history.length !== 1 ? 's' : ''}
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                <History size={13} />
+                Altas, ediciones, bajas y recargas
+              </span>
+            </div>
+            {history.length === 0 ? (
+              <div className="text-center py-8 text-slate-400">
+                <History size={28} className="mx-auto mb-2 opacity-30" />
+                <p className="text-sm">Sin historial registrado</p>
+                <p className="text-xs mt-1">
+                  Los eventos de recarga y cambios aparecerán aquí.
+                </p>
+              </div>
+            ) : (
+              <div className="pt-1">
+                {history.map((item) => (
+                  <TimelineItem key={item.id} item={item} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'vencimientos' && (
+          <div className="p-5">
+            <MetricGrid cols={2}>
+              <KpiCard
+                label="Estado de Carga"
+                value={FIRE_EXT_STATUS_LABELS[fe.chargeStatus] ?? fe.chargeStatus}
+                description={fe.chargeDate ? `Recargado el ${formatDate(fe.chargeDate)} · vence ${formatDate(fe.expirationDate)}` : `Vence ${formatDate(fe.expirationDate)}`}
+                icon={RefreshCw}
+                variant={fe.chargeStatus === 'vencido' ? 'danger' : fe.chargeStatus === 'proximo_vencer' ? 'warning' : 'success'}
+              />
+              <KpiCard
+                label="Estado por Vida Útil"
+                value={fe.manufacturingLifeStatus ? (FIRE_EXT_STATUS_LABELS[fe.manufacturingLifeStatus] ?? fe.manufacturingLifeStatus) : 'No aplica'}
+                description={
+                  fe.manufacturingYear
+                    ? `Fabricado en ${fe.manufacturingYear} · límite ${fe.manufacturingExpirationYear}`
+                    : 'Sin año de fabricación cargado'
+                }
+                icon={AlertTriangle}
+                variant={
+                  fe.manufacturingLifeStatus === 'vencido'
+                    ? 'danger'
+                    : fe.manufacturingLifeStatus === 'proximo_vencer'
+                      ? 'warning'
+                      : fe.manufacturingLifeStatus === 'vigente'
+                        ? 'success'
+                        : 'default'
+                }
+              />
+            </MetricGrid>
           </div>
         )}
       </SectionCard>

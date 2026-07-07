@@ -18,3 +18,4 @@ export function makeToken(role: Role = 'ADMIN', extra: Partial<{ email: string; 
 export const adminToken = () => makeToken('ADMIN')
 export const contadorToken = () => makeToken('CONTADOR')
 export const viewerToken = () => makeToken('VIEWER')
+export const auditorMatafuegosToken = () => makeToken('AUDITOR_MATAFUEGOS')

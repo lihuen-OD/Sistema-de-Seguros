@@ -16,6 +16,7 @@ import { producersRouter } from './modules/producers/producers.router'
 import { policiesRouter } from './modules/policies/policies.router'
 import { documentsRouter } from './modules/documents/documents.router'
 import { fireExtinguishersRouter } from './modules/fire-extinguishers/fire-extinguishers.router'
+import { fireExtinguisherAuditsRouter } from './modules/fire-extinguisher-audits/fire-extinguisher-audits.router'
 import { claimsRouter } from './modules/claims/claims.router'
 import { catalogsRouter } from './modules/catalogs/catalogs.router'
 import { dashboardRouter } from './modules/dashboard/dashboard.router'
@@ -102,6 +103,8 @@ app.use('/api/v1/policies', policiesRouter)
 app.use('/api/v1/documents', documentsRouter)
 // Fase 7 — Matafuegos
 app.use('/api/v1/fire-extinguishers', fireExtinguishersRouter)
+// Matafuegos Fase 3 — Auditoría mensual
+app.use('/api/v1/fire-extinguisher-audits', fireExtinguisherAuditsRouter)
 // Fase 8 — Siniestros
 app.use('/api/v1/claims', claimsRouter)
 // Fase 11 — Catálogos dinámicos

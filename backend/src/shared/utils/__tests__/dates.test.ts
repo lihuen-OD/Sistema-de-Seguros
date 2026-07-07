@@ -42,10 +42,10 @@ describe('computeExpirationStatus', () => {
     expect(computeExpirationStatus(isoDateOffset(-1))).toBe('vencido')
   })
 
-  it('returns proximo_a_vencer for a date within 30 days', () => {
-    expect(computeExpirationStatus(isoDateOffset(1))).toBe('proximo_a_vencer')
-    expect(computeExpirationStatus(isoDateOffset(15))).toBe('proximo_a_vencer')
-    expect(computeExpirationStatus(isoDateOffset(30))).toBe('proximo_a_vencer')
+  it('returns proximo_vencer for a date within 30 days', () => {
+    expect(computeExpirationStatus(isoDateOffset(1))).toBe('proximo_vencer')
+    expect(computeExpirationStatus(isoDateOffset(15))).toBe('proximo_vencer')
+    expect(computeExpirationStatus(isoDateOffset(30))).toBe('proximo_vencer')
   })
 
   it('returns vigente for a date beyond the warning window', () => {
@@ -56,8 +56,8 @@ describe('computeExpirationStatus', () => {
   it('respects custom daysWarning parameter', () => {
     // Con daysWarning=10, fecha en 15 días debería ser vigente
     expect(computeExpirationStatus(isoDateOffset(15), 10)).toBe('vigente')
-    // Con daysWarning=10, fecha en 8 días debería ser proximo_a_vencer
-    expect(computeExpirationStatus(isoDateOffset(8), 10)).toBe('proximo_a_vencer')
+    // Con daysWarning=10, fecha en 8 días debería ser proximo_vencer
+    expect(computeExpirationStatus(isoDateOffset(8), 10)).toBe('proximo_vencer')
   })
 })
 

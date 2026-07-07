@@ -2,6 +2,10 @@ import { prisma } from '../../config/database'
 import { getTransporter, isMailerConfigured } from '../../config/mailer'
 import { AppError } from '../../shared/errors/AppError'
 import { toISODate, toDateStr, dateOffset, todayDate } from '../../shared/utils/dates'
+import {
+  buildFireExtinguisherAtRiskFilter,
+  computeFireExtinguisherStatus,
+} from '../fire-extinguishers/fire-extinguishers.expiration'
 import { env } from '../../config/env'
 
 function formatDate(d: Date | string): string {
@@ -104,9 +108,9 @@ export const notificationsService = {
           orderBy: { endDate: 'asc' },
           include: { company: { select: { name: true } } },
         }),
-        // Matafuegos vencidos o que vencen en 30 días
+        // Matafuegos vencidos o que vencen en 30 días (por carga o por vida útil)
         prisma.fireExtinguisher.findMany({
-          where: { isActive: true, expirationDate: { lte: in30Days } },
+          where: { isActive: true, ...buildFireExtinguisherAtRiskFilter(30) },
           orderBy: { expirationDate: 'asc' },
         }),
         // Cuotas vencidas y sin pagar
@@ -143,7 +147,9 @@ export const notificationsService = {
           e.location ?? e.locationType,
           e.type,
           formatDate(e.expirationDate),
-          toDateStr(e.expirationDate) < toISODate() ? '<span style="color:#ef4444; font-weight:bold;">VENCIDO</span>' : 'Próximo',
+          computeFireExtinguisherStatus(e.expirationDate, e.manufacturingYear) === 'vencido'
+            ? '<span style="color:#ef4444; font-weight:bold;">VENCIDO</span>'
+            : 'Próximo',
         ]),
       },
       {
@@ -216,7 +222,7 @@ export const notificationsService = {
           where: { isActive: true, endDate: { gte: today, lte: in30Days } },
         }),
         prisma.fireExtinguisher.count({
-          where: { isActive: true, expirationDate: { lte: in30Days } },
+          where: { isActive: true, ...buildFireExtinguisherAtRiskFilter(30) },
         }),
         prisma.documentInstallment.count({
           where: { paymentStatus: { not: 'PAID' }, dueDate: { lt: today } },

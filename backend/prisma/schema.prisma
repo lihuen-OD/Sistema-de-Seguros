@@ -398,30 +398,39 @@ model DocumentAttachment {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model FireExtinguisher {
-  id               String   @id @default(uuid())
-  code             String    @unique
-  assetId          String?
-  locationType     String
-  location         String?
-  type             String
-  capacity         String
-  brand            String?
-  serialNumber     String?
-  expirationDate   DateTime  @db.Date
-  lastRechargeDate DateTime? @db.Date
-  observations     String?
-  isActive         Boolean   @default(true)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                String    @id @default(uuid())
+  code              String    @unique
+  internalNumber    String?   @unique
+  assetId           String?
+  locationType      String
+  location          String?
+  establishment     String?
+  type              String
+  capacity          String
+  brand             String?
+  cylinderNumber    String?
+  manufacturingYear Int?
+  expirationDate    DateTime  @db.Date
+  lastRechargeDate  DateTime? @db.Date
+  observations      String?
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   asset   Asset?                   @relation(fields: [assetId], references: [id])
   history FireExtinguisherHistory[]
+  audits          FireExtinguisherAudit[]
+  proposedChanges FireExtinguisherAuditProposedChange[]
+  attachments     FireExtinguisherAttachment[]
 
   @@index([isActive, expirationDate])
   @@index([assetId])
   @@map("fire_extinguishers")
 }
 
+// nextDueDate/previousExpirationDate: columnas específicas de recarga (sin cambios).
+// description/previousData/newData: diff genérico usado por altas/ediciones/bajas.
+// Ambas formas conviven en la misma tabla — un timeline único por matafuego.
 model FireExtinguisherHistory {
   id                     String           @id @default(uuid())
   fireExtinguisherId     String
@@ -431,11 +440,126 @@ model FireExtinguisherHistory {
   notes                  String?
   nextDueDate            DateTime?        @db.Date
   previousExpirationDate DateTime?        @db.Date
+  description            String?
+  previousData           Json?
+  newData                Json?
   createdAt              DateTime         @default(now())
   extinguisher           FireExtinguisher @relation(fields: [fireExtinguisherId], references: [id], onDelete: Cascade)
 
   @@index([fireExtinguisherId])
   @@map("fire_extinguisher_history")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Matafuegos Fase 3 — Auditoría mensual
+//
+// El maestro (FireExtinguisher) es la verdad oficial. Una auditoría NUNCA
+// modifica el maestro directamente — cualquier discrepancia detectada por el
+// auditor (ubicación o campos de FireExtinguisherAuditProposedChange) queda
+// en estado PENDING hasta que una fase futura (revisión/aprobación) la aplique.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FireExtinguisherAudit {
+  id                 String   @id @default(uuid())
+  fireExtinguisherId String
+  status             String   @default("SUBMITTED") // DRAFT | SUBMITTED | APPROVED | REJECTED | NEEDS_CORRECTION
+  auditDate          DateTime @db.Date // derivado en el server ("hoy"), nunca confiado del cliente
+  auditPeriod        String              // "YYYY-MM", derivado en el server
+  auditedBy          String
+
+  // Paso 2 — Validación de ubicación
+  locationConfirmed       Boolean @default(true)
+  locationChangeRequested Boolean @default(false)
+  proposedLocation        String?
+  locationChangeReason    String?
+
+  // Paso 4 — Checklist de condición (embebido, sin tabla separada)
+  cleanliness                         String
+  chargeFillStatus                    String // CARGADO | DESCARGADO — no confundir con el status de vencimiento (vigente/proximo_vencer/vencido)
+  beaconPlateExists                   String // SI | NO
+  beaconPlateCondition                String?
+  beaconPlateMatchesType              String?
+  isObstructed                        String
+  pressureStatus                      String
+  sealStatus                          String
+  ringStatus                          String
+  safetyPinStatus                     String
+  hoseNozzleCondition                 String
+  chargeExpirationDateObserved        DateTime? @db.Date
+  hydraulicTestExpirationDateObserved DateTime? @db.Date // sin contraparte en el maestro todavía — solo queda registrado
+  cylinderNumberObserved              String?
+  capacityObserved                    String?
+  extinguishingAgentObserved          String?
+  brandObserved                       String?
+  comments                            String? // comentario del checklist, distinto de `observations`
+
+  observations String? // nota general de la auditoría
+
+  // Fase 4 — Revisión/aprobación
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  extinguisher    FireExtinguisher                      @relation(fields: [fireExtinguisherId], references: [id], onDelete: Cascade)
+  proposedChanges FireExtinguisherAuditProposedChange[]
+  attachments     FireExtinguisherAttachment[]
+
+  // La unicidad real de (fireExtinguisherId, auditPeriod) NO se modela acá con
+  // @@unique — vive en un ÍNDICE ÚNICO PARCIAL creado a mano en la migración
+  // 20260707120000_add_fire_extinguisher_audit_review (WHERE status NOT IN
+  // ('REJECTED','NEEDS_CORRECTION')), para permitir crear una auditoría nueva
+  // del mismo matafuego+período tras una recorrección. Prisma no soporta
+  // partial indexes en su DSL — por eso es invisible acá. Mismo patrón que
+  // 20260622000003_add_sequential_sequences (SEQUENCEs de Postgres).
+  // NO reintroducir @@unique([fireExtinguisherId, auditPeriod]) acá.
+  // NO correr `prisma db push` contra esta tabla sin revisar a mano.
+  @@index([fireExtinguisherId, auditPeriod])
+  @@index([fireExtinguisherId])
+  @@map("fire_extinguisher_audits")
+}
+
+model FireExtinguisherAuditProposedChange {
+  id                 String   @id @default(uuid())
+  auditId            String
+  fireExtinguisherId String // denormalizado — permite consultar cambios pendientes de una unidad sin pasar por el audit
+  fieldName          String // coincide 1:1 con la columna real del maestro: cylinderNumber | expirationDate | capacity | type | brand | location
+  currentValue       String
+  proposedValue      String
+  reason             String?
+  status             String   @default("PENDING") // PENDING | APPROVED | REJECTED | APPLIED
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  audit        FireExtinguisherAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  extinguisher FireExtinguisher      @relation(fields: [fireExtinguisherId], references: [id], onDelete: Cascade)
+
+  @@index([auditId])
+  @@index([fireExtinguisherId])
+  @@map("fire_extinguisher_audit_proposed_changes")
+}
+
+model FireExtinguisherAttachment {
+  id                 String   @id @default(uuid())
+  fireExtinguisherId String
+  auditId            String?
+  name               String
+  description        String?
+  fileType           String
+  fileSize           String
+  fileUrl            String
+  cloudinaryPublicId String?
+  uploadedAt         DateTime @default(now())
+  uploadedBy         String
+
+  extinguisher FireExtinguisher       @relation(fields: [fireExtinguisherId], references: [id], onDelete: Cascade)
+  audit        FireExtinguisherAudit? @relation(fields: [auditId], references: [id], onDelete: SetNull)
+
+  @@index([fireExtinguisherId])
+  @@index([auditId])
+  @@map("fire_extinguisher_attachments")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -549,6 +673,7 @@ model CatalogItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([category, label])
   @@index([category])
   @@map("catalog_items")
 }

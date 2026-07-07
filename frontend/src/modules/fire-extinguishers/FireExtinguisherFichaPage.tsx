@@ -7,7 +7,7 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatDate } from '../../shared/utils/format'
 import { downloadAsPdf } from '../../shared/utils/downloadAsPdf'
-import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
+import { fireExtinguishersApi, fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
 import { assetsApi } from '../../shared/api/assets.api'
 import { FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 
@@ -27,9 +27,9 @@ export default function FireExtinguisherFichaPage() {
   const fichaRef = useRef<HTMLDivElement>(null)
   const [downloading, setDownloading] = useState(false)
 
-  const { data: fe } = useQuery({ queryKey: ['fire-extinguisher', id], queryFn: () => fireExtinguishersApi.findById(id!) })
-  const { data: history = [] } = useQuery({ queryKey: ['fire-extinguisher-history', id], queryFn: () => fireExtinguishersApi.findHistory(id!) })
-  const { data: assets = [] } = useQuery({ queryKey: ['assets-list'], queryFn: () => assetsApi.findAll() })
+  const { data: fe } = useQuery({ queryKey: fireExtinguisherKeys.detail(id!), queryFn: () => fireExtinguishersApi.findById(id!) })
+  const { data: history = [] } = useQuery({ queryKey: fireExtinguisherKeys.history(id!), queryFn: () => fireExtinguishersApi.findHistory(id!) })
+  const { data: assets = [] } = useQuery({ queryKey: ['assets'], queryFn: () => assetsApi.findAll() })
 
   if (!fe) {
     return (

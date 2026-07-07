@@ -1,8 +1,17 @@
-export type ExpirationStatus = 'vigente' | 'proximo_a_vencer' | 'vencido'
+export type ExpirationStatus = 'vigente' | 'proximo_vencer' | 'vencido'
 export type PolicyStatus = 'vigente' | 'proxima_a_vencer' | 'vencida'
 
 export function toISODate(date: Date = new Date()): string {
   return date.toISOString().slice(0, 10)
+}
+
+/**
+ * Devuelve el año/mes actual en formato "YYYY-MM" (UTC), usado para
+ * derivar `auditPeriod` en el servidor — nunca se confía en lo que
+ * mande el cliente para este valor.
+ */
+export function currentYearMonth(): string {
+  return toISODate().slice(0, 7)
 }
 
 /**
@@ -55,7 +64,7 @@ export function computeExpirationStatus(
   const inNDays = toISODate(addDays(new Date(), daysWarning))
 
   if (exp < today) return 'vencido'
-  if (exp <= inNDays) return 'proximo_a_vencer'
+  if (exp <= inNDays) return 'proximo_vencer'
   return 'vigente'
 }
 

@@ -71,6 +71,17 @@ export const FIRE_EXT_STATUS_LABELS: Record<string, string> = {
   vencido: 'Vencido',
 }
 
+// Status de FireExtinguisherAudit — dominio distinto del status de vencimiento
+// del matafuego físico (FIRE_EXT_STATUS_LABELS). PENDING/APPLIED (para el
+// status de un proposedChange individual) se resuelven vía PAYMENT_STATUS_LABELS
+// y DOCUMENT_STATUS_LABELS, ya definidos más abajo con el texto correcto.
+export const FIRE_EXT_AUDIT_STATUS_LABELS: Record<string, string> = {
+  SUBMITTED: 'Pendiente de revisión',
+  NEEDS_CORRECTION: 'Requiere corrección',
+  APPROVED: 'Aprobado',
+  REJECTED: 'Rechazado',
+}
+
 export const TASK_STATUS_LABELS: Record<string, string> = {
   pendiente: 'Pendiente',
   en_curso: 'En Curso',

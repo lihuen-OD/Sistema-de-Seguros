@@ -15,7 +15,9 @@ import {
   ShieldAlert,
   Shield,
   ClipboardList,
+  ClipboardCheck,
   SlidersHorizontal,
+  BarChart3,
 } from 'lucide-react'
 import { useState } from 'react'
 import clsx from 'clsx'
@@ -64,6 +66,8 @@ const navGroups: NavGroup[] = [
       { label: 'Productores', to: '/producers', icon: Users },
       { label: 'Tareas', to: '/tasks', icon: ClipboardList },
       { label: 'Matafuegos', to: '/fire-extinguishers', icon: Flame },
+      { label: 'Auditoría de Matafuegos', to: '/fire-extinguishers/audits', icon: ClipboardCheck },
+      { label: 'Dashboard de Matafuegos', to: '/fire-extinguishers/dashboard', icon: BarChart3 },
     ],
   },
   {
@@ -103,7 +107,20 @@ export function Sidebar({ onClose }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5 scrollbar-hide">
-        {navGroups.map((group) => (
+        {navGroups.map((group) => {
+          // Cuando dos rutas del mismo grupo comparten prefijo (ej. /fire-extinguishers
+          // y /fire-extinguishers/audits/new), gana el match más específico — evita que
+          // ambos ítems queden marcados como activos a la vez.
+          const activeTo = group.items
+            .map((item) => item.to)
+            .filter((to) =>
+              to === '/dashboard'
+                ? location.pathname === '/dashboard' || location.pathname === '/'
+                : location.pathname === to || location.pathname.startsWith(`${to}/`),
+            )
+            .sort((a, b) => b.length - a.length)[0]
+
+          return (
           <div key={group.label}>
             <p className="text-xs font-semibold uppercase tracking-widest text-slate-600 px-3 mb-1.5">
               {group.label}
@@ -111,10 +128,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             <ul className="space-y-0.5">
               {group.items.map((item) => {
                 const Icon = item.icon
-                const isActive =
-                  item.to === '/dashboard'
-                    ? location.pathname === '/dashboard' || location.pathname === '/'
-                    : location.pathname.startsWith(item.to)
+                const isActive = item.to === activeTo
                 return (
                   <li key={item.to}>
                     <NavLink
@@ -135,7 +149,8 @@ export function Sidebar({ onClose }: SidebarProps) {
               })}
             </ul>
           </div>
-        ))}
+          )
+        })}
       </nav>
 
       {/* Footer */}

@@ -57,6 +57,10 @@ const FireExtinguisherDetailPage = lazy(() => import('../modules/fire-extinguish
 const FireExtinguisherNewPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherNewPage'))
 const FireExtinguisherEditPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherEditPage'))
 const FireExtinguisherFichaPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherFichaPage'))
+const FireExtinguisherAuditNewPage = lazy(() => import('../modules/fire-extinguishers/audits/FireExtinguisherAuditNewPage'))
+const FireExtinguisherAuditsQueuePage = lazy(() => import('../modules/fire-extinguishers/audits/FireExtinguisherAuditsQueuePage'))
+const FireExtinguisherDashboardPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherDashboardPage'))
+const FireExtinguisherAuditDetailPage = lazy(() => import('../modules/fire-extinguishers/audits/FireExtinguisherAuditDetailPage'))
 
 // Settings
 const CompaniesPage = lazy(() => import('../modules/settings/companies/CompaniesPage'))
@@ -136,6 +140,10 @@ export default function App() {
           {/* Fire Extinguishers */}
           <Route path="/fire-extinguishers" element={<FireExtinguishersPage />} />
           <Route path="/fire-extinguishers/new" element={<FireExtinguisherNewPage />} />
+          <Route path="/fire-extinguishers/dashboard" element={<FireExtinguisherDashboardPage />} />
+          <Route path="/fire-extinguishers/audits" element={<FireExtinguisherAuditsQueuePage />} />
+          <Route path="/fire-extinguishers/audits/new" element={<FireExtinguisherAuditNewPage />} />
+          <Route path="/fire-extinguishers/audits/:id" element={<FireExtinguisherAuditDetailPage />} />
           <Route path="/fire-extinguishers/:id" element={<FireExtinguisherDetailPage />} />
           <Route path="/fire-extinguishers/:id/edit" element={<FireExtinguisherEditPage />} />
           <Route path="/fire-extinguishers/:id/ficha" element={<FireExtinguisherFichaPage />} />

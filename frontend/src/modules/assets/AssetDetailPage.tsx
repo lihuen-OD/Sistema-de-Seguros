@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FileDown, Edit2, ShieldCheck, Flame, Paperclip,
   MapPin, Building2, Download, ShieldAlert, TrendingUp,
-  Calendar, ExternalLink, Box, FileText,
+  Calendar, ExternalLink, Box, FileText, Plus, Link2,
 } from 'lucide-react'
 import { AssetPhotoGallery } from '../../shared/components/photos/AssetPhotoGallery'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -17,7 +17,7 @@ import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
-import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
+import { fireExtinguishersApi, fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
 import { companiesApi } from '../../shared/api/companies.api'
 import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { claimsApi } from '../../shared/api/claims.api'
@@ -26,6 +26,7 @@ import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../shared/constant
 import type { Policy, FireExtinguisher, TableColumn, AssetValueEntry, AccountingDocument } from '../../shared/types'
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
+import { AssociateFireExtinguisherModal } from './AssociateFireExtinguisherModal'
 
 const TABS = ['Pólizas', 'Doc. Contables', 'Matafuegos', 'Siniestros', 'Valuaciones', 'Adjuntos'] as const
 type Tab = (typeof TABS)[number]
@@ -100,6 +101,7 @@ export default function AssetDetailPage() {
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0)
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
   const [uploadingPhotos, setUploadingPhotos] = useState(false)
+  const [showAssociateModal, setShowAssociateModal] = useState(false)
   const queryClient = useQueryClient()
   const attachmentsKey = ['assets', id, 'attachments'] as const
 
@@ -118,7 +120,7 @@ export default function AssetDetailPage() {
   })
 
   const { data: allFireExtinguishers = [] } = useQuery({
-    queryKey: ['fire-extinguishers', { assetId: id }],
+    queryKey: fireExtinguisherKeys.list({ assetId: id }),
     queryFn: () => fireExtinguishersApi.findAll({ assetId: id }),
     enabled: !!id,
   })
@@ -821,14 +823,32 @@ export default function AssetDetailPage() {
             />
           )}
           {activeTab === 'Matafuegos' && (
-            <DataTable
-              columns={feColumns}
-              data={fireExtinguishers}
-              rowKey="id"
-              onRowClick={(row) => navigate(`/fire-extinguishers/${row.id}`)}
-              emptyTitle="Sin matafuegos"
-              emptyDescription="Este activo no tiene matafuegos asociados."
-            />
+            <div>
+              <div className="flex items-center justify-end gap-2 px-4 py-3 border-b border-slate-100">
+                <button
+                  onClick={() => setShowAssociateModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                >
+                  <Link2 size={13} />
+                  Asociar existente
+                </button>
+                <button
+                  onClick={() => navigate(`/fire-extinguishers/new?assetId=${asset.id}`)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  <Plus size={13} />
+                  Nuevo matafuego
+                </button>
+              </div>
+              <DataTable
+                columns={feColumns}
+                data={fireExtinguishers}
+                rowKey="id"
+                onRowClick={(row) => navigate(`/fire-extinguishers/${row.id}`)}
+                emptyTitle="Sin matafuegos"
+                emptyDescription="Este activo no tiene matafuegos asociados."
+              />
+            </div>
           )}
           {activeTab === 'Siniestros' && (
             <AssetClaimsTab assetId={asset.id} policies={policies} claims={claims} />
@@ -841,6 +861,14 @@ export default function AssetDetailPage() {
           )}
         </div>
       </SectionCard>
+
+      {showAssociateModal && (
+        <AssociateFireExtinguisherModal
+          assetId={asset.id}
+          assetName={asset.name}
+          onClose={() => setShowAssociateModal(false)}
+        />
+      )}
     </PageContent>
   )
 }

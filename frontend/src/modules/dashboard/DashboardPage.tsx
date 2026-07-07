@@ -22,7 +22,7 @@ import { ASSET_TYPES } from '../../shared/constants'
 import { assetsApi } from '../../shared/api/assets.api'
 import { policiesApi } from '../../shared/api/policies.api'
 import { documentsApi } from '../../shared/api/documents.api'
-import { fireExtinguishersApi } from '../../shared/api/fire-extinguishers.api'
+import { fireExtinguishersApi, fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
 import { companiesApi } from '../../shared/api/companies.api'
 import { costCentersApi } from '../../shared/api/cost-centers.api'
 import { producersApi } from '../../shared/api/producers.api'
@@ -55,7 +55,7 @@ export default function DashboardPage() {
   // ── Data queries ──────────────────────────────────────────────────
   const { data: allAssets = [], isError: assetsError } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
   const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: allFireExtinguishers = [] } = useQuery({ queryKey: ['fire-extinguishers'], queryFn: () => fireExtinguishersApi.findAll() })
+  const { data: allFireExtinguishers = [] } = useQuery({ queryKey: fireExtinguisherKeys.all, queryFn: () => fireExtinguishersApi.findAll() })
   const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
   const { data: financialDocs = [] } = useQuery({
     queryKey: ['documents', 'financial'],

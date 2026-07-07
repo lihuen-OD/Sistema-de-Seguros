@@ -16,17 +16,26 @@ import {
 } from '../../shared/components/forms/FormSection'
 import {
   fireExtinguishersApi,
+  fireExtinguisherKeys,
   type FireExtinguisherCreateInput,
 } from '../../shared/api/fire-extinguishers.api'
 import { assetsApi } from '../../shared/api/assets.api'
 import { catalogsApi } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
+import { FIRE_EXT_ESTABLISHMENTS } from '../../shared/types'
+
+const CURRENT_YEAR = new Date().getFullYear()
 
 interface FormErrors {
   type?: string
   capacity?: string
   chargeDate?: string
   expirationDate?: string
+  associatedLocationType?: string
+  internalNumber?: string
+  cylinderNumber?: string
+  manufacturingYear?: string
+  establishment?: string
 }
 
 export default function FireExtinguisherEditPage() {
@@ -35,7 +44,7 @@ export default function FireExtinguisherEditPage() {
   const queryClient = useQueryClient()
 
   const { data: original, isLoading, isError } = useQuery({
-    queryKey: ['fire-extinguishers', id],
+    queryKey: fireExtinguisherKeys.detail(id!),
     queryFn: () => fireExtinguishersApi.findById(id!),
     enabled: !!id,
   })
@@ -65,6 +74,12 @@ export default function FireExtinguisherEditPage() {
   const [associatedAssetId, setAssociatedAssetId] = useState('')
   const [associatedLocationType, setAssociatedLocationType] = useState('')
   const [observations, setObservations] = useState('')
+  const [internalNumber, setInternalNumber] = useState('')
+  const [cylinderNumber, setCylinderNumber] = useState('')
+  const [brand, setBrand] = useState('')
+  const [manufacturingYear, setManufacturingYear] = useState('')
+  const [establishment, setEstablishment] = useState('')
+  const [location, setLocation] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [seeded, setSeeded] = useState(false)
@@ -82,9 +97,18 @@ export default function FireExtinguisherEditPage() {
       setAssociatedAssetId(original.associatedAssetId ?? '')
       setAssociatedLocationType(original.associatedLocationType as string)
       setObservations(original.observations ?? '')
+      setInternalNumber(original.internalNumber ?? '')
+      setCylinderNumber(original.cylinderNumber ?? '')
+      setBrand(original.brand ?? '')
+      setManufacturingYear(original.manufacturingYear != null ? String(original.manufacturingYear) : '')
+      setEstablishment(original.establishment ?? '')
+      setLocation(original.location ?? '')
       setSeeded(true)
     }
   }, [original, seeded])
+
+  const isMissingLegacyData =
+    seeded && (!original?.internalNumber || !original?.cylinderNumber || !original?.manufacturingYear || !original?.establishment)
 
   useEffect(() => {
     if (!manualExpDate && chargeDate) {
@@ -122,6 +146,18 @@ export default function FireExtinguisherEditPage() {
     if (!capacity) e.capacity = 'Seleccioná una capacidad'
     if (!chargeDate) e.chargeDate = 'La fecha de carga es obligatoria'
     if (!expirationDate) e.expirationDate = 'La fecha de vencimiento es obligatoria'
+    if (!associatedLocationType) e.associatedLocationType = 'Seleccioná un tipo de ubicación'
+    if (!internalNumber.trim()) e.internalNumber = 'El número interno es obligatorio'
+    if (!cylinderNumber.trim()) e.cylinderNumber = 'El número de cilindro es obligatorio'
+    if (!establishment) e.establishment = 'Seleccioná un establecimiento'
+    if (!manufacturingYear) {
+      e.manufacturingYear = 'El año de fabricación es obligatorio'
+    } else {
+      const y = parseInt(manufacturingYear, 10)
+      if (Number.isNaN(y) || y < 1950 || y > CURRENT_YEAR) {
+        e.manufacturingYear = `Ingresá un año entre 1950 y ${CURRENT_YEAR}`
+      }
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -139,11 +175,17 @@ export default function FireExtinguisherEditPage() {
         expirationDate,
         associatedAssetId: associatedAssetId || undefined,
         associatedLocationType,
+        location: location.trim() || undefined,
+        internalNumber: internalNumber.trim(),
+        establishment,
+        brand: brand.trim() || undefined,
+        cylinderNumber: cylinderNumber.trim(),
+        manufacturingYear: parseInt(manufacturingYear, 10),
         observations: observations.trim(),
       }
 
       await fireExtinguishersApi.update(id!, input)
-      await queryClient.invalidateQueries({ queryKey: ['fire-extinguishers'] })
+      await queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
       navigate(ROUTES.FIRE_EXTINGUISHERS_DETAIL(id!))
     } catch {
       setSubmitting(false)
@@ -162,6 +204,15 @@ export default function FireExtinguisherEditPage() {
       />
 
       <form onSubmit={handleSubmit} noValidate>
+        {isMissingLegacyData && (
+          <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+            <span>
+              Este registro no tiene todos los datos cargados (número interno, número de cilindro,
+              año de fabricación y/o establecimiento) — completalos antes de guardar.
+            </span>
+          </div>
+        )}
+
         <SectionCard title="Datos del Matafuego" className="mb-5">
           {/* Code — read-only */}
           <div className="mb-5 flex items-center gap-3 px-4 py-3 bg-slate-50 rounded-lg border border-slate-200">
@@ -170,30 +221,75 @@ export default function FireExtinguisherEditPage() {
             <span className="text-xs text-slate-400 ml-2">(generado automáticamente, no editable)</span>
           </div>
 
-          <FormSection title="Tipo y capacidad">
-            <FormField label="Tipo de agente extintor" required error={errors.type}>
-              <FormSelect
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-              >
-                <option value="">Seleccionar tipo…</option>
-                {extTypes.map((t) => (
-                  <option key={t.id} value={t.label}>{t.label}</option>
-                ))}
-              </FormSelect>
+          <FormSection title="Identificación del equipo">
+            <FormField label="Número interno" required error={errors.internalNumber}>
+              <FormInput
+                type="text"
+                value={internalNumber}
+                onChange={(e) => setInternalNumber(e.target.value)}
+                placeholder="Ej: INT-045"
+              />
             </FormField>
-            <FormField label="Capacidad" required error={errors.capacity}>
-              <FormSelect
-                value={capacity}
-                onChange={(e) => setCapacity(e.target.value)}
-              >
-                <option value="">Seleccionar capacidad…</option>
-                {extCapacities.map((c) => (
-                  <option key={c.id} value={c.label}>{c.label}</option>
-                ))}
-              </FormSelect>
+            <FormField label="Número de cilindro" required error={errors.cylinderNumber}>
+              <FormInput
+                type="text"
+                value={cylinderNumber}
+                onChange={(e) => setCylinderNumber(e.target.value)}
+                placeholder="Ej: CIL-10023"
+              />
             </FormField>
+            <FormField label="Marca">
+              <FormInput
+                type="text"
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                placeholder="Ej: Cesa, Amerex, Kidde"
+              />
+            </FormField>
+            <FormField label="Año de fabricación" required error={errors.manufacturingYear}>
+              <FormInput
+                type="number"
+                min={1950}
+                max={CURRENT_YEAR}
+                value={manufacturingYear}
+                onChange={(e) => setManufacturingYear(e.target.value)}
+              />
+            </FormField>
+            {manufacturingYear && !Number.isNaN(parseInt(manufacturingYear, 10)) && (
+              <div className="col-span-2">
+                <p className="text-xs text-slate-400 -mt-1">
+                  Vencimiento por vida útil: {parseInt(manufacturingYear, 10) + 20}
+                </p>
+              </div>
+            )}
           </FormSection>
+
+          <div className="mt-5">
+            <FormSection title="Tipo y capacidad">
+              <FormField label="Tipo de agente extintor" required error={errors.type}>
+                <FormSelect
+                  value={type}
+                  onChange={(e) => setType(e.target.value)}
+                >
+                  <option value="">Seleccionar tipo…</option>
+                  {extTypes.map((t) => (
+                    <option key={t.id} value={t.label}>{t.label}</option>
+                  ))}
+                </FormSelect>
+              </FormField>
+              <FormField label="Capacidad" required error={errors.capacity}>
+                <FormSelect
+                  value={capacity}
+                  onChange={(e) => setCapacity(e.target.value)}
+                >
+                  <option value="">Seleccionar capacidad…</option>
+                  {extCapacities.map((c) => (
+                    <option key={c.id} value={c.label}>{c.label}</option>
+                  ))}
+                </FormSelect>
+              </FormField>
+            </FormSection>
+          </div>
 
           <div className="mt-5">
             <FormSection title="Fechas">
@@ -220,7 +316,18 @@ export default function FireExtinguisherEditPage() {
 
         <SectionCard title="Ubicación" className="mb-5">
           <FormSection title="Asignación física">
-            <FormField label="Asignación física" required>
+            <FormField label="Establecimiento" required error={errors.establishment}>
+              <FormSelect
+                value={establishment}
+                onChange={(e) => setEstablishment(e.target.value)}
+              >
+                <option value="">Seleccionar establecimiento…</option>
+                {FIRE_EXT_ESTABLISHMENTS.map((est) => (
+                  <option key={est} value={est}>{est}</option>
+                ))}
+              </FormSelect>
+            </FormField>
+            <FormField label="Asignación física" required error={errors.associatedLocationType}>
               <FormSelect
                 value={associatedLocationType}
                 onChange={(e) => setAssociatedLocationType(e.target.value)}
@@ -230,6 +337,14 @@ export default function FireExtinguisherEditPage() {
                   <option key={lt.id} value={lt.label}>{lt.label}</option>
                 ))}
               </FormSelect>
+            </FormField>
+            <FormField label="Detalle de ubicación (opcional)">
+              <FormInput
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Ej: Pasillo 3, cerca del tablero eléctrico"
+              />
             </FormField>
             <FormField label="Activo asociado (opcional)">
               <FormSelect

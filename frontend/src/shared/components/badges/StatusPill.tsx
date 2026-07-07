@@ -5,6 +5,7 @@ import {
   PAYMENT_STATUS_LABELS,
   DOCUMENT_STATUS_LABELS,
   FIRE_EXT_STATUS_LABELS,
+  FIRE_EXT_AUDIT_STATUS_LABELS,
   TASK_STATUS_LABELS,
   TASK_PRIORITY_LABELS,
 } from '../../constants'
@@ -50,6 +51,11 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   OBSERVED:                { bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200' },
   // Fire ext
   vencido:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
+  // Fire ext — auditorías (Fase 4)
+  SUBMITTED:               { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+  APPROVED:                { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  REJECTED:                { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
+  NEEDS_CORRECTION:        { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
   // Task
   en_curso:                { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
   finalizada:              { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
@@ -66,6 +72,7 @@ const allLabels = {
   ...PAYMENT_STATUS_LABELS,
   ...DOCUMENT_STATUS_LABELS,
   ...FIRE_EXT_STATUS_LABELS,
+  ...FIRE_EXT_AUDIT_STATUS_LABELS,
   ...TASK_STATUS_LABELS,
   ...TASK_PRIORITY_LABELS,
 }

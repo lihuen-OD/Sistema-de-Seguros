@@ -1,5 +1,6 @@
 import { prisma } from '../../config/database'
 import { toISODate, toDateStr, dateOffset, todayDate } from '../../shared/utils/dates'
+import { buildFireExtinguisherStatusFilter } from '../fire-extinguishers/fire-extinguishers.expiration'
 
 export const dashboardService = {
   // ── KPIs ──────────────────────────────────────────────────────────────────────
@@ -48,10 +49,10 @@ export const dashboardService = {
       }),
       prisma.fireExtinguisher.count({ where: { isActive: true } }),
       prisma.fireExtinguisher.count({
-        where: { isActive: true, expirationDate: { lt: today } },
+        where: { isActive: true, ...buildFireExtinguisherStatusFilter('vencido') },
       }),
       prisma.fireExtinguisher.count({
-        where: { isActive: true, expirationDate: { gte: today, lte: in30Days } },
+        where: { isActive: true, ...buildFireExtinguisherStatusFilter('proximo_vencer') },
       }),
       prisma.claim.count({ where: { isActive: true } }),
       prisma.claim.count({
@@ -191,9 +192,11 @@ export const dashboardService = {
         }),
         prisma.company.findMany({ select: { id: true, name: true } }),
         prisma.fireExtinguisher.count({ where: { isActive: true } }),
-        prisma.fireExtinguisher.count({ where: { isActive: true, expirationDate: { lt: today } } }),
         prisma.fireExtinguisher.count({
-          where: { isActive: true, expirationDate: { gte: today, lte: in30Days } },
+          where: { isActive: true, ...buildFireExtinguisherStatusFilter('vencido') },
+        }),
+        prisma.fireExtinguisher.count({
+          where: { isActive: true, ...buildFireExtinguisherStatusFilter('proximo_vencer') },
         }),
         prisma.policy.count({ where: { isActive: true, endDate: { gt: in30Days } } }),
         prisma.policy.count({ where: { isActive: true, endDate: { gte: today, lte: in30Days } } }),

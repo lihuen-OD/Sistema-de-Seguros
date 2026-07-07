@@ -43,6 +43,10 @@ export const catalogsController = {
         throw new AppError(400, 'El campo label es requerido y no puede estar vacío', 'VALIDATION_ERROR')
       }
 
+      if (label.trim().length > 200) {
+        throw new AppError(400, 'El campo label no puede superar los 200 caracteres', 'VALIDATION_ERROR')
+      }
+
       if (sortOrder !== undefined && (typeof sortOrder !== 'number' || !Number.isInteger(sortOrder))) {
         throw new AppError(400, 'sortOrder debe ser un número entero', 'VALIDATION_ERROR')
       }
@@ -69,6 +73,10 @@ export const catalogsController = {
 
       if (label !== undefined && (typeof label !== 'string' || label.trim() === '')) {
         throw new AppError(400, 'El campo label no puede estar vacío', 'VALIDATION_ERROR')
+      }
+
+      if (typeof label === 'string' && label.trim().length > 200) {
+        throw new AppError(400, 'El campo label no puede superar los 200 caracteres', 'VALIDATION_ERROR')
       }
 
       if (sortOrder !== undefined && (typeof sortOrder !== 'number' || !Number.isInteger(sortOrder))) {

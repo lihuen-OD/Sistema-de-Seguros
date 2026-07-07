@@ -428,17 +428,37 @@ export interface ProducerTask {
 export interface FireExtinguisher {
   id: string
   code: string
+  internalNumber: string | null
   type: string
   capacity: string
   chargeDate: string
   expirationDate: string
   associatedAssetId: string | null
   associatedLocationType: AssociatedLocationType
+  location: string | null
+  establishment: string | null
+  brand: string | null
+  cylinderNumber: string | null
+  manufacturingYear: number | null
   status: FireExtStatus
+  chargeStatus: FireExtStatus
+  manufacturingLifeStatus: FireExtStatus | null
+  manufacturingExpirationYear: number | null
   observations: string
   createdAt: string
   updatedAt: string
 }
+
+export const FIRE_EXT_ESTABLISHMENTS = [
+  'LA SUCHO',
+  'LA HONORIA',
+  'PLANTA',
+  'TALLER',
+  'OFICINA',
+  'OTROS',
+] as const
+
+export type FireExtEstablishment = (typeof FIRE_EXT_ESTABLISHMENTS)[number]
 
 export interface AssetStatusHistory {
   id: string
@@ -517,6 +537,13 @@ export interface ClaimExpense {
   createdBy?: string | null
 }
 
+export interface FireExtinguisherHistoryChange {
+  field: string
+  label: string
+  previousValue: string | number | boolean | null
+  newValue: string | number | boolean | null
+}
+
 export interface FireExtinguisherHistory {
   id: string
   fireExtinguisherId: string
@@ -526,6 +553,8 @@ export interface FireExtinguisherHistory {
   newValue: string
   observations: string
   createdBy: string
+  description?: string | null
+  changes?: FireExtinguisherHistoryChange[] | null
 }
 
 // ─── Bien de Uso (Finnegans API response) ────────────────────────────────────
