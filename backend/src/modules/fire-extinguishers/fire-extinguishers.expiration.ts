@@ -54,19 +54,26 @@ export function manufacturingExpirationYear(manufacturingYear?: number | null): 
 
 /**
  * Status general de un matafuego: el peor entre el status de carga
- * (vencimiento de recarga) y el status de vida útil por fabricación.
- * Única fuente de verdad — reemplaza los cálculos duplicados que existían
- * en fire-extinguishers.service.ts, dashboard.service.ts y notifications.service.ts.
+ * (vencimiento de recarga), el status de vida útil por fabricación, y el
+ * status de la prueba hidráulica del cilindro. Única fuente de verdad —
+ * reemplaza los cálculos duplicados que existían en
+ * fire-extinguishers.service.ts, dashboard.service.ts y notifications.service.ts.
  */
 export function computeFireExtinguisherStatus(
   expirationDate: Date | string,
   manufacturingYear?: number | null,
+  hydraulicTestExpirationDate?: Date | string | null,
   daysWarning = 30,
 ): FireExtStatus {
   const chargeStatus = computeExpirationStatus(expirationDate, daysWarning)
   const lifeStatus = computeManufacturingLifeStatus(manufacturingYear, null, daysWarning)
-  if (!lifeStatus) return chargeStatus
-  return worseStatus(chargeStatus, lifeStatus)
+  const hydraulicStatus = hydraulicTestExpirationDate
+    ? computeExpirationStatus(hydraulicTestExpirationDate, daysWarning)
+    : null
+  let status = chargeStatus
+  if (lifeStatus) status = worseStatus(status, lifeStatus)
+  if (hydraulicStatus) status = worseStatus(status, hydraulicStatus)
+  return status
 }
 
 /**
@@ -84,7 +91,11 @@ export function buildFireExtinguisherStatusFilter(
 
   if (status === 'vencido') {
     return {
-      OR: [{ expirationDate: { lt: today } }, { manufacturingYear: { lt: lifeLimitYear } }],
+      OR: [
+        { expirationDate: { lt: today } },
+        { manufacturingYear: { lt: lifeLimitYear } },
+        { hydraulicTestExpirationDate: { lt: today } },
+      ],
     }
   }
   if (status === 'proximo_vencer') {
@@ -92,7 +103,14 @@ export function buildFireExtinguisherStatusFilter(
       AND: [
         { NOT: { expirationDate: { lt: today } } },
         { NOT: { manufacturingYear: { lt: lifeLimitYear } } },
-        { OR: [{ expirationDate: { lte: inNDays } }, { manufacturingYear: lifeLimitYear }] },
+        { NOT: { hydraulicTestExpirationDate: { lt: today } } },
+        {
+          OR: [
+            { expirationDate: { lte: inNDays } },
+            { manufacturingYear: lifeLimitYear },
+            { hydraulicTestExpirationDate: { lte: inNDays } },
+          ],
+        },
       ],
     }
   }
@@ -101,6 +119,7 @@ export function buildFireExtinguisherStatusFilter(
       AND: [
         { expirationDate: { gt: inNDays } },
         { OR: [{ manufacturingYear: null }, { manufacturingYear: { gt: lifeLimitYear } }] },
+        { OR: [{ hydraulicTestExpirationDate: null }, { hydraulicTestExpirationDate: { gt: inNDays } }] },
       ],
     }
   }
@@ -118,6 +137,10 @@ export function buildFireExtinguisherAtRiskFilter(daysWarning = 30): Record<stri
   const lifeLimitYear = currentYear - MANUFACTURING_LIFESPAN_YEARS
 
   return {
-    OR: [{ expirationDate: { lte: inNDays } }, { manufacturingYear: { lte: lifeLimitYear } }],
+    OR: [
+      { expirationDate: { lte: inNDays } },
+      { manufacturingYear: { lte: lifeLimitYear } },
+      { hydraulicTestExpirationDate: { lte: inNDays } },
+    ],
   }
 }

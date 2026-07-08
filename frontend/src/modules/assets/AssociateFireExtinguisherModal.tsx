@@ -31,7 +31,7 @@ export function AssociateFireExtinguisherModal({ assetId, assetName, onClose }: 
       (fe) =>
         fe.code.toLowerCase().includes(q) ||
         fe.type.toLowerCase().includes(q) ||
-        (fe.internalNumber?.toLowerCase().includes(q) ?? false),
+        (fe.cylinderNumber?.toLowerCase().includes(q) ?? false),
     )
   }, [all, search])
 

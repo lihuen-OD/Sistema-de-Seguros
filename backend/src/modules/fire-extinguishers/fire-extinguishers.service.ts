@@ -21,11 +21,11 @@ import type {
 
 const FIELD_LABELS: Record<string, string> = {
   code: 'Código',
-  internalNumber: 'Número interno',
   type: 'Tipo',
   capacity: 'Capacidad',
   expirationDate: 'Vencimiento de carga',
   lastRechargeDate: 'Fecha de recarga',
+  hydraulicTestExpirationDate: 'Vencimiento de prueba hidráulica',
   assetId: 'Activo asociado',
   locationType: 'Tipo de ubicación',
   location: 'Ubicación',
@@ -102,10 +102,10 @@ const IMPORTANT_FIELD_MAP: { dbKey: string; dtoKey: keyof UpdateFireExtinguisher
   { dbKey: 'capacity', dtoKey: 'capacity' },
   { dbKey: 'expirationDate', dtoKey: 'expirationDate' },
   { dbKey: 'lastRechargeDate', dtoKey: 'chargeDate' },
+  { dbKey: 'hydraulicTestExpirationDate', dtoKey: 'hydraulicTestExpirationDate' },
   { dbKey: 'assetId', dtoKey: 'associatedAssetId' },
   { dbKey: 'locationType', dtoKey: 'associatedLocationType' },
   { dbKey: 'location', dtoKey: 'location' },
-  { dbKey: 'internalNumber', dtoKey: 'internalNumber' },
   { dbKey: 'establishment', dtoKey: 'establishment' },
   { dbKey: 'brand', dtoKey: 'brand' },
   { dbKey: 'cylinderNumber', dtoKey: 'cylinderNumber' },
@@ -134,9 +134,6 @@ function buildUpdateDiff(before: Record<string, unknown>, data: UpdateFireExting
 function handleUniqueConstraint(e: unknown): never {
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
     const target = Array.isArray(e.meta?.target) ? (e.meta.target as string[]).join(',') : String(e.meta?.target ?? '')
-    if (target.includes('internalNumber')) {
-      throw new AppError(409, 'Ya existe un matafuego con ese número interno', 'DUPLICATE_INTERNAL_NUMBER')
-    }
     if (target.includes('code')) {
       throw new AppError(409, 'Ya existe un matafuego con ese código', 'DUPLICATE_CODE')
     }
@@ -152,7 +149,6 @@ function mapFireExt(fe: Record<string, unknown>) {
   return {
     id: fe.id,
     code: fe.code,
-    internalNumber: fe.internalNumber ?? null,
     type: fe.type,
     capacity: fe.capacity,
     chargeDate: fe.lastRechargeDate ? toDateStr(fe.lastRechargeDate as Date | string) : null,
@@ -161,9 +157,19 @@ function mapFireExt(fe: Record<string, unknown>) {
     associatedLocationType: fe.locationType,
     location: fe.location ?? null,
     establishment: fe.establishment ?? null,
-    status: computeFireExtinguisherStatus(fe.expirationDate as Date | string, manufacturingYear),
+    status: computeFireExtinguisherStatus(
+      fe.expirationDate as Date | string,
+      manufacturingYear,
+      fe.hydraulicTestExpirationDate as Date | string | null,
+    ),
     chargeStatus: computeExpirationStatus(fe.expirationDate as Date | string),
     manufacturingLifeStatus: computeManufacturingLifeStatus(manufacturingYear),
+    hydraulicTestExpirationDate: fe.hydraulicTestExpirationDate
+      ? toDateStr(fe.hydraulicTestExpirationDate as Date | string)
+      : null,
+    hydraulicTestStatus: fe.hydraulicTestExpirationDate
+      ? computeExpirationStatus(fe.hydraulicTestExpirationDate as Date | string)
+      : null,
     manufacturingYear,
     manufacturingExpirationYear: manufacturingExpirationYear(manufacturingYear),
     observations: fe.observations ?? '',
@@ -244,7 +250,6 @@ export const fireExtinguishersService = {
     if (query.search) {
       where.OR = [
         { code: { contains: query.search, mode: 'insensitive' } },
-        { internalNumber: { contains: query.search, mode: 'insensitive' } },
         { type: { contains: query.search, mode: 'insensitive' } },
         { observations: { contains: query.search, mode: 'insensitive' } },
         { cylinderNumber: { contains: query.search, mode: 'insensitive' } },
@@ -315,11 +320,11 @@ export const fireExtinguishersService = {
         const created = await tx.fireExtinguisher.create({
           data: {
             code,
-            internalNumber: data.internalNumber,
             type: data.type,
             capacity: data.capacity,
             expirationDate: data.expirationDate,
             lastRechargeDate: data.chargeDate ?? null,
+            hydraulicTestExpirationDate: data.hydraulicTestExpirationDate,
             assetId: data.associatedAssetId ?? null,
             locationType: data.associatedLocationType,
             location: data.location ?? null,
@@ -337,11 +342,13 @@ export const fireExtinguishersService = {
           description: 'Matafuego dado de alta',
           newData: {
             code: created.code,
-            internalNumber: created.internalNumber,
             type: created.type,
             capacity: created.capacity,
             expirationDate: toDateStr(created.expirationDate),
             lastRechargeDate: created.lastRechargeDate ? toDateStr(created.lastRechargeDate) : null,
+            hydraulicTestExpirationDate: created.hydraulicTestExpirationDate
+              ? toDateStr(created.hydraulicTestExpirationDate)
+              : null,
             assetId: created.assetId,
             locationType: created.locationType,
             location: created.location,
@@ -382,10 +389,12 @@ export const fireExtinguishersService = {
             ...(data.capacity && { capacity: data.capacity }),
             ...(data.expirationDate && { expirationDate: data.expirationDate }),
             ...(data.chargeDate !== undefined && { lastRechargeDate: data.chargeDate }),
+            ...(data.hydraulicTestExpirationDate !== undefined && {
+              hydraulicTestExpirationDate: data.hydraulicTestExpirationDate,
+            }),
             ...(data.associatedAssetId !== undefined && { assetId: data.associatedAssetId }),
             ...(data.associatedLocationType && { locationType: data.associatedLocationType }),
             ...(data.location !== undefined && { location: data.location }),
-            ...(data.internalNumber !== undefined && { internalNumber: data.internalNumber }),
             ...(data.establishment !== undefined && { establishment: data.establishment }),
             ...(data.brand !== undefined && { brand: data.brand }),
             ...(data.cylinderNumber !== undefined && { cylinderNumber: data.cylinderNumber }),

@@ -12,6 +12,8 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
+import { CatalogSelectOrOther } from '../../shared/components/forms/CatalogSelectOrOther'
+import { SearchableSelect } from '../../shared/components/forms/SearchableSelect'
 import {
   fireExtinguishersApi,
   fireExtinguisherKeys,
@@ -20,7 +22,6 @@ import {
 import { assetsApi } from '../../shared/api/assets.api'
 import { catalogsApi } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
-import { FIRE_EXT_ESTABLISHMENTS } from '../../shared/types'
 
 function todayISO(): string {
   const now = new Date()
@@ -41,10 +42,10 @@ interface FormErrors {
   chargeDate?: string
   expirationDate?: string
   associatedLocationType?: string
-  internalNumber?: string
   cylinderNumber?: string
   manufacturingYear?: string
   establishment?: string
+  hydraulicTestExpirationDate?: string
 }
 
 export default function FireExtinguisherNewPage() {
@@ -69,16 +70,24 @@ export default function FireExtinguisherNewPage() {
     queryKey: ['catalogs', 'fire_ext_location_type'],
     queryFn: () => catalogsApi.findByCategory('fire_ext_location_type'),
   })
+  const { data: establishments = [] } = useQuery({
+    queryKey: ['catalogs', 'fire_ext_establishment'],
+    queryFn: () => catalogsApi.findByCategory('fire_ext_establishment'),
+  })
+  const { data: extBrands = [] } = useQuery({
+    queryKey: ['catalogs', 'fire_ext_brand'],
+    queryFn: () => catalogsApi.findByCategory('fire_ext_brand'),
+  })
 
   const [type, setType] = useState('')
   const [capacity, setCapacity] = useState('')
   const [chargeDate, setChargeDate] = useState(todayISO())
   const [expirationDate, setExpirationDate] = useState(addOneYear(todayISO()))
+  const [hydraulicTestExpirationDate, setHydraulicTestExpirationDate] = useState('')
   const [manualExpDate, setManualExpDate] = useState(false)
   const [associatedAssetId, setAssociatedAssetId] = useState(searchParams.get('assetId') ?? '')
   const [associatedLocationType, setAssociatedLocationType] = useState('')
   const [observations, setObservations] = useState('')
-  const [internalNumber, setInternalNumber] = useState('')
   const [cylinderNumber, setCylinderNumber] = useState('')
   const [brand, setBrand] = useState('')
   const [manufacturingYear, setManufacturingYear] = useState('')
@@ -99,8 +108,8 @@ export default function FireExtinguisherNewPage() {
     if (!capacity) e.capacity = 'Seleccioná una capacidad'
     if (!chargeDate) e.chargeDate = 'La fecha de carga es obligatoria'
     if (!expirationDate) e.expirationDate = 'La fecha de vencimiento es obligatoria'
+    if (!hydraulicTestExpirationDate) e.hydraulicTestExpirationDate = 'La fecha de vencimiento de prueba hidráulica es obligatoria'
     if (!associatedLocationType) e.associatedLocationType = 'Seleccioná un tipo de ubicación'
-    if (!internalNumber.trim()) e.internalNumber = 'El número interno es obligatorio'
     if (!cylinderNumber.trim()) e.cylinderNumber = 'El número de cilindro es obligatorio'
     if (!establishment) e.establishment = 'Seleccioná un establecimiento'
     if (!manufacturingYear) {
@@ -126,10 +135,10 @@ export default function FireExtinguisherNewPage() {
         capacity,
         chargeDate,
         expirationDate,
+        hydraulicTestExpirationDate,
         associatedAssetId: associatedAssetId || undefined,
         associatedLocationType,
         location: location.trim() || undefined,
-        internalNumber: internalNumber.trim(),
         establishment,
         brand: brand.trim() || undefined,
         cylinderNumber: cylinderNumber.trim(),
@@ -158,14 +167,6 @@ export default function FireExtinguisherNewPage() {
       <form onSubmit={handleSubmit} noValidate>
         <SectionCard title="Datos del Matafuego" className="mb-5">
           <FormSection title="Identificación del equipo">
-            <FormField label="Número interno" required error={errors.internalNumber}>
-              <FormInput
-                type="text"
-                value={internalNumber}
-                onChange={(e) => setInternalNumber(e.target.value)}
-                placeholder="Ej: INT-045"
-              />
-            </FormField>
             <FormField label="Número de cilindro" required error={errors.cylinderNumber}>
               <FormInput
                 type="text"
@@ -174,14 +175,14 @@ export default function FireExtinguisherNewPage() {
                 placeholder="Ej: CIL-10023"
               />
             </FormField>
-            <FormField label="Marca">
-              <FormInput
-                type="text"
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                placeholder="Ej: Cesa, Amerex, Kidde"
-              />
-            </FormField>
+            <CatalogSelectOrOther
+              label="Marca"
+              options={extBrands.map((b) => b.label)}
+              value={brand}
+              onChange={setBrand}
+              selectPlaceholder="Seleccionar marca…"
+              otherPlaceholder="Escribir marca…"
+            />
             <FormField label="Año de fabricación" required error={errors.manufacturingYear}>
               <FormInput
                 type="number"
@@ -264,6 +265,13 @@ export default function FireExtinguisherNewPage() {
                   </p>
                 </div>
               )}
+              <FormField label="Vencimiento de prueba hidráulica" required error={errors.hydraulicTestExpirationDate}>
+                <FormInput
+                  type="date"
+                  value={hydraulicTestExpirationDate}
+                  onChange={(e) => setHydraulicTestExpirationDate(e.target.value)}
+                />
+              </FormField>
             </FormSection>
           </div>
         </SectionCard>
@@ -276,8 +284,8 @@ export default function FireExtinguisherNewPage() {
                 onChange={(e) => setEstablishment(e.target.value)}
               >
                 <option value="">Seleccionar establecimiento…</option>
-                {FIRE_EXT_ESTABLISHMENTS.map((est) => (
-                  <option key={est} value={est}>{est}</option>
+                {establishments.map((est) => (
+                  <option key={est.id} value={est.label}>{est.label}</option>
                 ))}
               </FormSelect>
             </FormField>
@@ -301,19 +309,16 @@ export default function FireExtinguisherNewPage() {
               />
             </FormField>
             <FormField label="Activo asociado (opcional)">
-              <FormSelect
+              <SearchableSelect
                 value={associatedAssetId}
-                onChange={(e) => setAssociatedAssetId(e.target.value)}
-              >
-                <option value="">— Sin activo específico</option>
-                {assets
+                onChange={setAssociatedAssetId}
+                placeholder="— Sin activo específico"
+                searchPlaceholder="Buscar por código, nombre o tipo…"
+                emptyOptionLabel="— Sin activo específico"
+                options={assets
                   .filter((a) => a.status === 'activo')
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.internalCode} — {a.name}
-                    </option>
-                  ))}
-              </FormSelect>
+                  .map((a) => ({ value: a.id, label: `${a.internalCode} — ${a.name}`, sublabel: a.assetType }))}
+              />
             </FormField>
           </FormSection>
         </SectionCard>

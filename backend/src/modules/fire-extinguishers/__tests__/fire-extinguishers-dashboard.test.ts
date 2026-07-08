@@ -15,6 +15,9 @@ jest.mock('../../../config/database', () => ({
       findMany: jest.fn(),
       count: jest.fn(),
     },
+    catalogItem: {
+      findMany: jest.fn(),
+    },
   },
 }))
 
@@ -22,6 +25,8 @@ import { prisma } from '../../../config/database'
 const db = prisma as any
 
 const BASE_DATE = new Date('2026-07-07T00:00:00.000Z')
+
+const ESTABLISHMENT_CATALOG = ['LA SUCHO', 'LA HONORIA', 'PLANTA', 'TALLER', 'OFICINA'].map((label) => ({ label }))
 
 describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
   beforeEach(() => {
@@ -32,6 +37,7 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     db.fireExtinguisher.groupBy.mockResolvedValue([])
     db.fireExtinguisherAudit.findMany.mockResolvedValue([])
     db.fireExtinguisherAudit.count.mockResolvedValue(0)
+    db.catalogItem.findMany.mockResolvedValue(ESTABLISHMENT_CATALOG)
   })
 
   it('computes totals, deriving vigente by subtraction', async () => {
@@ -48,7 +54,7 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     expect(res.body.data.totals).toEqual({ total: 10, vigente: 5, proximo_vencer: 3, vencido: 2 })
   })
 
-  it('always returns the 6 fixed establishment zones, zero-filled when empty', async () => {
+  it('always returns every establishment from the catalog, zero-filled when empty', async () => {
     db.fireExtinguisher.findMany.mockResolvedValue([
       { establishment: 'PLANTA', expirationDate: new Date('2020-01-01'), manufacturingYear: 2000 }, // vencido
       { establishment: 'PLANTA', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024 }, // vigente
@@ -62,7 +68,7 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     expect(res.status).toBe(200)
     const byEstablishment = res.body.data.byEstablishment
     expect(byEstablishment.map((b: any) => b.establishment)).toEqual([
-      'LA SUCHO', 'LA HONORIA', 'PLANTA', 'TALLER', 'OFICINA', 'OTROS',
+      'LA SUCHO', 'LA HONORIA', 'PLANTA', 'TALLER', 'OFICINA',
     ])
     const planta = byEstablishment.find((b: any) => b.establishment === 'PLANTA')
     expect(planta).toMatchObject({ total: 2, vigente: 1, vencido: 1, proximo_vencer: 0 })

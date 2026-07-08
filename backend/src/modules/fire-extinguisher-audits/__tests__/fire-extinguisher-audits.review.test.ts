@@ -373,7 +373,7 @@ describe('Fire Extinguisher Audits — Review API', () => {
       db.fireExtinguisherAudit.findMany.mockResolvedValue([
         {
           ...makeAuditRow(),
-          extinguisher: { id: FE_ID, code: 'MAT-001-A', internalNumber: 'INT-01', type: 'Polvo seco ABC', establishment: 'PLANTA', location: 'Planta baja' },
+          extinguisher: { id: FE_ID, code: 'MAT-001-A', cylinderNumber: 'CIL-01', type: 'Polvo seco ABC', establishment: 'PLANTA', location: 'Planta baja' },
           _count: { proposedChanges: 2 },
         },
       ])

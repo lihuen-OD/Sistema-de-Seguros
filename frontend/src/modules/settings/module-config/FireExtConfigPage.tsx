@@ -35,6 +35,22 @@ export default function FireExtConfigPage() {
             addPlaceholder="Ej: Establecimiento"
           />
         </SectionCard>
+
+        <SectionCard title="Establecimiento" noPadding>
+          <CatalogManager
+            category="fire_ext_establishment"
+            title="Establecimiento"
+            addPlaceholder="Ej: PLANTA"
+          />
+        </SectionCard>
+
+        <SectionCard title="Marca" noPadding>
+          <CatalogManager
+            category="fire_ext_brand"
+            title="Marca"
+            addPlaceholder="Ej: FADESA"
+          />
+        </SectionCard>
       </div>
     </PageContent>
   )

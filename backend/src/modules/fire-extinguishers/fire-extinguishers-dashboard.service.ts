@@ -1,7 +1,7 @@
 import { prisma } from '../../config/database'
 import { currentYearMonth } from '../../shared/utils/dates'
 import { computeFireExtinguisherStatus, buildFireExtinguisherStatusFilter } from './fire-extinguishers.expiration'
-import { FIRE_EXT_ESTABLISHMENTS } from './fire-extinguishers.constants'
+import { catalogsService } from '../catalogs/catalogs.service'
 
 interface StatusBucket {
   total: number
@@ -23,6 +23,7 @@ export const fireExtinguishersDashboardService = {
       vencidoCount,
       proximoVencerCount,
       establishmentRows,
+      establishmentCatalog,
       byTypeRaw,
       auditedRows,
       pendingReview,
@@ -34,8 +35,14 @@ export const fireExtinguishersDashboardService = {
       prisma.fireExtinguisher.count({ where: { isActive: true, ...buildFireExtinguisherStatusFilter('proximo_vencer') } }),
       prisma.fireExtinguisher.findMany({
         where: { isActive: true },
-        select: { establishment: true, expirationDate: true, manufacturingYear: true },
+        select: {
+          establishment: true,
+          expirationDate: true,
+          manufacturingYear: true,
+          hydraulicTestExpirationDate: true,
+        },
       }),
+      catalogsService.findByCategory('fire_ext_establishment'),
       prisma.fireExtinguisher.groupBy({
         by: ['type'],
         _count: { _all: true },
@@ -58,17 +65,18 @@ export const fireExtinguishersDashboardService = {
 
     const vigenteCount = totalActive - vencidoCount - proximoVencerCount
 
+    const establishments = establishmentCatalog.map((c) => c.label)
     const byEstablishmentMap = new Map<string, StatusBucket>(
-      FIRE_EXT_ESTABLISHMENTS.map((e) => [e, emptyBucket()]),
+      establishments.map((e) => [e, emptyBucket()]),
     )
     for (const row of establishmentRows) {
       const bucket = row.establishment ? byEstablishmentMap.get(row.establishment) : undefined
       if (!bucket) continue // establecimiento legacy sin valor reconocido — no rompe el desglose
-      const status = computeFireExtinguisherStatus(row.expirationDate, row.manufacturingYear)
+      const status = computeFireExtinguisherStatus(row.expirationDate, row.manufacturingYear, row.hydraulicTestExpirationDate)
       bucket.total += 1
       bucket[status] += 1
     }
-    const byEstablishment = FIRE_EXT_ESTABLISHMENTS.map((establishment) => ({
+    const byEstablishment = establishments.map((establishment) => ({
       establishment,
       ...byEstablishmentMap.get(establishment)!,
     }))

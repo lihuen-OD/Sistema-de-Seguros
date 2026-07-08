@@ -16,6 +16,7 @@ import {
   Plus,
   Trash2,
   ClipboardCheck,
+  Droplet,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -281,6 +282,24 @@ export default function FireExtinguisherDetailPage() {
         </div>
       )}
 
+      {/* Alert banner for hydraulic test (independent of charge/life status), siempre visible */}
+      {fe.hydraulicTestStatus && fe.hydraulicTestStatus !== 'vigente' && (
+        <div
+          className={`mb-5 flex items-start gap-3 px-4 py-3 rounded-xl text-sm border ${
+            fe.hydraulicTestStatus === 'vencido'
+              ? 'bg-red-50 border-red-200 text-red-700'
+              : 'bg-amber-50 border-amber-200 text-amber-700'
+          }`}
+        >
+          <Droplet size={16} className="mt-0.5 flex-shrink-0" />
+          <span>
+            {fe.hydraulicTestStatus === 'vencido'
+              ? `Prueba hidráulica vencida (${formatDate(fe.hydraulicTestExpirationDate!)}). Requiere prueba y reemplazo del cilindro si corresponde.`
+              : `Prueba hidráulica próxima a vencer (${formatDate(fe.hydraulicTestExpirationDate!)}). Programar la prueba del cilindro.`}
+          </span>
+        </div>
+      )}
+
       {/* Recharge modal */}
       {showRechargeModal && (
         <RechargeModal
@@ -381,10 +400,6 @@ export default function FireExtinguisherDetailPage() {
               <dd className="text-sm font-mono text-slate-700">{fe.cylinderNumber ?? '—'}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-500 mb-0.5">Número interno</dt>
-              <dd className="text-sm font-mono text-slate-700">{fe.internalNumber ?? '—'}</dd>
-            </div>
-            <div>
               <dt className="text-xs text-slate-500 mb-0.5">Año de fabricación</dt>
               <dd className="text-sm text-slate-700">
                 {fe.manufacturingYear ?? '—'}
@@ -454,7 +469,7 @@ export default function FireExtinguisherDetailPage() {
 
         {activeTab === 'vencimientos' && (
           <div className="p-5">
-            <MetricGrid cols={2}>
+            <MetricGrid cols={3}>
               <KpiCard
                 label="Estado de Carga"
                 value={FIRE_EXT_STATUS_LABELS[fe.chargeStatus] ?? fe.chargeStatus}
@@ -477,6 +492,25 @@ export default function FireExtinguisherDetailPage() {
                     : fe.manufacturingLifeStatus === 'proximo_vencer'
                       ? 'warning'
                       : fe.manufacturingLifeStatus === 'vigente'
+                        ? 'success'
+                        : 'default'
+                }
+              />
+              <KpiCard
+                label="Estado de Prueba Hidráulica"
+                value={fe.hydraulicTestStatus ? (FIRE_EXT_STATUS_LABELS[fe.hydraulicTestStatus] ?? fe.hydraulicTestStatus) : 'No aplica'}
+                description={
+                  fe.hydraulicTestExpirationDate
+                    ? `Vence ${formatDate(fe.hydraulicTestExpirationDate)}`
+                    : 'Sin fecha de prueba hidráulica cargada'
+                }
+                icon={Droplet}
+                variant={
+                  fe.hydraulicTestStatus === 'vencido'
+                    ? 'danger'
+                    : fe.hydraulicTestStatus === 'proximo_vencer'
+                      ? 'warning'
+                      : fe.hydraulicTestStatus === 'vigente'
                         ? 'success'
                         : 'default'
                 }

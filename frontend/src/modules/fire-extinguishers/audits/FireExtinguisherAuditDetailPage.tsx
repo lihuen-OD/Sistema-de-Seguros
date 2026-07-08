@@ -85,7 +85,7 @@ export default function FireExtinguisherAuditDetailPage() {
   return (
     <PageContent>
       <PageHeader
-        title={`Auditoría · ${extinguisher?.internalNumber ?? extinguisher?.code ?? '…'}`}
+        title={`Auditoría · ${extinguisher?.code ?? '…'}${extinguisher?.cylinderNumber ? ` · Cilindro ${extinguisher.cylinderNumber}` : ''}`}
         subtitle={`Período ${audit.auditPeriod} · Auditado por ${audit.auditedBy} el ${audit.auditDate}`}
         category="Matafuegos"
         backTo={ROUTES.FIRE_EXTINGUISHERS_AUDITS}

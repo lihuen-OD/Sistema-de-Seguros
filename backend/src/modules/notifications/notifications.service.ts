@@ -147,7 +147,7 @@ export const notificationsService = {
           e.location ?? e.locationType,
           e.type,
           formatDate(e.expirationDate),
-          computeFireExtinguisherStatus(e.expirationDate, e.manufacturingYear) === 'vencido'
+          computeFireExtinguisherStatus(e.expirationDate, e.manufacturingYear, e.hydraulicTestExpirationDate) === 'vencido'
             ? '<span style="color:#ef4444; font-weight:bold;">VENCIDO</span>'
             : 'Próximo',
         ]),

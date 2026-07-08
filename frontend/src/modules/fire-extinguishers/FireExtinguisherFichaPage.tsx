@@ -135,6 +135,13 @@ export default function FireExtinguisherFichaPage() {
               <div className="space-y-2.5">
                 {fe.chargeDate && <FichaRow label="Última recarga" value={formatDate(fe.chargeDate)} />}
                 <FichaRow label="Fecha de vencimiento" value={formatDate(fe.expirationDate)} highlight={daysToExpiry <= 30} />
+                {fe.hydraulicTestExpirationDate && (
+                  <FichaRow
+                    label="Prueba hidráulica"
+                    value={formatDate(fe.hydraulicTestExpirationDate)}
+                    highlight={fe.hydraulicTestStatus !== 'vigente'}
+                  />
+                )}
               </div>
             </div>
 

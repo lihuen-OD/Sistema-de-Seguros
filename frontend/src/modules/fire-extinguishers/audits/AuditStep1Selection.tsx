@@ -23,7 +23,7 @@ export function AuditStep1Selection({ selected, onSelect }: AuditStep1SelectionP
   const q = search.trim().toLowerCase()
   const filtered = q
     ? extinguishers.filter((fe) =>
-        [fe.internalNumber, fe.cylinderNumber, fe.code, fe.type, fe.location, fe.establishment]
+        [fe.cylinderNumber, fe.code, fe.type, fe.location, fe.establishment]
           .filter(Boolean)
           .some((v) => v!.toLowerCase().includes(q)),
       )
@@ -35,7 +35,7 @@ export function AuditStep1Selection({ selected, onSelect }: AuditStep1SelectionP
       <SearchInput
         value={search}
         onChange={setSearch}
-        placeholder="Buscar por número interno, cilindro, tipo o ubicación…"
+        placeholder="Buscar por cilindro, código, tipo o ubicación…"
         className="mb-4"
       />
 
@@ -66,7 +66,8 @@ export function AuditStep1Selection({ selected, onSelect }: AuditStep1SelectionP
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-800 truncate">
-                        {fe.internalNumber ?? fe.code}
+                        {fe.code}
+                        {fe.cylinderNumber ? ` · ${fe.cylinderNumber}` : ''}
                       </p>
                       <p className="text-xs text-slate-500 truncate">
                         {fe.type} · {fe.capacity}

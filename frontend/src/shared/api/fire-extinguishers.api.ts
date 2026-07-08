@@ -11,8 +11,9 @@ interface BackendHistory {
   description?: string | null; changes?: BackendHistoryChange[] | null
 }
 interface BackendExtinguisher {
-  id: string; code: string | null; internalNumber: string | null; type: string; capacity: string
+  id: string; code: string | null; type: string; capacity: string
   chargeDate: string | null; expirationDate: string; associatedAssetId: string | null
+  hydraulicTestExpirationDate: string | null; hydraulicTestStatus?: string | null
   associatedLocationType: string; location: string | null; establishment: string | null
   status: string; chargeStatus: string; manufacturingLifeStatus: string | null
   manufacturingYear: number | null; manufacturingExpirationYear: number | null
@@ -46,11 +47,11 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
   return {
     id: b.id,
     code: b.code ?? b.id.slice(0, 8).toUpperCase(),
-    internalNumber: b.internalNumber ?? null,
     type: b.type,
     capacity: b.capacity,
     chargeDate: b.chargeDate ?? '',
     expirationDate: b.expirationDate,
+    hydraulicTestExpirationDate: b.hydraulicTestExpirationDate ?? null,
     associatedAssetId: b.associatedAssetId ?? null,
     associatedLocationType: b.associatedLocationType as AssociatedLocationType,
     location: b.location ?? null,
@@ -61,6 +62,7 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
     status: b.status as FireExtStatus,
     chargeStatus: (b.chargeStatus as FireExtStatus) ?? (b.status as FireExtStatus),
     manufacturingLifeStatus: (b.manufacturingLifeStatus as FireExtStatus) ?? null,
+    hydraulicTestStatus: (b.hydraulicTestStatus as FireExtStatus) ?? null,
     manufacturingExpirationYear: b.manufacturingExpirationYear ?? null,
     observations: b.observations,
     createdAt: b.createdAt,
@@ -70,8 +72,9 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
 
 export interface FireExtinguisherCreateInput {
   type: string; capacity: string; expirationDate: string; chargeDate?: string
+  hydraulicTestExpirationDate: string
   associatedAssetId?: string; associatedLocationType: string; location?: string
-  internalNumber: string; establishment: string; observations?: string
+  establishment: string; observations?: string
   brand?: string; cylinderNumber: string; manufacturingYear: number
 }
 

@@ -101,7 +101,7 @@ export interface FireExtinguisherAuditListItem {
   extinguisher: {
     id: string
     code: string
-    internalNumber: string | null
+    cylinderNumber: string | null
     type: string
     establishment: string | null
     location: string | null

@@ -133,7 +133,7 @@ function mapAuditListItem(row: Record<string, unknown>) {
       ? {
           id: fe.id,
           code: fe.code,
-          internalNumber: fe.internalNumber ?? null,
+          cylinderNumber: fe.cylinderNumber ?? null,
           type: fe.type,
           establishment: fe.establishment ?? null,
           location: fe.location ?? null,
@@ -332,7 +332,7 @@ export const fireExtinguisherAuditsService = {
         orderBy: { createdAt: 'desc' },
         include: {
           extinguisher: {
-            select: { id: true, code: true, internalNumber: true, type: true, establishment: true, location: true },
+            select: { id: true, code: true, cylinderNumber: true, type: true, establishment: true, location: true },
           },
           _count: { select: { proposedChanges: true } },
         },

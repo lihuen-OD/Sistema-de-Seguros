@@ -154,7 +154,10 @@ export default function DashboardPage() {
   )
 
   const allInstallments = useMemo(
-    () => financialDocs.flatMap((d) => d.installments),
+    () =>
+      financialDocs.flatMap((d) =>
+        d.installments.map((i) => ({ ...i, documentNumber: d.documentNumber, insuranceCompany: d.insuranceCompany })),
+      ),
     [financialDocs],
   )
   const pendingInstallments = useMemo(
@@ -522,7 +525,10 @@ export default function DashboardPage() {
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${days <= 7 ? 'bg-red-400' : 'bg-amber-400'}`} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-slate-800">Cuota {inst.installmentNumber}</p>
-                      <p className="text-xs text-slate-500">Doc: {inst.accountingDocumentId.replace('doc-', '#')}</p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {inst.documentNumber}
+                        {inst.insuranceCompany ? ` · ${inst.insuranceCompany}` : ''}
+                      </p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-semibold text-slate-800">

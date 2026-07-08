@@ -49,7 +49,7 @@ export default function FireExtinguisherAuditsQueuePage() {
       const matchStatus = filterStatus.length === 0 || filterStatus.includes(a.status)
       const matchSearch =
         !q ||
-        [a.extinguisher?.code, a.extinguisher?.internalNumber, a.extinguisher?.type, a.extinguisher?.establishment, a.auditedBy]
+        [a.extinguisher?.code, a.extinguisher?.cylinderNumber, a.extinguisher?.type, a.extinguisher?.establishment, a.auditedBy]
           .filter(Boolean)
           .some((v) => v!.toLowerCase().includes(q))
       return matchStatus && matchSearch
@@ -66,7 +66,10 @@ export default function FireExtinguisherAuditsQueuePage() {
       label: 'Matafuego',
       render: (_, row) => (
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-800">{row.extinguisher?.internalNumber ?? row.extinguisher?.code ?? '—'}</p>
+          <p className="text-sm font-medium text-slate-800">
+            {row.extinguisher?.code ?? '—'}
+            {row.extinguisher?.cylinderNumber ? ` · ${row.extinguisher.cylinderNumber}` : ''}
+          </p>
           <p className="text-xs text-slate-500">{row.extinguisher?.type ?? '—'}</p>
         </div>
       ),

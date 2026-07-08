@@ -400,7 +400,6 @@ model DocumentAttachment {
 model FireExtinguisher {
   id                String    @id @default(uuid())
   code              String    @unique
-  internalNumber    String?   @unique
   assetId           String?
   locationType      String
   location          String?
@@ -412,6 +411,7 @@ model FireExtinguisher {
   manufacturingYear Int?
   expirationDate    DateTime  @db.Date
   lastRechargeDate  DateTime? @db.Date
+  hydraulicTestExpirationDate DateTime? @db.Date
   observations      String?
   isActive          Boolean   @default(true)
   createdAt         DateTime  @default(now())

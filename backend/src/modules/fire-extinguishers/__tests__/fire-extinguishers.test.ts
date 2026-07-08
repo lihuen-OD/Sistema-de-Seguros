@@ -1,5 +1,4 @@
 import request from 'supertest'
-import { Prisma } from '@prisma/client'
 import { app } from '../../../app'
 import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpers/auth'
 
@@ -41,7 +40,6 @@ const ASSET_ID = '30000000-0000-0000-0000-000000000001'
 const fakeFireExt = {
   id: FE_ID,
   code: 'MAT-EDI001-A',
-  internalNumber: 'INT-100',
   assetId: null,
   locationType: 'Edificio',
   location: 'Planta baja',
@@ -53,6 +51,7 @@ const fakeFireExt = {
   manufacturingYear: 2020,
   expirationDate: new Date('2027-01-01T00:00:00.000Z'),
   lastRechargeDate: null,
+  hydraulicTestExpirationDate: new Date('2028-01-01T00:00:00.000Z'),
   observations: null,
   isActive: true,
   createdAt: BASE_DATE,
@@ -64,10 +63,10 @@ const validCreateBody = {
   capacity: '10 kg',
   expirationDate: '2027-01-01',
   associatedLocationType: 'Vehículo',
-  internalNumber: 'INT-100',
   establishment: 'PLANTA',
   cylinderNumber: 'CIL-001',
   manufacturingYear: 2020,
+  hydraulicTestExpirationDate: '2028-01-01',
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -96,7 +95,6 @@ describe('Fire Extinguishers API', () => {
 
       expect(res.status).toBe(200)
       expect(res.body.data).toHaveLength(1)
-      expect(res.body.data[0].internalNumber).toBe('INT-100')
       expect(res.body.data[0].location).toBe('Planta baja')
       expect(res.body.data[0].cylinderNumber).toBe('CIL-001')
     })
@@ -166,12 +164,12 @@ describe('Fire Extinguishers API', () => {
         .send(validCreateBody)
 
       expect(res.status).toBe(201)
-      expect(res.body.data.internalNumber).toBe('INT-100')
       expect(res.body.data.location).toBe('Planta baja')
       expect(res.body.data.establishment).toBe('PLANTA')
       expect(res.body.data.cylinderNumber).toBe('CIL-001')
       expect(res.body.data.manufacturingYear).toBe(2020)
       expect(res.body.data.manufacturingExpirationYear).toBe(2040)
+      expect(res.body.data.hydraulicTestExpirationDate).toBe('2028-01-01')
     })
 
     it('returns 201 as CONTADOR', async () => {
@@ -206,13 +204,22 @@ describe('Fire Extinguishers API', () => {
       expect(db.fireExtinguisherHistory.create).toHaveBeenCalledTimes(1)
       const historyArgs = db.fireExtinguisherHistory.create.mock.calls[0][0]
       expect(historyArgs.data.action).toBe('Alta')
-      expect(historyArgs.data.newData.internalNumber).toBe('INT-100')
       expect(historyArgs.data.newData.establishment).toBe('PLANTA')
       expect(historyArgs.data.performedBy).toBe('test@losodwyer.com')
     })
 
     it('returns 422 when cylinderNumber is missing', async () => {
       const { cylinderNumber, ...body } = validCreateBody
+      const res = await request(app)
+        .post('/api/v1/fire-extinguishers')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(body)
+
+      expect(res.status).toBe(422)
+    })
+
+    it('returns 422 when hydraulicTestExpirationDate is missing', async () => {
+      const { hydraulicTestExpirationDate, ...body } = validCreateBody
       const res = await request(app)
         .post('/api/v1/fire-extinguishers')
         .set('Authorization', `Bearer ${adminToken()}`)
@@ -260,21 +267,11 @@ describe('Fire Extinguishers API', () => {
       expect(res.status).toBe(201)
     })
 
-    it('returns 422 when internalNumber is missing', async () => {
-      const { internalNumber, ...body } = validCreateBody
+    it('returns 422 when establishment is empty', async () => {
       const res = await request(app)
         .post('/api/v1/fire-extinguishers')
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send(body)
-
-      expect(res.status).toBe(422)
-    })
-
-    it('returns 422 when establishment is not one of the allowed values', async () => {
-      const res = await request(app)
-        .post('/api/v1/fire-extinguishers')
-        .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ ...validCreateBody, establishment: 'SEDE INEXISTENTE' })
+        .send({ ...validCreateBody, establishment: '' })
 
       expect(res.status).toBe(422)
     })
@@ -289,26 +286,6 @@ describe('Fire Extinguishers API', () => {
 
       expect(res.status).toBe(400)
       expect(res.body.error.code).toBe('INVALID_REFERENCE')
-    })
-
-    it('returns 409 DUPLICATE_INTERNAL_NUMBER on a unique constraint violation', async () => {
-      db.fireExtinguisher.create.mockRejectedValue(
-        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-          code: 'P2002',
-          clientVersion: '5.22.0',
-          meta: { target: ['internalNumber'] },
-        }),
-      )
-
-      const res = await request(app)
-        .post('/api/v1/fire-extinguishers')
-        .set('Authorization', `Bearer ${adminToken()}`)
-        .send(validCreateBody)
-
-      expect(res.status).toBe(409)
-      expect(res.body.error.code).toBe('DUPLICATE_INTERNAL_NUMBER')
-      // No debe exponer detalles crudos de Prisma/SQL al cliente
-      expect(JSON.stringify(res.body)).not.toMatch(/PrismaClientKnownRequestError|constraint failed/i)
     })
 
     it('generates a code with the correct prefix end-to-end for a real catalog location type', async () => {
@@ -408,24 +385,6 @@ describe('Fire Extinguishers API', () => {
       expect(res.status).toBe(403)
     })
 
-    it('returns 409 DUPLICATE_INTERNAL_NUMBER on a unique constraint violation', async () => {
-      db.fireExtinguisher.findUnique.mockResolvedValue(fakeFireExt)
-      db.fireExtinguisher.update.mockRejectedValue(
-        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-          code: 'P2002',
-          clientVersion: '5.22.0',
-          meta: { target: ['internalNumber'] },
-        }),
-      )
-
-      const res = await request(app)
-        .put(`/api/v1/fire-extinguishers/${FE_ID}`)
-        .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ internalNumber: 'INT-999' })
-
-      expect(res.status).toBe(409)
-      expect(res.body.error.code).toBe('DUPLICATE_INTERNAL_NUMBER')
-    })
   })
 
   // ── DELETE /api/v1/fire-extinguishers/:id ─────────────────────────────────

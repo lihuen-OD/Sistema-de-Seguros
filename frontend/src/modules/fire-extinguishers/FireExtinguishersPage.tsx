@@ -20,16 +20,15 @@ import { formatDate, daysUntil } from '../../shared/utils/format'
 import { fireExtinguishersApi, fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
 import { assetsApi } from '../../shared/api/assets.api'
+import { catalogsApi } from '../../shared/api/catalogs.api'
 import { FIRE_EXT_STATUS_LABELS, LOCATION_TYPES } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
-import { FIRE_EXT_ESTABLISHMENTS } from '../../shared/types'
 import type { FireExtinguisher, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 const LOCATION_OPTIONS = Object.entries(LOCATION_TYPES).map(([value, label]) => ({ value, label }))
-const ESTABLISHMENT_OPTIONS = FIRE_EXT_ESTABLISHMENTS.map((e) => ({ value: e, label: e }))
 
 function getExpiryFlags(fe: FireExtinguisher) {
   const days = daysUntil(fe.expirationDate)
@@ -54,6 +53,14 @@ export default function FireExtinguishersPage() {
 
   const { data: all = [], isError } = useQuery({ queryKey: fireExtinguisherKeys.all, queryFn: () => fireExtinguishersApi.findAll() })
   const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: establishmentCatalog = [] } = useQuery({
+    queryKey: ['catalogs', 'fire_ext_establishment'],
+    queryFn: () => catalogsApi.findByCategory('fire_ext_establishment'),
+  })
+  const ESTABLISHMENT_OPTIONS = useMemo(
+    () => establishmentCatalog.map((e) => ({ value: e.label, label: e.label })),
+    [establishmentCatalog],
+  )
 
   const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
 
@@ -86,14 +93,6 @@ export default function FireExtinguishersPage() {
       defaultVisible: true,
       hideable: true,
       render: (v) => <span className="font-mono text-xs text-slate-600">{v as string}</span>,
-    },
-    {
-      id: 'internalNumber',
-      key: 'internalNumber',
-      label: 'Número interno',
-      defaultVisible: false,
-      hideable: true,
-      render: (v) => (v ? <span className="font-mono text-xs text-slate-600">{v as string}</span> : <span className="text-slate-400">—</span>),
     },
     {
       id: 'cylinderNumber',
@@ -198,6 +197,23 @@ export default function FireExtinguishersPage() {
       },
     },
     {
+      id: 'hydraulicTestExpirationDate',
+      key: 'hydraulicTestExpirationDate',
+      label: 'Venc. Prueba Hidráulica',
+      defaultVisible: false,
+      hideable: true,
+      render: (v, row) => {
+        if (!v) return <span className="text-slate-400">—</span>
+        const isExp = row.hydraulicTestStatus === 'vencido'
+        const isSoon = row.hydraulicTestStatus === 'proximo_vencer'
+        return (
+          <span className={clsx('text-xs tabular-nums font-medium', isExp ? 'text-red-600' : isSoon ? 'text-amber-600' : 'text-slate-600')}>
+            {formatDate(v as string)}
+          </span>
+        )
+      },
+    },
+    {
       id: 'status',
       key: 'status',
       label: 'Estado',
@@ -284,7 +300,6 @@ export default function FireExtinguishersPage() {
         !search ||
         fe.code.toLowerCase().includes(q) ||
         fe.type.toLowerCase().includes(q) ||
-        (fe.internalNumber?.toLowerCase().includes(q) ?? false) ||
         (fe.cylinderNumber?.toLowerCase().includes(q) ?? false) ||
         (fe.establishment?.toLowerCase().includes(q) ?? false) ||
         (fe.location?.toLowerCase().includes(q) ?? false) ||

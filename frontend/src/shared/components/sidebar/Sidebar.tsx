@@ -51,6 +51,14 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: 'Matafuegos',
+    items: [
+      { label: 'Matafuegos', to: '/fire-extinguishers', icon: Flame },
+      { label: 'Auditoría de Matafuegos', to: '/fire-extinguishers/audits', icon: ClipboardCheck },
+      { label: 'Dashboard de Matafuegos', to: '/fire-extinguishers/dashboard', icon: BarChart3 },
+    ],
+  },
+  {
     label: 'Seguros',
     items: [
       { label: 'Pólizas', to: '/insurance/policies', icon: ShieldCheck },
@@ -65,9 +73,6 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Productores', to: '/producers', icon: Users },
       { label: 'Tareas', to: '/tasks', icon: ClipboardList },
-      { label: 'Matafuegos', to: '/fire-extinguishers', icon: Flame },
-      { label: 'Auditoría de Matafuegos', to: '/fire-extinguishers/audits', icon: ClipboardCheck },
-      { label: 'Dashboard de Matafuegos', to: '/fire-extinguishers/dashboard', icon: BarChart3 },
     ],
   },
   {

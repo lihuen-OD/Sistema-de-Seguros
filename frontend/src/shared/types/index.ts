@@ -428,11 +428,11 @@ export interface ProducerTask {
 export interface FireExtinguisher {
   id: string
   code: string
-  internalNumber: string | null
   type: string
   capacity: string
   chargeDate: string
   expirationDate: string
+  hydraulicTestExpirationDate: string | null
   associatedAssetId: string | null
   associatedLocationType: AssociatedLocationType
   location: string | null
@@ -443,22 +443,12 @@ export interface FireExtinguisher {
   status: FireExtStatus
   chargeStatus: FireExtStatus
   manufacturingLifeStatus: FireExtStatus | null
+  hydraulicTestStatus: FireExtStatus | null
   manufacturingExpirationYear: number | null
   observations: string
   createdAt: string
   updatedAt: string
 }
-
-export const FIRE_EXT_ESTABLISHMENTS = [
-  'LA SUCHO',
-  'LA HONORIA',
-  'PLANTA',
-  'TALLER',
-  'OFICINA',
-  'OTROS',
-] as const
-
-export type FireExtEstablishment = (typeof FIRE_EXT_ESTABLISHMENTS)[number]
 
 export interface AssetStatusHistory {
   id: string

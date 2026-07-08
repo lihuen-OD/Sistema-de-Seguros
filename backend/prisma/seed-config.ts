@@ -156,6 +156,26 @@ const CATALOGS: Record<string, string[]> = {
     'Infraestructura',
   ],
 
+  // ── Matafuegos — Establecimiento ─────────────────────────────────────────
+  fire_ext_establishment: [
+    'LA SUCHO',
+    'LA HONORIA',
+    'PLANTA',
+    'TALLER',
+    'OFICINA',
+  ],
+
+  // ── Matafuegos — Marca ────────────────────────────────────────────────────
+  fire_ext_brand: [
+    'FADESA',
+    'GEORGIA',
+    'MELISAM',
+    'FISTORAY',
+    'NORBCO',
+    'HORIZONTE',
+    'PATAGONIA',
+  ],
+
   // ── Tareas ──────────────────────────────────────────────────────────────
   task_type: [
     'Solicitar cotización',

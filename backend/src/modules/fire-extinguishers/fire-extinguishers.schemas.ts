@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { PaginationSchema } from '../../shared/schemas/common'
-import { FIRE_EXT_ESTABLISHMENTS } from './fire-extinguishers.constants'
 
 const ISODate = z
   .string()
@@ -14,13 +13,11 @@ const FireExtBaseSchema = z.object({
   capacity: z.string().min(1, 'La capacidad es requerida').max(50),
   expirationDate: ISODate,
   chargeDate: ISODate.optional().nullable(),
+  hydraulicTestExpirationDate: ISODate,
   associatedAssetId: z.string().uuid('ID de activo inválido').optional().nullable(),
   associatedLocationType: z.string().min(1, 'El tipo de ubicación es requerido').max(100),
   location: z.string().max(200).optional().nullable(),
-  internalNumber: z.string().trim().min(1, 'El número interno es requerido').max(100),
-  establishment: z.enum(FIRE_EXT_ESTABLISHMENTS, {
-    errorMap: () => ({ message: 'Establecimiento inválido' }),
-  }),
+  establishment: z.string().min(1, 'El establecimiento es requerido').max(100),
   brand: z.string().max(100).optional().nullable(),
   cylinderNumber: z.string().trim().min(1, 'El número de cilindro es requerido').max(100),
   manufacturingYear: z.coerce

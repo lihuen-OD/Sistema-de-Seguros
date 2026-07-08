@@ -935,7 +935,6 @@ async function main() {
     prisma.fireExtinguisher.create({
       data: {
         code: 'MAT-INC001-A',
-        internalNumber: 'INT-001',
         establishment: 'PLANTA',
         assetId: actEdificio.id,
         locationType: 'Edificio',
@@ -961,7 +960,6 @@ async function main() {
     prisma.fireExtinguisher.create({
       data: {
         code: 'MAT-INC002-A',
-        internalNumber: 'INT-002',
         establishment: 'PLANTA',
         assetId: actEdificio.id,
         locationType: 'Edificio',
@@ -1005,7 +1003,6 @@ async function main() {
     prisma.fireExtinguisher.create({
       data: {
         code: 'MAT-MAQ001-A',
-        internalNumber: 'INT-003',
         establishment: 'TALLER',
         assetId: actCosechadora.id,
         locationType: 'Maquinaria',
