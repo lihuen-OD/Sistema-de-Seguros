@@ -8,6 +8,7 @@ import {
   AddFireExtinguisherAuditAttachmentSchema,
   ReviewFireExtinguisherAuditSchema,
   ListFireExtinguisherAuditsQuerySchema,
+  CoverageQuerySchema,
 } from './fire-extinguisher-audits.schemas'
 import { fireExtinguisherAuditsController } from './fire-extinguisher-audits.controller'
 
@@ -16,6 +17,9 @@ export const fireExtinguisherAuditsRouter = Router()
 fireExtinguisherAuditsRouter.use(authMiddleware)
 
 fireExtinguisherAuditsRouter.get('/', validateQuery(ListFireExtinguisherAuditsQuerySchema), fireExtinguisherAuditsController.list)
+
+// Antes de "/:id" — si no, Express interpreta "coverage" como un :id.
+fireExtinguisherAuditsRouter.get('/coverage', validateQuery(CoverageQuerySchema), fireExtinguisherAuditsController.coverage)
 
 fireExtinguisherAuditsRouter.post(
   '/',

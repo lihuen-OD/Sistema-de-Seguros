@@ -8,6 +8,7 @@ jest.mock('../../../config/database', () => ({
   prisma: {
     fireExtinguisher: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
     },
     fireExtinguisherAudit: {
@@ -81,23 +82,12 @@ function makeAuditRow(overrides: Record<string, unknown> = {}) {
     locationChangeReason: null,
     cleanliness: 'IMPECABLE',
     chargeFillStatus: 'CARGADO',
-    beaconPlateExists: 'NO',
-    beaconPlateCondition: null,
-    beaconPlateMatchesType: null,
-    isObstructed: 'NO',
-    pressureStatus: 'BIEN',
+    beaconPlateCondition: 'SANA',
     sealStatus: 'TIENE',
     ringStatus: 'TIENE',
-    safetyPinStatus: 'SI',
     hoseNozzleCondition: 'SANA',
-    chargeExpirationDateObserved: null,
-    hydraulicTestExpirationDateObserved: null,
-    cylinderNumberObserved: null,
-    capacityObserved: null,
-    extinguishingAgentObserved: null,
-    brandObserved: null,
+    chargeExpirationDateObserved: new Date('2027-01-01T00:00:00.000Z'),
     comments: null,
-    observations: null,
     reviewedBy: null,
     reviewedAt: null,
     reviewNotes: null,
@@ -417,6 +407,67 @@ describe('Fire Extinguisher Audits — Review API', () => {
     })
   })
 
+  // ── GET /coverage ──────────────────────────────────────────────────────────
+
+  describe('GET /api/v1/fire-extinguisher-audits/coverage', () => {
+    const OTHER_FE_ID = '60000000-0000-0000-0000-000000000002'
+    const REJECTED_FE_ID = '60000000-0000-0000-0000-000000000003'
+
+    beforeEach(() => {
+      db.fireExtinguisher.findMany.mockResolvedValue([
+        { id: FE_ID, code: 'MAT-001-A', cylinderNumber: 'CIL-01', type: 'Polvo seco ABC', establishment: 'PLANTA', location: 'Planta baja' },
+        { id: OTHER_FE_ID, code: 'MAT-002-A', cylinderNumber: 'CIL-02', type: 'CO2', establishment: 'PLANTA', location: null },
+        { id: REJECTED_FE_ID, code: 'MAT-003-A', cylinderNumber: 'CIL-03', type: 'CO2', establishment: 'TALLER', location: null },
+      ])
+      db.fireExtinguisherAudit.findMany.mockResolvedValue([
+        { fireExtinguisherId: FE_ID, status: 'APPROVED', auditDate: BASE_DATE },
+        { fireExtinguisherId: REJECTED_FE_ID, status: 'REJECTED', auditDate: BASE_DATE },
+      ])
+    })
+
+    it('marks extinguishers with a non-rejected audit this period as audited, the rest as pending', async () => {
+      const res = await request(app)
+        .get('/api/v1/fire-extinguisher-audits/coverage?period=2026-07')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.fireExtinguisherAudit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { auditPeriod: '2026-07', status: { not: 'REJECTED' } } }),
+      )
+
+      const byId = Object.fromEntries(res.body.data.map((d: any) => [d.id, d]))
+      expect(byId[FE_ID].audited).toBe(true)
+      expect(byId[FE_ID].auditStatus).toBe('APPROVED')
+      expect(byId[OTHER_FE_ID].audited).toBe(false)
+      expect(byId[OTHER_FE_ID].auditStatus).toBeNull()
+    })
+
+    it('does not count a REJECTED audit as coverage — the query already excludes it, service just reflects that', async () => {
+      db.fireExtinguisherAudit.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .get('/api/v1/fire-extinguisher-audits/coverage?period=2026-07')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const rejectedRow = res.body.data.find((d: any) => d.id === REJECTED_FE_ID)
+      expect(rejectedRow.audited).toBe(false)
+    })
+
+    it('returns 422 when period has an invalid format', async () => {
+      const res = await request(app)
+        .get('/api/v1/fire-extinguisher-audits/coverage?period=07-2026')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(422)
+    })
+
+    it('returns 401 without a token', async () => {
+      const res = await request(app).get('/api/v1/fire-extinguisher-audits/coverage?period=2026-07')
+      expect(res.status).toBe(401)
+    })
+  })
+
   // ── Recorrección (create() sigue funcionando sin cambios) ─────────────────
 
   describe('Recorrección tras NEEDS_CORRECTION/REJECTED', () => {
@@ -446,13 +497,11 @@ describe('Fire Extinguisher Audits — Review API', () => {
           checklist: {
             cleanliness: 'IMPECABLE',
             chargeFillStatus: 'CARGADO',
-            beaconPlateExists: 'NO',
-            isObstructed: 'NO',
-            pressureStatus: 'BIEN',
+            beaconPlateCondition: 'SANA',
             sealStatus: 'TIENE',
             ringStatus: 'TIENE',
-            safetyPinStatus: 'SI',
             hoseNozzleCondition: 'SANA',
+            chargeExpirationDateObserved: '2027-01-01',
           },
         })
 

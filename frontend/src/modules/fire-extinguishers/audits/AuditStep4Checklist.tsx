@@ -26,7 +26,7 @@ export function AuditStep4Checklist({
 
   return (
     <div className="space-y-5">
-      {CHECKLIST_FIELDS.filter((field) => !field.showIf || field.showIf(checklist)).map((field) => (
+      {CHECKLIST_FIELDS.map((field) => (
         <FormField key={field.key} label={field.label} required={field.required}>
           {field.type === 'choice' ? (
             <ChoiceGroup
@@ -45,7 +45,7 @@ export function AuditStep4Checklist({
         </FormField>
       ))}
 
-      <FormField label="Comentarios adicionales">
+      <FormField label="Observaciones">
         <FormTextarea
           value={comments}
           onChange={(e) => onChangeComments(e.target.value)}

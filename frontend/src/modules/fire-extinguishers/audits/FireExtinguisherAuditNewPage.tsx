@@ -1,12 +1,12 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import clsx from 'clsx'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
-import { fireExtinguisherKeys } from '../../../shared/api/fire-extinguishers.api'
+import { fireExtinguishersApi, fireExtinguisherKeys } from '../../../shared/api/fire-extinguishers.api'
 import { fireExtinguisherAuditsApi } from '../../../shared/api/fire-extinguisher-audits.api'
 import type { AuditChecklistInput } from '../../../shared/api/fire-extinguisher-audits.api'
 import type { FireExtinguisher } from '../../../shared/types'
@@ -32,11 +32,25 @@ const STEPS: { id: WizardStep; label: string }[] = [
 export default function FireExtinguisherAuditNewPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const preselectedId = searchParams.get('extinguisherId')
 
-  const [step, setStep] = useState<WizardStep>(1)
-  const [maxStepReached, setMaxStepReached] = useState<WizardStep>(1)
+  const [step, setStep] = useState<WizardStep>(preselectedId ? 2 : 1)
+  const [maxStepReached, setMaxStepReached] = useState<WizardStep>(preselectedId ? 2 : 1)
 
   const [selectedExtinguisher, setSelectedExtinguisher] = useState<FireExtinguisher | null>(null)
+
+  // Viene de la pestaña "Cobertura" con un matafuego puntual — se salta el
+  // Paso 1 de selección, que ya se resolvió ahí.
+  const { data: preselectedExtinguisher } = useQuery({
+    queryKey: fireExtinguisherKeys.detail(preselectedId ?? ''),
+    queryFn: () => fireExtinguishersApi.findById(preselectedId!),
+    enabled: !!preselectedId,
+  })
+
+  useEffect(() => {
+    if (preselectedExtinguisher) setSelectedExtinguisher(preselectedExtinguisher)
+  }, [preselectedExtinguisher])
 
   const [locationConfirmed, setLocationConfirmed] = useState<boolean | null>(null)
   const [proposedLocation, setProposedLocation] = useState('')

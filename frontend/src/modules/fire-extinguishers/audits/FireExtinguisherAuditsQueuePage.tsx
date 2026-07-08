@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, ClipboardCheck, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import { Plus, ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, X } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -10,7 +10,9 @@ import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { MultiSelectFilter } from '../../../shared/components/filters/MultiSelectFilter'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
+import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
+import { Tabs, type TabItem } from '../../../shared/components/tabs/Tabs'
 import { formatDate } from '../../../shared/utils/format'
 import {
   fireExtinguisherAuditsApi,
@@ -20,18 +22,39 @@ import {
 import { FIRE_EXT_AUDIT_STATUS_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import type { TableColumn } from '../../../shared/types'
+import { AuditCoverageTab } from './AuditCoverageTab'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_AUDIT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 
+function currentPeriod(): string {
+  return new Date().toISOString().slice(0, 7)
+}
+
 export default function FireExtinguisherAuditsQueuePage() {
   const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState<'auditorias' | 'cobertura'>('auditorias')
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string[]>([])
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
+  const [coveragePeriod, setCoveragePeriod] = useState(currentPeriod())
 
   const { data: all = [], isLoading } = useQuery({
     queryKey: fireExtinguisherAuditKeys.all,
     queryFn: () => fireExtinguisherAuditsApi.findAll(),
   })
+
+  const { data: coverage = [], isLoading: coverageLoading } = useQuery({
+    queryKey: ['fire-extinguisher-audits', 'coverage', coveragePeriod],
+    queryFn: () => fireExtinguisherAuditsApi.getCoverage(coveragePeriod),
+  })
+
+  const pendingCoverageCount = useMemo(() => coverage.filter((c) => !c.audited).length, [coverage])
+
+  const tabs: TabItem[] = [
+    { id: 'auditorias', label: 'Auditorías' },
+    { id: 'cobertura', label: 'Cobertura', count: pendingCoverageCount },
+  ]
 
   const counts = useMemo(
     () => ({
@@ -52,9 +75,11 @@ export default function FireExtinguisherAuditsQueuePage() {
         [a.extinguisher?.code, a.extinguisher?.cylinderNumber, a.extinguisher?.type, a.extinguisher?.establishment, a.auditedBy]
           .filter(Boolean)
           .some((v) => v!.toLowerCase().includes(q))
-      return matchStatus && matchSearch
+      const matchDateFrom = !filterDateFrom || a.auditPeriod >= filterDateFrom
+      const matchDateTo = !filterDateTo || a.auditPeriod <= filterDateTo
+      return matchStatus && matchSearch && matchDateFrom && matchDateTo
     })
-  }, [all, search, filterStatus])
+  }, [all, search, filterStatus, filterDateFrom, filterDateTo])
 
   function toggleStatusFilter(status: string) {
     setFilterStatus((prev) => (prev.length === 1 && prev[0] === status ? [] : [status]))
@@ -119,66 +144,98 @@ export default function FireExtinguisherAuditsQueuePage() {
         }
       />
 
-      <MetricGrid cols={4} className="mb-5">
-        <KpiCard
-          label="Pendientes de revisión"
-          value={counts.SUBMITTED}
-          description="Esperando decisión"
-          icon={ClipboardCheck}
-          variant="info"
-          onClick={() => toggleStatusFilter('SUBMITTED')}
-        />
-        <KpiCard
-          label="Requieren corrección"
-          value={counts.NEEDS_CORRECTION}
-          description="Devueltas al auditor"
-          icon={AlertTriangle}
-          variant="warning"
-          onClick={() => toggleStatusFilter('NEEDS_CORRECTION')}
-        />
-        <KpiCard
-          label="Aprobadas"
-          value={counts.APPROVED}
-          description="Cambios aplicados al maestro"
-          icon={CheckCircle2}
-          variant="success"
-          onClick={() => toggleStatusFilter('APPROVED')}
-        />
-        <KpiCard
-          label="Rechazadas"
-          value={counts.REJECTED}
-          description="Sin cambios aplicados"
-          icon={XCircle}
-          variant="danger"
-          onClick={() => toggleStatusFilter('REJECTED')}
-        />
-      </MetricGrid>
-
-      <SectionCard noPadding>
-        <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Buscar por matafuego, establecimiento o auditor…"
-            className="w-full sm:w-80"
-          />
-          <MultiSelectFilter label="Estado" options={STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
-          <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-            {filtered.length} de {all.length} auditorías
-          </span>
-        </div>
-
-        <DataTable
-          columns={columns}
-          data={filtered}
-          rowKey="id"
-          loading={isLoading}
-          onRowClick={(row) => navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(row.id))}
-          emptyTitle="Sin auditorías"
-          emptyDescription="No se encontraron auditorías con los filtros aplicados."
-          minWidth={900}
-        />
+      <SectionCard noPadding className="mb-5">
+        <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => setActiveTab(id as 'auditorias' | 'cobertura')} />
       </SectionCard>
+
+      {activeTab === 'auditorias' && (
+        <>
+          <MetricGrid cols={4} className="mb-5">
+            <KpiCard
+              label="Pendientes de revisión"
+              value={counts.SUBMITTED}
+              description="Esperando decisión"
+              icon={ClipboardCheck}
+              variant="info"
+              onClick={() => toggleStatusFilter('SUBMITTED')}
+            />
+            <KpiCard
+              label="Requieren corrección"
+              value={counts.NEEDS_CORRECTION}
+              description="Devueltas al auditor"
+              icon={AlertTriangle}
+              variant="warning"
+              onClick={() => toggleStatusFilter('NEEDS_CORRECTION')}
+            />
+            <KpiCard
+              label="Aprobadas"
+              value={counts.APPROVED}
+              description="Cambios aplicados al maestro"
+              icon={CheckCircle2}
+              variant="success"
+              onClick={() => toggleStatusFilter('APPROVED')}
+            />
+            <KpiCard
+              label="Rechazadas"
+              value={counts.REJECTED}
+              description="Sin cambios aplicados"
+              icon={XCircle}
+              variant="danger"
+              onClick={() => toggleStatusFilter('REJECTED')}
+            />
+          </MetricGrid>
+
+          <SectionCard noPadding>
+            <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Buscar por matafuego, establecimiento o auditor…"
+                className="w-full sm:w-80"
+              />
+              <MultiSelectFilter label="Estado" options={STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
+              <DateRangeMonthPicker
+                from={filterDateFrom}
+                to={filterDateTo}
+                onChange={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
+              />
+              {(filterDateFrom || filterDateTo) && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterDateFrom(''); setFilterDateTo('') }}
+                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                >
+                  <X size={12} />
+                  Limpiar fechas
+                </button>
+              )}
+              <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
+                {filtered.length} de {all.length} auditorías
+              </span>
+            </div>
+
+            <DataTable
+              columns={columns}
+              data={filtered}
+              rowKey="id"
+              loading={isLoading}
+              onRowClick={(row) => navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(row.id))}
+              emptyTitle="Sin auditorías"
+              emptyDescription="No se encontraron auditorías con los filtros aplicados."
+              minWidth={900}
+            />
+          </SectionCard>
+        </>
+      )}
+
+      {activeTab === 'cobertura' && (
+        <AuditCoverageTab
+          period={coveragePeriod}
+          onPeriodChange={setCoveragePeriod}
+          data={coverage}
+          isLoading={coverageLoading}
+        />
+      )}
     </PageContent>
   )
 }

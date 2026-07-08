@@ -15,21 +15,11 @@ export type LocationReview =
 export interface AuditChecklistInput {
   cleanliness: string
   chargeFillStatus: string
-  beaconPlateExists: string
-  beaconPlateCondition?: string
-  beaconPlateMatchesType?: string
-  isObstructed: string
-  pressureStatus: string
+  beaconPlateCondition: string
   sealStatus: string
   ringStatus: string
-  safetyPinStatus: string
   hoseNozzleCondition: string
-  chargeExpirationDateObserved?: string
-  hydraulicTestExpirationDateObserved?: string
-  cylinderNumberObserved?: string
-  capacityObserved?: string
-  extinguishingAgentObserved?: string
-  brandObserved?: string
+  chargeExpirationDateObserved: string
   comments?: string
 }
 
@@ -38,7 +28,6 @@ export interface FireExtinguisherAuditCreateInput {
   locationReview: LocationReview
   masterDataReview: MasterFieldReview[]
   checklist: AuditChecklistInput
-  observations?: string
 }
 
 export interface FireExtinguisherAuditProposedChange {
@@ -74,7 +63,6 @@ export interface FireExtinguisherAudit {
   proposedLocation: string | null
   locationChangeReason: string | null
   checklist: AuditChecklistInput
-  observations: string | null
   proposedChanges: FireExtinguisherAuditProposedChange[]
   attachments: FireExtinguisherAuditAttachment[]
   reviewedBy: string | null
@@ -119,6 +107,20 @@ export interface FireExtinguisherAuditReviewInput {
   reviewNotes?: string
 }
 
+// ── Cobertura por establecimiento ───────────────────────────────────────────────
+
+export interface FireExtinguisherCoverageItem {
+  id: string
+  code: string
+  cylinderNumber: string | null
+  type: string
+  establishment: string | null
+  location: string | null
+  audited: boolean
+  auditStatus: FireExtinguisherAuditStatus | null
+  auditDate: string | null
+}
+
 export const fireExtinguisherAuditKeys = {
   all: ['fire-extinguisher-audits'] as const,
   detail: (id: string) => [...fireExtinguisherAuditKeys.all, id] as const,
@@ -155,6 +157,13 @@ export const fireExtinguisherAuditsApi = {
 
   async review(id: string, input: FireExtinguisherAuditReviewInput): Promise<FireExtinguisherAudit> {
     const res = await apiClient.post<{ data: FireExtinguisherAudit }>(`/fire-extinguisher-audits/${id}/review`, input)
+    return res.data.data
+  },
+
+  async getCoverage(period: string): Promise<FireExtinguisherCoverageItem[]> {
+    const res = await apiClient.get<{ data: FireExtinguisherCoverageItem[] }>('/fire-extinguisher-audits/coverage', {
+      params: { period },
+    })
     return res.data.data
   },
 }

@@ -82,28 +82,15 @@ function mapAudit(audit: Record<string, unknown>) {
     checklist: {
       cleanliness: audit.cleanliness,
       chargeFillStatus: audit.chargeFillStatus,
-      beaconPlateExists: audit.beaconPlateExists,
-      beaconPlateCondition: audit.beaconPlateCondition ?? null,
-      beaconPlateMatchesType: audit.beaconPlateMatchesType ?? null,
-      isObstructed: audit.isObstructed,
-      pressureStatus: audit.pressureStatus,
+      beaconPlateCondition: audit.beaconPlateCondition,
       sealStatus: audit.sealStatus,
       ringStatus: audit.ringStatus,
-      safetyPinStatus: audit.safetyPinStatus,
       hoseNozzleCondition: audit.hoseNozzleCondition,
       chargeExpirationDateObserved: audit.chargeExpirationDateObserved
         ? toDateStr(audit.chargeExpirationDateObserved as Date | string)
         : null,
-      hydraulicTestExpirationDateObserved: audit.hydraulicTestExpirationDateObserved
-        ? toDateStr(audit.hydraulicTestExpirationDateObserved as Date | string)
-        : null,
-      cylinderNumberObserved: audit.cylinderNumberObserved ?? null,
-      capacityObserved: audit.capacityObserved ?? null,
-      extinguishingAgentObserved: audit.extinguishingAgentObserved ?? null,
-      brandObserved: audit.brandObserved ?? null,
       comments: audit.comments ?? null,
     },
-    observations: audit.observations ?? null,
     proposedChanges: Array.isArray(audit.proposedChanges)
       ? (audit.proposedChanges as Record<string, unknown>[]).map(mapProposedChange)
       : [],
@@ -218,23 +205,12 @@ export const fireExtinguisherAuditsService = {
             locationChangeReason: data.locationReview.action === 'MODIFICAR' ? data.locationReview.reason ?? null : null,
             cleanliness: data.checklist.cleanliness,
             chargeFillStatus: data.checklist.chargeFillStatus,
-            beaconPlateExists: data.checklist.beaconPlateExists,
-            beaconPlateCondition: data.checklist.beaconPlateCondition ?? null,
-            beaconPlateMatchesType: data.checklist.beaconPlateMatchesType ?? null,
-            isObstructed: data.checklist.isObstructed,
-            pressureStatus: data.checklist.pressureStatus,
+            beaconPlateCondition: data.checklist.beaconPlateCondition,
             sealStatus: data.checklist.sealStatus,
             ringStatus: data.checklist.ringStatus,
-            safetyPinStatus: data.checklist.safetyPinStatus,
             hoseNozzleCondition: data.checklist.hoseNozzleCondition,
-            chargeExpirationDateObserved: data.checklist.chargeExpirationDateObserved ?? null,
-            hydraulicTestExpirationDateObserved: data.checklist.hydraulicTestExpirationDateObserved ?? null,
-            cylinderNumberObserved: data.checklist.cylinderNumberObserved ?? null,
-            capacityObserved: data.checklist.capacityObserved ?? null,
-            extinguishingAgentObserved: data.checklist.extinguishingAgentObserved ?? null,
-            brandObserved: data.checklist.brandObserved ?? null,
+            chargeExpirationDateObserved: data.checklist.chargeExpirationDateObserved,
             comments: data.checklist.comments ?? null,
-            observations: data.observations ?? null,
           },
         })
 
@@ -345,6 +321,47 @@ export const fireExtinguisherAuditsService = {
       total,
       { page, limit },
     )
+  },
+
+  // Cobertura de auditoría: todos los matafuegos activos, marcados con la
+  // auditoría más reciente (si existe) que tengan en el período dado, sin
+  // contar las rechazadas — mismo criterio que `auditedThisPeriod` en
+  // fire-extinguishers-dashboard.service.ts.
+  async getCoverage(period: string) {
+    const [extinguishers, audits] = await Promise.all([
+      prisma.fireExtinguisher.findMany({
+        where: { isActive: true },
+        select: { id: true, code: true, cylinderNumber: true, type: true, establishment: true, location: true },
+        orderBy: [{ establishment: 'asc' }, { code: 'asc' }],
+      }),
+      prisma.fireExtinguisherAudit.findMany({
+        where: { auditPeriod: period, status: { not: 'REJECTED' } },
+        select: { fireExtinguisherId: true, status: true, auditDate: true },
+        orderBy: { auditDate: 'desc' },
+      }),
+    ])
+
+    const latestAuditByExtinguisher = new Map<string, { status: string; auditDate: Date }>()
+    for (const a of audits) {
+      if (!latestAuditByExtinguisher.has(a.fireExtinguisherId)) {
+        latestAuditByExtinguisher.set(a.fireExtinguisherId, { status: a.status, auditDate: a.auditDate })
+      }
+    }
+
+    return extinguishers.map((fe) => {
+      const audit = latestAuditByExtinguisher.get(fe.id)
+      return {
+        id: fe.id,
+        code: fe.code,
+        cylinderNumber: fe.cylinderNumber ?? null,
+        type: fe.type,
+        establishment: fe.establishment ?? null,
+        location: fe.location ?? null,
+        audited: audit !== undefined,
+        auditStatus: audit?.status ?? null,
+        auditDate: audit ? toDateStr(audit.auditDate) : null,
+      }
+    })
   },
 
   async review(id: string, data: ReviewFireExtinguisherAuditDTO, reviewedBy: string) {

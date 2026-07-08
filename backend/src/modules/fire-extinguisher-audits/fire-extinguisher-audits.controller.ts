@@ -2,7 +2,7 @@ import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { AppError } from '../../shared/errors/AppError'
 import { fireExtinguisherAuditsService } from './fire-extinguisher-audits.service'
-import type { ListFireExtinguisherAuditsQueryDTO } from './fire-extinguisher-audits.schemas'
+import type { ListFireExtinguisherAuditsQueryDTO, CoverageQueryDTO } from './fire-extinguisher-audits.schemas'
 
 type IdParam = { id: string }
 
@@ -15,6 +15,12 @@ export const fireExtinguisherAuditsController = {
   list: asyncHandler(async (req: Request, res: Response) => {
     const result = await fireExtinguisherAuditsService.findAll(req.query as unknown as ListFireExtinguisherAuditsQueryDTO)
     res.json(result)
+  }),
+
+  coverage: asyncHandler(async (req: Request, res: Response) => {
+    const { period } = req.query as unknown as CoverageQueryDTO
+    const data = await fireExtinguisherAuditsService.getCoverage(period)
+    res.json({ data })
   }),
 
   getById: asyncHandler(async (req: Request<IdParam>, res: Response) => {

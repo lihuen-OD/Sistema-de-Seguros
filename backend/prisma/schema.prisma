@@ -474,26 +474,14 @@ model FireExtinguisherAudit {
   locationChangeReason    String?
 
   // Paso 4 — Checklist de condición (embebido, sin tabla separada)
-  cleanliness                         String
-  chargeFillStatus                    String // CARGADO | DESCARGADO — no confundir con el status de vencimiento (vigente/proximo_vencer/vencido)
-  beaconPlateExists                   String // SI | NO
-  beaconPlateCondition                String?
-  beaconPlateMatchesType              String?
-  isObstructed                        String
-  pressureStatus                      String
-  sealStatus                          String
-  ringStatus                          String
-  safetyPinStatus                     String
-  hoseNozzleCondition                 String
-  chargeExpirationDateObserved        DateTime? @db.Date
-  hydraulicTestExpirationDateObserved DateTime? @db.Date // sin contraparte en el maestro todavía — solo queda registrado
-  cylinderNumberObserved              String?
-  capacityObserved                    String?
-  extinguishingAgentObserved          String?
-  brandObserved                       String?
-  comments                            String? // comentario del checklist, distinto de `observations`
-
-  observations String? // nota general de la auditoría
+  cleanliness                  String
+  chargeFillStatus             String // CARGADO | DESCARGADO — no confundir con el status de vencimiento (vigente/proximo_vencer/vencido)
+  beaconPlateCondition         String // SANA | ROTA_LEVE | ROTA_REQUIERE_CAMBIO | NO_TIENE
+  sealStatus                   String
+  ringStatus                   String
+  hoseNozzleCondition          String
+  chargeExpirationDateObserved DateTime? @db.Date
+  comments                     String?
 
   // Fase 4 — Revisión/aprobación
   reviewedBy  String?

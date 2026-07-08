@@ -3,9 +3,7 @@ import { PaginationSchema } from '../../shared/schemas/common'
 import {
   FIRE_EXT_AUDIT_CLEANLINESS,
   FIRE_EXT_AUDIT_CHARGE_FILL_STATUS,
-  FIRE_EXT_AUDIT_YES_NO,
   FIRE_EXT_AUDIT_PLATE_CONDITION,
-  FIRE_EXT_AUDIT_PRESSURE_STATUS,
   FIRE_EXT_AUDIT_HAS_STATUS,
   FIRE_EXT_AUDIT_HOSE_NOZZLE_CONDITION,
   FIRE_EXT_AUDIT_MASTER_FIELDS,
@@ -64,31 +62,16 @@ const MasterDataReviewSchema = z
 
 // ── Paso 4 — Checklist de condición ────────────────────────────────────────────
 
-const ChecklistSchema = z
-  .object({
-    cleanliness: z.enum(FIRE_EXT_AUDIT_CLEANLINESS),
-    chargeFillStatus: z.enum(FIRE_EXT_AUDIT_CHARGE_FILL_STATUS),
-    beaconPlateExists: z.enum(FIRE_EXT_AUDIT_YES_NO),
-    beaconPlateCondition: z.enum(FIRE_EXT_AUDIT_PLATE_CONDITION).optional().nullable(),
-    beaconPlateMatchesType: z.enum(FIRE_EXT_AUDIT_YES_NO).optional().nullable(),
-    isObstructed: z.enum(FIRE_EXT_AUDIT_YES_NO),
-    pressureStatus: z.enum(FIRE_EXT_AUDIT_PRESSURE_STATUS),
-    sealStatus: z.enum(FIRE_EXT_AUDIT_HAS_STATUS),
-    ringStatus: z.enum(FIRE_EXT_AUDIT_HAS_STATUS),
-    safetyPinStatus: z.enum(FIRE_EXT_AUDIT_YES_NO),
-    hoseNozzleCondition: z.enum(FIRE_EXT_AUDIT_HOSE_NOZZLE_CONDITION),
-    chargeExpirationDateObserved: ISODate.optional().nullable(),
-    hydraulicTestExpirationDateObserved: ISODate.optional().nullable(),
-    cylinderNumberObserved: z.string().max(100).optional().nullable(),
-    capacityObserved: z.string().max(50).optional().nullable(),
-    extinguishingAgentObserved: z.string().max(100).optional().nullable(),
-    brandObserved: z.string().max(100).optional().nullable(),
-    comments: z.string().max(1000).optional().nullable(),
-  })
-  .refine((data) => (data.beaconPlateExists === 'SI' ? data.beaconPlateCondition != null && data.beaconPlateMatchesType != null : true), {
-    message: 'beaconPlateCondition y beaconPlateMatchesType son requeridos cuando beaconPlateExists = SI',
-    path: ['beaconPlateCondition'],
-  })
+const ChecklistSchema = z.object({
+  cleanliness: z.enum(FIRE_EXT_AUDIT_CLEANLINESS),
+  chargeFillStatus: z.enum(FIRE_EXT_AUDIT_CHARGE_FILL_STATUS),
+  beaconPlateCondition: z.enum(FIRE_EXT_AUDIT_PLATE_CONDITION),
+  sealStatus: z.enum(FIRE_EXT_AUDIT_HAS_STATUS),
+  ringStatus: z.enum(FIRE_EXT_AUDIT_HAS_STATUS),
+  hoseNozzleCondition: z.enum(FIRE_EXT_AUDIT_HOSE_NOZZLE_CONDITION),
+  chargeExpirationDateObserved: ISODate,
+  comments: z.string().max(1000).optional().nullable(),
+})
 
 // ── Alta de auditoría ───────────────────────────────────────────────────────────
 
@@ -97,7 +80,6 @@ export const CreateFireExtinguisherAuditSchema = z.object({
   locationReview: LocationReviewSchema,
   masterDataReview: MasterDataReviewSchema,
   checklist: ChecklistSchema,
-  observations: z.string().max(1000).optional().nullable(),
 })
 
 export const AddFireExtinguisherAuditAttachmentSchema = z.object({
@@ -133,6 +115,12 @@ export const ListFireExtinguisherAuditsQuerySchema = PaginationSchema.extend({
     .transform((v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v])),
 })
 
+// ── Cobertura por establecimiento ───────────────────────────────────────────────
+
+export const CoverageQuerySchema = z.object({
+  period: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM'),
+})
+
 export type LocationReviewDTO = z.infer<typeof LocationReviewSchema>
 export type MasterFieldReviewDTO = z.infer<typeof MasterFieldReviewSchema>
 export type ChecklistDTO = z.infer<typeof ChecklistSchema>
@@ -140,3 +128,4 @@ export type CreateFireExtinguisherAuditDTO = z.infer<typeof CreateFireExtinguish
 export type AddFireExtinguisherAuditAttachmentDTO = z.infer<typeof AddFireExtinguisherAuditAttachmentSchema>
 export type ReviewFireExtinguisherAuditDTO = z.infer<typeof ReviewFireExtinguisherAuditSchema>
 export type ListFireExtinguisherAuditsQueryDTO = z.infer<typeof ListFireExtinguisherAuditsQuerySchema>
+export type CoverageQueryDTO = z.infer<typeof CoverageQuerySchema>
