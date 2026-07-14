@@ -1,7 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
 import clsx from 'clsx'
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 export interface ModalProps {
   open: boolean
@@ -38,6 +41,9 @@ export function Modal({
   closeOnEscape = true,
   children,
 }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previouslyFocused = useRef<HTMLElement | null>(null)
+
   useEffect(() => {
     if (!open || !closeOnEscape) return
     function handleKeyDown(e: KeyboardEvent) {
@@ -46,6 +52,37 @@ export function Modal({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [open, closeOnEscape, onClose])
+
+  // Foco: al abrir, entra al modal (primer elemento enfocable o el panel);
+  // mientras está abierto, Tab/Shift+Tab queda atrapado adentro; al cerrar,
+  // vuelve al elemento que lo abrió.
+  useEffect(() => {
+    if (!open) return
+    previouslyFocused.current = document.activeElement as HTMLElement | null
+    const panel = panelRef.current
+    const firstFocusable = panel?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
+    ;(firstFocusable ?? panel)?.focus()
+
+    function handleTabTrap(e: KeyboardEvent) {
+      if (e.key !== 'Tab' || !panel) return
+      const focusables = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', handleTabTrap)
+    return () => {
+      window.removeEventListener('keydown', handleTabTrap)
+      previouslyFocused.current?.focus?.()
+    }
+  }, [open])
 
   if (!open) return null
 
@@ -59,8 +96,10 @@ export function Modal({
       />
 
       <div
+        ref={panelRef}
+        tabIndex={-1}
         className={clsx(
-          'relative z-10 w-full bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden',
+          'relative z-10 w-full bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden outline-none',
           SIZE_CLASSES[size],
         )}
         onClick={(e) => e.stopPropagation()}
@@ -80,6 +119,7 @@ export function Modal({
               <button
                 type="button"
                 onClick={onClose}
+                aria-label="Cerrar"
                 className="flex-shrink-0 p-1 -m-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 <X size={16} />

@@ -12,9 +12,9 @@ import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
-import { documentsApi } from '../../../../shared/api/documents.api'
-import { policiesApi } from '../../../../shared/api/policies.api'
-import { catalogsApi } from '../../../../shared/api/catalogs.api'
+import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
+import { policyQueries } from '../../../../shared/api/policies.api'
+import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import type { AccountingDocument } from '../../../../shared/types'
 
 interface DocumentoFacturaFormProps {
@@ -61,30 +61,27 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [emailTo, setEmailTo] = useState('')
   const [emailSubjectEdit, setEmailSubjectEdit] = useState('')
-  const [emailSent, setEmailSent] = useState(false)
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'skipped'>('idle')
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
-  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit)
+  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'INVOICE', form.insuranceCompany)
 
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
-  const { data: paymentMethods = [] } = useQuery({ queryKey: ['catalogs', 'document_payment_method'], queryFn: () => catalogsApi.findByCategory('document_payment_method') })
-  const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
+  const { data: paymentMethods = [] } = useQuery(catalogQueries.byCategory('document_payment_method'))
+  const { data: currencies = [] } = useQuery(catalogQueries.byCategory('document_currency'))
 
   const { data: sourcePolicy } = useQuery({
-    queryKey: ['policy', sourcePolicyId],
-    queryFn: () => policiesApi.findById(sourcePolicyId!),
+    ...policyQueries.detail(sourcePolicyId!),
     enabled: !isEdit && !!sourcePolicyId,
   })
 
   const { data: existingAllocations = [], isSuccess: allocationsLoaded } = useQuery({
-    queryKey: ['documents', initialDoc?.id, 'allocations'],
-    queryFn: () => documentsApi.findAllocations(initialDoc!.id),
+    ...documentQueries.allocations(initialDoc?.id ?? ''),
     enabled: isEdit,
   })
   const { data: existingInstallments = [], isSuccess: installmentsLoaded } = useQuery({
-    queryKey: ['documents', initialDoc?.id, 'installments'],
-    queryFn: () => documentsApi.findInstallments(initialDoc!.id),
+    ...documentQueries.installments(initialDoc?.id ?? ''),
     enabled: isEdit,
   })
 
@@ -236,13 +233,27 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
       const newDoc = await createMutation.mutateAsync()
       markSaved(newDoc.id)
     }
-    queryClient.invalidateQueries({ queryKey: ['documents'] })
+    queryClient.invalidateQueries({ queryKey: documentKeys.all })
   }
 
-  const handleSendEmail = () => {
-    if (!emailTo.trim()) return
-    setEmailSent(true)
-    setTimeout(() => { setEmailModalOpen(false); setEmailSent(false); setEmailTo('') }, 1800)
+  const handleSendEmail = async () => {
+    if (!emailTo.trim() || !savedDocId || emailStatus === 'sending') return
+    setEmailStatus('sending')
+    try {
+      const result = await documentsApi.sendEmail(savedDocId, {
+        to: [emailTo.trim()],
+        subject: emailSubjectEdit || undefined,
+      })
+      if (result.status === 'SKIPPED') {
+        setEmailStatus('skipped')
+      } else {
+        setEmailStatus('sent')
+        setTimeout(() => { setEmailModalOpen(false); setEmailStatus('idle'); setEmailTo('') }, 1800)
+      }
+    } catch {
+      // El toast de error ya lo muestra el interceptor de apiClient.
+      setEmailStatus('idle')
+    }
   }
 
   const savedPolicyNumbers = policyRows
@@ -400,7 +411,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
 
       {emailModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => !emailSent && setEmailModalOpen(false)} />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => emailStatus !== 'sending' && setEmailModalOpen(false)} />
           <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
@@ -409,18 +420,33 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                 </div>
                 <h2 className="text-sm font-semibold text-slate-800">Enviar por mail</h2>
               </div>
-              {!emailSent && (
+              {emailStatus !== 'sending' && emailStatus !== 'sent' && (
                 <button type="button" onClick={() => setEmailModalOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
                   <X size={16} />
                 </button>
               )}
             </div>
 
-            {emailSent ? (
+            {emailStatus === 'sent' ? (
               <div className="px-6 py-10 text-center">
                 <CheckCircle2 size={40} className="mx-auto text-emerald-500 mb-3" />
                 <p className="text-sm font-semibold text-slate-800">Mail enviado</p>
                 <p className="text-xs text-slate-400 mt-1">Cerrando…</p>
+              </div>
+            ) : emailStatus === 'skipped' ? (
+              <div className="px-6 py-10 text-center">
+                <Info size={40} className="mx-auto text-amber-500 mb-3" />
+                <p className="text-sm font-semibold text-slate-800">Envío deshabilitado en este entorno</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                  El intento quedó registrado, pero el servicio de email no está activo acá. No se mandó ningún mail.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setEmailModalOpen(false); setEmailStatus('idle') }}
+                  className="mt-4 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+                >
+                  Cerrar
+                </button>
               </div>
             ) : (
               <div className="px-6 py-5 space-y-4">
@@ -470,11 +496,12 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pt-1">
-                  <button type="button" onClick={handleSendEmail} disabled={!emailTo.trim()}
+                  <button type="button" onClick={handleSendEmail} disabled={!emailTo.trim() || emailStatus === 'sending'}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                    <Mail size={14} /> Enviar
+                    <Mail size={14} /> {emailStatus === 'sending' ? 'Enviando…' : 'Enviar'}
                   </button>
-                  <button type="button" onClick={() => setEmailModalOpen(false)} className="px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors">
+                  <button type="button" onClick={() => setEmailModalOpen(false)} disabled={emailStatus === 'sending'}
+                    className="px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                     Cancelar
                   </button>
                 </div>

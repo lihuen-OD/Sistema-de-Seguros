@@ -2,7 +2,7 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { toDateStr } from '../../shared/utils/dates'
-import { detectFileType, formatFileSize, isAllowedMimetype } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, isAllowedMimetype, sanitizeFileName } from '../../shared/utils/files'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import { computeTotalAmount } from '../documents/document-amounts'
 import type {
@@ -184,7 +184,11 @@ export const claimsService = {
   },
 
   async update(id: string, data: UpdateClaimDTO) {
-    await this.assertExists(id)
+    const existing = await prisma.claim.findUnique({
+      where: { id },
+      select: { status: true, claimedAmountArs: true, realAmountArs: true, settledAmountArs: true },
+    })
+    if (!existing) throw new AppError(404, 'Siniestro no encontrado', 'NOT_FOUND')
 
     if (data.assetId) {
       const asset = await prisma.asset.findFirst({ where: { id: data.assetId, isActive: true } })
@@ -196,32 +200,80 @@ export const claimsService = {
       if (!policy) throw new AppError(400, 'Póliza no encontrada o inactiva', 'INVALID_REFERENCE')
     }
 
-    const updated = await prisma.claim.update({
-      where: { id },
-      data: {
-        ...(data.claimNumber && { claimNumber: data.claimNumber }),
-        ...(data.claimType && { claimType: data.claimType }),
-        ...(data.occurrenceDate && { occurrenceDate: data.occurrenceDate }),
-        ...(data.reportDate && { reportDate: data.reportDate }),
-        ...(data.description && { description: data.description }),
-        ...(data.insuranceCompany !== undefined && { insuranceCompany: data.insuranceCompany }),
-        ...(data.ownershipType && { ownershipType: data.ownershipType }),
-        ...(data.responsiblePersonName !== undefined && { responsiblePersonName: data.responsiblePersonName }),
-        ...(data.thirdPartyInsuranceCompany !== undefined && { thirdPartyInsuranceCompany: data.thirdPartyInsuranceCompany }),
-        ...(data.thirdPartyContact !== undefined && { thirdPartyContact: data.thirdPartyContact }),
-        ...(data.thirdPartyInsurerContact !== undefined && { thirdPartyInsurerContact: data.thirdPartyInsurerContact }),
-        ...(data.status && { status: data.status }),
-        ...(data.claimedAmountArs !== undefined && { claimedAmountArs: data.claimedAmountArs }),
-        ...(data.realAmountArs !== undefined && { realAmountArs: data.realAmountArs }),
-        ...(data.settledAmountArs !== undefined && { settledAmountArs: data.settledAmountArs }),
-        ...(data.deductibleArs !== undefined && { deductibleArs: data.deductibleArs }),
-        ...(data.currency && { currency: data.currency }),
-        ...(data.exchangeRate !== undefined && { exchangeRate: data.exchangeRate }),
-        ...(data.observations !== undefined && { observations: data.observations }),
-        ...(data.assetId !== undefined && { assetId: data.assetId }),
-        ...(data.policyId !== undefined && { policyId: data.policyId }),
-      },
-      include: CLAIM_DETAIL_INCLUDE,
+    // Cambios de estado/montos vía este update() genérico (ej. desde el
+    // formulario de edición completo) quedan igual de auditados que los que
+    // vienen del selector rápido de estado — no depende de que el frontend
+    // se acuerde de llamar a addEvent() por separado. Todo en una transacción
+    // para que el update y su rastro en ClaimEvent sean atómicos.
+    const amountChanges: { label: string; previous: number | null; next: number }[] = [
+      { label: 'Monto reclamado', previous: existing.claimedAmountArs, next: data.claimedAmountArs },
+      { label: 'Monto real', previous: existing.realAmountArs, next: data.realAmountArs },
+      { label: 'Monto liquidado', previous: existing.settledAmountArs, next: data.settledAmountArs },
+    ].filter((c): c is { label: string; next: number; previous: number | null } =>
+      c.next !== undefined && c.next !== c.previous,
+    )
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.claim.update({
+        where: { id },
+        data: {
+          ...(data.claimNumber && { claimNumber: data.claimNumber }),
+          ...(data.claimType && { claimType: data.claimType }),
+          ...(data.occurrenceDate && { occurrenceDate: data.occurrenceDate }),
+          ...(data.reportDate && { reportDate: data.reportDate }),
+          ...(data.description && { description: data.description }),
+          ...(data.insuranceCompany !== undefined && { insuranceCompany: data.insuranceCompany }),
+          ...(data.ownershipType && { ownershipType: data.ownershipType }),
+          ...(data.responsiblePersonName !== undefined && { responsiblePersonName: data.responsiblePersonName }),
+          ...(data.thirdPartyInsuranceCompany !== undefined && { thirdPartyInsuranceCompany: data.thirdPartyInsuranceCompany }),
+          ...(data.thirdPartyContact !== undefined && { thirdPartyContact: data.thirdPartyContact }),
+          ...(data.thirdPartyInsurerContact !== undefined && { thirdPartyInsurerContact: data.thirdPartyInsurerContact }),
+          ...(data.status && { status: data.status }),
+          ...(data.claimedAmountArs !== undefined && { claimedAmountArs: data.claimedAmountArs }),
+          ...(data.realAmountArs !== undefined && { realAmountArs: data.realAmountArs }),
+          ...(data.settledAmountArs !== undefined && { settledAmountArs: data.settledAmountArs }),
+          ...(data.deductibleArs !== undefined && { deductibleArs: data.deductibleArs }),
+          ...(data.currency && { currency: data.currency }),
+          ...(data.exchangeRate !== undefined && { exchangeRate: data.exchangeRate }),
+          ...(data.observations !== undefined && { observations: data.observations }),
+          ...(data.assetId !== undefined && { assetId: data.assetId }),
+          ...(data.policyId !== undefined && { policyId: data.policyId }),
+        },
+      })
+
+      if (data.status && data.status !== existing.status) {
+        await tx.claimEvent.create({
+          data: {
+            claimId: id,
+            type: 'estado_cambiado',
+            description: `Estado actualizado: "${existing.status}" → "${data.status}".`,
+            date: new Date(),
+            previousStatus: existing.status,
+            newStatus: data.status,
+            createdBy: 'Sistema',
+          },
+        })
+      }
+
+      for (const change of amountChanges) {
+        await tx.claimEvent.create({
+          data: {
+            claimId: id,
+            type: 'monto_actualizado',
+            description: `${change.label} actualizado: ${change.previous ?? 0} → ${change.next}.`,
+            date: new Date(),
+            amountLabel: change.label,
+            previousAmount: change.previous,
+            newAmount: change.next,
+            createdBy: 'Sistema',
+          },
+        })
+      }
+
+      // Re-fetch dentro de la misma transacción para que la respuesta incluya
+      // los ClaimEvent recién creados (el include del update de arriba se
+      // resolvió antes de que existieran).
+      return tx.claim.findUniqueOrThrow({ where: { id }, include: CLAIM_DETAIL_INCLUDE })
     })
 
     return {
@@ -401,7 +453,7 @@ export const claimsService = {
     let cloudinaryPublicId: string | null = null
 
     if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'claims')
+      const result = await uploadToCloudinary(file.buffer, 'claims', file.mimetype)
       fileUrl = result.secure_url
       cloudinaryPublicId = result.public_id
     }
@@ -410,7 +462,7 @@ export const claimsService = {
       return await prisma.claimAttachment.create({
         data: {
           claimId,
-          name: file.originalname,
+          name: sanitizeFileName(file.originalname),
           description: meta.description ?? null,
           fileType: detectFileType(file.mimetype),
           fileSize: formatFileSize(file.size),
@@ -434,6 +486,14 @@ export const claimsService = {
       await deleteFromCloudinary(attachment.cloudinaryPublicId)
     }
     await prisma.claimAttachment.delete({ where: { id: attachmentId } })
+  },
+
+  async getAttachmentForDownload(claimId: string, attachmentId: string) {
+    const attachment = await prisma.claimAttachment.findFirst({
+      where: { id: attachmentId, claimId },
+    })
+    if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    return attachment
   },
 
   // ── Private ───────────────────────────────────────────────────────────────────

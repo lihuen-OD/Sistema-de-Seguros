@@ -120,8 +120,9 @@ describe('buildPolicyStatusFilter', () => {
     expect(buildPolicyStatusFilter('')).toEqual({})
   })
 
-  it('generates ISO date strings in filter values', () => {
-    const filter = buildPolicyStatusFilter('vencida') as { endDate: { lt: string } }
-    expect(filter.endDate.lt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  it('generates Date objects (not strings) in filter values, as required by Prisma for @db.Date filtering', () => {
+    const filter = buildPolicyStatusFilter('vencida') as { endDate: { lt: Date } }
+    expect(filter.endDate.lt).toBeInstanceOf(Date)
+    expect(filter.endDate.lt.toISOString()).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/)
   })
 })

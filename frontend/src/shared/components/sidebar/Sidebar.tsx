@@ -18,6 +18,7 @@ import {
   ClipboardCheck,
   SlidersHorizontal,
   BarChart3,
+  Bell,
 } from 'lucide-react'
 import { useState } from 'react'
 import clsx from 'clsx'
@@ -42,6 +43,7 @@ const navGroups: NavGroup[] = [
     label: 'Principal',
     items: [
       { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
+      { label: 'Notificaciones', to: '/notifications', icon: Bell },
     ],
   },
   {

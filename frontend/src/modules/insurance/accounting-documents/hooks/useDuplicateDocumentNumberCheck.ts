@@ -3,7 +3,19 @@ import { documentsApi } from '../../../../shared/api/documents.api'
 
 // Solo tiene sentido en modo creación — en edición el número de documento es
 // de solo lectura (ver DocumentFormRouter), así que `enabled` se pasa en false.
-export function useDuplicateDocumentNumberCheck(documentNumber: string, enabled: boolean) {
+//
+// El duplicado real (ver documents.service.ts::create) es la combinación
+// documentType + insuranceCompany + documentNumber, no el número solo — dos
+// compañías (o dos tipos de documento) pueden compartir numeración. Por eso
+// este hook necesita documentType/insuranceCompany además del número: de lo
+// contrario mostraría una advertencia de duplicado en casos que el backend
+// permite sin problema.
+export function useDuplicateDocumentNumberCheck(
+  documentNumber: string,
+  enabled: boolean,
+  documentType?: string,
+  insuranceCompany?: string,
+) {
   const [dupWarning, setDupWarning] = useState(false)
   const [dupChecking, setDupChecking] = useState(false)
 
@@ -20,7 +32,7 @@ export function useDuplicateDocumentNumberCheck(documentNumber: string, enabled:
     setDupChecking(true)
     const timer = setTimeout(async () => {
       try {
-        const { exists } = await documentsApi.checkDocumentNumber(trimmed)
+        const { exists } = await documentsApi.checkDocumentNumber(trimmed, documentType, insuranceCompany)
         setDupWarning(exists)
       } catch {
         setDupWarning(false)
@@ -29,7 +41,7 @@ export function useDuplicateDocumentNumberCheck(documentNumber: string, enabled:
       }
     }, 600)
     return () => clearTimeout(timer)
-  }, [documentNumber, enabled])
+  }, [documentNumber, enabled, documentType, insuranceCompany])
 
   return { dupWarning, dupChecking }
 }

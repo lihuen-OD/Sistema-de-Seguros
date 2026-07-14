@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
-import { detectFileType, formatFileSize, isAllowedMimetype } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, isAllowedMimetype, sanitizeFileName } from '../../shared/utils/files'
 import { toDateStr } from '../../shared/utils/dates'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import {
@@ -19,6 +19,11 @@ import {
 } from './document-types'
 import { computeTotalAmount } from './document-amounts'
 import { documentsBalanceService } from './documents-balance.service'
+import { emailService } from '../email/email.service'
+import { resolveEmailAttachments } from '../email/email-attachments'
+import { assetsService } from '../assets/assets.service'
+import type { EmailActor } from '../email/email.types'
+import type { ManualDocumentEmailData } from '../email/email.templates'
 import type {
   CreateDocumentDTO,
   UpdateDocumentDTO,
@@ -27,6 +32,7 @@ import type {
   ReplaceInstallmentsDTO,
   ReplaceAllocationsDTO,
   AddDocumentAttachmentDTO,
+  SendDocumentEmailDTO,
 } from './documents.schemas'
 
 // ── Include shapes ────────────────────────────────────────────────────────────
@@ -73,6 +79,11 @@ const DOCUMENT_FINANCIAL_INCLUDE = {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Permite pasar el cliente de una transacción (tx) a recordAudit/
+// recalculateDocumentStatus para que la escritura financiera y su rastro de
+// auditoría (o el recálculo de paymentStatus) sean atómicos.
+type DocClient = typeof prisma | Prisma.TransactionClient
 
 function withTotalAmount<T extends { netAmount: number; vatAmount: number; otherTaxesAmount: number }>(
   doc: T,
@@ -189,52 +200,78 @@ export const documentsService = {
 
     await this.validateTypeConstraints(typeDef, docData)
 
+    // No hay @unique en documentNumber a propósito: distintas compañías o
+    // distintos tipos de documento pueden compartir numeración. El duplicado
+    // real es la combinación tipo + compañía + número (documentNumber es
+    // inmutable después del alta, así que este chequeo solo aplica en create).
+    const duplicate = await prisma.accountingDocument.findFirst({
+      where: {
+        documentNumber: docData.documentNumber,
+        documentType: docData.documentType,
+        insuranceCompany: docData.insuranceCompany ?? null,
+      },
+      select: { id: true },
+    })
+    if (duplicate) {
+      throw new AppError(
+        409,
+        'Ya existe un documento del mismo tipo y compañía con ese número',
+        'CONFLICT',
+      )
+    }
+
     // El estado inicial y la relación con el documento vinculado los define
     // el tipo, no el cliente — evita que se puedan crear documentos que
     // arrancan ya APPLIED/CANCELLED o con un relationType inconsistente.
-    const doc = await prisma.accountingDocument.create({
-      data: {
-        ...docData,
-        documentStatus: 'ISSUED',
-        relationType: typeDef.relationType ?? null,
-        paymentStatus: typeDef.hasPaymentStatus ? 'PENDING' : 'NOT_APPLICABLE',
-        ...(installments.length > 0 && typeDef.hasInstallments && {
-          installments: {
-            create: installments.map((inst) => ({
-              installmentNumber: inst.installmentNumber,
-              dueDate: inst.dueDate,
-              amount: inst.amount,
-              currency: docData.currency,
-            })),
-          },
-        }),
-        ...(allocations.length > 0 && {
-          allocations: {
-            create: allocations.map((alloc) => ({
-              policyId: alloc.policyId,
-              allocatedAmount: alloc.allocatedAmount,
-              allocationPercentage: alloc.allocationPercentage,
-            })),
-          },
-        }),
-      },
-      include: DOCUMENT_DETAIL_INCLUDE,
-    })
+    // Create + audit log en una sola transacción: si el audit log fallara,
+    // no debe quedar un documento creado sin su rastro de auditoría.
+    const doc = await prisma.$transaction(async (tx) => {
+      const created = await tx.accountingDocument.create({
+        data: {
+          ...docData,
+          documentStatus: 'ISSUED',
+          relationType: typeDef.relationType ?? null,
+          paymentStatus: typeDef.hasPaymentStatus ? 'PENDING' : 'NOT_APPLICABLE',
+          ...(installments.length > 0 && typeDef.hasInstallments && {
+            installments: {
+              create: installments.map((inst) => ({
+                installmentNumber: inst.installmentNumber,
+                dueDate: inst.dueDate,
+                amount: inst.amount,
+                currency: docData.currency,
+              })),
+            },
+          }),
+          ...(allocations.length > 0 && {
+            allocations: {
+              create: allocations.map((alloc) => ({
+                policyId: alloc.policyId,
+                allocatedAmount: alloc.allocatedAmount,
+                allocationPercentage: alloc.allocationPercentage,
+              })),
+            },
+          }),
+        },
+        include: DOCUMENT_DETAIL_INCLUDE,
+      })
 
-    await this.recordAudit(doc.id, {
-      action: 'CREATE',
-      description: `${typeDef.label} creada`,
-      newData: {
-        documentType: doc.documentType,
-        documentStatus: doc.documentStatus,
-        paymentStatus: doc.paymentStatus,
-        netAmount: doc.netAmount,
-        vatAmount: doc.vatAmount,
-        otherTaxesAmount: doc.otherTaxesAmount,
-        currency: doc.currency,
-        linkedDocumentId: doc.linkedDocumentId,
-      },
-      performedBy,
+      await this.recordAudit(created.id, {
+        action: 'CREATE',
+        description: `${typeDef.label} creada`,
+        newData: {
+          documentType: created.documentType,
+          documentStatus: created.documentStatus,
+          paymentStatus: created.paymentStatus,
+          netAmount: created.netAmount,
+          vatAmount: created.vatAmount,
+          otherTaxesAmount: created.otherTaxesAmount,
+          currency: created.currency,
+          linkedDocumentId: created.linkedDocumentId,
+        },
+        performedBy,
+      }, tx)
+
+      return created
     })
 
     return {
@@ -298,34 +335,38 @@ export const documentsService = {
       throw new AppError(400, 'Estado de documento inválido para este tipo', 'BAD_REQUEST')
     }
 
-    const updated = await prisma.accountingDocument.update({
-      where: { id },
-      data: {
-        ...docData,
-        relationType: typeDef.relationType ?? null,
-        ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
-      },
-      include: DOCUMENT_DETAIL_INCLUDE,
-    })
+    const updated = await prisma.$transaction(async (tx) => {
+      const doc = await tx.accountingDocument.update({
+        where: { id },
+        data: {
+          ...docData,
+          relationType: typeDef.relationType ?? null,
+          ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
+        },
+        include: DOCUMENT_DETAIL_INCLUDE,
+      })
 
-    await this.recordAudit(id, {
-      action: 'UPDATE',
-      description: 'Documento actualizado',
-      previousData: {
-        documentType: existing.documentType,
-        linkedDocumentId: existing.linkedDocumentId,
-        netAmount: existing.netAmount,
-        vatAmount: existing.vatAmount,
-        otherTaxesAmount: existing.otherTaxesAmount,
-      },
-      newData: {
-        documentType: updated.documentType,
-        linkedDocumentId: updated.linkedDocumentId,
-        netAmount: updated.netAmount,
-        vatAmount: updated.vatAmount,
-        otherTaxesAmount: updated.otherTaxesAmount,
-      },
-      performedBy,
+      await this.recordAudit(id, {
+        action: 'UPDATE',
+        description: 'Documento actualizado',
+        previousData: {
+          documentType: existing.documentType,
+          linkedDocumentId: existing.linkedDocumentId,
+          netAmount: existing.netAmount,
+          vatAmount: existing.vatAmount,
+          otherTaxesAmount: existing.otherTaxesAmount,
+        },
+        newData: {
+          documentType: doc.documentType,
+          linkedDocumentId: doc.linkedDocumentId,
+          netAmount: doc.netAmount,
+          vatAmount: doc.vatAmount,
+          otherTaxesAmount: doc.otherTaxesAmount,
+        },
+        performedBy,
+      }, tx)
+
+      return doc
     })
 
     return {
@@ -380,31 +421,34 @@ export const documentsService = {
       }))
     }
 
-    if (doc.documentType === 'CREDIT_NOTE') {
-      await prisma.$transaction([
-        prisma.documentPolicyAllocation.deleteMany({ where: { accountingDocumentId: id } }),
-        ...(negativeAllocations.length > 0
-          ? [
-              prisma.documentPolicyAllocation.createMany({
-                data: negativeAllocations.map((a) => ({ ...a, accountingDocumentId: id })),
-              }),
-            ]
-          : []),
-      ])
-    }
+    // Las 3 escrituras (allocations negativas, cambio de estado, audit log)
+    // deben ser atómicas — un crash a mitad no puede dejar allocations
+    // desincronizadas con el estado o el documento aplicado sin auditoría.
+    const updated = await prisma.$transaction(async (tx) => {
+      if (doc.documentType === 'CREDIT_NOTE') {
+        await tx.documentPolicyAllocation.deleteMany({ where: { accountingDocumentId: id } })
+        if (negativeAllocations.length > 0) {
+          await tx.documentPolicyAllocation.createMany({
+            data: negativeAllocations.map((a) => ({ ...a, accountingDocumentId: id })),
+          })
+        }
+      }
 
-    const updated = await prisma.accountingDocument.update({
-      where: { id },
-      data: { documentStatus: 'APPLIED' },
-      include: DOCUMENT_DETAIL_INCLUDE,
-    })
+      const doc2 = await tx.accountingDocument.update({
+        where: { id },
+        data: { documentStatus: 'APPLIED' },
+        include: DOCUMENT_DETAIL_INCLUDE,
+      })
 
-    await this.recordAudit(id, {
-      action: 'APPLY',
-      description: `${typeDef.label} aplicada`,
-      previousData: { documentStatus: 'ISSUED' },
-      newData: { documentStatus: 'APPLIED' },
-      performedBy,
+      await this.recordAudit(id, {
+        action: 'APPLY',
+        description: `${typeDef.label} aplicada`,
+        previousData: { documentStatus: 'ISSUED' },
+        newData: { documentStatus: 'APPLIED' },
+        performedBy,
+      }, tx)
+
+      return doc2
     })
 
     return {
@@ -420,25 +464,131 @@ export const documentsService = {
       throw new AppError(409, 'El documento ya está anulado', 'CONFLICT')
     }
 
-    const updated = await prisma.accountingDocument.update({
-      where: { id },
-      data: { documentStatus: 'CANCELLED' },
-      include: DOCUMENT_DETAIL_INCLUDE,
-    })
+    const updated = await prisma.$transaction(async (tx) => {
+      const doc2 = await tx.accountingDocument.update({
+        where: { id },
+        data: { documentStatus: 'CANCELLED' },
+        include: DOCUMENT_DETAIL_INCLUDE,
+      })
 
-    await this.recordAudit(id, {
-      action: 'CANCEL',
-      description: reason ? `Documento anulado: ${reason}` : 'Documento anulado',
-      previousData: { documentStatus: doc.documentStatus },
-      newData: { documentStatus: 'CANCELLED' },
-      performedBy,
-      reason,
+      await this.recordAudit(id, {
+        action: 'CANCEL',
+        description: reason ? `Documento anulado: ${reason}` : 'Documento anulado',
+        previousData: { documentStatus: doc.documentStatus },
+        newData: { documentStatus: 'CANCELLED' },
+        performedBy,
+        reason,
+      }, tx)
+
+      return doc2
     })
 
     return {
       ...withTotalAmount(updated),
       installments: updated.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
     }
+  },
+
+  // ── Envío manual por email ────────────────────────────────────────────────────
+
+  async sendEmail(id: string, payload: SendDocumentEmailDTO, actor: EmailActor) {
+    const doc = await this.findById(id)
+    const typeDef = getDocumentTypeDef(doc.documentType)
+
+    // Bien de uso + Centro de Costo de cada póliza asignada — se resuelven
+    // acá (no vienen en DOCUMENT_DETAIL_INCLUDE) porque están asociados al
+    // Activo, no al documento. Se buscan en batch, no por póliza.
+    const policyIds = doc.allocations.map((a) => a.policyId)
+    const policies = policyIds.length > 0
+      ? await prisma.policy.findMany({ where: { id: { in: policyIds } }, select: { id: true, assetIds: true } })
+      : []
+    const assetIdsByPolicy = new Map(policies.map((p) => [p.id, p.assetIds]))
+
+    const allAssetIds = [...new Set(policies.flatMap((p) => p.assetIds))]
+    const assetsSummary = await assetsService.resolveAssetsSummary(allAssetIds)
+    const assetsById = new Map(assetsSummary.map((a) => [a.id, a]))
+
+    // Reparto plano por Bien de Uso y por Centro de Costo sobre el total del
+    // documento — sin agrupar por póliza (no interesa para este mail). Si una
+    // póliza cubre varios activos, su monto se reparte en partes iguales
+    // entre ellos (no hay un peso individual por activo en el modelo hoy).
+    const assetBreakdown = new Map<string, { code: string | null; name: string; amount: number; percentage: number }>()
+    const costCenterBreakdown = new Map<string, { code: string | null; name: string | null; amount: number; percentage: number }>()
+
+    for (const alloc of doc.allocations) {
+      const policyAssets = (assetIdsByPolicy.get(alloc.policyId) ?? [])
+        .map((assetId) => assetsById.get(assetId))
+        .filter((asset): asset is NonNullable<typeof asset> => Boolean(asset))
+      if (policyAssets.length === 0) continue
+
+      const perAssetAmount = alloc.allocatedAmount / policyAssets.length
+      const perAssetPercentage = alloc.allocationPercentage / policyAssets.length
+
+      for (const asset of policyAssets) {
+        const existingAsset = assetBreakdown.get(asset.id)
+        if (existingAsset) {
+          existingAsset.amount += perAssetAmount
+          existingAsset.percentage += perAssetPercentage
+        } else {
+          assetBreakdown.set(asset.id, {
+            code: asset.fixedAssetCode,
+            name: asset.name,
+            amount: perAssetAmount,
+            percentage: perAssetPercentage,
+          })
+        }
+
+        const ccKey = asset.costCenterCode ?? asset.costCenterName ?? `sin-cc-${asset.id}`
+        const existingCC = costCenterBreakdown.get(ccKey)
+        if (existingCC) {
+          existingCC.amount += perAssetAmount
+          existingCC.percentage += perAssetPercentage
+        } else {
+          costCenterBreakdown.set(ccKey, {
+            code: asset.costCenterCode,
+            name: asset.costCenterName,
+            amount: perAssetAmount,
+            percentage: perAssetPercentage,
+          })
+        }
+      }
+    }
+
+    // El contenido del mail se arma solo con datos ya persistidos del
+    // documento — nunca con montos/distribución que pudiera mandar el
+    // cliente en el body de este endpoint.
+    const templateData: ManualDocumentEmailData = {
+      documentId: doc.id,
+      documentTypeLabel: typeDef?.label ?? doc.documentType,
+      documentNumber: doc.documentNumber,
+      insuranceCompany: doc.insuranceCompany,
+      paymentMethod: doc.paymentMethod,
+      currency: doc.currency,
+      totalAmount: doc.totalAmount,
+      costCenters: [...costCenterBreakdown.values()],
+      assets: [...assetBreakdown.values()],
+      attachments: [],
+    }
+
+    // Adjuntos reales — se bajan del storage (Cloudinary) recién acá, al
+    // momento de enviar, no se guardan bytes en ningún lado intermedio.
+    const { attachments, summaries } = await resolveEmailAttachments(
+      doc.attachments.map((att) => ({ name: att.name, fileUrl: att.fileUrl })),
+    )
+    templateData.attachments = summaries
+
+    return emailService.sendManualEntityEmail({
+      entityType: 'AccountingDocument',
+      entityId: id,
+      to: payload.to,
+      cc: payload.cc,
+      bcc: payload.bcc,
+      subjectOverride: payload.subject,
+      message: payload.message,
+      templateData: templateData as unknown as Record<string, unknown>,
+      attachments,
+      actor,
+    })
   },
 
   // ── Installments ──────────────────────────────────────────────────────────────
@@ -463,6 +613,9 @@ export const documentsService = {
   async replaceInstallments(documentId: string, data: ReplaceInstallmentsDTO) {
     const doc = await this.assertDocumentExists(documentId)
 
+    // Reemplazo de cuotas + reset de paymentStatus en una sola transacción —
+    // evita que el documento quede con cuotas nuevas pero un paymentStatus
+    // desincronizado si el segundo write fallara por separado.
     await prisma.$transaction([
       prisma.documentInstallment.deleteMany({ where: { accountingDocumentId: documentId } }),
       ...(data.installments.length > 0
@@ -478,13 +631,11 @@ export const documentsService = {
             }),
           ]
         : []),
+      prisma.accountingDocument.update({
+        where: { id: documentId },
+        data: { paymentStatus: 'PENDING' },
+      }),
     ])
-
-    // When all installments are replaced, reset document to pending
-    await prisma.accountingDocument.update({
-      where: { id: documentId },
-      data: { paymentStatus: 'PENDING' },
-    })
 
     const installments = await prisma.documentInstallment.findMany({
       where: { accountingDocumentId: documentId },
@@ -499,28 +650,32 @@ export const documentsService = {
     })
     if (!installment) throw new AppError(404, 'Cuota no encontrada', 'NOT_FOUND')
 
-    const updated = await prisma.documentInstallment.update({
-      where: { id: installmentId },
-      data,
-    })
-
-    await this.recalculateDocumentStatus(documentId)
-
-    if (data.paymentStatus && data.paymentStatus !== installment.paymentStatus) {
-      await this.recordAudit(documentId, {
-        action: 'PAYMENT_CHANGE',
-        description: `Cuota ${installment.installmentNumber} marcada como ${PAYMENT_STATUS_LABELS[data.paymentStatus] ?? data.paymentStatus}`,
-        previousData: { paymentStatus: installment.paymentStatus },
-        newData: { paymentStatus: data.paymentStatus },
-        performedBy,
+    const updated = await prisma.$transaction(async (tx) => {
+      const inst = await tx.documentInstallment.update({
+        where: { id: installmentId },
+        data,
       })
-    }
+
+      await this.recalculateDocumentStatus(documentId, tx)
+
+      if (data.paymentStatus && data.paymentStatus !== installment.paymentStatus) {
+        await this.recordAudit(documentId, {
+          action: 'PAYMENT_CHANGE',
+          description: `Cuota ${installment.installmentNumber} marcada como ${PAYMENT_STATUS_LABELS[data.paymentStatus] ?? data.paymentStatus}`,
+          previousData: { paymentStatus: installment.paymentStatus },
+          newData: { paymentStatus: data.paymentStatus },
+          performedBy,
+        }, tx)
+      }
+
+      return inst
+    })
 
     return mapInstallment(updated as Record<string, unknown>)
   },
 
-  async recalculateDocumentStatus(documentId: string) {
-    const installments = await prisma.documentInstallment.findMany({
+  async recalculateDocumentStatus(documentId: string, client: DocClient = prisma) {
+    const installments = await client.documentInstallment.findMany({
       where: { accountingDocumentId: documentId },
       select: { paymentStatus: true },
     })
@@ -531,7 +686,7 @@ export const documentsService = {
     const paymentStatus =
       paid === 0 ? 'PENDING' : paid === installments.length ? 'PAID' : 'PARTIALLY_PAID'
 
-    await prisma.accountingDocument.update({
+    await client.accountingDocument.update({
       where: { id: documentId },
       data: { paymentStatus },
     })
@@ -622,7 +777,7 @@ export const documentsService = {
     let cloudinaryPublicId: string | null = null
 
     if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'documents')
+      const result = await uploadToCloudinary(file.buffer, 'documents', file.mimetype)
       fileUrl = result.secure_url
       cloudinaryPublicId = result.public_id
     }
@@ -631,7 +786,7 @@ export const documentsService = {
       return await prisma.documentAttachment.create({
         data: {
           accountingDocumentId: documentId,
-          name: file.originalname,
+          name: sanitizeFileName(file.originalname),
           description: meta.description ?? null,
           fileType: detectFileType(file.mimetype),
           fileSize: formatFileSize(file.size),
@@ -657,6 +812,14 @@ export const documentsService = {
     await prisma.documentAttachment.delete({ where: { id: attachmentId } })
   },
 
+  async getAttachmentForDownload(documentId: string, attachmentId: string) {
+    const attachment = await prisma.documentAttachment.findFirst({
+      where: { id: attachmentId, accountingDocumentId: documentId },
+    })
+    if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    return attachment
+  },
+
   // ── Auditoría (Fase 4) ────────────────────────────────────────────────────────
 
   async getAuditLog(documentId: string) {
@@ -677,8 +840,9 @@ export const documentsService = {
       performedBy?: string
       reason?: string
     },
+    client: DocClient = prisma,
   ) {
-    await prisma.documentAuditLog.create({
+    await client.documentAuditLog.create({
       data: {
         accountingDocumentId,
         action: entry.action,
@@ -799,9 +963,15 @@ export const documentsService = {
     }
   },
 
-  async checkDocumentNumber(documentNumber: string) {
+  async checkDocumentNumber(documentNumber: string, documentType?: string, insuranceCompany?: string | null) {
+    // Mismo criterio compuesto que create(): el duplicado real es
+    // tipo + compañía + número, no el número solo.
     const existing = await prisma.accountingDocument.findFirst({
-      where: { documentNumber },
+      where: {
+        documentNumber,
+        ...(documentType && { documentType }),
+        ...(insuranceCompany !== undefined && { insuranceCompany: insuranceCompany ?? null }),
+      },
       select: { id: true },
     })
     return { exists: !!existing }

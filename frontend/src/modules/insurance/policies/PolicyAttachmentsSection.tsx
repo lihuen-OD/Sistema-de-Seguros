@@ -3,25 +3,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, X, Download, Paperclip, Upload, FileText, FileSpreadsheet,
   Image as ImageIcon, File as FileIcon, AlertTriangle, CheckCircle2,
-  Clock, Calendar, Mail, Bell, Send, Loader2,
+  Clock, Calendar, Loader2,
 } from 'lucide-react'
 import type { PolicyAttachment } from '../../../shared/types'
-import { policiesApi } from '../../../shared/api/policies.api'
+import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
 import { formatDate } from '../../../shared/utils/format'
+import { getExpirationStatus } from '../../../shared/utils/expiration'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getExpirationStatus(date: string | null): 'vencido' | 'proximo_vencer' | 'vigente' | null {
-  if (!date) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const exp = new Date(date + 'T00:00:00')
-  const diffDays = Math.floor((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  if (diffDays < 0) return 'vencido'
-  if (diffDays <= 30) return 'proximo_vencer'
-  return 'vigente'
-}
 
 function detectFileType(filename: string): PolicyAttachment['fileType'] {
   const ext = filename.split('.').pop()?.toLowerCase() ?? ''
@@ -107,8 +97,6 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
   const [description, setDescription] = useState('')
   const [hasExpiration, setHasExpiration] = useState(false)
   const [expirationDate, setExpirationDate] = useState('')
-  const [hasNotification, setHasNotification] = useState(false)
-  const [notifyEmail, setNotifyEmail] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -124,10 +112,6 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
     const e: Record<string, string> = {}
     if (!selectedFile) e.file = 'Seleccioná un archivo.'
     if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
-    if (hasNotification && !notifyEmail.trim()) e.email = 'Ingresá el email para la notificación.'
-    if (hasNotification && notifyEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notifyEmail.trim())) {
-      e.email = 'El formato del email no es válido.'
-    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -140,7 +124,6 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
       await policiesApi.addAttachment(policyId, selectedFile, {
         description: description.trim() || undefined,
         expirationDate: hasExpiration ? expirationDate : undefined,
-        notifyEmail: hasNotification && hasExpiration ? notifyEmail.trim() : undefined,
       })
       onSuccess()
       onClose()
@@ -231,7 +214,7 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
                 onToggle={() => {
                   const next = !hasExpiration
                   setHasExpiration(next)
-                  if (!next) { setExpirationDate(''); setHasNotification(false); setNotifyEmail('') }
+                  if (!next) setExpirationDate('')
                 }}
               />
               <div className="flex-1 min-w-0">
@@ -241,64 +224,22 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
             </div>
 
             {hasExpiration && (
-              <>
-                <div className="px-4 pb-4 bg-slate-50/50">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    <Calendar size={11} className="inline mr-1 align-[-1px]" />
-                    Fecha de vencimiento <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={expirationDate}
-                    onChange={(e) => setExpirationDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
-                  />
-                  {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
-                </div>
-
-                <div className="border-t border-slate-200" />
-
-                <div className="flex items-start gap-3 p-4">
-                  <Checkbox
-                    checked={hasNotification}
-                    onToggle={() => { setHasNotification((v) => !v); if (hasNotification) setNotifyEmail('') }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-slate-800">Notificar por email al vencer</p>
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
-                        Simulado
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Se enviará un aviso 30 días antes del vencimiento y el día que venza
-                    </p>
-                  </div>
-                </div>
-
-                {hasNotification && (
-                  <div className="px-4 pb-4">
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      <Mail size={11} className="inline mr-1 align-[-1px]" />
-                      Email destinatario <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      value={notifyEmail}
-                      onChange={(e) => setNotifyEmail(e.target.value)}
-                      placeholder="Ej: proveedor@empresa.com"
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
-                    />
-                    {errors.email && <p className="text-xs text-red-600 mt-1.5">{errors.email}</p>}
-                    {notifyEmail && !errors.email && (
-                      <p className="text-xs text-slate-400 mt-1.5 flex items-center gap-1">
-                        <Bell size={10} />
-                        Se notificará a <span className="font-medium text-slate-600 ml-0.5">{notifyEmail}</span>
-                      </p>
-                    )}
-                  </div>
-                )}
-              </>
+              <div className="px-4 pb-4 bg-slate-50/50">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  <Calendar size={11} className="inline mr-1 align-[-1px]" />
+                  Fecha de vencimiento <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={expirationDate}
+                  onChange={(e) => setExpirationDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+                />
+                {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
+                <p className="text-xs text-slate-400 mt-2">
+                  Va a aparecer en el centro de Notificaciones cuando esté por vencer.
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -343,22 +284,17 @@ interface PolicyAttachmentsSectionProps {
 
 export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionProps) {
   const queryClient = useQueryClient()
-  const attachmentsKey = ['policies', policyId, 'attachments'] as const
 
-  const { data: attachments = [] } = useQuery({
-    queryKey: attachmentsKey,
-    queryFn: () => policiesApi.findAttachments(policyId),
-    enabled: !!policyId,
-  })
+  const { data: attachments = [] } = useQuery(policyQueries.attachments(policyId))
 
   const [showModal, setShowModal] = useState(false)
 
   const deleteMutation = useMutation({
     mutationFn: (attachmentId: string) => policiesApi.deleteAttachment(policyId, attachmentId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: attachmentsKey }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: policyKeys.attachments(policyId) }),
   })
 
-  const handleSuccess = () => queryClient.invalidateQueries({ queryKey: attachmentsKey })
+  const handleSuccess = () => queryClient.invalidateQueries({ queryKey: policyKeys.attachments(policyId) })
   const handleRemove = (id: string) => deleteMutation.mutate(id)
 
   return (
@@ -434,19 +370,6 @@ export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionP
                   </td>
                   <td className="px-4 py-3">
                     <ExpirationCell date={att.expirationDate} />
-                    {att.notifyEmail && (
-                      <div className={`mt-1.5 flex items-center gap-1.5 px-2 py-1 rounded-lg w-fit text-[11px] font-medium border ${
-                        getExpirationStatus(att.expirationDate) === 'vencido' || getExpirationStatus(att.expirationDate) === 'proximo_vencer'
-                          ? 'bg-amber-50 border-amber-200 text-amber-700'
-                          : 'bg-slate-50 border-slate-200 text-slate-500'
-                      }`}>
-                        {getExpirationStatus(att.expirationDate) === 'vencido' || getExpirationStatus(att.expirationDate) === 'proximo_vencer'
-                          ? <Send size={10} />
-                          : <Mail size={10} />
-                        }
-                        <span className="truncate max-w-[160px]">{att.notifyEmail}</span>
-                      </div>
-                    )}
                   </td>
                   <td className="px-4 py-3">
                     <p className="text-xs text-slate-700">{formatDate(att.uploadedAt)}</p>
@@ -457,6 +380,7 @@ export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionP
                       <button
                         type="button"
                         title="Descargar"
+                        onClick={() => policiesApi.downloadAttachment(policyId, att.id, att.name)}
                         className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                       >
                         <Download size={14} />

@@ -10,6 +10,7 @@ jest.mock('../../../config/database', () => ({
       findMany:   jest.fn(),
       count:      jest.fn(),
       findUnique: jest.fn(),
+      findFirst:  jest.fn(),
       create:     jest.fn(),
       update:     jest.fn(),
       delete:     jest.fn(),
@@ -103,6 +104,18 @@ const validDocumentBody = {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('Documents API', () => {
+  // documents.service.ts envuelve create/update/apply/cancel/updateInstallment
+  // en prisma.$transaction(async (tx) => ...) para que la escritura financiera
+  // y su audit log sean atómicas. Acá el mock de tx es el mismo objeto `db`
+  // que ya usa el resto de los tests — así los mocks configurados por test
+  // (ej. db.accountingDocument.update.mockResolvedValue(...)) siguen aplicando
+  // sin importar si el código real llama a `prisma.X` o `tx.X`. También cubre
+  // la forma en array ($transaction([...])) que sigue usando replaceInstallments.
+  beforeEach(() => {
+    db.$transaction.mockImplementation((arg: unknown) =>
+      typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(db) : Promise.all(arg as unknown[]),
+    )
+  })
 
   // ── GET /api/v1/documents/types ─────────────────────────────────────────────
 
@@ -243,12 +256,11 @@ describe('Documents API', () => {
       expect(res.status).toBe(403)
     })
 
-    // Nota: el service no valida duplicados de documentNumber en create() — solo
-    // existe checkDocumentNumber() como endpoint de advertencia usado por el
-    // frontend, no bloqueante. Este test ya fallaba antes de la Fase 1
-    // (confirmado en baseline) y no es un bug introducido por este refactor.
-    it('returns 409 when documentNumber already exists', async () => {
-      db.accountingDocument.findUnique.mockResolvedValue(fakeDocument) // duplicate!
+    // No hay @unique en documentNumber a propósito — distintos tipos o
+    // compañías pueden compartir numeración. El duplicado real es la
+    // combinación tipo + compañía + número, chequeada con findFirst.
+    it('returns 409 when a document with the same type + company + number already exists', async () => {
+      db.accountingDocument.findFirst.mockResolvedValue(fakeDocument) // duplicate!
 
       const res = await request(app)
         .post('/api/v1/documents')
@@ -257,6 +269,18 @@ describe('Documents API', () => {
 
       expect(res.status).toBe(409)
       expect(res.body.error.code).toBe('CONFLICT')
+    })
+
+    it('allows the same documentNumber for a different documentType/company (no false duplicate)', async () => {
+      db.accountingDocument.findFirst.mockResolvedValue(null) // no match for this type+company combo
+      db.accountingDocument.create.mockResolvedValue(fakeDocument)
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validDocumentBody)
+
+      expect(res.status).toBe(201)
     })
 
     it('returns 422 when documentType is invalid', async () => {
@@ -1007,7 +1031,6 @@ describe('Documents API', () => {
       db.accountingDocument.findMany.mockResolvedValue([])
       db.documentInstallment.findMany.mockResolvedValue([])
       db.documentPolicyAllocation.findMany.mockResolvedValue([])
-      db.$transaction.mockResolvedValue([])
       db.accountingDocument.update.mockResolvedValue({ ...creditNote, documentStatus: 'APPLIED', installments: [], allocations: [], attachments: [] })
 
       const res = await request(app)
@@ -1031,7 +1054,6 @@ describe('Documents API', () => {
         { policyId: POLICY_A, allocationPercentage: 40 },
         { policyId: POLICY_B, allocationPercentage: 60 },
       ])
-      db.$transaction.mockResolvedValue([])
       db.accountingDocument.update.mockResolvedValue({ ...creditNote, documentStatus: 'APPLIED', installments: [], allocations: [], attachments: [] })
 
       const res = await request(app)
@@ -1055,7 +1077,6 @@ describe('Documents API', () => {
       db.accountingDocument.findMany.mockResolvedValue([])
       db.documentInstallment.findMany.mockResolvedValue([])
       db.documentPolicyAllocation.findMany.mockResolvedValue([])
-      db.$transaction.mockResolvedValue([])
       db.accountingDocument.update.mockResolvedValue({ ...creditNote, documentStatus: 'APPLIED', installments: [], allocations: [], attachments: [] })
 
       const res = await request(app)

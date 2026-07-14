@@ -6,7 +6,7 @@ import clsx from 'clsx'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
-import { fireExtinguishersApi, fireExtinguisherKeys } from '../../../shared/api/fire-extinguishers.api'
+import { fireExtinguisherKeys, fireExtinguisherQueries } from '../../../shared/api/fire-extinguishers.api'
 import { fireExtinguisherAuditsApi } from '../../../shared/api/fire-extinguisher-audits.api'
 import type { AuditChecklistInput } from '../../../shared/api/fire-extinguisher-audits.api'
 import type { FireExtinguisher } from '../../../shared/types'
@@ -42,11 +42,7 @@ export default function FireExtinguisherAuditNewPage() {
 
   // Viene de la pestaña "Cobertura" con un matafuego puntual — se salta el
   // Paso 1 de selección, que ya se resolvió ahí.
-  const { data: preselectedExtinguisher } = useQuery({
-    queryKey: fireExtinguisherKeys.detail(preselectedId ?? ''),
-    queryFn: () => fireExtinguishersApi.findById(preselectedId!),
-    enabled: !!preselectedId,
-  })
+  const { data: preselectedExtinguisher } = useQuery(fireExtinguisherQueries.detail(preselectedId ?? ''))
 
   useEffect(() => {
     if (preselectedExtinguisher) setSelectedExtinguisher(preselectedExtinguisher)

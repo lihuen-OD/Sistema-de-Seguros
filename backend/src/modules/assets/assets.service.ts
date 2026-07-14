@@ -2,7 +2,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
-import { detectFileType, formatFileSize, isAllowedMimetype } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, isAllowedMimetype, sanitizeFileName } from '../../shared/utils/files'
+import { toDateStr } from '../../shared/utils/dates'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import type {
   CreateAssetDTO,
@@ -40,6 +41,12 @@ const ASSET_DETAIL_INCLUDE = {
   valueHistory: { orderBy: { date: 'desc' as const }, take: 100 },
   statusHistory: { orderBy: { date: 'asc' as const } },
   attachments: { orderBy: { uploadedAt: 'desc' as const }, take: 50 },
+}
+
+// expirationDate es @db.Date — normalizarlo a YYYY-MM-DD antes de exponerlo,
+// igual que withStatus() hace para Policy.startDate/endDate.
+function mapAttachment<T extends { expirationDate: Date | string | null }>(att: T) {
+  return { ...att, expirationDate: att.expirationDate ? toDateStr(att.expirationDate) : null }
 }
 
 async function assertAssetExists(id: string) {
@@ -91,7 +98,7 @@ export const assetsService = {
       include: ASSET_DETAIL_INCLUDE,
     })
     if (!asset) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
-    return asset
+    return { ...asset, attachments: asset.attachments.map(mapAttachment) }
   },
 
   async create(data: CreateAssetDTO) {
@@ -170,10 +177,11 @@ export const assetsService = {
 
     // La transacción solo ejecuta writes. La lectura con include se hace fuera
     // para no agotar el timeout de 5s de la transacción interactiva.
-    return prisma.asset.findUniqueOrThrow({
+    const asset = await prisma.asset.findUniqueOrThrow({
       where: { id: created },
       include: ASSET_DETAIL_INCLUDE,
     })
+    return { ...asset, attachments: asset.attachments.map(mapAttachment) }
   },
 
   async update(id: string, data: UpdateAssetDTO) {
@@ -313,10 +321,11 @@ export const assetsService = {
 
   async findAttachments(assetId: string) {
     await assertAssetExists(assetId)
-    return prisma.assetAttachment.findMany({
+    const attachments = await prisma.assetAttachment.findMany({
       where: { assetId },
       orderBy: { uploadedAt: 'desc' },
     })
+    return attachments.map(mapAttachment)
   },
 
   async addAttachment(
@@ -335,26 +344,26 @@ export const assetsService = {
     let cloudinaryPublicId: string | null = null
 
     if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'assets')
+      const result = await uploadToCloudinary(file.buffer, 'assets', file.mimetype)
       fileUrl = result.secure_url
       cloudinaryPublicId = result.public_id
     }
 
     try {
-      return await prisma.assetAttachment.create({
+      const created = await prisma.assetAttachment.create({
         data: {
           assetId,
-          name: file.originalname,
+          name: sanitizeFileName(file.originalname),
           description: meta.description ?? null,
           fileType: detectFileType(file.mimetype),
           fileSize: formatFileSize(file.size),
           fileUrl,
           cloudinaryPublicId,
           expirationDate: meta.expirationDate ?? null,
-          notifyEmail: meta.notifyEmail || null,
           uploadedBy,
         },
       })
+      return mapAttachment(created)
     } catch (err) {
       if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
       throw err
@@ -370,5 +379,48 @@ export const assetsService = {
       await deleteFromCloudinary(attachment.cloudinaryPublicId)
     }
     await prisma.assetAttachment.delete({ where: { id: attachmentId } })
+  },
+
+  async getAttachmentForDownload(assetId: string, attachmentId: string) {
+    const attachment = await prisma.assetAttachment.findFirst({
+      where: { id: attachmentId, assetId },
+    })
+    if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    return attachment
+  },
+
+  // Resumen liviano de activos (bien de uso + su centro de costo principal,
+  // el de mayor %) — usado por Pólizas (activos cubiertos) y por el envío de
+  // mail de Documentos (desglose por póliza).
+  async resolveAssetsSummary(assetIds: string[]) {
+    if (assetIds.length === 0) return []
+
+    const assets = await prisma.asset.findMany({
+      where: { id: { in: assetIds } },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        assetType: true,
+        fixedAssetCode: true,
+        allocations: {
+          orderBy: { percentage: 'desc' as const },
+          take: 1,
+          select: {
+            costCenter: { select: { id: true, name: true, code: true } },
+          },
+        },
+      },
+    })
+
+    return assets.map((a) => ({
+      id: a.id,
+      code: a.code,
+      name: a.name,
+      assetType: a.assetType,
+      fixedAssetCode: a.fixedAssetCode,
+      costCenterName: a.allocations[0]?.costCenter?.name ?? null,
+      costCenterCode: a.allocations[0]?.costCenter?.code ?? null,
+    }))
   },
 }

@@ -28,8 +28,8 @@ import {
   formatCurrencyCompact,
   formatDate,
 } from '../../../shared/utils/format'
-import { documentsApi } from '../../../shared/api/documents.api'
-import { policiesApi } from '../../../shared/api/policies.api'
+import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
+import { policyQueries } from '../../../shared/api/policies.api'
 import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
@@ -90,48 +90,22 @@ export default function DocumentDetailPage() {
   const [cancelDocConfirmOpen, setCancelDocConfirmOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
 
-  const { data: doc, isLoading: docLoading } = useQuery({
-    queryKey: ['documents', id],
-    queryFn: () => documentsApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: doc, isLoading: docLoading } = useQuery(documentQueries.detail(id!))
 
-  const { data: allPolicies = [] } = useQuery({
-    queryKey: ['policies'],
-    queryFn: () => policiesApi.findAll(),
-  })
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
 
-  const { data: documentTypesData } = useQuery({
-    queryKey: ['documents', 'types'],
-    queryFn: () => documentsApi.getTypes(),
-  })
+  const { data: documentTypesData } = useQuery(documentQueries.types())
 
-  const { data: balance } = useQuery({
-    queryKey: ['documents', id, 'balance'],
-    queryFn: () => documentsApi.getBalance(id!),
-    enabled: !!id,
-  })
+  const { data: balance } = useQuery(documentQueries.balance(id!))
 
-  const { data: allocations = [] } = useQuery({
-    queryKey: ['documents', id, 'allocations'],
-    queryFn: () => documentsApi.findAllocations(id!),
-    enabled: !!id,
-  })
+  const { data: allocations = [] } = useQuery(documentQueries.allocations(id!))
 
-  const { data: auditLog = [] } = useQuery({
-    queryKey: ['documents', id, 'audit-log'],
-    queryFn: () => documentsApi.getAuditLog(id!),
-    enabled: !!id,
-  })
+  const { data: auditLog = [] } = useQuery(documentQueries.auditLog(id!))
 
   // Sin default `= []` a propósito: mientras carga, data es `undefined` (valor
   // estable), no un array nuevo en cada render — evita un loop de renders en
   // el efecto de abajo.
-  const { data: fetchedInstallments } = useQuery({
-    queryKey: ['documents', id, 'installments'],
-    queryFn: () => documentsApi.findInstallments(id!),
-    enabled: !!id,
-  })
+  const { data: fetchedInstallments } = useQuery(documentQueries.installments(id!))
 
   const [installments, setInstallments] = useState<Installment[]>([])
 
@@ -212,12 +186,15 @@ export default function DocumentDetailPage() {
   const linkedDocBadgeLabel = doc.relationType === 'ENDORSES' ? 'Respalda impacto económico' : 'Aplicado a'
 
   function invalidateAfterStatusChange() {
-    queryClient.invalidateQueries({ queryKey: ['documents', id] })
-    queryClient.invalidateQueries({ queryKey: ['documents', id, 'balance'] })
-    queryClient.invalidateQueries({ queryKey: ['documents', id, 'audit-log'] })
-    queryClient.invalidateQueries({ queryKey: ['documents'] })
+    queryClient.invalidateQueries({ queryKey: documentKeys.detail(id!) })
+    queryClient.invalidateQueries({ queryKey: documentKeys.balance(id!) })
+    queryClient.invalidateQueries({ queryKey: documentKeys.auditLog(id!) })
+    queryClient.invalidateQueries({ queryKey: documentKeys.all })
+    // Aplicar/cancelar un documento afecta los totales agregados de Análisis
+    // Económico/Financiero — sin esto quedaban stale hasta que expirara el staleTime.
+    queryClient.invalidateQueries({ queryKey: documentKeys.financial() })
     if (doc?.linkedDocumentId) {
-      queryClient.invalidateQueries({ queryKey: ['documents', doc.linkedDocumentId, 'balance'] })
+      queryClient.invalidateQueries({ queryKey: documentKeys.balance(doc.linkedDocumentId) })
     }
   }
 
@@ -249,8 +226,11 @@ export default function DocumentDetailPage() {
     try {
       await documentsApi.updateInstallment(doc!.id, instId, updates)
     } finally {
-      queryClient.invalidateQueries({ queryKey: ['documents', id, 'installments'] })
-      queryClient.invalidateQueries({ queryKey: ['documents', id, 'balance'] })
+      queryClient.invalidateQueries({ queryKey: documentKeys.installments(id!) })
+      queryClient.invalidateQueries({ queryKey: documentKeys.balance(id!) })
+      // Cambiar el estado de pago de una cuota también afecta los agregados
+      // de Análisis Económico/Financiero.
+      queryClient.invalidateQueries({ queryKey: documentKeys.financial() })
     }
   }
 
@@ -364,7 +344,7 @@ export default function DocumentDetailPage() {
                 <button
                   onClick={async () => {
                     await documentsApi.softDelete(doc.id)
-                    queryClient.invalidateQueries({ queryKey: ['documents'] })
+                    queryClient.invalidateQueries({ queryKey: documentKeys.all })
                     navigate('/insurance/documents')
                   }}
                   className="px-2.5 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"

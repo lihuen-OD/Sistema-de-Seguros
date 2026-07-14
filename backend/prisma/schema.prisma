@@ -167,12 +167,12 @@ model AssetAttachment {
   fileUrl             String
   cloudinaryPublicId  String?
   expirationDate      DateTime? @db.Date
-  notifyEmail         String?
   uploadedAt          DateTime  @default(now())
   uploadedBy          String
   asset               Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@index([assetId])
+  @@index([expirationDate])
   @@map("asset_attachments")
 }
 
@@ -272,12 +272,12 @@ model PolicyAttachment {
   fileUrl             String
   cloudinaryPublicId  String?
   expirationDate      DateTime? @db.Date
-  notifyEmail         String?
   uploadedAt          DateTime  @default(now())
   uploadedBy          String
   policy              Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
 
   @@index([policyId])
+  @@index([expirationDate])
   @@map("policy_attachments")
 }
 
@@ -325,6 +325,7 @@ model AccountingDocument {
   @@index([documentType])
   @@index([documentStatus])
   @@index([policyId])
+  @@index([linkedDocumentId])
   @@map("accounting_documents")
 }
 
@@ -664,4 +665,46 @@ model CatalogItem {
   @@unique([category, label])
   @@index([category])
   @@map("catalog_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Email — Envío transaccional (Resend)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model EmailLog {
+  id       String @id @default(uuid())
+  type     String // MANUAL_DOCUMENT_SEND | EXPIRATION_SUMMARY | ATTACHMENT_EXPIRATION | POLICY_EXPIRATION | FIRE_EXTINGUISHER_EXPIRATION | WORKFLOW_NOTIFICATION | SYSTEM
+  status   String @default("PENDING") // PENDING | SENT | FAILED | SKIPPED | CANCELLED
+  provider String @default("resend")
+
+  fromAddress  String
+  toAddresses  String[]
+  ccAddresses  String[] @default([])
+  bccAddresses String[] @default([])
+  replyTo      String?
+  subject      String
+
+  // Referencia polimórfica suelta — un mismo log puede apuntar a distintas
+  // tablas (AccountingDocument, Policy, FireExtinguisher, etc.), por eso no
+  // hay FK real, solo entityType + entityId.
+  entityType String?
+  entityId   String?
+
+  triggeredByUserId String?
+  triggeredByEmail  String?
+
+  scheduledFor DateTime?
+  sentAt       DateTime?
+  failedAt     DateTime?
+  errorMessage String?
+
+  providerMessageId String?
+  metadata          Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([entityType, entityId])
+  @@index([type, status])
+  @@map("email_logs")
 }

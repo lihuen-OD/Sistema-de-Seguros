@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { ValidatedField, type FieldValidationState } from './ValidatedField'
-import { catalogsApi } from '../../../shared/api/catalogs.api'
+import { catalogQueries } from '../../../shared/api/catalogs.api'
 import type { FireExtinguisher } from '../../../shared/types'
 import type { FireExtAuditMasterField } from '../../../shared/api/fire-extinguisher-audits.api'
 import type { ChoiceOption } from '../../../shared/components/forms/ChoiceGroup'
@@ -27,14 +27,8 @@ interface AuditStep3FieldValidationProps {
 }
 
 export function AuditStep3FieldValidation({ extinguisher, validations, onChange }: AuditStep3FieldValidationProps) {
-  const { data: extTypes = [] } = useQuery({
-    queryKey: ['catalogs', 'fire_ext_type'],
-    queryFn: () => catalogsApi.findByCategory('fire_ext_type'),
-  })
-  const { data: extCapacities = [] } = useQuery({
-    queryKey: ['catalogs', 'fire_ext_capacity'],
-    queryFn: () => catalogsApi.findByCategory('fire_ext_capacity'),
-  })
+  const { data: extTypes = [] } = useQuery(catalogQueries.byCategory('fire_ext_type'))
+  const { data: extCapacities = [] } = useQuery(catalogQueries.byCategory('fire_ext_capacity'))
 
   const optionsByField: Partial<Record<FireExtAuditMasterField, ChoiceOption[]>> = {
     type: extTypes.map((t) => ({ value: t.label, label: t.label })),

@@ -1,4 +1,6 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Policy, PolicyStatus, PolicyAsset, PolicyAttachment, ProducerTask, TaskPriority } from '../types'
 
 interface BackendInsuranceType { id: string; name: string }
@@ -30,6 +32,7 @@ interface BackendTask {
   policyId: string | null; assetId: string | null
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
+interface BackendPolicyAttachment extends Omit<PolicyAttachment, 'expirationDate'> { expirationDate: string | null }
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -58,6 +61,10 @@ function mapStatus(s: string): PolicyStatus {
   if (s === 'proxima_a_vencer') return 'proximo_vencer'
   if (s === 'vigente' || s === 'vencida') return s as PolicyStatus
   return 'vigente'
+}
+
+function mapPolicyAttachment(a: BackendPolicyAttachment): PolicyAttachment {
+  return { ...a, expirationDate: a.expirationDate ? a.expirationDate.slice(0, 10) : null }
 }
 
 function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
@@ -134,34 +141,83 @@ export const policiesApi = {
   },
 
   async findAttachments(policyId: string): Promise<PolicyAttachment[]> {
-    const res = await apiClient.get<{ data: PolicyAttachment[] }>(`/policies/${policyId}/attachments`)
-    return res.data.data
+    const res = await apiClient.get<{ data: BackendPolicyAttachment[] }>(`/policies/${policyId}/attachments`)
+    return res.data.data.map(mapPolicyAttachment)
   },
 
   async addAttachment(
     policyId: string,
     file: File,
-    meta: { description?: string; expirationDate?: string; notifyEmail?: string },
+    meta: { description?: string; expirationDate?: string },
   ): Promise<PolicyAttachment> {
     const form = new FormData()
     form.append('file', file)
     if (meta.description) form.append('description', meta.description)
     if (meta.expirationDate) form.append('expirationDate', meta.expirationDate)
-    if (meta.notifyEmail) form.append('notifyEmail', meta.notifyEmail)
-    const res = await apiClient.post<{ data: PolicyAttachment }>(
+    const res = await apiClient.post<{ data: BackendPolicyAttachment }>(
       `/policies/${policyId}/attachments`,
       form,
       { headers: { 'Content-Type': 'multipart/form-data' } },
     )
-    return res.data.data
+    return mapPolicyAttachment(res.data.data)
   },
 
   async deleteAttachment(policyId: string, attachmentId: string): Promise<void> {
     await apiClient.delete(`/policies/${policyId}/attachments/${attachmentId}`)
   },
 
+  async downloadAttachment(policyId: string, attachmentId: string, filename: string): Promise<void> {
+    const res = await apiClient.get(`/policies/${policyId}/attachments/${attachmentId}/download`, { responseType: 'blob' })
+    triggerBlobDownload(res.data, filename)
+  },
+
   async findTasks(policyId: string): Promise<ProducerTask[]> {
     const res = await apiClient.get<{ data: BackendTask[] }>(`/policies/${policyId}/tasks`)
     return res.data.data.map(mapTask)
   },
+}
+
+// ── Query keys / query options (categoría B — semi-dinámico) ────────────────────
+// El detalle usa la key singular `['policy', id]` (no `['policies', id]`) porque
+// es la convención que ya domina en el código (PolicyDetailPage/Edit/Ficha) — se
+// mantiene así a propósito para no fragmentar cache con lo ya existente.
+
+type PolicyFilters = { assetId?: string; companyId?: string; producerId?: string }
+
+export const policyKeys = {
+  all: ['policies'] as const,
+  list: (filters?: PolicyFilters) => (filters ? ([...policyKeys.all, filters] as const) : policyKeys.all),
+  detail: (id: string) => ['policy', id] as const,
+  attachments: (id: string) => [...policyKeys.all, id, 'attachments'] as const,
+  tasks: (id: string) => [...policyKeys.all, id, 'tasks'] as const,
+}
+
+export const policyQueries = {
+  list: (filters?: PolicyFilters) =>
+    queryOptions({
+      queryKey: policyKeys.list(filters),
+      queryFn: () => policiesApi.findAll(filters),
+      staleTime: 60 * 1000,
+    }),
+  detail: (id: string) =>
+    queryOptions({
+      queryKey: policyKeys.detail(id),
+      queryFn: () => policiesApi.findById(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  attachments: (id: string) =>
+    queryOptions({
+      queryKey: policyKeys.attachments(id),
+      queryFn: () => policiesApi.findAttachments(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  tasks: (id: string) =>
+    queryOptions({
+      queryKey: policyKeys.tasks(id),
+      queryFn: () => policiesApi.findTasks(id),
+      staleTime: 60 * 1000,
+      enabled: !!id,
+    }),
 }

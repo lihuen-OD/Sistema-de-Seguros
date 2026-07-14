@@ -12,8 +12,8 @@ import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
-import { documentsApi } from '../../../../shared/api/documents.api'
-import { catalogsApi } from '../../../../shared/api/catalogs.api'
+import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
+import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import type { AccountingDocument } from '../../../../shared/types'
 
 interface DocumentoRefacturacionFormProps {
@@ -59,16 +59,15 @@ export default function DocumentoRefacturacionForm({ initialDoc }: DocumentoRefa
   const [installmentsInitialized, setInstallmentsInitialized] = useState(!isEdit)
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
-  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit)
+  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'REBILLING', form.insuranceCompany)
 
-  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: () => documentsApi.findAll() })
-  const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
-  const { data: paymentMethods = [] } = useQuery({ queryKey: ['catalogs', 'document_payment_method'], queryFn: () => catalogsApi.findByCategory('document_payment_method') })
-  const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+  const { data: allDocuments = [] } = useQuery(documentQueries.list())
+  const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
+  const { data: paymentMethods = [] } = useQuery(catalogQueries.byCategory('document_payment_method'))
+  const { data: currencies = [] } = useQuery(catalogQueries.byCategory('document_currency'))
 
   const { data: existingInstallments = [], isSuccess: installmentsLoaded } = useQuery({
-    queryKey: ['documents', initialDoc?.id, 'installments'],
-    queryFn: () => documentsApi.findInstallments(initialDoc!.id),
+    ...documentQueries.installments(initialDoc?.id ?? ''),
     enabled: isEdit,
   })
   if (installmentsLoaded && !installmentsInitialized) {
@@ -173,7 +172,7 @@ export default function DocumentoRefacturacionForm({ initialDoc }: DocumentoRefa
       const newDoc = await createMutation.mutateAsync()
       markSaved(newDoc.id)
     }
-    queryClient.invalidateQueries({ queryKey: ['documents'] })
+    queryClient.invalidateQueries({ queryKey: documentKeys.all })
   }
 
   return (

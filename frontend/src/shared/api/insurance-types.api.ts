@@ -1,3 +1,4 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 
 export interface InsuranceTypeConfig {
@@ -69,4 +70,20 @@ export const insuranceTypesApi = {
     if (!coverage) throw new Error(`Cobertura "${coverageName}" no encontrada`)
     await apiClient.delete(`/insurance-types/${typeId}/coverages/${coverage.id}`)
   },
+}
+
+// ── Query keys / query options (categoría A — estático, TTL largo) ──────────────
+
+export const insuranceTypeKeys = {
+  all: ['insurance-types'] as const,
+}
+
+export const insuranceTypeQueries = {
+  list: () =>
+    queryOptions({
+      queryKey: insuranceTypeKeys.all,
+      queryFn: () => insuranceTypesApi.findAll(),
+      staleTime: 30 * 60 * 1000,
+      gcTime: 24 * 60 * 60 * 1000,
+    }),
 }

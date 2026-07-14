@@ -12,8 +12,8 @@ import {
   FormSection, FormField, FormInput, FormSelect, FormTextarea,
 } from '../../shared/components/forms/FormSection'
 import { AttachmentListEditor } from '../../shared/components/file-upload/AttachmentListEditor'
-import { assetsApi } from '../../shared/api/assets.api'
-import { catalogsApi } from '../../shared/api/catalogs.api'
+import { assetsApi, assetKeys } from '../../shared/api/assets.api'
+import { catalogQueries } from '../../shared/api/catalogs.api'
 import type { CatalogItem } from '../../shared/api/catalogs.api'
 import {
   PROVINCES,
@@ -180,14 +180,14 @@ export default function AssetNewPage() {
   const [silos, setSilos] = useState<Silo[]>([])
   const [attachments, setAttachments] = useState<AssetAttachment[]>([])
 
-  const { data: fuelTypes = [] } = useQuery({ queryKey: ['catalogs', 'asset_fuel_type'], queryFn: () => catalogsApi.findByCategory('asset_fuel_type') })
-  const { data: buildingPurposes = [] } = useQuery({ queryKey: ['catalogs', 'asset_building_purpose'], queryFn: () => catalogsApi.findByCategory('asset_building_purpose') })
-  const { data: infrastructureTypes = [] } = useQuery({ queryKey: ['catalogs', 'asset_infrastructure_type'], queryFn: () => catalogsApi.findByCategory('asset_infrastructure_type') })
-  const { data: siloContents = [] } = useQuery({ queryKey: ['catalogs', 'asset_silo_content'], queryFn: () => catalogsApi.findByCategory('asset_silo_content') })
-  const { data: cargoSpecies = [] } = useQuery({ queryKey: ['catalogs', 'asset_cargo_species'], queryFn: () => catalogsApi.findByCategory('asset_cargo_species') })
-  const { data: implementTypes = [] } = useQuery({ queryKey: ['catalogs', 'asset_implement_type'], queryFn: () => catalogsApi.findByCategory('asset_implement_type') })
-  const { data: productiveUnits = [] } = useQuery({ queryKey: ['catalogs', 'asset_productive_unit'], queryFn: () => catalogsApi.findByCategory('asset_productive_unit') })
-  const { data: areas = [] } = useQuery({ queryKey: ['catalogs', 'asset_area'], queryFn: () => catalogsApi.findByCategory('asset_area') })
+  const { data: fuelTypes = [] } = useQuery(catalogQueries.byCategory('asset_fuel_type'))
+  const { data: buildingPurposes = [] } = useQuery(catalogQueries.byCategory('asset_building_purpose'))
+  const { data: infrastructureTypes = [] } = useQuery(catalogQueries.byCategory('asset_infrastructure_type'))
+  const { data: siloContents = [] } = useQuery(catalogQueries.byCategory('asset_silo_content'))
+  const { data: cargoSpecies = [] } = useQuery(catalogQueries.byCategory('asset_cargo_species'))
+  const { data: implementTypes = [] } = useQuery(catalogQueries.byCategory('asset_implement_type'))
+  const { data: productiveUnits = [] } = useQuery(catalogQueries.byCategory('asset_productive_unit'))
+  const { data: areas = [] } = useQuery(catalogQueries.byCategory('asset_area'))
 
   function set(field: keyof FormState) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -346,11 +346,10 @@ export default function AssetNewPage() {
           file: att.pendingFile!,
           description: att.description || undefined,
           expirationDate: att.expirationDate ?? undefined,
-          notifyEmail: att.notifyEmail || undefined,
         })
       }
 
-      await queryClient.invalidateQueries({ queryKey: ['assets'] })
+      await queryClient.invalidateQueries({ queryKey: assetKeys.all })
       toast.success('Activo registrado correctamente')
       navigate(`/assets/${newAsset.id}`)
     } finally {

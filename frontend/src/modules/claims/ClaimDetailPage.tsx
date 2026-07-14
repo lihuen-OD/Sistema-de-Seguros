@@ -14,11 +14,11 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
-import { claimsApi } from '../../shared/api/claims.api'
+import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import type { ClaimAttachment } from '../../shared/types'
-import { assetsApi } from '../../shared/api/assets.api'
-import { policiesApi } from '../../shared/api/policies.api'
-import { catalogsApi } from '../../shared/api/catalogs.api'
+import { assetQueries } from '../../shared/api/assets.api'
+import { policyQueries } from '../../shared/api/policies.api'
+import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ClaimExpensesCard } from './ClaimExpensesCard'
 import {
   CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
@@ -51,7 +51,7 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-function AttachmentRow({ attachment }: { attachment: ClaimAttachment }) {
+function AttachmentRow({ claimId, attachment }: { claimId: string; attachment: ClaimAttachment }) {
   const Icon = attachment.fileType === 'pdf' ? FileText
     : attachment.fileType === 'excel' ? FileText
     : FileText
@@ -68,15 +68,14 @@ function AttachmentRow({ attachment }: { attachment: ClaimAttachment }) {
         </p>
       </div>
       {attachment.fileUrl && !attachment.fileUrl.startsWith('local://') && (
-        <a
-          href={attachment.fileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={() => claimsApi.downloadAttachment(claimId, attachment.id, attachment.name)}
           className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0"
         >
           <Download size={12} />
           Descargar
-        </a>
+        </button>
       )}
     </div>
   )
@@ -225,46 +224,19 @@ export default function ClaimDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: claim, isLoading: claimLoading, isError: claimError } = useQuery({
-    queryKey: ['claims', id],
-    queryFn: () => claimsApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: claim, isLoading: claimLoading, isError: claimError } = useQuery(claimQueries.detail(id!))
 
-  const { data: claimStatuses = [] } = useQuery({
-    queryKey: ['catalogs', 'claim_status'],
-    queryFn: () => catalogsApi.findByCategory('claim_status'),
-  })
+  const { data: claimStatuses = [] } = useQuery(catalogQueries.byCategory('claim_status'))
 
-  const { data: events = [] } = useQuery({
-    queryKey: ['claims', id, 'events'],
-    queryFn: () => claimsApi.findEvents(id!),
-    enabled: !!id,
-  })
+  const { data: events = [] } = useQuery(claimQueries.events(id!))
 
-  const { data: asset = null } = useQuery({
-    queryKey: ['assets', claim?.assetId],
-    queryFn: () => assetsApi.findById(claim!.assetId!),
-    enabled: !!claim?.assetId,
-  })
+  const { data: asset = null } = useQuery(assetQueries.detail(claim?.assetId ?? ''))
 
-  const { data: policy = null } = useQuery({
-    queryKey: ['policies', claim?.policyId],
-    queryFn: () => policiesApi.findById(claim!.policyId!),
-    enabled: !!claim?.policyId,
-  })
+  const { data: policy = null } = useQuery(policyQueries.detail(claim?.policyId ?? ''))
 
-  const { data: attachments = [] } = useQuery({
-    queryKey: ['claims', id, 'attachments'],
-    queryFn: () => claimsApi.findAttachments(id!),
-    enabled: !!id,
-  })
+  const { data: attachments = [] } = useQuery(claimQueries.attachments(id!))
 
-  const { data: expenses = [] } = useQuery({
-    queryKey: ['claims', id, 'expenses'],
-    queryFn: () => claimsApi.findExpenses(id!),
-    enabled: !!id,
-  })
+  const { data: expenses = [] } = useQuery(claimQueries.expenses(id!))
 
   const docs = attachments.filter((a) => a.fileType !== 'image')
   const photos = attachments.filter((a) => a.fileType === 'image')
@@ -404,17 +376,12 @@ export default function ClaimDetailPage() {
   }
 
   const handleStatusChange = async (newStatus: string) => {
+    // El backend ya registra el ClaimEvent de "estado_cambiado" automáticamente
+    // dentro de update() — no hace falta (ni hay que) llamar a addEvent() acá.
     await claimsApi.update(claim.id, { status: newStatus })
-    await claimsApi.addEvent(claim.id, {
-      type: 'estado_cambiado',
-      date: new Date().toISOString().split('T')[0],
-      description: `Estado actualizado: "${effectiveStatus}" → "${newStatus}".`,
-      previousStatus: effectiveStatus,
-      newStatus,
-    })
     setCurrentStatus(newStatus)
     setEditingStatus(false)
-    await queryClient.invalidateQueries({ queryKey: ['claims', id] })
+    await queryClient.invalidateQueries({ queryKey: claimKeys.detail(id!) })
   }
 
   return (
@@ -753,7 +720,7 @@ export default function ClaimDetailPage() {
         >
           <div className="divide-y divide-slate-100">
             {docs.map((att) => (
-              <AttachmentRow key={att.id} attachment={att} />
+              <AttachmentRow key={att.id} claimId={claim.id} attachment={att} />
             ))}
           </div>
         </SectionCard>

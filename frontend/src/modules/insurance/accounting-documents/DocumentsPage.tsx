@@ -19,7 +19,7 @@ import {
   formatCurrencyCompact,
   formatDate,
 } from '../../../shared/utils/format'
-import { documentsApi } from '../../../shared/api/documents.api'
+import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PAYMENT_STATUS_LABELS } from '../../../shared/constants'
 import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
@@ -40,8 +40,8 @@ export default function DocumentsPage() {
   const [filterDateTo, setFilterDateTo] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
-  const { data: allDocuments = [], isLoading, isError } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
-  const { data: documentTypesData } = useQuery({ queryKey: ['documents', 'types'], queryFn: () => documentsApi.getTypes() })
+  const { data: allDocuments = [], isLoading, isError } = useQuery(documentQueries.list())
+  const { data: documentTypesData } = useQuery(documentQueries.types())
   const documentTypes = documentTypesData?.types ?? []
   const documentTypeLabels = useMemo(
     () => Object.fromEntries(documentTypes.map((t) => [t.key, t.label])),
@@ -72,7 +72,7 @@ export default function DocumentsPage() {
 
   async function handleDelete(id: string) {
     await documentsApi.softDelete(id)
-    queryClient.invalidateQueries({ queryKey: ['documents'] })
+    queryClient.invalidateQueries({ queryKey: documentKeys.all })
     setConfirmDeleteId(null)
   }
 

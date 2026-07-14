@@ -12,9 +12,9 @@ import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
-import { documentsApi } from '../../../../shared/api/documents.api'
-import { policiesApi } from '../../../../shared/api/policies.api'
-import { catalogsApi } from '../../../../shared/api/catalogs.api'
+import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
+import { policyQueries } from '../../../../shared/api/policies.api'
+import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import type { AccountingDocument, EconomicImpactType } from '../../../../shared/types'
 import { ENDORSEMENT_ALLOWED_LINKED_TYPES } from '../endorsementRules'
 
@@ -54,12 +54,12 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
   const [errors, setErrors] = useState<FormErrors>({})
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
-  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit)
+  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'ENDORSEMENT', form.insuranceCompany)
 
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: () => documentsApi.findAll() })
-  const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
-  const { data: documentTypesData } = useQuery({ queryKey: ['documents', 'types'], queryFn: () => documentsApi.getTypes() })
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: allDocuments = [] } = useQuery(documentQueries.list())
+  const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
+  const { data: documentTypesData } = useQuery(documentQueries.types())
   const endorsementTypes = documentTypesData?.endorsementTypes ?? []
   const economicImpactTypes = documentTypesData?.economicImpactTypes ?? []
 
@@ -145,7 +145,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
       const newDoc = await createMutation.mutateAsync()
       markSaved(newDoc.id)
     }
-    queryClient.invalidateQueries({ queryKey: ['documents'] })
+    queryClient.invalidateQueries({ queryKey: documentKeys.all })
   }
 
   return (

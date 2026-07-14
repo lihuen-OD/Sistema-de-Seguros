@@ -14,9 +14,9 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
-import { producersApi } from '../../shared/api/producers.api'
-import { policiesApi } from '../../shared/api/policies.api'
-import { assetsApi } from '../../shared/api/assets.api'
+import { producersApi, producerQueries, producerKeys } from '../../shared/api/producers.api'
+import { policyQueries } from '../../shared/api/policies.api'
+import { assetQueries } from '../../shared/api/assets.api'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TaskPriority, TaskStatus } from '../../shared/types'
@@ -31,16 +31,12 @@ export default function TaskEditPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
+  const { data: allProducers = [] } = useQuery(producerQueries.list())
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
 
   const taskQueries = useQueries({
-    queries: allProducers.map((p) => ({
-      queryKey: ['producers', p.id, 'tasks'],
-      queryFn: () => producersApi.findTasks(p.id),
-      enabled: allProducers.length > 0,
-    })),
+    queries: allProducers.map((p) => ({ ...producerQueries.tasks(p.id), enabled: allProducers.length > 0 })),
   })
 
   const allTasks = taskQueries.flatMap((q, i) =>
@@ -127,7 +123,7 @@ export default function TaskEditPage() {
         policyId: policyId || undefined,
         assetId: assetId || undefined,
       })
-      queryClient.invalidateQueries({ queryKey: ['producers'] })
+      queryClient.invalidateQueries({ queryKey: producerKeys.all })
       navigate(ROUTES.TASKS)
     } catch {
       setSubmitting(false)

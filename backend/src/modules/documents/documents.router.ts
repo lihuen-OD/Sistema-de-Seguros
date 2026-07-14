@@ -14,6 +14,7 @@ import {
   AddDocumentAttachmentSchema,
   CancelDocumentSchema,
   BulkIdsQuerySchema,
+  SendDocumentEmailSchema,
 } from './documents.schemas'
 
 export const documentsRouter = Router()
@@ -60,6 +61,12 @@ documentsRouter.post(
   validate(CancelDocumentSchema),
   documentsController.cancel,
 )
+documentsRouter.post(
+  '/:id/send-email',
+  requireRole('ADMIN', 'CONTADOR'),
+  validate(SendDocumentEmailSchema),
+  documentsController.sendEmail,
+)
 
 // ── Auditoría (Fase 4) ────────────────────────────────────────────────────────
 documentsRouter.get('/:id/audit-log', documentsController.getAuditLog)
@@ -102,3 +109,4 @@ documentsRouter.delete(
   requireRole('ADMIN', 'CONTADOR'),
   documentsController.deleteAttachment,
 )
+documentsRouter.get('/:id/attachments/:attachmentId/download', documentsController.downloadAttachment)

@@ -20,10 +20,10 @@ import {
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
 import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
-import { claimsApi } from '../../shared/api/claims.api'
-import { assetsApi } from '../../shared/api/assets.api'
-import { policiesApi } from '../../shared/api/policies.api'
-import { catalogsApi } from '../../shared/api/catalogs.api'
+import { claimsApi, claimKeys } from '../../shared/api/claims.api'
+import { assetQueries } from '../../shared/api/assets.api'
+import { policyQueries } from '../../shared/api/policies.api'
+import { catalogQueries } from '../../shared/api/catalogs.api'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
 import type { ClaimOwnershipType } from '../../shared/types'
 
@@ -72,12 +72,12 @@ export default function ClaimNewPage() {
   const preselectedAssetId = searchParams.get('assetId') ?? ''
   const preselectedPolicyId = searchParams.get('policyId') ?? ''
 
-  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: () => assetsApi.findAll() })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
-  const { data: claimTypes = [] } = useQuery({ queryKey: ['catalogs', 'claim_type'], queryFn: () => catalogsApi.findByCategory('claim_type') })
-  const { data: claimStatuses = [] } = useQuery({ queryKey: ['catalogs', 'claim_status'], queryFn: () => catalogsApi.findByCategory('claim_status') })
-  const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
+  const { data: claimTypes = [] } = useQuery(catalogQueries.byCategory('claim_type'))
+  const { data: claimStatuses = [] } = useQuery(catalogQueries.byCategory('claim_status'))
+  const { data: currencies = [] } = useQuery(catalogQueries.byCategory('document_currency'))
 
   const preselectedAsset = preselectedAssetId
     ? (allAssets.find((a) => a.id === preselectedAssetId) ?? null)
@@ -211,7 +211,7 @@ export default function ClaimNewPage() {
         allFiles.map(({ file }) => claimsApi.addAttachment(created.id, file, {})),
       )
 
-      queryClient.invalidateQueries({ queryKey: ['claims'] })
+      queryClient.invalidateQueries({ queryKey: claimKeys.all })
       toast.success('Siniestro registrado correctamente')
       navigate(`/claims/${created.id}`)
     } finally {

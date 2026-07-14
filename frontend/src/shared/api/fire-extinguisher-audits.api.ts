@@ -1,3 +1,4 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 
 // ── Contrato (ver plan de Fase 3 — reconciliado entre backend y frontend) ──────
@@ -166,4 +167,28 @@ export const fireExtinguisherAuditsApi = {
     })
     return res.data.data
   },
+}
+
+// ── Query options (categoría B — semi-dinámico) ──────────────────────────────────
+
+export const fireExtinguisherAuditQueries = {
+  list: () =>
+    queryOptions({
+      queryKey: fireExtinguisherAuditKeys.all,
+      queryFn: () => fireExtinguisherAuditsApi.findAll(),
+      staleTime: 60 * 1000,
+    }),
+  detail: (id: string) =>
+    queryOptions({
+      queryKey: fireExtinguisherAuditKeys.detail(id),
+      queryFn: () => fireExtinguisherAuditsApi.findById(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  coverage: (period: string) =>
+    queryOptions({
+      queryKey: [...fireExtinguisherAuditKeys.all, 'coverage', period] as const,
+      queryFn: () => fireExtinguisherAuditsApi.getCoverage(period),
+      staleTime: 60 * 1000,
+    }),
 }

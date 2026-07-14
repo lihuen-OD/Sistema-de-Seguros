@@ -7,9 +7,9 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
 import { downloadAsPdf } from '../../shared/utils/downloadAsPdf'
-import { claimsApi } from '../../shared/api/claims.api'
-import { assetsApi } from '../../shared/api/assets.api'
-import { policiesApi } from '../../shared/api/policies.api'
+import { claimQueries } from '../../shared/api/claims.api'
+import { assetQueries } from '../../shared/api/assets.api'
+import { policyQueries } from '../../shared/api/policies.api'
 
 const EMISSION_DATE = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
@@ -19,9 +19,9 @@ export default function ClaimFichaPage() {
   const fichaRef = useRef<HTMLDivElement>(null)
   const [downloading, setDownloading] = useState(false)
 
-  const { data: claim } = useQuery({ queryKey: ['claim', id], queryFn: () => claimsApi.findById(id!) })
-  const { data: assets = [] } = useQuery({ queryKey: ['assets-list'], queryFn: () => assetsApi.findAll() })
-  const { data: policies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
+  const { data: claim } = useQuery(claimQueries.detail(id!))
+  const { data: assets = [] } = useQuery(assetQueries.list())
+  const { data: policies = [] } = useQuery(policyQueries.list())
 
   if (!claim) {
     return (

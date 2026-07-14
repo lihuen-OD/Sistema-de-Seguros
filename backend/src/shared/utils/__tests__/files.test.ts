@@ -1,4 +1,4 @@
-import { detectFileType, isAllowedMimetype, formatFileSize } from '../files'
+import { detectFileType, isAllowedMimetype, formatFileSize, sanitizeFileName } from '../files'
 
 // ── detectFileType ────────────────────────────────────────────────────────────
 
@@ -80,5 +80,34 @@ describe('formatFileSize', () => {
     expect(formatFileSize(1024 * 1024)).toBe('1.0 MB')
     expect(formatFileSize(1024 * 1024 * 2.5)).toBe('2.5 MB')
     expect(formatFileSize(1024 * 1024 * 20)).toBe('20.0 MB')
+  })
+})
+
+// ── sanitizeFileName ──────────────────────────────────────────────────────────
+
+describe('sanitizeFileName', () => {
+  it('leaves a normal filename untouched', () => {
+    expect(sanitizeFileName('poliza-2026.pdf')).toBe('poliza-2026.pdf')
+  })
+
+  it('strips control characters', () => {
+    expect(sanitizeFileName('archivo\x00malicioso.pdf')).toBe('archivomalicioso.pdf')
+  })
+
+  it('falls back to a default name when the cleaned name is empty', () => {
+    expect(sanitizeFileName('   ')).toBe('archivo')
+  })
+
+  it('truncates an overly long name while preserving the extension', () => {
+    const longName = `${'a'.repeat(300)}.pdf`
+    const result = sanitizeFileName(longName, 200)
+    expect(result.length).toBe(200)
+    expect(result.endsWith('.pdf')).toBe(true)
+  })
+
+  it('truncates without trying to preserve an implausibly long "extension"', () => {
+    const longName = 'a'.repeat(300)
+    const result = sanitizeFileName(longName, 200)
+    expect(result.length).toBe(200)
   })
 })

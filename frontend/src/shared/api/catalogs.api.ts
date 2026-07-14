@@ -1,3 +1,4 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 
 export interface CatalogItem {
@@ -24,4 +25,29 @@ export const catalogsApi = {
 
   delete: (category: string, id: string) =>
     apiClient.delete<{ data: { message: string } }>(`/catalogs/${category}/${id}`).then((r) => r.data.data),
+}
+
+// ── Query keys / query options (categoría A — estático, TTL largo) ──────────────
+
+export const catalogKeys = {
+  all: ['catalogs'] as const,
+  byCategory: (category: string) => [...catalogKeys.all, category] as const,
+  allByCategory: (category: string) => [...catalogKeys.all, category, 'all'] as const,
+}
+
+export const catalogQueries = {
+  byCategory: (category: string) =>
+    queryOptions({
+      queryKey: catalogKeys.byCategory(category),
+      queryFn: () => catalogsApi.findByCategory(category),
+      staleTime: 30 * 60 * 1000,
+      gcTime: 24 * 60 * 60 * 1000,
+    }),
+  allByCategory: (category: string) =>
+    queryOptions({
+      queryKey: catalogKeys.allByCategory(category),
+      queryFn: () => catalogsApi.findAllByCategory(category),
+      staleTime: 30 * 60 * 1000,
+      gcTime: 24 * 60 * 60 * 1000,
+    }),
 }

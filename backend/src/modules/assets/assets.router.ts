@@ -68,3 +68,4 @@ assetsRouter.delete(
   requireRole('ADMIN', 'CONTADOR'),
   assetsController.deleteAttachment,
 )
+assetsRouter.get('/:id/attachments/:attachmentId/download', assetsController.downloadAttachment)

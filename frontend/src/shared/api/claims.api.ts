@@ -1,4 +1,6 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment, ClaimExpense } from '../types'
 
 interface BackendClaimEvent {
@@ -152,6 +154,11 @@ export const claimsApi = {
     await apiClient.delete(`/claims/${claimId}/attachments/${attachmentId}`)
   },
 
+  async downloadAttachment(claimId: string, attachmentId: string, filename: string): Promise<void> {
+    const res = await apiClient.get(`/claims/${claimId}/attachments/${attachmentId}/download`, { responseType: 'blob' })
+    triggerBlobDownload(res.data, filename)
+  },
+
   async findExpenses(claimId: string): Promise<ClaimExpense[]> {
     const res = await apiClient.get<{ data: BackendClaimExpense[] }>(`/claims/${claimId}/expenses`)
     return res.data.data.map(mapExpense)
@@ -176,4 +183,54 @@ export const claimsApi = {
   async deleteExpense(claimId: string, expenseId: string): Promise<void> {
     await apiClient.delete(`/claims/${claimId}/expenses/${expenseId}`)
   },
+}
+
+// ── Query keys / query options (categoría B — semi-dinámico) ────────────────────
+
+type ClaimFilters = { assetId?: string; policyId?: string; status?: string }
+
+export const claimKeys = {
+  all: ['claims'] as const,
+  list: (filters?: ClaimFilters) => (filters ? ([...claimKeys.all, filters] as const) : claimKeys.all),
+  detail: (id: string) => [...claimKeys.all, id] as const,
+  events: (id: string) => [...claimKeys.all, id, 'events'] as const,
+  attachments: (id: string) => [...claimKeys.all, id, 'attachments'] as const,
+  expenses: (id: string) => [...claimKeys.all, id, 'expenses'] as const,
+}
+
+export const claimQueries = {
+  list: (filters?: ClaimFilters) =>
+    queryOptions({
+      queryKey: claimKeys.list(filters),
+      queryFn: () => claimsApi.findAll(filters),
+      staleTime: 60 * 1000,
+    }),
+  detail: (id: string) =>
+    queryOptions({
+      queryKey: claimKeys.detail(id),
+      queryFn: () => claimsApi.findById(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  events: (id: string) =>
+    queryOptions({
+      queryKey: claimKeys.events(id),
+      queryFn: () => claimsApi.findEvents(id),
+      staleTime: 60 * 1000,
+      enabled: !!id,
+    }),
+  attachments: (id: string) =>
+    queryOptions({
+      queryKey: claimKeys.attachments(id),
+      queryFn: () => claimsApi.findAttachments(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  expenses: (id: string) =>
+    queryOptions({
+      queryKey: claimKeys.expenses(id),
+      queryFn: () => claimsApi.findExpenses(id),
+      staleTime: 60 * 1000,
+      enabled: !!id,
+    }),
 }

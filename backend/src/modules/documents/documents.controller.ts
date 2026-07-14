@@ -3,6 +3,7 @@ import { asyncHandler } from '../../shared/utils/async-handler'
 import { documentsService } from './documents.service'
 import { documentsBalanceService } from './documents-balance.service'
 import { AppError } from '../../shared/errors/AppError'
+import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
 import type {
   ListDocumentsQueryDTO,
   UpdateInstallmentDTO,
@@ -10,6 +11,7 @@ import type {
   ReplaceAllocationsDTO,
   BulkIdsQueryDTO,
   CancelDocumentDTO,
+  SendDocumentEmailDTO,
 } from './documents.schemas'
 
 type IdParam = { id: string }
@@ -28,12 +30,20 @@ export const documentsController = {
   }),
 
   checkNumber: asyncHandler(async (req: Request, res: Response) => {
-    const { documentNumber } = req.query as { documentNumber?: string }
+    const { documentNumber, documentType, insuranceCompany } = req.query as {
+      documentNumber?: string
+      documentType?: string
+      insuranceCompany?: string
+    }
     if (!documentNumber?.trim()) {
       res.json({ data: { exists: false } })
       return
     }
-    const result = await documentsService.checkDocumentNumber(documentNumber.trim())
+    const result = await documentsService.checkDocumentNumber(
+      documentNumber.trim(),
+      documentType,
+      insuranceCompany,
+    )
     res.json({ data: result })
   }),
 
@@ -79,6 +89,15 @@ export const documentsController = {
     const { reason } = req.body as CancelDocumentDTO
     const doc = await documentsService.cancel(req.params.id, req.user?.email ?? 'sistema', reason)
     res.json({ data: doc })
+  }),
+
+  sendEmail: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    if (!req.user) throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
+    const result = await documentsService.sendEmail(req.params.id, req.body as SendDocumentEmailDTO, {
+      userId: req.user.userId,
+      email: req.user.email,
+    })
+    res.json({ data: result })
   }),
 
   getAuditLog: asyncHandler(async (req: Request<IdParam>, res: Response) => {
@@ -161,5 +180,10 @@ export const documentsController = {
   deleteAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
     await documentsService.deleteAttachment(req.params.id, req.params.attachmentId)
     res.json({ data: { message: 'Adjunto eliminado correctamente' } })
+  }),
+
+  downloadAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
+    const attachment = await documentsService.getAttachmentForDownload(req.params.id, req.params.attachmentId)
+    await sendAttachmentDownload(res, attachment)
   }),
 }

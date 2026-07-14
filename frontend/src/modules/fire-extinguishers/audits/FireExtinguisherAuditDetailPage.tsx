@@ -16,8 +16,9 @@ import { ProposedChangeDecisionRow } from './ProposedChangeDecisionRow'
 import {
   fireExtinguisherAuditsApi,
   fireExtinguisherAuditKeys,
+  fireExtinguisherAuditQueries,
 } from '../../../shared/api/fire-extinguisher-audits.api'
-import { fireExtinguishersApi, fireExtinguisherKeys } from '../../../shared/api/fire-extinguishers.api'
+import { fireExtinguisherKeys, fireExtinguisherQueries } from '../../../shared/api/fire-extinguishers.api'
 import { ROUTES } from '../../../app/routes'
 
 const AUDIT_DECISION_OPTIONS = [
@@ -36,17 +37,9 @@ export default function FireExtinguisherAuditDetailPage() {
   const [reviewNotes, setReviewNotes] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
 
-  const { data: audit, isLoading } = useQuery({
-    queryKey: fireExtinguisherAuditKeys.detail(id!),
-    queryFn: () => fireExtinguisherAuditsApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: audit, isLoading } = useQuery(fireExtinguisherAuditQueries.detail(id!))
 
-  const { data: extinguisher } = useQuery({
-    queryKey: fireExtinguisherKeys.detail(audit?.fireExtinguisherId ?? ''),
-    queryFn: () => fireExtinguishersApi.findById(audit!.fireExtinguisherId),
-    enabled: !!audit,
-  })
+  const { data: extinguisher } = useQuery(fireExtinguisherQueries.detail(audit?.fireExtinguisherId ?? ''))
 
   const reviewMutation = useMutation({
     mutationFn: () =>

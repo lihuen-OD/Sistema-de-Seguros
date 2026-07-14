@@ -1,10 +1,12 @@
-import * as XLSX from 'xlsx'
 import type { TableColumn } from '../types'
 
 // ─── Excel (.xlsx) ────────────────────────────────────────────────────────────
 
-export function downloadXLSX(rows: string[][], filename: string): void {
+// xlsx pesa ~400-500KB — se carga dinámicamente recién al exportar, no en el
+// chunk inicial de cada página de listado que usa ExportPresetsButton.
+export async function downloadXLSX(rows: string[][], filename: string): Promise<void> {
   if (rows.length === 0) return
+  const XLSX = await import('xlsx')
   const ws = XLSX.utils.aoa_to_sheet(rows)
 
   // Auto column widths capped at 60 chars

@@ -33,21 +33,21 @@ export function ExportPresetsButton<T>({
 
   const exportableVisible = visibleColumns.filter((c) => c.hideable !== false)
 
-  function doExport(columns: TableColumn<T>[]) {
+  async function doExport(columns: TableColumn<T>[]) {
     if (columns.length === 0) return
     const rows = buildExportRows(filteredRows, columns)
     const date = new Date().toISOString().slice(0, 10)
-    downloadXLSX(rows, `${filenamePrefix}-${date}.xlsx`)
+    await downloadXLSX(rows, `${filenamePrefix}-${date}.xlsx`)
     setOpen(false)
   }
 
   function handleExportVisible() {
-    doExport(exportableVisible)
+    void doExport(exportableVisible)
   }
 
   function handleExportPreset(columnIds: string[]) {
     const cols = columnIds.map((id) => colMap.get(id)).filter((c): c is TableColumn<T> => !!c)
-    doExport(cols)
+    void doExport(cols)
   }
 
   function handleSave() {

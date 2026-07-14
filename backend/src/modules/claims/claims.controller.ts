@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { claimsService } from './claims.service'
 import { AppError } from '../../shared/errors/AppError'
+import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
 import type { ListClaimsQueryDTO, AddEventDTO, AddClaimAttachmentDTO, CreateExpenseDTO, UpdateExpenseDTO } from './claims.schemas'
 
 type IdParam = { id: string }
@@ -105,5 +106,10 @@ export const claimsController = {
   deleteAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
     await claimsService.deleteAttachment(req.params.id, req.params.attachmentId)
     res.json({ data: { message: 'Adjunto eliminado correctamente' } })
+  }),
+
+  downloadAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
+    const attachment = await claimsService.getAttachmentForDownload(req.params.id, req.params.attachmentId)
+    await sendAttachmentDownload(res, attachment)
   }),
 }

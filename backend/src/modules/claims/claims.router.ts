@@ -83,3 +83,4 @@ claimsRouter.delete(
   requireRole('ADMIN', 'CONTADOR'),
   claimsController.deleteAttachment,
 )
+claimsRouter.get('/:id/attachments/:attachmentId/download', claimsController.downloadAttachment)

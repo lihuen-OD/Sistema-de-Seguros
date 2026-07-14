@@ -2,8 +2,9 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { computePolicyStatus, buildPolicyStatusFilter, toDateStr } from '../../shared/utils/dates'
-import { detectFileType, formatFileSize, isAllowedMimetype } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, isAllowedMimetype, sanitizeFileName } from '../../shared/utils/files'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
+import { assetsService } from '../assets/assets.service'
 import type {
   CreatePolicyDTO,
   UpdatePolicyDTO,
@@ -26,13 +27,23 @@ const POLICY_DETAIL_INCLUDE = {
   _count: { select: { allocations: true, attachments: true } },
 }
 
+// expirationDate es @db.Date — normalizarlo a YYYY-MM-DD antes de exponerlo.
+function mapAttachment<T extends { expirationDate: Date | string | null }>(att: T) {
+  return { ...att, expirationDate: att.expirationDate ? toDateStr(att.expirationDate) : null }
+}
+
 // Normaliza las fechas a YYYY-MM-DD y agrega el status computado
-function withStatus<T extends { startDate: Date | string; endDate: Date | string }>(policy: T) {
+function withStatus<T extends {
+  startDate: Date | string
+  endDate: Date | string
+  attachments?: Array<{ expirationDate: Date | string | null }>
+}>(policy: T) {
   return {
     ...policy,
     startDate: toDateStr(policy.startDate),
     endDate: toDateStr(policy.endDate),
     status: computePolicyStatus(policy.endDate),
+    ...(policy.attachments ? { attachments: policy.attachments.map(mapAttachment) } : {}),
   }
 }
 
@@ -89,33 +100,7 @@ export const policiesService = {
       policy.coverageIds.includes(c.id),
     )
 
-    const selectedAssets = policy.assetIds.length > 0
-      ? (await prisma.asset.findMany({
-          where: { id: { in: policy.assetIds } },
-          select: {
-            id: true,
-            code: true,
-            name: true,
-            assetType: true,
-            fixedAssetCode: true,
-            allocations: {
-              orderBy: { percentage: 'desc' as const },
-              take: 1,
-              select: {
-                costCenter: { select: { id: true, name: true, code: true } },
-              },
-            },
-          },
-        })).map((a) => ({
-          id: a.id,
-          code: a.code,
-          name: a.name,
-          assetType: a.assetType,
-          fixedAssetCode: a.fixedAssetCode,
-          costCenterName: a.allocations[0]?.costCenter?.name ?? null,
-          costCenterCode: a.allocations[0]?.costCenter?.code ?? null,
-        }))
-      : []
+    const selectedAssets = await assetsService.resolveAssetsSummary(policy.assetIds)
 
     return withStatus({ ...policy, selectedCoverages, selectedAssets })
   },
@@ -209,10 +194,11 @@ export const policiesService = {
   async findAttachments(policyId: string) {
     const policy = await prisma.policy.findUnique({ where: { id: policyId }, select: { id: true } })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
-    return prisma.policyAttachment.findMany({
+    const attachments = await prisma.policyAttachment.findMany({
       where: { policyId },
       orderBy: { uploadedAt: 'desc' },
     })
+    return attachments.map(mapAttachment)
   },
 
   async addAttachment(
@@ -232,26 +218,26 @@ export const policiesService = {
     let cloudinaryPublicId: string | null = null
 
     if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'policies')
+      const result = await uploadToCloudinary(file.buffer, 'policies', file.mimetype)
       fileUrl = result.secure_url
       cloudinaryPublicId = result.public_id
     }
 
     try {
-      return await prisma.policyAttachment.create({
+      const created = await prisma.policyAttachment.create({
         data: {
           policyId,
-          name: file.originalname,
+          name: sanitizeFileName(file.originalname),
           description: meta.description ?? null,
           fileType: detectFileType(file.mimetype),
           fileSize: formatFileSize(file.size),
           fileUrl,
           cloudinaryPublicId,
           expirationDate: meta.expirationDate ?? null,
-          notifyEmail: meta.notifyEmail || null,
           uploadedBy,
         },
       })
+      return mapAttachment(created)
     } catch (err) {
       if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
       throw err
@@ -267,6 +253,14 @@ export const policiesService = {
       await deleteFromCloudinary(attachment.cloudinaryPublicId)
     }
     await prisma.policyAttachment.delete({ where: { id: attachmentId } })
+  },
+
+  async getAttachmentForDownload(policyId: string, attachmentId: string) {
+    const attachment = await prisma.policyAttachment.findFirst({
+      where: { id: attachmentId, policyId },
+    })
+    if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    return attachment
   },
 
   // ── Tasks ────────────────────────────────────────────────────────────────────

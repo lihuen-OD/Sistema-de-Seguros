@@ -49,3 +49,4 @@ policiesRouter.delete(
   requireRole('ADMIN', 'CONTADOR'),
   policiesController.deleteAttachment,
 )
+policiesRouter.get('/:id/attachments/:attachmentId/download', policiesController.downloadAttachment)

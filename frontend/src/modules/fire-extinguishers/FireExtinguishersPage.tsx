@@ -17,10 +17,10 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
-import { fireExtinguishersApi, fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
+import { fireExtinguishersApi, fireExtinguisherKeys, fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
-import { assetsApi } from '../../shared/api/assets.api'
-import { catalogsApi } from '../../shared/api/catalogs.api'
+import { assetQueries } from '../../shared/api/assets.api'
+import { catalogQueries } from '../../shared/api/catalogs.api'
 import { FIRE_EXT_STATUS_LABELS, LOCATION_TYPES } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
@@ -51,12 +51,9 @@ export default function FireExtinguishersPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: all = [], isError } = useQuery({ queryKey: fireExtinguisherKeys.all, queryFn: () => fireExtinguishersApi.findAll() })
-  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
-  const { data: establishmentCatalog = [] } = useQuery({
-    queryKey: ['catalogs', 'fire_ext_establishment'],
-    queryFn: () => catalogsApi.findByCategory('fire_ext_establishment'),
-  })
+  const { data: all = [], isError } = useQuery(fireExtinguisherQueries.list())
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  const { data: establishmentCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_establishment'))
   const ESTABLISHMENT_OPTIONS = useMemo(
     () => establishmentCatalog.map((e) => ({ value: e.label, label: e.label })),
     [establishmentCatalog],
@@ -269,6 +266,7 @@ export default function FireExtinguishersPage() {
             onClick={(e) => { e.stopPropagation(); navigate(`/fire-extinguishers/${row.id}`) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
             title="Ver detalle"
+            aria-label="Ver detalle"
           >
             <Eye size={15} />
           </button>
@@ -276,6 +274,7 @@ export default function FireExtinguishersPage() {
             onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
             title="Eliminar matafuego"
+            aria-label="Eliminar matafuego"
           >
             <Trash2 size={15} />
           </button>

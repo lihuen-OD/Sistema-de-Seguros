@@ -17,32 +17,17 @@ import { DateRangeMonthPicker } from '../../shared/components/filters/DateRangeM
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
-import { claimsApi } from '../../shared/api/claims.api'
-import { assetsApi } from '../../shared/api/assets.api'
-import { policiesApi } from '../../shared/api/policies.api'
+import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
+import { assetQueries } from '../../shared/api/assets.api'
+import { policyQueries } from '../../shared/api/policies.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
-import {
-  CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
-  CLAIM_STATUS_DEFAULT_STYLE, CLAIM_STATUS_DEFAULT_ICON,
-} from '../../shared/constants/claim-status'
+import { StatusPill } from '../../shared/components/badges/StatusPill'
+import { CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS, CLAIM_STATUS_DEFAULT_ICON } from '../../shared/constants/claim-status'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { Claim, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.keys(CLAIM_STATUS_STYLES).map((s) => ({ value: s, label: s }))
-
-// ── Status pill ───────────────────────────────────────────────────────────────
-
-function ClaimStatusPill({ status }: { status: string }) {
-  const Icon = CLAIM_STATUS_ICONS[status] ?? CLAIM_STATUS_DEFAULT_ICON
-  const style = CLAIM_STATUS_STYLES[status] ?? CLAIM_STATUS_DEFAULT_STYLE
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${style}`}>
-      <Icon size={10} />
-      {status}
-    </span>
-  )
-}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -56,9 +41,9 @@ export default function ClaimsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: all = [], isLoading, isError } = useQuery({ queryKey: ['claims'], queryFn: () => claimsApi.findAll() })
-  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
+  const { data: all = [], isLoading, isError } = useQuery(claimQueries.list())
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
 
   const TYPE_OPTIONS = useMemo(() => {
     const unique = [...new Set(all.map((c) => c.claimType))].sort()
@@ -67,7 +52,7 @@ export default function ClaimsPage() {
 
   async function handleDelete(id: string) {
     await claimsApi.softDelete(id)
-    queryClient.invalidateQueries({ queryKey: ['claims'] })
+    queryClient.invalidateQueries({ queryKey: claimKeys.all })
     setDeleteId(null)
   }
 
@@ -214,7 +199,9 @@ export default function ClaimsPage() {
       key: 'status',
       label: 'Estado',
       defaultVisible: true,
-      render: (v) => <ClaimStatusPill status={String(v)} />,
+      render: (v) => (
+        <StatusPill status={String(v)} icon={CLAIM_STATUS_ICONS[String(v)] ?? CLAIM_STATUS_DEFAULT_ICON} size="sm" />
+      ),
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
     {
@@ -305,6 +292,7 @@ export default function ClaimsPage() {
             onClick={(e) => { e.stopPropagation(); navigate(`/claims/${row.id}`) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
             title="Ver detalle"
+            aria-label="Ver detalle"
           >
             <Eye size={15} />
           </button>
@@ -312,6 +300,7 @@ export default function ClaimsPage() {
             onClick={(e) => { e.stopPropagation(); navigate(`/claims/${row.id}/edit`) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
             title="Editar"
+            aria-label="Editar"
           >
             <Edit2 size={15} />
           </button>
@@ -319,6 +308,7 @@ export default function ClaimsPage() {
             onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
             title="Eliminar siniestro"
+            aria-label="Eliminar siniestro"
           >
             <Trash2 size={15} />
           </button>

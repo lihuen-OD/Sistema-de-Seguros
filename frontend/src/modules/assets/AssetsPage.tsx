@@ -15,9 +15,9 @@ import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFi
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
-import { assetsApi } from '../../shared/api/assets.api'
-import { companiesApi } from '../../shared/api/companies.api'
-import { costCentersApi } from '../../shared/api/cost-centers.api'
+import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
+import { companyQueries } from '../../shared/api/companies.api'
+import { costCenterQueries } from '../../shared/api/cost-centers.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { ASSET_TYPES, ASSET_STATUS_LABELS } from '../../shared/constants'
@@ -36,13 +36,13 @@ export default function AssetsPage() {
   const [filterCompany, setFilterCompany] = useState<string[]>([])
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const { data: allAssets = [], isLoading, isError } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
-  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
-  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
+  const { data: allAssets = [], isLoading, isError } = useQuery(assetQueries.list())
+  const { data: allCompanies = [] } = useQuery(companyQueries.list())
+  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
   async function handleDelete(id: string) {
     await assetsApi.softDelete(id)
-    queryClient.invalidateQueries({ queryKey: ['assets'] })
+    queryClient.invalidateQueries({ queryKey: assetKeys.all })
     setDeleteId(null)
   }
 
@@ -305,6 +305,7 @@ export default function AssetsPage() {
             onClick={(e) => { e.stopPropagation(); navigate(`/assets/${row.id}`) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
             title="Ver detalle"
+            aria-label="Ver detalle"
           >
             <Eye size={15} />
           </button>
@@ -312,6 +313,7 @@ export default function AssetsPage() {
             onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
             title="Dar de baja"
+            aria-label="Dar de baja"
           >
             <Trash2 size={15} />
           </button>

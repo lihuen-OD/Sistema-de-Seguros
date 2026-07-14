@@ -11,8 +11,8 @@ import {
 } from '../../shared/components/forms/FormSection'
 import { AttachmentListEditor } from '../../shared/components/file-upload/AttachmentListEditor'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
-import { assetsApi } from '../../shared/api/assets.api'
-import { catalogsApi } from '../../shared/api/catalogs.api'
+import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
+import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ASSET_STATUS_LABELS, PROVINCES } from '../../shared/constants'
 import { ASSET_TYPE_TO_FINNEGANS, LABEL_TO_CATEGORY } from '../../shared/constants/asset-categories'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
@@ -150,17 +150,9 @@ export default function AssetEditPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: asset, isLoading, isError } = useQuery({
-    queryKey: ['assets', id],
-    queryFn: () => assetsApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: asset, isLoading, isError } = useQuery(assetQueries.detail(id!))
 
-  const { data: existingAttachments = [] } = useQuery({
-    queryKey: ['assets', id, 'attachments'],
-    queryFn: () => assetsApi.findAttachments(id!),
-    enabled: !!id,
-  })
+  const { data: existingAttachments = [] } = useQuery(assetQueries.attachments(id!))
 
   const [form, setForm] = useState<EditForm>(EMPTY_FORM)
   const [patrimonialValueUsd, setPatrimonialValueUsd] = useState('')
@@ -179,14 +171,14 @@ export default function AssetEditPage() {
   const [errors, setErrors] = useState<FormErrors>({})
 
   // Catalog queries
-  const { data: fuelTypes = [] } = useQuery({ queryKey: ['catalogs', 'asset_fuel_type'], queryFn: () => catalogsApi.findByCategory('asset_fuel_type') })
-  const { data: buildingPurposes = [] } = useQuery({ queryKey: ['catalogs', 'asset_building_purpose'], queryFn: () => catalogsApi.findByCategory('asset_building_purpose') })
-  const { data: infrastructureTypes = [] } = useQuery({ queryKey: ['catalogs', 'asset_infrastructure_type'], queryFn: () => catalogsApi.findByCategory('asset_infrastructure_type') })
-  const { data: implementTypes = [] } = useQuery({ queryKey: ['catalogs', 'asset_implement_type'], queryFn: () => catalogsApi.findByCategory('asset_implement_type') })
-  const { data: cargoSpecies = [] } = useQuery({ queryKey: ['catalogs', 'asset_cargo_species'], queryFn: () => catalogsApi.findByCategory('asset_cargo_species') })
-  const { data: siloContents = [] } = useQuery({ queryKey: ['catalogs', 'asset_silo_content'], queryFn: () => catalogsApi.findByCategory('asset_silo_content') })
-  const { data: productiveUnits = [] } = useQuery({ queryKey: ['catalogs', 'asset_productive_unit'], queryFn: () => catalogsApi.findByCategory('asset_productive_unit') })
-  const { data: areas = [] } = useQuery({ queryKey: ['catalogs', 'asset_area'], queryFn: () => catalogsApi.findByCategory('asset_area') })
+  const { data: fuelTypes = [] } = useQuery(catalogQueries.byCategory('asset_fuel_type'))
+  const { data: buildingPurposes = [] } = useQuery(catalogQueries.byCategory('asset_building_purpose'))
+  const { data: infrastructureTypes = [] } = useQuery(catalogQueries.byCategory('asset_infrastructure_type'))
+  const { data: implementTypes = [] } = useQuery(catalogQueries.byCategory('asset_implement_type'))
+  const { data: cargoSpecies = [] } = useQuery(catalogQueries.byCategory('asset_cargo_species'))
+  const { data: siloContents = [] } = useQuery(catalogQueries.byCategory('asset_silo_content'))
+  const { data: productiveUnits = [] } = useQuery(catalogQueries.byCategory('asset_productive_unit'))
+  const { data: areas = [] } = useQuery(catalogQueries.byCategory('asset_area'))
 
   useEffect(() => {
     if (!asset) return
@@ -478,16 +470,15 @@ export default function AssetEditPage() {
             file: att.pendingFile,
             description: att.description || undefined,
             expirationDate: att.expirationDate ?? undefined,
-            notifyEmail: att.notifyEmail,
           })
         }
       }
 
       toast.success('Activo actualizado correctamente')
       navigate(`/assets/${asset.id}`)
-      void queryClient.invalidateQueries({ queryKey: ['assets', id] })
-      void queryClient.invalidateQueries({ queryKey: ['assets'] })
-      void queryClient.invalidateQueries({ queryKey: ['asset-status-history', id] })
+      void queryClient.invalidateQueries({ queryKey: assetKeys.detail(id!) })
+      void queryClient.invalidateQueries({ queryKey: assetKeys.all })
+      void queryClient.invalidateQueries({ queryKey: assetKeys.statusHistory(id!) })
     } finally {
       setSubmitting(false)
     }

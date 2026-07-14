@@ -15,8 +15,7 @@ import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { Tabs, type TabItem } from '../../../shared/components/tabs/Tabs'
 import { formatDate } from '../../../shared/utils/format'
 import {
-  fireExtinguisherAuditsApi,
-  fireExtinguisherAuditKeys,
+  fireExtinguisherAuditQueries,
   type FireExtinguisherAuditListItem,
 } from '../../../shared/api/fire-extinguisher-audits.api'
 import { FIRE_EXT_AUDIT_STATUS_LABELS } from '../../../shared/constants'
@@ -39,15 +38,9 @@ export default function FireExtinguisherAuditsQueuePage() {
   const [filterDateTo, setFilterDateTo] = useState('')
   const [coveragePeriod, setCoveragePeriod] = useState(currentPeriod())
 
-  const { data: all = [], isLoading } = useQuery({
-    queryKey: fireExtinguisherAuditKeys.all,
-    queryFn: () => fireExtinguisherAuditsApi.findAll(),
-  })
+  const { data: all = [], isLoading } = useQuery(fireExtinguisherAuditQueries.list())
 
-  const { data: coverage = [], isLoading: coverageLoading } = useQuery({
-    queryKey: ['fire-extinguisher-audits', 'coverage', coveragePeriod],
-    queryFn: () => fireExtinguisherAuditsApi.getCoverage(coveragePeriod),
-  })
+  const { data: coverage = [], isLoading: coverageLoading } = useQuery(fireExtinguisherAuditQueries.coverage(coveragePeriod))
 
   const pendingCoverageCount = useMemo(() => coverage.filter((c) => !c.audited).length, [coverage])
 

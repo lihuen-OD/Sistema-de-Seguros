@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { GripVertical, Check, X, Pencil, Plus, EyeOff, Eye, Trash2 } from 'lucide-react'
-import { catalogsApi, type CatalogItem } from '../../api/catalogs.api'
+import { catalogsApi, catalogQueries, catalogKeys, type CatalogItem } from '../../api/catalogs.api'
 
 interface CatalogManagerProps {
   category: string
@@ -19,10 +19,7 @@ interface RowState {
 export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps) {
   const queryClient = useQueryClient()
 
-  const { data: items = [], isLoading } = useQuery({
-    queryKey: ['catalogs', category, 'all'],
-    queryFn: () => catalogsApi.findAllByCategory(category),
-  })
+  const { data: items = [], isLoading } = useQuery(catalogQueries.allByCategory(category))
 
   const [rowState, setRowState] = useState<Record<string, RowState>>({})
   const [newLabel, setNewLabel] = useState('')
@@ -51,13 +48,13 @@ export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps
       return
     }
     await catalogsApi.update(category, item.id, { label })
-    queryClient.invalidateQueries({ queryKey: ['catalogs', category] })
+    queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
     setRow(item.id, { editing: false, editLabel: '', confirmDelete: false })
   }
 
   async function toggleActive(item: CatalogItem) {
     await catalogsApi.update(category, item.id, { isActive: !item.isActive })
-    queryClient.invalidateQueries({ queryKey: ['catalogs', category] })
+    queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
   }
 
   function startDelete(id: string) {
@@ -70,7 +67,7 @@ export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps
 
   async function confirmDelete(item: CatalogItem) {
     await catalogsApi.delete(category, item.id)
-    queryClient.invalidateQueries({ queryKey: ['catalogs', category] })
+    queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
   }
 
   async function handleAdd() {
@@ -79,7 +76,7 @@ export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps
     setAdding(true)
     try {
       await catalogsApi.create(category, label)
-      queryClient.invalidateQueries({ queryKey: ['catalogs', category] })
+      queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
       setNewLabel('')
     } finally {
       setAdding(false)

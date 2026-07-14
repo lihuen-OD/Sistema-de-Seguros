@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { assetsService } from './assets.service'
 import { AppError } from '../../shared/errors/AppError'
+import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
 import type { ListAssetsQueryDTO } from './assets.schemas'
 
 type IdParam = { id: string }
@@ -76,5 +77,10 @@ export const assetsController = {
   deleteAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
     await assetsService.deleteAttachment(req.params.id, req.params.attachmentId)
     res.json({ data: { message: 'Adjunto eliminado correctamente' } })
+  }),
+
+  downloadAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
+    const attachment = await assetsService.getAttachmentForDownload(req.params.id, req.params.attachmentId)
+    await sendAttachmentDownload(res, attachment)
   }),
 }

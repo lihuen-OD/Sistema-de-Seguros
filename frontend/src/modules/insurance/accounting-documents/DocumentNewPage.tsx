@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
-import { documentsApi } from '../../../shared/api/documents.api'
+import { documentQueries } from '../../../shared/api/documents.api'
 import { DocumentTypePicker } from './forms/DocumentTypePicker'
 import { DocumentFormRouter } from './forms/DocumentFormRouter'
 import type { DocumentType } from '../../../shared/types'
@@ -17,10 +17,7 @@ export default function DocumentNewPage() {
   // El shortcut "Nuevo documento" desde una póliza siempre crea una Factura.
   const [selectedType, setSelectedType] = useState<DocumentType | null>(fromPolicyId ? 'INVOICE' : null)
 
-  const { data: documentTypesData, isLoading } = useQuery({
-    queryKey: ['documents', 'types'],
-    queryFn: () => documentsApi.getTypes(),
-  })
+  const { data: documentTypesData, isLoading } = useQuery(documentQueries.types())
 
   if (isLoading) {
     return (

@@ -17,8 +17,8 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
-import { assetsApi } from '../../../shared/api/assets.api'
-import { costCentersApi, type CostCenterInput } from '../../../shared/api/cost-centers.api'
+import { assetQueries } from '../../../shared/api/assets.api'
+import { costCentersApi, costCenterQueries, costCenterKeys, type CostCenterInput } from '../../../shared/api/cost-centers.api'
 import type { CostCenter, TableColumn } from '../../../shared/types'
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
@@ -157,15 +157,9 @@ export default function CostCentersPage() {
 
   const queryClient = useQueryClient()
 
-  const { data: allCostCenters = [], isLoading } = useQuery({
-    queryKey: ['cost-centers'],
-    queryFn: costCentersApi.findAll,
-  })
+  const { data: allCostCenters = [], isLoading } = useQuery(costCenterQueries.list())
 
-  const { data: allAssets = [] } = useQuery({
-    queryKey: ['assets'],
-    queryFn: assetsApi.findAll,
-  })
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
 
   const filtered = useMemo(() => {
     return allCostCenters.filter((cc) => {
@@ -195,7 +189,7 @@ export default function CostCentersPage() {
       await costCentersApi.create(input)
     }
     setModalCC(undefined)
-    queryClient.invalidateQueries({ queryKey: ['cost-centers'] })
+    queryClient.invalidateQueries({ queryKey: costCenterKeys.all })
   }
 
   const columns: TableColumn<CostCenter>[] = [

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PaginationSchema } from '../../shared/schemas/common'
+import { EmailRecipientsSchema } from '../email/email.schemas'
 import { isValidDocumentType } from './document-types'
 
 const ISODate = z
@@ -90,6 +91,8 @@ export const CancelDocumentSchema = z.object({
   reason: z.string().max(500).optional(),
 })
 
+export const SendDocumentEmailSchema = EmailRecipientsSchema
+
 export const BulkIdsQuerySchema = z.object({
   ids: z
     .string()
@@ -106,3 +109,4 @@ export type ReplaceAllocationsDTO = z.infer<typeof ReplaceAllocationsSchema>
 export type AddDocumentAttachmentDTO = z.infer<typeof AddDocumentAttachmentSchema>
 export type CancelDocumentDTO = z.infer<typeof CancelDocumentSchema>
 export type BulkIdsQueryDTO = z.infer<typeof BulkIdsQuerySchema>
+export type SendDocumentEmailDTO = z.infer<typeof SendDocumentEmailSchema>

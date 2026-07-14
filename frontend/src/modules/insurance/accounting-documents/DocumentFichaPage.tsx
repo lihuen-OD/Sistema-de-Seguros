@@ -7,8 +7,8 @@ import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatDate } from '../../../shared/utils/format'
 import { downloadAsPdf } from '../../../shared/utils/downloadAsPdf'
-import { documentsApi } from '../../../shared/api/documents.api'
-import { policiesApi } from '../../../shared/api/policies.api'
+import { documentQueries } from '../../../shared/api/documents.api'
+import { policyQueries } from '../../../shared/api/policies.api'
 import { PAYMENT_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 
 const EMISSION_DATE = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -19,19 +19,11 @@ export default function DocumentFichaPage() {
   const fichaRef = useRef<HTMLDivElement>(null)
   const [downloading, setDownloading] = useState(false)
 
-  const { data: doc } = useQuery({ queryKey: ['documents', id], queryFn: () => documentsApi.findById(id!) })
-  const { data: documentTypesData } = useQuery({ queryKey: ['documents', 'types'], queryFn: () => documentsApi.getTypes() })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: rawInstallments = [] } = useQuery({
-    queryKey: ['documents', id, 'installments'],
-    queryFn: () => documentsApi.findInstallments(id!),
-    enabled: !!id,
-  })
-  const { data: allocations = [] } = useQuery({
-    queryKey: ['documents', id, 'allocations'],
-    queryFn: () => documentsApi.findAllocations(id!),
-    enabled: !!id,
-  })
+  const { data: doc } = useQuery(documentQueries.detail(id!))
+  const { data: documentTypesData } = useQuery(documentQueries.types())
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: rawInstallments = [] } = useQuery(documentQueries.installments(id!))
+  const { data: allocations = [] } = useQuery(documentQueries.allocations(id!))
 
   if (!doc) {
     return (

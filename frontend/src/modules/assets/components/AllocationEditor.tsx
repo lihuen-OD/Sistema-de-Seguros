@@ -1,8 +1,8 @@
 import { Plus, Trash2, Check, Hash } from 'lucide-react'
 import clsx from 'clsx'
 import { useQuery } from '@tanstack/react-query'
-import { costCentersApi } from '../../../shared/api/cost-centers.api'
-import { companiesApi } from '../../../shared/api/companies.api'
+import { costCenterQueries } from '../../../shared/api/cost-centers.api'
+import { companyQueries } from '../../../shared/api/companies.api'
 import type { AssetAllocation } from '../../../shared/types'
 
 interface AllocationEditorProps {
@@ -11,10 +11,11 @@ interface AllocationEditorProps {
 }
 
 export function AllocationEditor({ allocations, onChange }: AllocationEditorProps) {
-  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
-  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findActive })
+  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
+  const { data: allCompanies = [] } = useQuery(companyQueries.list())
 
   const activeCostCenters = allCostCenters.filter((cc) => cc.status === 'activo')
+  const activeCompanies = allCompanies.filter((c) => c.status === 'activo')
 
   function add() {
     onChange([...allocations, { id: `alloc-${Date.now()}`, companyId: '', costCenterId: '', percentage: 0 }])
@@ -71,7 +72,7 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
                     className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Seleccionar…</option>
-                    {allCompanies.map((c) => (
+                    {activeCompanies.map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>

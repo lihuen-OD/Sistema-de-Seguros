@@ -15,13 +15,13 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
-import { assetsApi } from '../../shared/api/assets.api'
-import { policiesApi } from '../../shared/api/policies.api'
-import { fireExtinguishersApi, fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
-import { companiesApi } from '../../shared/api/companies.api'
-import { costCentersApi } from '../../shared/api/cost-centers.api'
-import { claimsApi } from '../../shared/api/claims.api'
-import { documentsApi } from '../../shared/api/documents.api'
+import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
+import { policyQueries } from '../../shared/api/policies.api'
+import { fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
+import { companyQueries } from '../../shared/api/companies.api'
+import { costCenterQueries } from '../../shared/api/cost-centers.api'
+import { claimQueries } from '../../shared/api/claims.api'
+import { documentQueries } from '../../shared/api/documents.api'
 import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../shared/constants'
 import type { Policy, FireExtinguisher, TableColumn, AssetValueEntry, AccountingDocument } from '../../shared/types'
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
@@ -103,63 +103,45 @@ export default function AssetDetailPage() {
   const [uploadingPhotos, setUploadingPhotos] = useState(false)
   const [showAssociateModal, setShowAssociateModal] = useState(false)
   const queryClient = useQueryClient()
-  const attachmentsKey = ['assets', id, 'attachments'] as const
+  const attachmentsKey = assetKeys.attachments(id!)
 
   // ── Data fetching ─────────────────────────────────────────────────────────────
 
-  const { data: asset, isLoading: assetLoading } = useQuery({
-    queryKey: ['assets', id],
-    queryFn: () => assetsApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: asset, isLoading: assetLoading } = useQuery(assetQueries.detail(id!))
 
   const { data: allPolicies = [] } = useQuery({
-    queryKey: ['policies', { assetId: id }],
-    queryFn: () => policiesApi.findAll({ assetId: id }),
+    ...policyQueries.list({ assetId: id }),
     enabled: !!id,
   })
 
   const { data: allFireExtinguishers = [] } = useQuery({
-    queryKey: fireExtinguisherKeys.list({ assetId: id }),
-    queryFn: () => fireExtinguishersApi.findAll({ assetId: id }),
+    ...fireExtinguisherQueries.list({ assetId: id }),
     enabled: !!id,
   })
 
   const { data: allClaims = [] } = useQuery({
-    queryKey: ['claims', { assetId: id }],
-    queryFn: () => claimsApi.findAll({ assetId: id }),
+    ...claimQueries.list({ assetId: id }),
     enabled: !!id,
   })
 
   const { data: allCompanies = [] } = useQuery({
-    queryKey: ['companies'],
-    queryFn: () => companiesApi.findAll(),
+    ...companyQueries.list(),
     enabled: !!asset,
   })
 
   const { data: allCostCenters = [] } = useQuery({
-    queryKey: ['cost-centers'],
-    queryFn: () => costCentersApi.findAll(),
+    ...costCenterQueries.list(),
     enabled: !!asset,
   })
 
   const { data: allDocuments = [] } = useQuery({
-    queryKey: ['documents'],
-    queryFn: () => documentsApi.findAll(),
+    ...documentQueries.list(),
     enabled: !!asset,
   })
 
-  const { data: statusHistory = [] } = useQuery({
-    queryKey: ['asset-status-history', id],
-    queryFn: () => assetsApi.findStatusHistory(id!),
-    enabled: !!id,
-  })
+  const { data: statusHistory = [] } = useQuery(assetQueries.statusHistory(id!))
 
-  const { data: allAttachments = [] } = useQuery({
-    queryKey: attachmentsKey,
-    queryFn: () => assetsApi.findAttachments(id!),
-    enabled: !!id,
-  })
+  const { data: allAttachments = [] } = useQuery(assetQueries.attachments(id!))
 
   // Historial de estado: usa el real o genera uno sintético para activos pre-feature
   // Debe estar ANTES de cualquier return condicional (Rules of Hooks)

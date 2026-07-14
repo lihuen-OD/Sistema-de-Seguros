@@ -260,7 +260,6 @@ export interface PolicyAttachment {
   fileSize: string
   fileUrl?: string
   expirationDate: string | null
-  notifyEmail?: string
   uploadedAt: string
   uploadedBy: string
 }
@@ -468,7 +467,6 @@ export interface AssetAttachment {
   fileSize: string
   fileUrl?: string
   expirationDate: string | null
-  notifyEmail?: string
   uploadedAt: string
   uploadedBy: string
   /** Solo en memoria durante creación — nunca persistido ni enviado al backend */

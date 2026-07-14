@@ -5,7 +5,7 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { FormField, FormInput } from '../../shared/components/forms/FormSection'
-import { claimsApi } from '../../shared/api/claims.api'
+import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
 import type { ClaimExpense } from '../../shared/types'
 
@@ -20,21 +20,16 @@ function rowTotal(e: ClaimExpense): number {
 
 export function ClaimExpensesCard({ claimId, claimedAmountArs }: ClaimExpensesCardProps) {
   const queryClient = useQueryClient()
-  const expensesKey = ['claims', claimId, 'expenses'] as const
 
-  const { data: expenses = [] } = useQuery({
-    queryKey: expensesKey,
-    queryFn: () => claimsApi.findExpenses(claimId),
-    enabled: !!claimId,
-  })
+  const { data: expenses = [] } = useQuery(claimQueries.expenses(claimId))
 
   const [showModal, setShowModal] = useState(false)
   const [editingExpense, setEditingExpense] = useState<ClaimExpense | null>(null)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: expensesKey })
-    queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'events'] })
+    queryClient.invalidateQueries({ queryKey: claimKeys.expenses(claimId) })
+    queryClient.invalidateQueries({ queryKey: claimKeys.events(claimId) })
   }
 
   const deleteMutation = useMutation({

@@ -62,7 +62,6 @@ export const AddValueHistorySchema = z.object({
 export const AddAttachmentSchema = z.object({
   description: z.string().max(500).optional(),
   expirationDate: ISODate.optional().nullable(),
-  notifyEmail: z.string().email('Email inválido').optional().or(z.literal('')),
 })
 
 export const ListAssetsQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({

@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
-import { detectFileType, formatFileSize } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import { todayDate, currentYearMonth, toDateStr } from '../../shared/utils/dates'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
@@ -268,7 +268,7 @@ export const fireExtinguisherAuditsService = {
     let cloudinaryPublicId: string | null = null
 
     if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'fire-extinguisher-audits')
+      const result = await uploadToCloudinary(file.buffer, 'fire-extinguisher-audits', file.mimetype)
       fileUrl = result.secure_url
       cloudinaryPublicId = result.public_id
     }
@@ -278,7 +278,7 @@ export const fireExtinguisherAuditsService = {
         data: {
           fireExtinguisherId: audit.fireExtinguisherId,
           auditId,
-          name: file.originalname,
+          name: sanitizeFileName(file.originalname),
           description: meta.description ?? null,
           fileType: detectFileType(file.mimetype),
           fileSize: formatFileSize(file.size),

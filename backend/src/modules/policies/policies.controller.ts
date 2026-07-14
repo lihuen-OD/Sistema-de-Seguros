@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { policiesService } from './policies.service'
 import { AppError } from '../../shared/errors/AppError'
+import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
 import type { ListPoliciesQueryDTO } from './policies.schemas'
 
 type IdParam = { id: string }
@@ -59,5 +60,10 @@ export const policiesController = {
   deleteAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
     await policiesService.deleteAttachment(req.params.id, req.params.attachmentId)
     res.json({ data: { message: 'Adjunto eliminado correctamente' } })
+  }),
+
+  downloadAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
+    const attachment = await policiesService.getAttachmentForDownload(req.params.id, req.params.attachmentId)
+    await sendAttachmentDownload(res, attachment)
   }),
 }

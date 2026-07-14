@@ -13,7 +13,7 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatDate } from '../../shared/utils/format'
 import { downloadXLSX, printTableAsPDF, type PrintRow } from '../../shared/utils/export'
-import { fireExtinguishersApi, type FireExtinguisherDashboardSummary } from '../../shared/api/fire-extinguishers.api'
+import { fireExtinguisherQueries, type FireExtinguisherDashboardSummary } from '../../shared/api/fire-extinguishers.api'
 import { ROUTES } from '../../app/routes'
 import { EstablishmentZoneCard } from './EstablishmentZoneCard'
 
@@ -37,16 +37,13 @@ export default function FireExtinguisherDashboardPage() {
   const navigate = useNavigate()
   const [pdfLoading, setPdfLoading] = useState(false)
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['fire-extinguishers', 'dashboard-summary'],
-    queryFn: fireExtinguishersApi.getDashboardSummary,
-  })
+  const { data, isLoading } = useQuery(fireExtinguisherQueries.dashboardSummary())
 
-  function handleExportExcel() {
+  async function handleExportExcel() {
     if (!data) return
     const rows = buildReportRows(data)
     const date = new Date().toISOString().slice(0, 10)
-    downloadXLSX(
+    await downloadXLSX(
       [['Sección', 'Concepto', 'Valor'], ...rows.map((r) => [r.section, r.concept, r.value])],
       `dashboard-matafuegos-${date}.xlsx`,
     )

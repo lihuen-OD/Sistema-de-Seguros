@@ -19,14 +19,14 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
 import { ASSET_TYPES } from '../../shared/constants'
-import { assetsApi } from '../../shared/api/assets.api'
-import { policiesApi } from '../../shared/api/policies.api'
-import { documentsApi } from '../../shared/api/documents.api'
-import { fireExtinguishersApi, fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
-import { companiesApi } from '../../shared/api/companies.api'
-import { costCentersApi } from '../../shared/api/cost-centers.api'
-import { producersApi } from '../../shared/api/producers.api'
-import { dashboardApi } from '../../shared/api/dashboard.api'
+import { assetQueries } from '../../shared/api/assets.api'
+import { policyQueries } from '../../shared/api/policies.api'
+import { documentQueries } from '../../shared/api/documents.api'
+import { fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
+import { companyQueries } from '../../shared/api/companies.api'
+import { costCenterQueries } from '../../shared/api/cost-centers.api'
+import { producerQueries } from '../../shared/api/producers.api'
+import { dashboardQueries } from '../../shared/api/dashboard.api'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
@@ -53,31 +53,18 @@ export default function DashboardPage() {
   }
 
   // ── Data queries ──────────────────────────────────────────────────
-  const { data: allAssets = [], isError: assetsError } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: allFireExtinguishers = [] } = useQuery({ queryKey: fireExtinguisherKeys.all, queryFn: () => fireExtinguishersApi.findAll() })
-  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
-  const { data: financialDocs = [] } = useQuery({
-    queryKey: ['documents', 'financial'],
-    queryFn: () => documentsApi.findAllForFinancial(),
-    staleTime: 5 * 60 * 1000,
-  })
-  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
-  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
-  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
-  const { data: charts } = useQuery({
-    queryKey: ['dashboard', 'charts', new Date().getFullYear()],
-    queryFn: () => dashboardApi.getCharts(new Date().getFullYear()),
-    staleTime: 5 * 60 * 1000,
-  })
+  const { data: allAssets = [], isError: assetsError } = useQuery(assetQueries.list())
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: allFireExtinguishers = [] } = useQuery(fireExtinguisherQueries.list())
+  const { data: allDocuments = [] } = useQuery(documentQueries.list())
+  const { data: financialDocs = [] } = useQuery(documentQueries.financial())
+  const { data: allCompanies = [] } = useQuery(companyQueries.list())
+  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
+  const { data: allProducers = [] } = useQuery(producerQueries.list())
+  const { data: charts } = useQuery(dashboardQueries.charts(new Date().getFullYear()))
 
   const taskQueries = useQueries({
-    queries: allProducers.map((p) => ({
-      queryKey: ['producers', p.id, 'tasks'],
-      queryFn: () => producersApi.findTasks(p.id),
-      enabled: allProducers.length > 0,
-      staleTime: 2 * 60 * 1000,
-    })),
+    queries: allProducers.map((p) => producerQueries.tasks(p.id)),
   })
 
   const assetById = useMemo(

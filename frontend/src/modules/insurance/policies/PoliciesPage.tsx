@@ -20,11 +20,11 @@ import {
   formatCurrencyCompact,
   formatDate,
 } from '../../../shared/utils/format'
-import { policiesApi } from '../../../shared/api/policies.api'
-import { producersApi } from '../../../shared/api/producers.api'
-import { assetsApi } from '../../../shared/api/assets.api'
-import { companiesApi } from '../../../shared/api/companies.api'
-import { costCentersApi } from '../../../shared/api/cost-centers.api'
+import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
+import { producerQueries } from '../../../shared/api/producers.api'
+import { assetQueries } from '../../../shared/api/assets.api'
+import { companyQueries } from '../../../shared/api/companies.api'
+import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { POLICY_STATUS_LABELS } from '../../../shared/constants'
@@ -46,15 +46,15 @@ export default function PoliciesPage() {
   const [filterDateTo, setFilterDateTo] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const { data: allPolicies = [], isLoading, isError } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
-  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
-  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
-  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
+  const { data: allPolicies = [], isLoading, isError } = useQuery(policyQueries.list())
+  const { data: allProducers = [] } = useQuery(producerQueries.list())
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  const { data: allCompanies = [] } = useQuery(companyQueries.list())
+  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
   async function handleDelete(id: string) {
     await policiesApi.softDelete(id)
-    queryClient.invalidateQueries({ queryKey: ['policies'] })
+    queryClient.invalidateQueries({ queryKey: policyKeys.all })
     setDeleteId(null)
   }
 
@@ -331,6 +331,7 @@ export default function PoliciesPage() {
             onClick={(e) => { e.stopPropagation(); navigate(`/insurance/policies/${row.id}`) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
             title="Ver detalle"
+            aria-label="Ver detalle"
           >
             <Eye size={15} />
           </button>
@@ -338,6 +339,7 @@ export default function PoliciesPage() {
             onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
             title="Eliminar póliza"
+            aria-label="Eliminar póliza"
           >
             <Trash2 size={15} />
           </button>

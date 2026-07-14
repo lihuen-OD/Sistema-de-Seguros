@@ -1,4 +1,6 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Asset, AssetAttachment, AssetStatus, AssetStatusHistory, Building } from '../types'
 
 interface BackendCompany { id: string; name: string; cuit: string }
@@ -30,7 +32,7 @@ interface BackendAsset {
 }
 interface BackendAttachment {
   id: string; assetId: string; name: string; description: string | null; fileType: string
-  fileSize: string; fileUrl: string; expirationDate: string | null; notifyEmail: string | null; uploadedAt: string; uploadedBy: string
+  fileSize: string; fileUrl: string; expirationDate: string | null; uploadedAt: string; uploadedBy: string
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
 
@@ -102,8 +104,7 @@ function mapAttachment(a: BackendAttachment): AssetAttachment {
     id: a.id, assetId: a.assetId, name: a.name,
     description: a.description ?? '', fileType, fileSize: a.fileSize,
     fileUrl: a.fileUrl,
-    expirationDate: a.expirationDate ?? null,
-    notifyEmail: a.notifyEmail ?? undefined,
+    expirationDate: a.expirationDate ? a.expirationDate.slice(0, 10) : null,
     uploadedAt: a.uploadedAt, uploadedBy: a.uploadedBy,
   }
 }
@@ -112,7 +113,6 @@ export interface AddAttachmentInput {
   file: File
   description?: string
   expirationDate?: string
-  notifyEmail?: string
 }
 
 export interface AssetCreateInput {
@@ -176,7 +176,6 @@ export const assetsApi = {
     form.append('file', input.file)
     if (input.description) form.append('description', input.description)
     if (input.expirationDate) form.append('expirationDate', input.expirationDate)
-    if (input.notifyEmail) form.append('notifyEmail', input.notifyEmail)
     const res = await apiClient.post<{ data: BackendAttachment }>(
       `/assets/${assetId}/attachments`,
       form,
@@ -189,6 +188,11 @@ export const assetsApi = {
     await apiClient.delete(`/assets/${assetId}/attachments/${attachmentId}`)
   },
 
+  async downloadAttachment(assetId: string, attachmentId: string, filename: string): Promise<void> {
+    const res = await apiClient.get(`/assets/${assetId}/attachments/${attachmentId}/download`, { responseType: 'blob' })
+    triggerBlobDownload(res.data, filename)
+  },
+
   async addValueHistory(assetId: string, entry: { value: number; date: string; type: 'real' | 'nuevo'; note?: string }): Promise<void> {
     await apiClient.post(`/assets/${assetId}/value-history`, entry)
   },
@@ -197,4 +201,46 @@ export const assetsApi = {
     const res = await apiClient.get<{ data: AssetStatusHistory[] }>(`/assets/${assetId}/status-history`)
     return res.data.data.map((h) => ({ ...h, date: h.date.slice(0, 10) }))
   },
+}
+
+// ── Query keys / query options (categoría B — semi-dinámico) ────────────────────
+// Las keys reproducen EXACTAMENTE los arrays literales ya usados en toda la app
+// (`['assets']`, `['assets', id]`, etc.) para no fragmentar cache mientras se
+// migran los call sites — no se inventa un esquema nuevo de sub-namespacing.
+
+export const assetKeys = {
+  all: ['assets'] as const,
+  detail: (id: string) => [...assetKeys.all, id] as const,
+  attachments: (id: string) => [...assetKeys.all, id, 'attachments'] as const,
+  statusHistory: (id: string) => ['asset-status-history', id] as const,
+}
+
+export const assetQueries = {
+  list: () =>
+    queryOptions({
+      queryKey: assetKeys.all,
+      queryFn: () => assetsApi.findAll(),
+      staleTime: 60 * 1000,
+    }),
+  detail: (id: string) =>
+    queryOptions({
+      queryKey: assetKeys.detail(id),
+      queryFn: () => assetsApi.findById(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  attachments: (id: string) =>
+    queryOptions({
+      queryKey: assetKeys.attachments(id),
+      queryFn: () => assetsApi.findAttachments(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  statusHistory: (id: string) =>
+    queryOptions({
+      queryKey: assetKeys.statusHistory(id),
+      queryFn: () => assetsApi.findStatusHistory(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
 }

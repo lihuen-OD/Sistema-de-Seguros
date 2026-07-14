@@ -7,9 +7,9 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
 import { useQuery } from '@tanstack/react-query'
-import { assetsApi } from '../../shared/api/assets.api'
-import { companiesApi } from '../../shared/api/companies.api'
-import { costCentersApi } from '../../shared/api/cost-centers.api'
+import { assetQueries } from '../../shared/api/assets.api'
+import { companyQueries } from '../../shared/api/companies.api'
+import { costCenterQueries } from '../../shared/api/cost-centers.api'
 import { ASSET_STATUS_LABELS } from '../../shared/constants'
 import { LABEL_TO_CATEGORY } from '../../shared/constants/asset-categories'
 
@@ -36,14 +36,10 @@ export default function AssetFichaPage() {
     }
   }
 
-  const { data: asset } = useQuery({ queryKey: ['assets', id], queryFn: () => assetsApi.findById(id!) })
-  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
-  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
-  const { data: allAttachments = [] } = useQuery({
-    queryKey: ['assets', id, 'attachments'],
-    queryFn: () => assetsApi.findAttachments(id!),
-    enabled: !!id,
-  })
+  const { data: asset } = useQuery(assetQueries.detail(id!))
+  const { data: allCompanies = [] } = useQuery(companyQueries.list())
+  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
+  const { data: allAttachments = [] } = useQuery(assetQueries.attachments(id!))
 
   if (!asset) {
     return (

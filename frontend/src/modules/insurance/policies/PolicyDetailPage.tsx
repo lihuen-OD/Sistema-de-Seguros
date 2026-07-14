@@ -19,11 +19,11 @@ import {
   formatDate,
   daysUntil,
 } from '../../../shared/utils/format'
-import { policiesApi } from '../../../shared/api/policies.api'
-import { producersApi } from '../../../shared/api/producers.api'
-import { companiesApi } from '../../../shared/api/companies.api'
-import { costCentersApi } from '../../../shared/api/cost-centers.api'
-import { documentsApi } from '../../../shared/api/documents.api'
+import { policyQueries } from '../../../shared/api/policies.api'
+import { producerQueries } from '../../../shared/api/producers.api'
+import { companyQueries } from '../../../shared/api/companies.api'
+import { costCenterQueries } from '../../../shared/api/cost-centers.api'
+import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
 import { DOCUMENT_TYPE_LABELS, ECONOMIC_IMPACT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
@@ -35,37 +35,17 @@ export default function PolicyDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: policy, isLoading: loadingPolicy } = useQuery({
-    queryKey: ['policy', id],
-    queryFn: () => policiesApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: policy, isLoading: loadingPolicy } = useQuery(policyQueries.detail(id!))
 
-  const { data: producers = [] } = useQuery({
-    queryKey: ['producers'],
-    queryFn: () => producersApi.findAll(),
-  })
+  const { data: producers = [] } = useQuery(producerQueries.list())
 
-  const { data: companies = [] } = useQuery({
-    queryKey: ['companies'],
-    queryFn: () => companiesApi.findAll(),
-  })
+  const { data: companies = [] } = useQuery(companyQueries.list())
 
-  const { data: costCenters = [] } = useQuery({
-    queryKey: ['cost-centers'],
-    queryFn: () => costCentersApi.findAll(),
-  })
+  const { data: costCenters = [] } = useQuery(costCenterQueries.list())
 
-  const { data: allDocuments = [] } = useQuery({
-    queryKey: ['documents'],
-    queryFn: () => documentsApi.findAll(),
-  })
+  const { data: allDocuments = [] } = useQuery(documentQueries.list())
 
-  const { data: policyTasks = [] } = useQuery({
-    queryKey: ['policies', id, 'tasks'],
-    queryFn: () => policiesApi.findTasks(id!),
-    enabled: !!id,
-  })
+  const { data: policyTasks = [] } = useQuery(policyQueries.tasks(id!))
 
   const policyDocIds = useMemo(
     () => allDocuments.filter((d) => d.policyIds.includes(id ?? '')).map((d) => d.id),
@@ -73,10 +53,7 @@ export default function PolicyDetailPage() {
   )
 
   const docInstallmentQueries = useQueries({
-    queries: policyDocIds.map((docId) => ({
-      queryKey: ['documents', docId, 'installments'],
-      queryFn: () => documentsApi.findInstallments(docId),
-    })),
+    queries: policyDocIds.map((docId) => documentQueries.installments(docId)),
   })
 
   const [activeDocTab, setActiveDocTab] = useState<'documentos' | 'tareas' | 'adjuntos'>('documentos')
@@ -152,14 +129,14 @@ export default function PolicyDetailPage() {
     })
     try {
       await documentsApi.updateInstallment(docId, instId, updates)
-      queryClient.invalidateQueries({ queryKey: ['documents', docId, 'installments'] })
+      queryClient.invalidateQueries({ queryKey: documentKeys.installments(docId) })
       setLocalInstallments((prev) => {
         const next = new Map(prev)
         next.delete(docId)
         return next
       })
     } catch {
-      queryClient.invalidateQueries({ queryKey: ['documents', docId, 'installments'] })
+      queryClient.invalidateQueries({ queryKey: documentKeys.installments(docId) })
     }
   }
 

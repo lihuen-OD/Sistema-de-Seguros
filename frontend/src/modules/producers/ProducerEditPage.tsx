@@ -14,7 +14,7 @@ import {
   FormInput,
   FormSelect,
 } from '../../shared/components/forms/FormSection'
-import { producersApi } from '../../shared/api/producers.api'
+import { producersApi, producerQueries } from '../../shared/api/producers.api'
 import { ROUTES } from '../../app/routes'
 
 interface FormErrors {
@@ -27,11 +27,7 @@ export default function ProducerEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const { data: original, isLoading } = useQuery({
-    queryKey: ['producers', id],
-    queryFn: () => producersApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: original, isLoading } = useQuery(producerQueries.detail(id!))
 
   const [name, setName] = useState('')
   const [registrationNumber, setRegistrationNumber] = useState('')

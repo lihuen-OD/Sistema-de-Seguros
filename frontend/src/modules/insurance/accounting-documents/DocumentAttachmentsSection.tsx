@@ -5,7 +5,7 @@ import {
   Image as ImageIcon, File as FileIcon, AlertTriangle, Loader2,
 } from 'lucide-react'
 import type { AccountingDocumentAttachment } from '../../../shared/types'
-import { documentsApi } from '../../../shared/api/documents.api'
+import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
 import { formatDate } from '../../../shared/utils/format'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 
@@ -200,13 +200,9 @@ interface DocumentAttachmentsSectionProps {
 
 export function DocumentAttachmentsSection({ documentId }: DocumentAttachmentsSectionProps) {
   const queryClient = useQueryClient()
-  const attachmentsKey = ['documents', documentId, 'attachments'] as const
+  const attachmentsKey = documentKeys.attachments(documentId)
 
-  const { data: attachments = [] } = useQuery({
-    queryKey: attachmentsKey,
-    queryFn: () => documentsApi.findAttachments(documentId),
-    enabled: !!documentId,
-  })
+  const { data: attachments = [] } = useQuery(documentQueries.attachments(documentId))
 
   const [showModal, setShowModal] = useState(false)
 
@@ -291,6 +287,7 @@ export function DocumentAttachmentsSection({ documentId }: DocumentAttachmentsSe
                       <button
                         type="button"
                         title="Descargar"
+                        onClick={() => documentsApi.downloadAttachment(documentId, att.id, att.name)}
                         className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                       >
                         <Download size={14} />

@@ -16,11 +16,11 @@ import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils
 import {
   downloadXLSX, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
-import { documentsApi } from '../../../shared/api/documents.api'
-import { policiesApi } from '../../../shared/api/policies.api'
-import { assetsApi } from '../../../shared/api/assets.api'
-import { companiesApi } from '../../../shared/api/companies.api'
-import { costCentersApi } from '../../../shared/api/cost-centers.api'
+import { documentQueries } from '../../../shared/api/documents.api'
+import { policyQueries } from '../../../shared/api/policies.api'
+import { assetQueries } from '../../../shared/api/assets.api'
+import { companyQueries } from '../../../shared/api/companies.api'
+import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import type { Currency, Policy, Asset, Company, CostCenter, Installment, DocumentPolicyAllocation } from '../../../shared/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -209,15 +209,11 @@ export default function FinancialAnalysisPage() {
   // ─── Remote data ─────────────────────────────────────────────────────────────
 
   // Filtra en el backend por el rango seleccionado — evita cargar todos los documentos en memoria
-  const { data: financialDocs = [] } = useQuery({
-    queryKey: ['documents', 'financial', dateFrom, dateTo],
-    queryFn: () => documentsApi.findAllForFinancial({ from: dateFrom, to: dateTo }),
-    staleTime: 2 * 60 * 1000,
-  })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
-  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
-  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
+  const { data: financialDocs = [] } = useQuery(documentQueries.financial({ from: dateFrom, to: dateTo }))
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  const { data: allCompanies = [] } = useQuery(companyQueries.list())
+  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
   // Derivados de la misma fuente — memoizados para que los useMemo downstream se actualicen
   const allDocuments = financialDocs
@@ -366,7 +362,7 @@ export default function FinancialAnalysisPage() {
   const periodLabel = colPeriod === 'semana' ? 'semanal' : colPeriod === 'mes' ? 'mensual' : 'trimestral'
   const groupingLabel = groupingButtons.find((b) => b.value === grouping)?.label ?? grouping
 
-  function handleExportCSV() {
+  async function handleExportCSV() {
     const header = [groupingLabel, ...columns.map((c) => `${c.label} Pag`), ...columns.map((c) => `${c.label} Pen`), 'Total Pag', 'Total Pen']
     const dataRows = rows.map((row) => {
       const totals = getRowTotals(row.id)
@@ -393,7 +389,7 @@ export default function FinancialAnalysisPage() {
     })
     dataRows.push(['TOTAL', ...colTotals, kpis.totalPaid.toFixed(0), kpis.totalPending.toFixed(0)])
 
-    downloadXLSX([header, ...dataRows], `analisis-financiero-${periodLabel}-${dateFrom}-${dateTo}.xlsx`)
+    await downloadXLSX([header, ...dataRows], `analisis-financiero-${periodLabel}-${dateFrom}-${dateTo}.xlsx`)
   }
 
   async function handleExportPDF() {

@@ -1,4 +1,5 @@
 import request from 'supertest'
+import { Prisma } from '@prisma/client'
 import { app } from '../../../app'
 import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpers/auth'
 
@@ -7,12 +8,14 @@ import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpe
 jest.mock('../../../config/database', () => ({
   prisma: {
     asset: {
-      findMany:   jest.fn(),
-      count:      jest.fn(),
-      findUnique: jest.fn(),
-      create:     jest.fn(),
-      update:     jest.fn(),
+      findMany:         jest.fn(),
+      count:            jest.fn(),
+      findUnique:       jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+      create:           jest.fn(),
+      update:           jest.fn(),
     },
+    company: { findMany: jest.fn() },
     costCenter: { findMany: jest.fn() },
     assetAllocation: {
       deleteMany: jest.fn(),
@@ -28,7 +31,12 @@ jest.mock('../../../config/database', () => ({
       create:    jest.fn(),
       delete:    jest.fn(),
     },
+    assetStatusHistory: {
+      findMany: jest.fn(),
+      create:   jest.fn(),
+    },
     $transaction: jest.fn(),
+    $queryRaw:    jest.fn(),
   },
 }))
 
@@ -56,6 +64,13 @@ const fakeCostCenter = {
   id: CC_ID,
   name: 'Producción',
   code: 'PROD',
+  isActive: true,
+}
+
+const fakeCompany = {
+  id: COMPANY_ID,
+  name: 'Empresa Test',
+  cuit: '30-71234567-8',
   isActive: true,
 }
 
@@ -165,17 +180,20 @@ describe('Assets API', () => {
 
   describe('POST /api/v1/assets', () => {
     it('returns 201 when ADMIN creates an asset', async () => {
+      db.company.findMany.mockResolvedValue([fakeCompany])
       db.costCenter.findMany.mockResolvedValue([fakeCostCenter])
-      // create uses a callback-based $transaction(async (tx) => { tx.asset.create, tx.assetAllocation.createMany, tx.asset.findUniqueOrThrow })
+      db.$queryRaw.mockResolvedValue([{ nextval: 1n }])
+      // create uses a callback-based $transaction(async (tx) => { tx.asset.create, tx.assetAllocation.createMany, tx.assetStatusHistory.create })
       db.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
           asset: {
             create: jest.fn().mockResolvedValue(fakeAsset),
-            findUniqueOrThrow: jest.fn().mockResolvedValue(fakeAsset),
           },
           assetAllocation: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+          assetStatusHistory: { create: jest.fn().mockResolvedValue({}) },
         }),
       )
+      db.asset.findUniqueOrThrow.mockResolvedValue(fakeAsset)
 
       const res = await request(app)
         .post('/api/v1/assets')
@@ -187,16 +205,19 @@ describe('Assets API', () => {
     })
 
     it('returns 201 when CONTADOR creates an asset', async () => {
+      db.company.findMany.mockResolvedValue([fakeCompany])
       db.costCenter.findMany.mockResolvedValue([fakeCostCenter])
+      db.$queryRaw.mockResolvedValue([{ nextval: 1n }])
       db.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
           asset: {
             create: jest.fn().mockResolvedValue(fakeAsset),
-            findUniqueOrThrow: jest.fn().mockResolvedValue(fakeAsset),
           },
           assetAllocation: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+          assetStatusHistory: { create: jest.fn().mockResolvedValue({}) },
         }),
       )
+      db.asset.findUniqueOrThrow.mockResolvedValue(fakeAsset)
 
       const res = await request(app)
         .post('/api/v1/assets')
@@ -255,6 +276,7 @@ describe('Assets API', () => {
     })
 
     it('returns 400 when cost center does not exist', async () => {
+      db.company.findMany.mockResolvedValue([fakeCompany])
       db.costCenter.findMany.mockResolvedValue([]) // cost center not found
 
       const res = await request(app)
@@ -307,8 +329,11 @@ describe('Assets API', () => {
 
   describe('DELETE /api/v1/assets/:id', () => {
     it('returns 200 when ADMIN soft-deletes asset', async () => {
-      db.asset.findUnique.mockResolvedValue(fakeAsset)
+      // softDelete() no consulta findUnique — llama directo a
+      // $transaction([asset.update(...), assetStatusHistory.create(...)]).
       db.asset.update.mockResolvedValue({ ...fakeAsset, isActive: false })
+      db.assetStatusHistory.create.mockResolvedValue({})
+      db.$transaction.mockImplementation((arr: unknown[]) => Promise.all(arr))
 
       const res = await request(app)
         .delete(`/api/v1/assets/${ASSET_ID}`)
@@ -327,7 +352,15 @@ describe('Assets API', () => {
     })
 
     it('returns 404 when asset does not exist', async () => {
-      db.asset.findUnique.mockResolvedValue(null)
+      // softDelete() detecta "no existe" vía el P2025 que Prisma tira en
+      // update() sobre un id inexistente, capturado por handleUpdateNotFound.
+      db.asset.update.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Record not found', {
+          code: 'P2025',
+          clientVersion: '5.22.0',
+        }),
+      )
+      db.$transaction.mockImplementation((arr: unknown[]) => Promise.all(arr))
 
       const res = await request(app)
         .delete(`/api/v1/assets/${OTHER_ID}`)
@@ -356,9 +389,8 @@ describe('Assets API', () => {
 
     it('returns 200 when ADMIN replaces allocations correctly', async () => {
       // replaceAllocations calls assertExists (findUnique) then findById (findUnique) at the end
-      db.asset.findUnique
-        .mockResolvedValueOnce(fakeAsset) // assertExists
-        .mockResolvedValueOnce(fakeAsset) // final findById (for response)
+      db.asset.findUnique.mockResolvedValueOnce(fakeAsset) // assertAssetExists
+      db.company.findMany.mockResolvedValue([fakeCompany])
       db.costCenter.findMany.mockResolvedValue([fakeCostCenter])
       // $transaction receives array of Prisma lazy promises — just resolve it
       db.$transaction.mockResolvedValue([])

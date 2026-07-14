@@ -19,8 +19,8 @@ import {
   fireExtinguisherKeys,
   type FireExtinguisherCreateInput,
 } from '../../shared/api/fire-extinguishers.api'
-import { assetsApi } from '../../shared/api/assets.api'
-import { catalogsApi } from '../../shared/api/catalogs.api'
+import { assetQueries } from '../../shared/api/assets.api'
+import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
 
 function todayISO(): string {
@@ -53,31 +53,13 @@ export default function FireExtinguisherNewPage() {
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
 
-  const { data: assets = [] } = useQuery({
-    queryKey: ['assets'],
-    queryFn: assetsApi.findAll,
-  })
+  const { data: assets = [] } = useQuery(assetQueries.list())
 
-  const { data: extTypes = [] } = useQuery({
-    queryKey: ['catalogs', 'fire_ext_type'],
-    queryFn: () => catalogsApi.findByCategory('fire_ext_type'),
-  })
-  const { data: extCapacities = [] } = useQuery({
-    queryKey: ['catalogs', 'fire_ext_capacity'],
-    queryFn: () => catalogsApi.findByCategory('fire_ext_capacity'),
-  })
-  const { data: locationTypes = [] } = useQuery({
-    queryKey: ['catalogs', 'fire_ext_location_type'],
-    queryFn: () => catalogsApi.findByCategory('fire_ext_location_type'),
-  })
-  const { data: establishments = [] } = useQuery({
-    queryKey: ['catalogs', 'fire_ext_establishment'],
-    queryFn: () => catalogsApi.findByCategory('fire_ext_establishment'),
-  })
-  const { data: extBrands = [] } = useQuery({
-    queryKey: ['catalogs', 'fire_ext_brand'],
-    queryFn: () => catalogsApi.findByCategory('fire_ext_brand'),
-  })
+  const { data: extTypes = [] } = useQuery(catalogQueries.byCategory('fire_ext_type'))
+  const { data: extCapacities = [] } = useQuery(catalogQueries.byCategory('fire_ext_capacity'))
+  const { data: locationTypes = [] } = useQuery(catalogQueries.byCategory('fire_ext_location_type'))
+  const { data: establishments = [] } = useQuery(catalogQueries.byCategory('fire_ext_establishment'))
+  const { data: extBrands = [] } = useQuery(catalogQueries.byCategory('fire_ext_brand'))
 
   const [type, setType] = useState('')
   const [capacity, setCapacity] = useState('')

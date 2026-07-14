@@ -16,8 +16,8 @@ import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { TableShell } from '../../shared/components/data-table/TableShell'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
-import { producersApi } from '../../shared/api/producers.api'
-import { policiesApi } from '../../shared/api/policies.api'
+import { producerQueries } from '../../shared/api/producers.api'
+import { policyQueries } from '../../shared/api/policies.api'
 import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { ProducerTask, TableColumn } from '../../shared/types'
@@ -32,15 +32,11 @@ export default function ProducerTasksPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
 
-  const { data: allProducers = [], isError } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
+  const { data: allProducers = [], isError } = useQuery(producerQueries.list())
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
 
   const taskQueries = useQueries({
-    queries: allProducers.map((p) => ({
-      queryKey: ['producers', p.id, 'tasks'],
-      queryFn: () => producersApi.findTasks(p.id),
-      enabled: allProducers.length > 0,
-    })),
+    queries: allProducers.map((p) => ({ ...producerQueries.tasks(p.id), enabled: allProducers.length > 0 })),
   })
 
   const allTasks = taskQueries.flatMap((q, i) =>

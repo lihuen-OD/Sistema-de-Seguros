@@ -44,7 +44,6 @@ export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema
 export const AddPolicyAttachmentSchema = z.object({
   description: z.string().max(500).optional(),
   expirationDate: ISODate.optional().nullable(),
-  notifyEmail: z.string().email('Email inválido').optional().or(z.literal('')),
 })
 
 export type CreatePolicyDTO = z.infer<typeof CreatePolicySchema>

@@ -1,3 +1,4 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import type { Company } from '../types'
 
@@ -65,4 +66,20 @@ export const companiesApi = {
     const res = await apiClient.put<{ data: BackendCompany }>(`/companies/${id}`, body)
     return mapCompany(res.data.data)
   },
+}
+
+// ── Query keys / query options (categoría A — estático, TTL largo) ──────────────
+
+export const companyKeys = {
+  all: ['companies'] as const,
+}
+
+export const companyQueries = {
+  list: () =>
+    queryOptions({
+      queryKey: companyKeys.all,
+      queryFn: () => companiesApi.findAll(),
+      staleTime: 30 * 60 * 1000,
+      gcTime: 24 * 60 * 60 * 1000,
+    }),
 }

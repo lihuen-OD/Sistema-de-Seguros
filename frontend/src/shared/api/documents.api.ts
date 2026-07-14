@@ -1,4 +1,6 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import { triggerBlobDownload } from '../utils/downloadFile'
 import type {
   AccountingDocument,
   PaymentStatus,
@@ -122,6 +124,20 @@ export interface DocumentCreateInput {
   installments?: InstallmentInput[]
 }
 
+export interface SendDocumentEmailInput {
+  to: string[]
+  cc?: string[]
+  bcc?: string[]
+  subject?: string
+  message?: string
+}
+
+export interface SendDocumentEmailResult {
+  sent: boolean
+  status: 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'CANCELLED'
+  to: string[]
+}
+
 export interface DocumentTypesResponse {
   types: DocumentTypeDef[]
   adjustmentReasons: AdjustmentReasonOption[]
@@ -201,14 +217,23 @@ export const documentsApi = {
     return mapDocument(res.data.data)
   },
 
+  async sendEmail(id: string, payload: SendDocumentEmailInput): Promise<SendDocumentEmailResult> {
+    const res = await apiClient.post<{ data: SendDocumentEmailResult }>(`/documents/${id}/send-email`, payload)
+    return res.data.data
+  },
+
   async getAuditLog(id: string): Promise<DocumentAuditLog[]> {
     const res = await apiClient.get<{ data: DocumentAuditLog[] }>(`/documents/${id}/audit-log`)
     return res.data.data
   },
 
-  async checkDocumentNumber(documentNumber: string): Promise<{ exists: boolean }> {
+  async checkDocumentNumber(
+    documentNumber: string,
+    documentType?: string,
+    insuranceCompany?: string,
+  ): Promise<{ exists: boolean }> {
     const res = await apiClient.get<{ data: { exists: boolean } }>('/documents/check-number', {
-      params: { documentNumber },
+      params: { documentNumber, documentType, insuranceCompany },
     })
     return res.data.data
   },
@@ -284,4 +309,94 @@ export const documentsApi = {
   async deleteAttachment(documentId: string, attachmentId: string): Promise<void> {
     await apiClient.delete(`/documents/${documentId}/attachments/${attachmentId}`)
   },
+
+  async downloadAttachment(documentId: string, attachmentId: string, filename: string): Promise<void> {
+    const res = await apiClient.get(`/documents/${documentId}/attachments/${attachmentId}/download`, { responseType: 'blob' })
+    triggerBlobDownload(res.data, filename)
+  },
+}
+
+// ── Query keys / query options ───────────────────────────────────────────────────
+// `financial`, `balance` e `installments` son categoría C (financiero/sensible):
+// staleTime corto + refetchOnWindowFocus true. El resto es categoría B.
+
+type FinancialFilters = { from?: string; to?: string }
+
+export const documentKeys = {
+  all: ['documents'] as const,
+  types: () => [...documentKeys.all, 'types'] as const,
+  detail: (id: string) => [...documentKeys.all, id] as const,
+  balance: (id: string) => [...documentKeys.all, id, 'balance'] as const,
+  allocations: (id: string) => [...documentKeys.all, id, 'allocations'] as const,
+  installments: (id: string) => [...documentKeys.all, id, 'installments'] as const,
+  auditLog: (id: string) => [...documentKeys.all, id, 'audit-log'] as const,
+  attachments: (id: string) => [...documentKeys.all, id, 'attachments'] as const,
+  financial: (filters?: FinancialFilters) =>
+    filters ? ([...documentKeys.all, 'financial', filters.from, filters.to] as const) : ([...documentKeys.all, 'financial'] as const),
+}
+
+export const documentQueries = {
+  list: () =>
+    queryOptions({
+      queryKey: documentKeys.all,
+      queryFn: () => documentsApi.findAll(),
+      staleTime: 60 * 1000,
+    }),
+  types: () =>
+    queryOptions({
+      queryKey: documentKeys.types(),
+      queryFn: () => documentsApi.getTypes(),
+      staleTime: 30 * 60 * 1000,
+    }),
+  detail: (id: string) =>
+    queryOptions({
+      queryKey: documentKeys.detail(id),
+      queryFn: () => documentsApi.findById(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  balance: (id: string) =>
+    queryOptions({
+      queryKey: documentKeys.balance(id),
+      queryFn: () => documentsApi.getBalance(id),
+      staleTime: 15 * 1000,
+      refetchOnWindowFocus: true,
+      enabled: !!id,
+    }),
+  allocations: (id: string) =>
+    queryOptions({
+      queryKey: documentKeys.allocations(id),
+      queryFn: () => documentsApi.findAllocations(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  installments: (id: string) =>
+    queryOptions({
+      queryKey: documentKeys.installments(id),
+      queryFn: () => documentsApi.findInstallments(id),
+      staleTime: 15 * 1000,
+      refetchOnWindowFocus: true,
+      enabled: !!id,
+    }),
+  auditLog: (id: string) =>
+    queryOptions({
+      queryKey: documentKeys.auditLog(id),
+      queryFn: () => documentsApi.getAuditLog(id),
+      staleTime: 60 * 1000,
+      enabled: !!id,
+    }),
+  attachments: (id: string) =>
+    queryOptions({
+      queryKey: documentKeys.attachments(id),
+      queryFn: () => documentsApi.findAttachments(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  financial: (filters?: FinancialFilters) =>
+    queryOptions({
+      queryKey: documentKeys.financial(filters),
+      queryFn: () => documentsApi.findAllForFinancial(filters),
+      staleTime: 15 * 1000,
+      refetchOnWindowFocus: true,
+    }),
 }

@@ -1,3 +1,4 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import type { Producer, ProducerTask, TaskPriority } from '../types'
 
@@ -109,4 +110,35 @@ export const producersApi = {
   async deleteTask(producerId: string, taskId: string): Promise<void> {
     await apiClient.delete(`/producers/${producerId}/tasks/${taskId}`)
   },
+}
+
+// ── Query keys / query options (categoría B — semi-dinámico) ────────────────────
+
+export const producerKeys = {
+  all: ['producers'] as const,
+  detail: (id: string) => [...producerKeys.all, id] as const,
+  tasks: (id: string) => [...producerKeys.all, id, 'tasks'] as const,
+}
+
+export const producerQueries = {
+  list: () =>
+    queryOptions({
+      queryKey: producerKeys.all,
+      queryFn: () => producersApi.findAll(),
+      staleTime: 60 * 1000,
+    }),
+  detail: (id: string) =>
+    queryOptions({
+      queryKey: producerKeys.detail(id),
+      queryFn: () => producersApi.findById(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  tasks: (id: string) =>
+    queryOptions({
+      queryKey: producerKeys.tasks(id),
+      queryFn: () => producersApi.findTasks(id),
+      staleTime: 60 * 1000,
+      enabled: !!id,
+    }),
 }

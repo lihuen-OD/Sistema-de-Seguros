@@ -20,7 +20,6 @@ import { fireExtinguisherAuditsRouter } from './modules/fire-extinguisher-audits
 import { claimsRouter } from './modules/claims/claims.router'
 import { catalogsRouter } from './modules/catalogs/catalogs.router'
 import { dashboardRouter } from './modules/dashboard/dashboard.router'
-import { uploadsRouter } from './modules/uploads/uploads.router'
 import { notificationsRouter } from './modules/notifications/notifications.router'
 
 const app = express()
@@ -111,8 +110,7 @@ app.use('/api/v1/claims', claimsRouter)
 app.use('/api/v1/catalogs', catalogsRouter)
 // Fase 9 — Dashboard y Analytics
 app.use('/api/v1/dashboard', dashboardRouter)
-// Fase 10 — File Storage + Notificaciones
-app.use('/api/v1/uploads', uploadsRouter)
+// Fase 10 — Notificaciones
 app.use('/api/v1/notifications', notificationsRouter)
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────

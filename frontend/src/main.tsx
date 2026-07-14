@@ -1,23 +1,17 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import App from './app/App'
 import { ensureDevToken } from './shared/api/auth'
+import { queryClient } from './shared/queryClient'
 import './index.css'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 2 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-})
+// El auto-login de desarrollo nunca debe poder ejecutarse en un build de
+// producción, aunque el backend quedara mal configurado (sin NODE_ENV=production).
+const bootstrap = import.meta.env.DEV ? ensureDevToken() : Promise.resolve()
 
-ensureDevToken().then(() => {
+bootstrap.then(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>

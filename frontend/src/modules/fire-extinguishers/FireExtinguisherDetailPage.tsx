@@ -29,9 +29,9 @@ import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { Tabs, type TabItem } from '../../shared/components/tabs/Tabs'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { ROUTES } from '../../app/routes'
-import { fireExtinguishersApi, fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
+import { fireExtinguishersApi, fireExtinguisherKeys, fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
-import { assetsApi } from '../../shared/api/assets.api'
+import { assetQueries } from '../../shared/api/assets.api'
 import { LOCATION_TYPES, FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import type { FireExtinguisherHistory } from '../../shared/types'
@@ -128,23 +128,11 @@ export default function FireExtinguisherDetailPage() {
   const [showRechargeModal, setShowRechargeModal] = useState(false)
   const [activeTab, setActiveTab] = useState('resumen')
 
-  const { data: fe, isLoading } = useQuery({
-    queryKey: fireExtinguisherKeys.detail(id!),
-    queryFn: () => fireExtinguishersApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: fe, isLoading } = useQuery(fireExtinguisherQueries.detail(id!))
 
-  const { data: history = [] } = useQuery({
-    queryKey: fireExtinguisherKeys.history(id!),
-    queryFn: () => fireExtinguishersApi.findHistory(id!),
-    enabled: !!id,
-  })
+  const { data: history = [] } = useQuery(fireExtinguisherQueries.history(id!))
 
-  const { data: asset } = useQuery({
-    queryKey: ['assets', fe?.associatedAssetId],
-    queryFn: () => assetsApi.findById(fe!.associatedAssetId!),
-    enabled: !!fe?.associatedAssetId,
-  })
+  const { data: asset } = useQuery(assetQueries.detail(fe?.associatedAssetId ?? ''))
 
   async function handleRecharge(data: RechargeInput) {
     if (!fe) return

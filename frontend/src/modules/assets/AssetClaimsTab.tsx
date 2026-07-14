@@ -5,23 +5,8 @@ import {
 import type { Claim, Policy } from '../../shared/types'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
-import {
-  CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
-  CLAIM_STATUS_DEFAULT_STYLE, CLAIM_STATUS_DEFAULT_ICON,
-} from '../../shared/constants/claim-status'
-
-// ── Status pill ───────────────────────────────────────────────────────────────
-
-function ClaimStatusPill({ status }: { status: string }) {
-  const Icon = CLAIM_STATUS_ICONS[status] ?? CLAIM_STATUS_DEFAULT_ICON
-  const style = CLAIM_STATUS_STYLES[status] ?? CLAIM_STATUS_DEFAULT_STYLE
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${style}`}>
-      <Icon size={10} />
-      {status}
-    </span>
-  )
-}
+import { StatusPill } from '../../shared/components/badges/StatusPill'
+import { CLAIM_STATUS_ICONS, CLAIM_STATUS_DEFAULT_ICON } from '../../shared/constants/claim-status'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -115,7 +100,11 @@ export function AssetClaimsTab({ assetId, policies: _policies, claims }: AssetCl
                     <span className="text-xs text-slate-600">{formatDate(claim.occurrenceDate)}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <ClaimStatusPill status={String(claim.status)} />
+                    <StatusPill
+                      status={String(claim.status)}
+                      icon={CLAIM_STATUS_ICONS[String(claim.status)] ?? CLAIM_STATUS_DEFAULT_ICON}
+                      size="sm"
+                    />
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="text-sm font-semibold text-slate-800">

@@ -1,20 +1,15 @@
 import { useRef, useState, useEffect } from 'react'
-import { Bell, ShieldAlert, CreditCard, Flame, X } from 'lucide-react'
+import { Bell, ShieldAlert, CreditCard, Flame, Paperclip, X, ArrowRight } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { notificationsApi } from '../../api/notifications.api'
+import { notificationQueries } from '../../api/notifications.api'
 
 export function NotificationBell() {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['notifications', 'preview'],
-    queryFn: notificationsApi.getPreview,
-    staleTime: 5 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
-  })
+  const { data, isLoading } = useQuery(notificationQueries.preview())
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -27,7 +22,7 @@ export function NotificationBell() {
   }, [open])
 
   const totalAlerts = data
-    ? data.expiringPolicies + data.expiringExtinguishers + data.overdueInstallments + data.nearInstallments
+    ? data.expiringPolicies + data.expiringExtinguishers + data.overdueInstallments + data.nearInstallments + data.expiringAttachments
     : 0
 
   return (
@@ -126,13 +121,27 @@ export function NotificationBell() {
                   onClick={() => { navigate('/fire-extinguishers'); setOpen(false) }}
                 />
               )}
+              {data.expiringAttachments > 0 && (
+                <AlertRow
+                  icon={Paperclip}
+                  iconColor="text-blue-500"
+                  iconBg="bg-blue-50"
+                  label={`${data.expiringAttachments} documento${data.expiringAttachments !== 1 ? 's' : ''} adjunto${data.expiringAttachments !== 1 ? 's' : ''} por vencer`}
+                  sub="Adjuntos de Activos y Pólizas"
+                  onClick={() => { navigate('/notifications'); setOpen(false) }}
+                />
+              )}
             </div>
           )}
 
           {/* Footer */}
-          <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/80">
-            <p className="text-[10px] text-slate-400 text-center">Actualiza automáticamente cada 5 min</p>
-          </div>
+          <button
+            onClick={() => { navigate('/notifications'); setOpen(false) }}
+            className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 border-t border-slate-100 bg-slate-50/80 hover:bg-slate-100 text-xs font-medium text-slate-600 transition-colors"
+          >
+            Ver todas las notificaciones
+            <ArrowRight size={12} />
+          </button>
         </div>
       )}
     </div>

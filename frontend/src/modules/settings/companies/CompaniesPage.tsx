@@ -15,9 +15,9 @@ import {
   FormSelect,
 } from '../../../shared/components/forms/FormSection'
 import { formatDate } from '../../../shared/utils/format'
-import { companiesApi, type CompanyInput } from '../../../shared/api/companies.api'
-import { assetsApi } from '../../../shared/api/assets.api'
-import { costCentersApi } from '../../../shared/api/cost-centers.api'
+import { companiesApi, companyQueries, companyKeys, type CompanyInput } from '../../../shared/api/companies.api'
+import { assetQueries } from '../../../shared/api/assets.api'
+import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import type { Company, TableColumn } from '../../../shared/types'
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
@@ -155,20 +155,11 @@ export default function CompaniesPage() {
 
   const queryClient = useQueryClient()
 
-  const { data: allCompanies = [], isLoading: isLoadingCompanies } = useQuery({
-    queryKey: ['companies'],
-    queryFn: companiesApi.findAll,
-  })
+  const { data: allCompanies = [], isLoading: isLoadingCompanies } = useQuery(companyQueries.list())
 
-  const { data: allCostCenters = [] } = useQuery({
-    queryKey: ['cost-centers'],
-    queryFn: costCentersApi.findAll,
-  })
+  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
-  const { data: allAssets = [] } = useQuery({
-    queryKey: ['assets'],
-    queryFn: assetsApi.findAll,
-  })
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
 
   const filtered = useMemo(() => {
     if (!search) return allCompanies
@@ -192,7 +183,7 @@ export default function CompaniesPage() {
       await companiesApi.create(input)
     }
     setModalCompany(undefined)
-    queryClient.invalidateQueries({ queryKey: ['companies'] })
+    queryClient.invalidateQueries({ queryKey: companyKeys.all })
   }
 
   const columns: TableColumn<Company>[] = [

@@ -12,8 +12,8 @@ import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
-import { documentsApi } from '../../../../shared/api/documents.api'
-import { catalogsApi } from '../../../../shared/api/catalogs.api'
+import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
+import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import type { AccountingDocument } from '../../../../shared/types'
 
 interface DocumentoNotaCreditoFormProps {
@@ -54,11 +54,11 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
   const [errors, setErrors] = useState<FormErrors>({})
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
-  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit)
+  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'CREDIT_NOTE', form.insuranceCompany)
 
-  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: () => documentsApi.findAll() })
-  const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
-  const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
+  const { data: allDocuments = [] } = useQuery(documentQueries.list())
+  const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
+  const { data: currencies = [] } = useQuery(catalogQueries.byCategory('document_currency'))
 
   // Facturas candidatas: mismo tipo, no anuladas, misma compañía. Se resuelve
   // el saldo de cada una para excluir las que ya no tienen saldo disponible.
@@ -67,8 +67,7 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
   )
   const balanceQueries = useQueries({
     queries: candidateInvoices.map((inv) => ({
-      queryKey: ['documents', inv.id, 'balance'],
-      queryFn: () => documentsApi.getBalance(inv.id),
+      ...documentQueries.balance(inv.id),
       enabled: !!form.insuranceCompany,
     })),
   })
@@ -79,11 +78,7 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
   })
 
   const linkedInvoice = allDocuments.find((d) => d.id === form.linkedDocumentId) ?? null
-  const { data: linkedBalance } = useQuery({
-    queryKey: ['documents', form.linkedDocumentId, 'balance'],
-    queryFn: () => documentsApi.getBalance(form.linkedDocumentId),
-    enabled: !!form.linkedDocumentId,
-  })
+  const { data: linkedBalance } = useQuery(documentQueries.balance(form.linkedDocumentId))
 
   const parsedNet = parseFloat(form.netAmount) || 0
   const parsedVat = parseFloat(form.vatAmount) || 0
@@ -164,7 +159,7 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
       const newDoc = await createMutation.mutateAsync()
       markSaved(newDoc.id)
     }
-    queryClient.invalidateQueries({ queryKey: ['documents'] })
+    queryClient.invalidateQueries({ queryKey: documentKeys.all })
   }
 
   return (

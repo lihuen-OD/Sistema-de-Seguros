@@ -12,10 +12,10 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
-import { producersApi } from '../../shared/api/producers.api'
-import { policiesApi } from '../../shared/api/policies.api'
-import { assetsApi } from '../../shared/api/assets.api'
-import { catalogsApi } from '../../shared/api/catalogs.api'
+import { producersApi, producerQueries, producerKeys } from '../../shared/api/producers.api'
+import { policyQueries } from '../../shared/api/policies.api'
+import { assetQueries } from '../../shared/api/assets.api'
+import { catalogQueries } from '../../shared/api/catalogs.api'
 import { TASK_PRIORITY_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TaskPriority } from '../../shared/types'
@@ -31,13 +31,10 @@ export default function TaskNewPage() {
   const [searchParams] = useSearchParams()
   const prefilledProducerId = searchParams.get('producerId') ?? ''
 
-  const { data: allProducers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
-  const { data: taskTypes = [] } = useQuery({
-    queryKey: ['catalogs', 'task_type'],
-    queryFn: () => catalogsApi.findByCategory('task_type'),
-  })
+  const { data: allProducers = [] } = useQuery(producerQueries.list())
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  const { data: taskTypes = [] } = useQuery(catalogQueries.byCategory('task_type'))
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -83,7 +80,7 @@ export default function TaskNewPage() {
         policyId: policyId || undefined,
         assetId: assetId || undefined,
       })
-      queryClient.invalidateQueries({ queryKey: ['producers'] })
+      queryClient.invalidateQueries({ queryKey: producerKeys.all })
       navigate(ROUTES.TASKS)
     } catch {
       setSubmitting(false)

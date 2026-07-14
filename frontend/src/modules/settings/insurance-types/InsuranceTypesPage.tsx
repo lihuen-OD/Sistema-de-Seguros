@@ -4,15 +4,12 @@ import { Plus, Trash2, ChevronDown, ChevronUp, Tag, Shield } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
-import { insuranceTypesApi } from '../../../shared/api/insurance-types.api'
+import { insuranceTypesApi, insuranceTypeQueries, insuranceTypeKeys } from '../../../shared/api/insurance-types.api'
 
 export default function InsuranceTypesPage() {
   const queryClient = useQueryClient()
 
-  const { data: types = [] } = useQuery({
-    queryKey: ['insurance-types'],
-    queryFn: insuranceTypesApi.findAll,
-  })
+  const { data: types = [] } = useQuery(insuranceTypeQueries.list())
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [newTypeLabel, setNewTypeLabel] = useState('')
@@ -35,7 +32,7 @@ export default function InsuranceTypesPage() {
     }
     try {
       const created = await insuranceTypesApi.create(label)
-      await queryClient.invalidateQueries({ queryKey: ['insurance-types'] })
+      await queryClient.invalidateQueries({ queryKey: insuranceTypeKeys.all })
       setNewTypeLabel('')
       setNewTypeError('')
       setExpandedId(created.id)
@@ -47,7 +44,7 @@ export default function InsuranceTypesPage() {
   const removeType = async (id: string) => {
     try {
       await insuranceTypesApi.remove(id)
-      await queryClient.invalidateQueries({ queryKey: ['insurance-types'] })
+      await queryClient.invalidateQueries({ queryKey: insuranceTypeKeys.all })
       if (expandedId === id) setExpandedId(null)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error al eliminar el tipo')
@@ -59,7 +56,7 @@ export default function InsuranceTypesPage() {
     if (!label) return
     try {
       await insuranceTypesApi.addCoverage(typeId, label)
-      await queryClient.invalidateQueries({ queryKey: ['insurance-types'] })
+      await queryClient.invalidateQueries({ queryKey: insuranceTypeKeys.all })
       setNewCoverage((prev) => ({ ...prev, [typeId]: '' }))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error al agregar cobertura')
@@ -69,7 +66,7 @@ export default function InsuranceTypesPage() {
   const removeCoverage = async (typeId: string, coverage: string) => {
     try {
       await insuranceTypesApi.removeCoverage(typeId, coverage)
-      await queryClient.invalidateQueries({ queryKey: ['insurance-types'] })
+      await queryClient.invalidateQueries({ queryKey: insuranceTypeKeys.all })
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error al eliminar cobertura')
     }

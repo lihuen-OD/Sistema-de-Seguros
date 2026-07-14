@@ -13,8 +13,8 @@ import { DataTable } from '../../shared/components/data-table/DataTable'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
-import { producersApi } from '../../shared/api/producers.api'
-import { policiesApi } from '../../shared/api/policies.api'
+import { producerQueries } from '../../shared/api/producers.api'
+import { policyQueries } from '../../shared/api/policies.api'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
@@ -24,23 +24,11 @@ export default function ProducerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const { data: producer, isLoading: producerLoading } = useQuery({
-    queryKey: ['producers', id],
-    queryFn: () => producersApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: producer, isLoading: producerLoading } = useQuery(producerQueries.detail(id!))
 
-  const { data: allPolicies = [] } = useQuery({
-    queryKey: ['policies'],
-    queryFn: () => policiesApi.findAll(),
-    enabled: !!producer,
-  })
+  const { data: allPolicies = [] } = useQuery({ ...policyQueries.list(), enabled: !!producer })
 
-  const { data: tasks = [] } = useQuery({
-    queryKey: ['producers', id, 'tasks'],
-    queryFn: () => producersApi.findTasks(id!),
-    enabled: !!id,
-  })
+  const { data: tasks = [] } = useQuery(producerQueries.tasks(id!))
 
   if (producerLoading) {
     return (

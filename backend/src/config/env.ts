@@ -13,15 +13,22 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z
+  EMAIL_PROVIDER: z.string().optional().default('resend'),
+  EMAIL_ENABLED: z
     .string()
     .optional()
-    .transform((v) => (v ? parseInt(v, 10) : 587)),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().optional().default('notificaciones@losodwyer.com'),
-  NOTIFICATION_TO: z.string().optional(),
+    .default('false')
+    .transform((v) => v === 'true'),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM_DEFAULT: z.string().optional().default('Sistema Seguros <notificaciones@losodwyer.com>'),
+  EMAIL_FROM_NOTIFICATIONS: z.string().optional().default('Sistema Seguros <notificaciones@losodwyer.com>'),
+  EMAIL_FROM_MANUAL: z.string().optional().default('Sistema Seguros <seguros@losodwyer.com>'),
+  EMAIL_FORCE_TO: z.string().optional(),
+  EMAIL_LOG_BODY: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true'),
 })
 
 const parsed = envSchema.safeParse(process.env)

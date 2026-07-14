@@ -7,7 +7,7 @@ import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpe
 jest.mock('../../../config/database', () => ({
   prisma: {
     fireExtinguisher: {
-      findUnique: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
     },
     fireExtinguisherHistory: {
@@ -52,7 +52,7 @@ describe('POST /api/v1/fire-extinguishers/bulk-recharge', () => {
   })
 
   it('recharges all units atomically, writing one history entry per unit', async () => {
-    db.fireExtinguisher.findUnique.mockImplementation((args: any) => Promise.resolve(fakeFireExt(args.where.id)))
+    db.fireExtinguisher.findMany.mockResolvedValue([ID_1, ID_2, ID_3].map(fakeFireExt))
 
     const res = await request(app)
       .post('/api/v1/fire-extinguishers/bulk-recharge')
@@ -72,9 +72,8 @@ describe('POST /api/v1/fire-extinguishers/bulk-recharge', () => {
   })
 
   it('rolls back entirely (404) when one id in the batch does not exist, without recharging units after it', async () => {
-    db.fireExtinguisher.findUnique.mockImplementation((args: any) =>
-      Promise.resolve(args.where.id === ID_2 ? null : fakeFireExt(args.where.id)),
-    )
+    // ID_2 no viene en el resultado de findMany — simula que no existe.
+    db.fireExtinguisher.findMany.mockResolvedValue([ID_1, ID_3].map(fakeFireExt))
 
     const res = await request(app)
       .post('/api/v1/fire-extinguishers/bulk-recharge')
@@ -89,7 +88,7 @@ describe('POST /api/v1/fire-extinguishers/bulk-recharge', () => {
   })
 
   it('returns 404 when the missing id is the only one in the batch', async () => {
-    db.fireExtinguisher.findUnique.mockResolvedValue(null)
+    db.fireExtinguisher.findMany.mockResolvedValue([])
 
     const res = await request(app)
       .post('/api/v1/fire-extinguishers/bulk-recharge')
@@ -128,7 +127,7 @@ describe('POST /api/v1/fire-extinguishers/bulk-recharge', () => {
   })
 
   it('returns 200 for CONTADOR', async () => {
-    db.fireExtinguisher.findUnique.mockImplementation((args: any) => Promise.resolve(fakeFireExt(args.where.id)))
+    db.fireExtinguisher.findMany.mockResolvedValue([ID_1, ID_2, ID_3].map(fakeFireExt))
 
     const res = await request(app)
       .post('/api/v1/fire-extinguishers/bulk-recharge')

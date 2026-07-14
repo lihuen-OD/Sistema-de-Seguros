@@ -7,8 +7,8 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatDate } from '../../shared/utils/format'
 import { downloadAsPdf } from '../../shared/utils/downloadAsPdf'
-import { fireExtinguishersApi, fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
-import { assetsApi } from '../../shared/api/assets.api'
+import { fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
+import { assetQueries } from '../../shared/api/assets.api'
 import { FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 
 const EMISSION_DATE = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -27,9 +27,9 @@ export default function FireExtinguisherFichaPage() {
   const fichaRef = useRef<HTMLDivElement>(null)
   const [downloading, setDownloading] = useState(false)
 
-  const { data: fe } = useQuery({ queryKey: fireExtinguisherKeys.detail(id!), queryFn: () => fireExtinguishersApi.findById(id!) })
-  const { data: history = [] } = useQuery({ queryKey: fireExtinguisherKeys.history(id!), queryFn: () => fireExtinguishersApi.findHistory(id!) })
-  const { data: assets = [] } = useQuery({ queryKey: ['assets'], queryFn: () => assetsApi.findAll() })
+  const { data: fe } = useQuery(fireExtinguisherQueries.detail(id!))
+  const { data: history = [] } = useQuery(fireExtinguisherQueries.history(id!))
+  const { data: assets = [] } = useQuery(assetQueries.list())
 
   if (!fe) {
     return (

@@ -3,9 +3,13 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { AppShell } from '../shared/components/layout/AppShell'
 import { LoadingState } from '../shared/components/empty-states/LoadingState'
+import { ErrorBoundary } from '../shared/components/error-boundary/ErrorBoundary'
 
 // Dashboard
 const DashboardPage = lazy(() => import('../modules/dashboard/DashboardPage'))
+
+// Notifications
+const NotificationsPage = lazy(() => import('../modules/notifications/NotificationsPage'))
 
 // Assets
 const AssetsPage = lazy(() => import('../modules/assets/AssetsPage'))
@@ -85,6 +89,7 @@ export default function App() {
   return (
     <AppShell>
       <Toaster position="top-right" richColors closeButton duration={4000} />
+      <ErrorBoundary>
       <Suspense fallback={<PageFallback />}>
         <Routes>
           {/* Root */}
@@ -92,6 +97,9 @@ export default function App() {
 
           {/* Dashboard */}
           <Route path="/dashboard" element={<DashboardPage />} />
+
+          {/* Notifications */}
+          <Route path="/notifications" element={<NotificationsPage />} />
 
           {/* Assets */}
           <Route path="/assets" element={<AssetsPage />} />
@@ -163,6 +171,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Suspense>
+      </ErrorBoundary>
     </AppShell>
   )
 }

@@ -1,3 +1,4 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import type { CostCenter } from '../types'
 
@@ -56,4 +57,20 @@ export const costCentersApi = {
     const res = await apiClient.put<{ data: BackendCostCenter }>(`/cost-centers/${id}`, body)
     return mapCostCenter(res.data.data)
   },
+}
+
+// ── Query keys / query options (categoría A — estático, TTL largo) ──────────────
+
+export const costCenterKeys = {
+  all: ['cost-centers'] as const,
+}
+
+export const costCenterQueries = {
+  list: () =>
+    queryOptions({
+      queryKey: costCenterKeys.all,
+      queryFn: () => costCentersApi.findAll(),
+      staleTime: 30 * 60 * 1000,
+      gcTime: 24 * 60 * 60 * 1000,
+    }),
 }

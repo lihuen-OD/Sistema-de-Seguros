@@ -1,3 +1,4 @@
+import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import type { FireExtinguisher, FireExtinguisherHistory, FireExtinguisherHistoryChange, AssociatedLocationType, FireExtStatus } from '../types'
 
@@ -129,6 +130,39 @@ export const fireExtinguishersApi = {
     const res = await apiClient.get<{ data: FireExtinguisherDashboardSummary }>('/fire-extinguishers/dashboard/summary')
     return res.data.data
   },
+}
+
+// ── Query options — categoría B (listado/detalle/historial), categoría D (dashboard) ──
+
+export const fireExtinguisherQueries = {
+  list: (filters?: { assetId?: string }) =>
+    queryOptions({
+      queryKey: fireExtinguisherKeys.list(filters),
+      queryFn: () => fireExtinguishersApi.findAll(filters),
+      staleTime: 60 * 1000,
+    }),
+  detail: (id: string) =>
+    queryOptions({
+      queryKey: fireExtinguisherKeys.detail(id),
+      queryFn: () => fireExtinguishersApi.findById(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  history: (id: string) =>
+    queryOptions({
+      queryKey: fireExtinguisherKeys.history(id),
+      queryFn: () => fireExtinguishersApi.findHistory(id),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  dashboardSummary: () =>
+    queryOptions({
+      queryKey: [...fireExtinguisherKeys.all, 'dashboard-summary'] as const,
+      queryFn: () => fireExtinguishersApi.getDashboardSummary(),
+      staleTime: 30 * 1000,
+      gcTime: 5 * 60 * 1000,
+      refetchOnMount: 'always' as const,
+    }),
 }
 
 // ── Dashboard propio del módulo (Fase 5) ────────────────────────────────────────

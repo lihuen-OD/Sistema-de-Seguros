@@ -7,11 +7,12 @@ import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpe
 jest.mock('../../../config/database', () => ({
   prisma: {
     claim: {
-      findMany: jest.fn(),
-      count: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
+      findMany:          jest.fn(),
+      count:             jest.fn(),
+      findUnique:        jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+      create:            jest.fn(),
+      update:            jest.fn(),
     },
     asset:  { findFirst: jest.fn() },
     policy: { findFirst: jest.fn() },
@@ -29,12 +30,24 @@ jest.mock('../../../config/database', () => ({
       delete:    jest.fn(),
     },
     $queryRaw: jest.fn(),
-    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+    // claims.service.ts::update() envuelve el update + el ClaimEvent
+    // automático (estado/monto) en $transaction(async (tx) => ...). Acá el
+    // mock de tx es el mismo objeto `db` que ya usan el resto de los tests —
+    // así los mocks configurados por test siguen aplicando sin importar si
+    // el código real llama a `prisma.X` o `tx.X`. También soporta la forma
+    // en array que ya usa addExpense().
+    $transaction: jest.fn(),
   },
 }))
 
 import { prisma } from '../../../config/database'
 const db = prisma as any
+
+beforeEach(() => {
+  db.$transaction.mockImplementation((arg: unknown) =>
+    typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(db) : Promise.all(arg as unknown[]),
+  )
+})
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -228,11 +241,13 @@ describe('Claims API', () => {
       expect(res.body.error.details).toBeDefined()
     })
 
-    it('returns 422 when claimType is invalid', async () => {
+    it('returns 422 when claimType is empty', async () => {
+      // claimType es un string libre (sin lista cerrada de valores documentada
+      // para el negocio), validado por longitud — no por un enum.
       const res = await request(app)
         .post('/api/v1/claims')
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ ...validClaimBody, claimType: 'tipo_invalido' })
+        .send({ ...validClaimBody, claimType: '' })
 
       expect(res.status).toBe(422)
     })
@@ -323,8 +338,11 @@ describe('Claims API', () => {
 
   describe('PUT /api/v1/claims/:id', () => {
     it('returns 200 when ADMIN updates status', async () => {
-      db.claim.findUnique.mockResolvedValue(fakeClaim) // assertExists
-      db.claim.update.mockResolvedValue({ ...fakeClaim, status: 'en_tramite', events: [] })
+      // update() ahora hace: findUnique (estado previo) -> tx.update -> tx
+      // auto-log de ClaimEvent si cambió el estado -> tx.findUniqueOrThrow
+      // (para devolver el claim con el evento recién creado incluido).
+      db.claim.findUnique.mockResolvedValue(fakeClaim)
+      db.claim.findUniqueOrThrow.mockResolvedValue({ ...fakeClaim, status: 'en_tramite' })
 
       const res = await request(app)
         .put('/api/v1/claims/claim-uuid-1')
@@ -333,6 +351,13 @@ describe('Claims API', () => {
 
       expect(res.status).toBe(200)
       expect(res.body.data.status).toBe('en_tramite')
+      expect(db.claimEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          type: 'estado_cambiado',
+          previousStatus: 'denunciado',
+          newStatus: 'en_tramite',
+        }),
+      })
     })
 
     it('returns 403 when VIEWER tries to update', async () => {

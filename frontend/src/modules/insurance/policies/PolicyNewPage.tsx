@@ -19,13 +19,13 @@ import {
   ExpirationCell,
 } from '../../../shared/components/file-upload/AttachmentListEditor'
 import { AssetSelector } from '../../../shared/components/forms/AssetSelector'
-import { policiesApi } from '../../../shared/api/policies.api'
-import { companiesApi } from '../../../shared/api/companies.api'
-import { costCentersApi } from '../../../shared/api/cost-centers.api'
-import { producersApi } from '../../../shared/api/producers.api'
-import { assetsApi } from '../../../shared/api/assets.api'
-import { insuranceTypesApi } from '../../../shared/api/insurance-types.api'
-import { catalogsApi } from '../../../shared/api/catalogs.api'
+import { policiesApi, policyKeys } from '../../../shared/api/policies.api'
+import { companyQueries } from '../../../shared/api/companies.api'
+import { costCenterQueries } from '../../../shared/api/cost-centers.api'
+import { producerQueries } from '../../../shared/api/producers.api'
+import { assetQueries } from '../../../shared/api/assets.api'
+import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
+import { catalogQueries } from '../../../shared/api/catalogs.api'
 import type { PolicyAttachment } from '../../../shared/types'
 
 type AssociationType = 'activo' | 'sin_activo'
@@ -184,35 +184,17 @@ export default function PolicyNewPage() {
   const [attachmentDrafts, setAttachmentDrafts] = useState<PolicyAttachmentDraft[]>([])
   const [showAttachModal, setShowAttachModal] = useState(false)
 
-  const { data: producers = [] } = useQuery({
-    queryKey: ['producers'],
-    queryFn: () => producersApi.findAll(),
-  })
+  const { data: producers = [] } = useQuery(producerQueries.list())
 
-  const { data: allAssets = [] } = useQuery({
-    queryKey: ['assets'],
-    queryFn: () => assetsApi.findAll(),
-  })
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
 
-  const { data: companies = [] } = useQuery({
-    queryKey: ['companies'],
-    queryFn: () => companiesApi.findAll(),
-  })
+  const { data: companies = [] } = useQuery(companyQueries.list())
 
-  const { data: costCenters = [] } = useQuery({
-    queryKey: ['cost-centers'],
-    queryFn: () => costCentersApi.findAll(),
-  })
+  const { data: costCenters = [] } = useQuery(costCenterQueries.list())
 
-  const { data: insuranceTypes = [] } = useQuery({
-    queryKey: ['insurance-types'],
-    queryFn: () => insuranceTypesApi.findAll(),
-  })
+  const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
 
-  const { data: insuranceCompanies = [] } = useQuery({
-    queryKey: ['catalogs', 'insurance_company'],
-    queryFn: () => catalogsApi.findByCategory('insurance_company'),
-  })
+  const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
 
   const createMutation = useMutation({
     mutationFn: (input: Parameters<typeof policiesApi.create>[0]) => policiesApi.create(input),
@@ -331,11 +313,10 @@ export default function PolicyNewPage() {
         await policiesApi.addAttachment(newPolicy.id, att.pendingFile!, {
           description: att.description || undefined,
           expirationDate: att.expirationDate ?? undefined,
-          notifyEmail: att.notifyEmail ?? undefined,
         })
       }
 
-      queryClient.invalidateQueries({ queryKey: ['policies'] })
+      queryClient.invalidateQueries({ queryKey: policyKeys.all })
       toast.success('Póliza creada correctamente')
       navigate(`/insurance/policies/${newPolicy.id}`)
     } catch {
@@ -647,7 +628,6 @@ export default function PolicyNewPage() {
                   fileType: partial.fileType,
                   fileSize: partial.fileSize,
                   expirationDate: partial.expirationDate,
-                  notifyEmail: partial.notifyEmail,
                   uploadedAt: partial.uploadedAt,
                   uploadedBy: partial.uploadedBy,
                   pendingFile: partial.pendingFile,

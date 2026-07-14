@@ -16,11 +16,11 @@ import { getDocumentEconomicEffect } from '../../../shared/utils/documentEconomi
 import {
   downloadXLSX, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
-import { documentsApi } from '../../../shared/api/documents.api'
-import { policiesApi } from '../../../shared/api/policies.api'
-import { assetsApi } from '../../../shared/api/assets.api'
-import { companiesApi } from '../../../shared/api/companies.api'
-import { costCentersApi } from '../../../shared/api/cost-centers.api'
+import { documentQueries } from '../../../shared/api/documents.api'
+import { policyQueries } from '../../../shared/api/policies.api'
+import { assetQueries } from '../../../shared/api/assets.api'
+import { companyQueries } from '../../../shared/api/companies.api'
+import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import type { Currency, Policy, Asset, Company, CostCenter, AccountingDocument, DocumentPolicyAllocation } from '../../../shared/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -241,14 +241,11 @@ export default function EconomicAnalysisPage() {
   // ─── Remote data ─────────────────────────────────────────────────────────────
 
   // Una sola request que devuelve documentos + installments + allocations embebidos
-  const { data: financialDocs = [] } = useQuery({
-    queryKey: ['documents', 'financial'],
-    queryFn: () => documentsApi.findAllForFinancial(),
-  })
-  const { data: allPolicies = [] } = useQuery({ queryKey: ['policies'], queryFn: () => policiesApi.findAll() })
-  const { data: allAssets = [] } = useQuery({ queryKey: ['assets'], queryFn: assetsApi.findAll })
-  const { data: allCompanies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
-  const { data: allCostCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
+  const { data: financialDocs = [] } = useQuery(documentQueries.financial())
+  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  const { data: allCompanies = [] } = useQuery(companyQueries.list())
+  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
   // Derivados memoizados para que los useMemo downstream reaccionen correctamente
   const allDocuments = financialDocs
@@ -425,7 +422,7 @@ export default function EconomicAnalysisPage() {
   const periodLabel = colPeriod === 'semana' ? 'semanal' : colPeriod === 'mes' ? 'mensual' : colPeriod === 'trimestre' ? 'trimestral' : 'anual'
   const groupingLabel = groupingButtons.find((b) => b.value === grouping)?.label ?? grouping
 
-  function handleExportCSV() {
+  async function handleExportCSV() {
     const header = [groupingLabel, ...columns.map((c) => c.label), 'Total']
     const dataRows = rows.map((row) => [
       row.label,
@@ -440,7 +437,7 @@ export default function EconomicAnalysisPage() {
       ...columns.map((c) => getColumnTotal(c.key).toFixed(0)),
       columns.reduce((s, c) => s + getColumnTotal(c.key), 0).toFixed(0),
     ]
-    downloadXLSX(
+    await downloadXLSX(
       [header, ...dataRows, totalRow],
       `analisis-economico-${periodLabel}-${dateFrom}-${dateTo}.xlsx`,
     )

@@ -1,6 +1,3 @@
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
-
 /**
  * Captures a DOM element as a high-res canvas and downloads it as a PDF.
  * No print dialog — direct browser download.
@@ -10,6 +7,13 @@ export async function downloadAsPdf(
   filename: string,
   orientation: 'p' | 'l' = 'p',
 ): Promise<void> {
+  // html2canvas + jspdf se cargan recién acá, no en el chunk inicial de cada
+  // *FichaPage.tsx (solo hace falta si el usuario efectivamente descarga el PDF).
+  const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ])
+
   const canvas = await html2canvas(element, {
     scale: 2,
     useCORS: true,

@@ -64,6 +64,12 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   media:                   { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
   alta:                    { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   pendiente_documentacion: { bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200' },
+  // Claims (Siniestros) — claves en español porque son el propio texto a mostrar
+  'Denunciado':            { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+  'En trámite':            { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
+  'Liquidado':             { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  'Rechazado':             { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
+  'Cerrado':               { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
 }
 
 const allLabels = {
@@ -81,20 +87,22 @@ interface StatusPillProps {
   status: StatusType
   label?: string
   size?: 'sm' | 'md'
+  icon?: React.ElementType
 }
 
-export function StatusPill({ status, label, size = 'md' }: StatusPillProps) {
+export function StatusPill({ status, label, size = 'md', icon: Icon }: StatusPillProps) {
   const cfg = statusConfig[status] ?? { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200' }
   const displayLabel = label ?? allLabels[status] ?? status
 
   return (
     <span
       className={clsx(
-        'inline-flex items-center font-medium rounded-full border whitespace-nowrap',
+        'inline-flex items-center gap-1 font-medium rounded-full border whitespace-nowrap',
         cfg.bg, cfg.text, cfg.border,
         size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-xs px-2.5 py-1',
       )}
     >
+      {Icon && <Icon size={size === 'sm' ? 10 : 12} />}
       {displayLabel}
     </span>
   )

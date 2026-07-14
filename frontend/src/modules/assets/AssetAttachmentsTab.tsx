@@ -3,25 +3,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, FileText, FileSpreadsheet, Image as ImageIcon, File as FileIcon,
   X, AlertTriangle, CheckCircle2, Clock, Upload, Calendar, Paperclip, Download,
-  Mail, Bell, Send, Loader2,
+  Loader2,
 } from 'lucide-react'
 import type { AssetAttachment } from '../../shared/types'
-import { assetsApi } from '../../shared/api/assets.api'
+import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
 import { formatDate } from '../../shared/utils/format'
+import { getExpirationStatus } from '../../shared/utils/expiration'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getExpirationStatus(date: string | null): 'vencido' | 'proximo_vencer' | 'vigente' | null {
-  if (!date) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const exp = new Date(date + 'T00:00:00')
-  const diffDays = Math.floor((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  if (diffDays < 0) return 'vencido'
-  if (diffDays <= 30) return 'proximo_vencer'
-  return 'vigente'
-}
 
 function detectFileType(filename: string): AssetAttachment['fileType'] {
   const ext = filename.split('.').pop()?.toLowerCase() ?? ''
@@ -72,30 +62,6 @@ function ExpirationCell({ date }: { date: string | null }) {
   )
 }
 
-function NotificationBadge({
-  email,
-  expirationStatus,
-}: {
-  email: string
-  expirationStatus: ReturnType<typeof getExpirationStatus>
-}) {
-  const isAlert = expirationStatus === 'vencido' || expirationStatus === 'proximo_vencer'
-
-  return (
-    <div className={`mt-1.5 flex items-center gap-1.5 px-2 py-1 rounded-lg w-fit text-[11px] font-medium border ${
-      isAlert
-        ? 'bg-amber-50 border-amber-200 text-amber-700'
-        : 'bg-slate-50 border-slate-200 text-slate-500'
-    }`}>
-      {isAlert ? <Send size={10} /> : <Mail size={10} />}
-      <span className="truncate max-w-[160px]">{email}</span>
-      {isAlert && (
-        <span className="flex-shrink-0 font-semibold text-amber-700">· Notif. enviada</span>
-      )}
-    </div>
-  )
-}
-
 // ── Add Attachment Modal ───────────────────────────────────────────────────────
 
 interface AddModalProps {
@@ -131,8 +97,6 @@ function AddAttachmentModal({ assetId, onClose, onSuccess }: AddModalProps) {
   const [description, setDescription] = useState('')
   const [hasExpiration, setHasExpiration] = useState(false)
   const [expirationDate, setExpirationDate] = useState('')
-  const [hasNotification, setHasNotification] = useState(false)
-  const [notifyEmail, setNotifyEmail] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -158,10 +122,6 @@ function AddAttachmentModal({ assetId, onClose, onSuccess }: AddModalProps) {
       e.file = 'Las imágenes van en "Fotografías", no en Adjuntos. Subila desde la galería de fotos del activo.'
     }
     if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
-    if (hasNotification && !notifyEmail.trim()) e.email = 'Ingresá el email para la notificación.'
-    if (hasNotification && notifyEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notifyEmail.trim())) {
-      e.email = 'El formato del email no es válido.'
-    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -175,7 +135,6 @@ function AddAttachmentModal({ assetId, onClose, onSuccess }: AddModalProps) {
         file: selectedFile,
         description: description.trim() || undefined,
         expirationDate: hasExpiration ? expirationDate : undefined,
-        notifyEmail: hasNotification && hasExpiration ? notifyEmail.trim() : undefined,
       })
       onSuccess()
       onClose()
@@ -273,7 +232,7 @@ function AddAttachmentModal({ assetId, onClose, onSuccess }: AddModalProps) {
                 onToggle={() => {
                   const next = !hasExpiration
                   setHasExpiration(next)
-                  if (!next) { setExpirationDate(''); setHasNotification(false); setNotifyEmail('') }
+                  if (!next) setExpirationDate('')
                 }}
               />
               <div className="flex-1 min-w-0">
@@ -283,71 +242,22 @@ function AddAttachmentModal({ assetId, onClose, onSuccess }: AddModalProps) {
             </div>
 
             {hasExpiration && (
-              <>
-                {/* Campo fecha */}
-                <div className="px-4 pb-4 bg-slate-50/50">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    <Calendar size={11} className="inline mr-1 align-[-1px]" />
-                    Fecha de vencimiento <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={expirationDate}
-                    onChange={(e) => setExpirationDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
-                  />
-                  {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
-                </div>
-
-                {/* Divisor */}
-                <div className="border-t border-slate-200" />
-
-                {/* Fila notificación email */}
-                <div className="flex items-start gap-3 p-4">
-                  <Checkbox
-                    checked={hasNotification}
-                    onToggle={() => {
-                      setHasNotification((v) => !v)
-                      if (hasNotification) setNotifyEmail('')
-                    }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-slate-800">Notificar por email al vencer</p>
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
-                        Simulado
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Se enviará un aviso al email indicado 30 días antes del vencimiento y el día que venza
-                    </p>
-                  </div>
-                </div>
-
-                {/* Campo email */}
-                {hasNotification && (
-                  <div className="px-4 pb-4">
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      <Mail size={11} className="inline mr-1 align-[-1px]" />
-                      Email destinatario <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      value={notifyEmail}
-                      onChange={(e) => setNotifyEmail(e.target.value)}
-                      placeholder="Ej: proveedor@empresa.com"
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
-                    />
-                    {errors.email && <p className="text-xs text-red-600 mt-1.5">{errors.email}</p>}
-                    {notifyEmail && !errors.email && (
-                      <p className="text-xs text-slate-400 mt-1.5 flex items-center gap-1">
-                        <Bell size={10} />
-                        Se notificará a <span className="font-medium text-slate-600 ml-0.5">{notifyEmail}</span> cuando el documento esté por vencer
-                      </p>
-                    )}
-                  </div>
-                )}
-              </>
+              <div className="px-4 pb-4 bg-slate-50/50">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  <Calendar size={11} className="inline mr-1 align-[-1px]" />
+                  Fecha de vencimiento <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={expirationDate}
+                  onChange={(e) => setExpirationDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+                />
+                {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
+                <p className="text-xs text-slate-400 mt-2">
+                  Va a aparecer en el centro de Notificaciones cuando esté por vencer.
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -393,13 +303,9 @@ interface AssetAttachmentsTabProps {
 
 export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
   const queryClient = useQueryClient()
-  const attachmentsKey = ['assets', assetId, 'attachments'] as const
+  const attachmentsKey = assetKeys.attachments(assetId)
 
-  const { data: allAttachments = [] } = useQuery({
-    queryKey: attachmentsKey,
-    queryFn: () => assetsApi.findAttachments(assetId),
-    enabled: !!assetId,
-  })
+  const { data: allAttachments = [] } = useQuery(assetQueries.attachments(assetId))
 
   // Las fotos (fileType === 'image') tienen su propia galería en la ficha del
   // activo — acá solo van documentos (PDF, Excel, etc.), para no duplicarlas
@@ -490,15 +396,9 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
                     </div>
                   </td>
 
-                  {/* Vencimiento + notificación */}
+                  {/* Vencimiento */}
                   <td className="px-4 py-3">
                     <ExpirationCell date={att.expirationDate} />
-                    {att.notifyEmail && (
-                      <NotificationBadge
-                        email={att.notifyEmail}
-                        expirationStatus={att.expirationDate ? getExpirationStatus(att.expirationDate) : null}
-                      />
-                    )}
                   </td>
 
                   {/* Subido */}
@@ -512,6 +412,7 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                       <button
                         title="Descargar"
+                        onClick={() => assetsApi.downloadAttachment(assetId, att.id, att.name)}
                         className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                       >
                         <Download size={14} />

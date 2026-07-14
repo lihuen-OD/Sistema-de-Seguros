@@ -472,9 +472,15 @@ export const fireExtinguishersService = {
   // llamados HTTP independientes que usaba el frontend antes de esta fase).
   async bulkRecharge(ids: string[], data: RechargeDTO) {
     const updated = await prisma.$transaction(async (tx) => {
+      // Un solo findMany en vez de N findUnique secuenciales — mismo
+      // resultado (cada matafuego necesita su previousExpirationDate antes
+      // de escribir), menos round-trips dentro de la transacción.
+      const existing = await tx.fireExtinguisher.findMany({ where: { id: { in: ids } } })
+      const existingById = new Map(existing.map((fe) => [fe.id, fe]))
+
       const results = []
       for (const id of ids) {
-        const fe = await tx.fireExtinguisher.findUnique({ where: { id } })
+        const fe = existingById.get(id)
         if (!fe) throw new AppError(404, `Matafuego ${id} no encontrado`, 'NOT_FOUND')
 
         const fe2 = await tx.fireExtinguisher.update({

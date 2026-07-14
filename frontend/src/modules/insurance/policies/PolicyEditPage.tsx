@@ -16,13 +16,13 @@ import {
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
 import { AssetSelector } from '../../../shared/components/forms/AssetSelector'
-import { policiesApi } from '../../../shared/api/policies.api'
-import { companiesApi } from '../../../shared/api/companies.api'
-import { costCentersApi } from '../../../shared/api/cost-centers.api'
-import { producersApi } from '../../../shared/api/producers.api'
-import { assetsApi } from '../../../shared/api/assets.api'
-import { insuranceTypesApi } from '../../../shared/api/insurance-types.api'
-import { catalogsApi } from '../../../shared/api/catalogs.api'
+import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
+import { companyQueries } from '../../../shared/api/companies.api'
+import { costCenterQueries } from '../../../shared/api/cost-centers.api'
+import { producerQueries } from '../../../shared/api/producers.api'
+import { assetQueries } from '../../../shared/api/assets.api'
+import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
+import { catalogQueries } from '../../../shared/api/catalogs.api'
 import type { Policy } from '../../../shared/types'
 import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
 
@@ -178,41 +178,19 @@ export default function PolicyEditPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: policy, isLoading: loadingPolicy } = useQuery({
-    queryKey: ['policy', id],
-    queryFn: () => policiesApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: policy, isLoading: loadingPolicy } = useQuery(policyQueries.detail(id!))
 
-  const { data: producers = [] } = useQuery({
-    queryKey: ['producers'],
-    queryFn: () => producersApi.findAll(),
-  })
+  const { data: producers = [] } = useQuery(producerQueries.list())
 
-  const { data: allAssets = [] } = useQuery({
-    queryKey: ['assets'],
-    queryFn: () => assetsApi.findAll(),
-  })
+  const { data: allAssets = [] } = useQuery(assetQueries.list())
 
-  const { data: companies = [] } = useQuery({
-    queryKey: ['companies'],
-    queryFn: () => companiesApi.findAll(),
-  })
+  const { data: companies = [] } = useQuery(companyQueries.list())
 
-  const { data: costCenters = [] } = useQuery({
-    queryKey: ['cost-centers'],
-    queryFn: () => costCentersApi.findAll(),
-  })
+  const { data: costCenters = [] } = useQuery(costCenterQueries.list())
 
-  const { data: insuranceTypes = [] } = useQuery({
-    queryKey: ['insurance-types'],
-    queryFn: () => insuranceTypesApi.findAll(),
-  })
+  const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
 
-  const { data: insuranceCompanies = [] } = useQuery({
-    queryKey: ['catalogs', 'insurance_company'],
-    queryFn: () => catalogsApi.findByCategory('insurance_company'),
-  })
+  const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
 
   const [form, setForm] = useState<PolicyForm>({
     policyNumber: '', insuranceCompany: '', producerId: '', insuranceType: '',
@@ -234,8 +212,8 @@ export default function PolicyEditPage() {
   const updateMutation = useMutation({
     mutationFn: (input: Parameters<typeof policiesApi.update>[1]) => policiesApi.update(id!, input),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['policies'] })
-      queryClient.invalidateQueries({ queryKey: ['policy', id] })
+      queryClient.invalidateQueries({ queryKey: policyKeys.all })
+      queryClient.invalidateQueries({ queryKey: policyKeys.detail(id!) })
       toast.success('Cambios guardados correctamente')
       navigate(`/insurance/policies/${id}`)
     },

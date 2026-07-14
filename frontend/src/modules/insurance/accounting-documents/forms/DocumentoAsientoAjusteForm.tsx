@@ -11,8 +11,8 @@ import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
-import { documentsApi } from '../../../../shared/api/documents.api'
-import { catalogsApi } from '../../../../shared/api/catalogs.api'
+import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
+import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import type { AccountingDocument, AdjustmentSign, DocumentType } from '../../../../shared/types'
 
 const ADJUSTABLE_TYPES: DocumentType[] = ['INVOICE', 'DEBIT_NOTE', 'CREDIT_NOTE', 'REBILLING']
@@ -51,11 +51,11 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
   const [errors, setErrors] = useState<FormErrors>({})
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
-  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit)
+  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'ADJUSTMENT_ENTRY', form.insuranceCompany)
 
-  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: () => documentsApi.findAll() })
-  const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
-  const { data: documentTypesData } = useQuery({ queryKey: ['documents', 'types'], queryFn: () => documentsApi.getTypes() })
+  const { data: allDocuments = [] } = useQuery(documentQueries.list())
+  const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
+  const { data: documentTypesData } = useQuery(documentQueries.types())
   const adjustmentReasons = documentTypesData?.adjustmentReasons ?? []
 
   const linkableDocuments = allDocuments.filter(
@@ -129,7 +129,7 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
       const newDoc = await createMutation.mutateAsync()
       markSaved(newDoc.id)
     }
-    queryClient.invalidateQueries({ queryKey: ['documents'] })
+    queryClient.invalidateQueries({ queryKey: documentKeys.all })
   }
 
   return (

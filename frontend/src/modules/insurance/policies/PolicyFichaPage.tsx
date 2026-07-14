@@ -7,11 +7,11 @@ import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatDate } from '../../../shared/utils/format'
 import { downloadAsPdf } from '../../../shared/utils/downloadAsPdf'
-import { policiesApi } from '../../../shared/api/policies.api'
-import { producersApi } from '../../../shared/api/producers.api'
-import { companiesApi } from '../../../shared/api/companies.api'
-import { costCentersApi } from '../../../shared/api/cost-centers.api'
-import { documentsApi } from '../../../shared/api/documents.api'
+import { policyQueries } from '../../../shared/api/policies.api'
+import { producerQueries } from '../../../shared/api/producers.api'
+import { companyQueries } from '../../../shared/api/companies.api'
+import { costCenterQueries } from '../../../shared/api/cost-centers.api'
+import { documentQueries } from '../../../shared/api/documents.api'
 import { POLICY_STATUS_LABELS, PAYMENT_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 
 const EMISSION_DATE = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -22,11 +22,11 @@ export default function PolicyFichaPage() {
   const fichaRef = useRef<HTMLDivElement>(null)
   const [downloading, setDownloading] = useState(false)
 
-  const { data: policy } = useQuery({ queryKey: ['policy', id], queryFn: () => policiesApi.findById(id!) })
-  const { data: producers = [] } = useQuery({ queryKey: ['producers'], queryFn: producersApi.findAll })
-  const { data: companies = [] } = useQuery({ queryKey: ['companies'], queryFn: companiesApi.findAll })
-  const { data: costCenters = [] } = useQuery({ queryKey: ['cost-centers'], queryFn: costCentersApi.findAll })
-  const { data: allDocuments = [] } = useQuery({ queryKey: ['documents'], queryFn: documentsApi.findAll })
+  const { data: policy } = useQuery(policyQueries.detail(id!))
+  const { data: producers = [] } = useQuery(producerQueries.list())
+  const { data: companies = [] } = useQuery(companyQueries.list())
+  const { data: costCenters = [] } = useQuery(costCenterQueries.list())
+  const { data: allDocuments = [] } = useQuery(documentQueries.list())
 
   if (!policy) {
     return (

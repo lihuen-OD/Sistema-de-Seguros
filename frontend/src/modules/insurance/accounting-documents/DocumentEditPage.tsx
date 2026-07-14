@@ -2,7 +2,7 @@ import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
-import { documentsApi } from '../../../shared/api/documents.api'
+import { documentQueries } from '../../../shared/api/documents.api'
 import { DocumentFormRouter } from './forms/DocumentFormRouter'
 
 // El tipo de documento es fijo una vez creado (igual que documentNumber) —
@@ -11,11 +11,7 @@ import { DocumentFormRouter } from './forms/DocumentFormRouter'
 export default function DocumentEditPage() {
   const { id } = useParams<{ id: string }>()
 
-  const { data: doc, isLoading } = useQuery({
-    queryKey: ['documents', id],
-    queryFn: () => documentsApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: doc, isLoading } = useQuery(documentQueries.detail(id!))
 
   if (isLoading) {
     return (

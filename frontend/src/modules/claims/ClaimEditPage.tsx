@@ -8,8 +8,8 @@ import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
-import { claimsApi } from '../../shared/api/claims.api'
-import { catalogsApi } from '../../shared/api/catalogs.api'
+import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
+import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
 import type { ClaimAttachment, ClaimOwnershipType } from '../../shared/types'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
@@ -48,28 +48,20 @@ export default function ClaimEditPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: original, isLoading, isError } = useQuery({
-    queryKey: ['claims', id],
-    queryFn: () => claimsApi.findById(id!),
-    enabled: !!id,
-  })
+  const { data: original, isLoading, isError } = useQuery(claimQueries.detail(id!))
 
-  const { data: insuranceCompanies = [] } = useQuery({ queryKey: ['catalogs', 'insurance_company'], queryFn: () => catalogsApi.findByCategory('insurance_company') })
-  const { data: claimStatuses = [] } = useQuery({ queryKey: ['catalogs', 'claim_status'], queryFn: () => catalogsApi.findByCategory('claim_status') })
-  const { data: claimTypes = [] } = useQuery({ queryKey: ['catalogs', 'claim_type'], queryFn: () => catalogsApi.findByCategory('claim_type') })
-  const { data: currencies = [] } = useQuery({ queryKey: ['catalogs', 'document_currency'], queryFn: () => catalogsApi.findByCategory('document_currency') })
-  const { data: attachments = [] } = useQuery({
-    queryKey: ['claims', id, 'attachments'],
-    queryFn: () => claimsApi.findAttachments(id!),
-    enabled: !!id,
-  })
+  const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
+  const { data: claimStatuses = [] } = useQuery(catalogQueries.byCategory('claim_status'))
+  const { data: claimTypes = [] } = useQuery(catalogQueries.byCategory('claim_type'))
+  const { data: currencies = [] } = useQuery(catalogQueries.byCategory('document_currency'))
+  const { data: attachments = [] } = useQuery(claimQueries.attachments(id!))
 
   const docs = attachments.filter((a) => a.fileType !== 'image')
   const photos = attachments.filter((a) => a.fileType === 'image')
 
   const handleDeleteAttachment = async (attachmentId: string) => {
     await claimsApi.deleteAttachment(id!, attachmentId)
-    queryClient.invalidateQueries({ queryKey: ['claims', id, 'attachments'] })
+    queryClient.invalidateQueries({ queryKey: claimKeys.attachments(id!) })
   }
 
   // ── Form state ──────────────────────────────────────────────────────────────
@@ -202,7 +194,7 @@ export default function ClaimEditPage() {
         observations: observations.trim() || undefined,
         exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
       })
-      queryClient.invalidateQueries({ queryKey: ['claims'] })
+      queryClient.invalidateQueries({ queryKey: claimKeys.all })
       toast.success('Siniestro actualizado correctamente')
       navigate(ROUTES.CLAIMS_DETAIL(original.id))
     } finally {
@@ -480,7 +472,7 @@ export default function ClaimEditPage() {
             {docs.length > 0 && (
               <div className="divide-y divide-slate-100 mb-4">
                 {docs.map((att) => (
-                  <EditAttachmentRow key={att.id} attachment={att} onDelete={handleDeleteAttachment} />
+                  <EditAttachmentRow key={att.id} claimId={id!} attachment={att} onDelete={handleDeleteAttachment} />
                 ))}
               </div>
             )}
@@ -492,7 +484,7 @@ export default function ClaimEditPage() {
                 for (const file of files) {
                   await claimsApi.addAttachment(original.id, file, {})
                 }
-                queryClient.invalidateQueries({ queryKey: ['claims', original.id, 'attachments'] })
+                queryClient.invalidateQueries({ queryKey: claimKeys.attachments(original.id) })
               }}
             />
           </SectionCard>
@@ -517,7 +509,7 @@ export default function ClaimEditPage() {
                 for (const file of files) {
                   await claimsApi.addAttachment(original.id, file, {})
                 }
-                queryClient.invalidateQueries({ queryKey: ['claims', original.id, 'attachments'] })
+                queryClient.invalidateQueries({ queryKey: claimKeys.attachments(original.id) })
               }}
             />
           </SectionCard>
@@ -556,9 +548,11 @@ export default function ClaimEditPage() {
 }
 
 function EditAttachmentRow({
+  claimId,
   attachment,
   onDelete,
 }: {
+  claimId: string
   attachment: ClaimAttachment
   onDelete: (id: string) => void
 }) {
@@ -573,15 +567,14 @@ function EditAttachmentRow({
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
         {attachment.fileUrl && !attachment.fileUrl.startsWith('local://') && (
-          <a
-            href={attachment.fileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => claimsApi.downloadAttachment(claimId, attachment.id, attachment.name)}
             className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
             title="Descargar"
           >
             <Download size={14} />
-          </a>
+          </button>
         )}
         <button
           type="button"
