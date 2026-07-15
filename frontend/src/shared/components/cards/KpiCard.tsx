@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 
 interface KpiCardProps {
@@ -35,6 +37,39 @@ export function KpiCard({
   onClick,
 }: KpiCardProps) {
   const styles = variantStyles[variant]
+  const valueRef = useRef<HTMLSpanElement>(null)
+  const [tooltip, setTooltip] = useState<{ top: number; left: number } | null>(null)
+
+  // El valor puede truncarse en cards angostas (montos largos). Si no está
+  // truncado, no hay nada que mostrar — solo abrimos el popover cuando
+  // scrollWidth > clientWidth (overflow real, no un chequeo por longitud fija).
+  const showValueTooltip = () => {
+    const el = valueRef.current
+    if (!el || el.scrollWidth <= el.clientWidth) return
+    const rect = el.getBoundingClientRect()
+    const POPOVER_MAX_W = 260
+    let left = rect.left
+    if (left + POPOVER_MAX_W > window.innerWidth - 16) left = window.innerWidth - POPOVER_MAX_W - 16
+    if (left < 8) left = 8
+    setTooltip({ top: rect.bottom + 6, left })
+  }
+  const hideValueTooltip = () => setTooltip(null)
+
+  // En touch no existe mouseleave — sin esto el popover quedaría abierto
+  // para siempre después de un tap. Se cierra al tocar/clickear afuera.
+  useEffect(() => {
+    if (!tooltip) return
+    function handleOutside(e: Event) {
+      if (valueRef.current?.contains(e.target as Node)) return
+      hideValueTooltip()
+    }
+    document.addEventListener('touchstart', handleOutside)
+    document.addEventListener('mousedown', handleOutside)
+    return () => {
+      document.removeEventListener('touchstart', handleOutside)
+      document.removeEventListener('mousedown', handleOutside)
+    }
+  }, [tooltip])
 
   return (
     <div
@@ -63,9 +98,32 @@ export function KpiCard({
 
       {/* Value — separate row, no icon overlap possible */}
       <div className="min-w-0">
-        <span className="text-2xl font-bold text-slate-900 leading-none block truncate">
+        <span
+          ref={valueRef}
+          className="text-2xl font-bold text-slate-900 leading-none block truncate cursor-default"
+          onMouseEnter={showValueTooltip}
+          onMouseLeave={hideValueTooltip}
+          onClick={(e) => {
+            // En touch no hay hover — el tap togglea el popover. stopPropagation
+            // evita que además dispare el onClick de la card (si lo tuviera).
+            e.stopPropagation()
+            tooltip ? hideValueTooltip() : showValueTooltip()
+          }}
+        >
           {value}
         </span>
+        {tooltip &&
+          createPortal(
+            <div
+              className="overflow-cell-popover"
+              style={{ top: tooltip.top, left: tooltip.left, maxWidth: 260 }}
+              onMouseEnter={showValueTooltip}
+              onMouseLeave={hideValueTooltip}
+            >
+              {value}
+            </div>,
+            document.body,
+          )}
         {description && (
           <span className="text-xs text-slate-500 mt-1 block">{description}</span>
         )}
