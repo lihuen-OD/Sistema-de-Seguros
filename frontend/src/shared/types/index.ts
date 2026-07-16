@@ -1,3 +1,7 @@
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export type Role = 'ADMIN' | 'CONTADOR' | 'PRODUCTOR' | 'VIEWER' | 'AUDITOR_MATAFUEGOS'
+
 // ─── Status types ────────────────────────────────────────────────────────────
 
 export type AssetStatus = 'activo' | 'baja' | 'vendido'

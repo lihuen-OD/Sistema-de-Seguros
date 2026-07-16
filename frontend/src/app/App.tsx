@@ -1,9 +1,10 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { Toaster } from 'sonner'
-import { AppShell } from '../shared/components/layout/AppShell'
 import { LoadingState } from '../shared/components/empty-states/LoadingState'
-import { ErrorBoundary } from '../shared/components/error-boundary/ErrorBoundary'
+import { AppLayout } from './AppLayout'
+
+// Auth
+const LoginPage = lazy(() => import('../modules/auth/LoginPage'))
 
 // Dashboard
 const DashboardPage = lazy(() => import('../modules/dashboard/DashboardPage'))
@@ -76,6 +77,7 @@ const PoliciesConfigPage = lazy(() => import('../modules/settings/module-config/
 const FireExtConfigPage = lazy(() => import('../modules/settings/module-config/FireExtConfigPage'))
 const TasksConfigPage = lazy(() => import('../modules/settings/module-config/TasksConfigPage'))
 const ClaimsConfigPage = lazy(() => import('../modules/settings/module-config/ClaimsConfigPage'))
+const UsersPage = lazy(() => import('../modules/settings/users/UsersPage'))
 
 function PageFallback() {
   return (
@@ -87,11 +89,13 @@ function PageFallback() {
 
 export default function App() {
   return (
-    <AppShell>
-      <Toaster position="top-right" richColors closeButton duration={4000} />
-      <ErrorBoundary>
-      <Suspense fallback={<PageFallback />}>
-        <Routes>
+    <Suspense fallback={<PageFallback />}>
+      <Routes>
+        {/* Login — fuera del AppShell, sin sesión requerida */}
+        <Route path="/login" element={<LoginPage />} />
+
+        {/* Todo lo demás vive detrás de AppLayout: guard de sesión + guard de rol + AppShell */}
+        <Route element={<AppLayout />}>
           {/* Root */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
@@ -166,12 +170,12 @@ export default function App() {
           <Route path="/settings/module-config/fire-extinguishers" element={<FireExtConfigPage />} />
           <Route path="/settings/module-config/tasks" element={<TasksConfigPage />} />
           <Route path="/settings/module-config/claims" element={<ClaimsConfigPage />} />
+          <Route path="/settings/users" element={<UsersPage />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </Suspense>
-      </ErrorBoundary>
-    </AppShell>
+        </Route>
+      </Routes>
+    </Suspense>
   )
 }

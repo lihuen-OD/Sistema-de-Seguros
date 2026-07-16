@@ -29,23 +29,36 @@ export interface NotificationItem {
   dueDate: string
   entityType: 'Policy' | 'FireExtinguisher' | 'AccountingDocument' | 'Asset'
   entityId: string
+  reviewed: boolean
+}
+
+export interface ReviewNotificationInput {
+  notificationId: string
+  dueDate: string
 }
 
 export const notificationsApi = {
   async getPreview(): Promise<NotificationsPreview> {
-    const res = await apiClient.get<NotificationsPreview>('/notifications/preview')
-    return res.data
+    // El backend envuelve todo en { data: ... } — antes esto devolvía
+    // res.data (el sobre completo, no el contenido), por eso los conteos
+    // llegaban undefined y la campanita se mostraba vacía sin ningún error.
+    const res = await apiClient.get<{ data: NotificationsPreview }>('/notifications/preview')
+    return res.data.data
   },
 
   async list(): Promise<NotificationItem[]> {
     const res = await apiClient.get<{ data: NotificationItem[] }>('/notifications')
     return res.data.data
   },
-}
 
-// ── Query keys / query options (categoría C — agrega cuotas vencidas/próximas) ──
-// Mismo staleTime/refetchInterval que ya tenía el useQuery a mano en
-// NotificationBell.tsx — solo se centraliza acá.
+  async review(items: ReviewNotificationInput[]): Promise<void> {
+    await apiClient.post('/notifications/review', { items })
+  },
+
+  async unreview(items: ReviewNotificationInput[]): Promise<void> {
+    await apiClient.post('/notifications/unreview', { items })
+  },
+}
 
 export const notificationKeys = {
   preview: ['notifications', 'preview'] as const,

@@ -11,7 +11,7 @@ import {
   Building2,
   Layers,
   X,
-  ChevronRight,
+  LogOut,
   ShieldAlert,
   Shield,
   ClipboardList,
@@ -19,9 +19,11 @@ import {
   SlidersHorizontal,
   BarChart3,
   Bell,
+  UserCog,
 } from 'lucide-react'
-import { useState } from 'react'
 import clsx from 'clsx'
+import { useCurrentUser } from '../../../app/auth/AuthContext'
+import { isAllowedForAuditorMatafuegos } from '../../../app/auth/roleScope'
 
 interface SidebarProps {
   onClose?: () => void
@@ -31,6 +33,7 @@ interface NavItem {
   label: string
   to: string
   icon: React.ElementType
+  adminOnly?: boolean
 }
 
 interface NavGroup {
@@ -84,12 +87,35 @@ const navGroups: NavGroup[] = [
       { label: 'Centros de Costo', to: '/settings/cost-centers', icon: Layers },
       { label: 'Tipos de Seguro', to: '/settings/insurance-types', icon: Shield },
       { label: 'Config. de Módulos', to: '/settings/module-config', icon: SlidersHorizontal },
+      { label: 'Usuarios', to: '/settings/users', icon: UserCog, adminOnly: true },
     ],
   },
 ]
 
+// Iniciales para el avatar del footer — "Juan Pérez" -> "JP", "Admin" -> "AD".
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  const initials = parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 2)
+  return initials.toUpperCase()
+}
+
 export function Sidebar({ onClose }: SidebarProps) {
   const location = useLocation()
+  const { user, logout } = useCurrentUser()
+
+  // AUDITOR_MATAFUEGOS solo ve el flujo de auditoría — mismo criterio que
+  // ya aplica el guard de rutas, reusado acá para no duplicar la lista.
+  // "Usuarios" además queda oculto para cualquiera que no sea ADMIN.
+  const visibleGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        if (item.adminOnly && user?.role !== 'ADMIN') return false
+        if (user?.role === 'AUDITOR_MATAFUEGOS' && !isAllowedForAuditorMatafuegos(item.to)) return false
+        return true
+      }),
+    }))
+    .filter((group) => group.items.length > 0)
 
   return (
     <div className="flex flex-col h-full">
@@ -114,7 +140,7 @@ export function Sidebar({ onClose }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5 scrollbar-hide">
-        {navGroups.map((group) => {
+        {visibleGroups.map((group) => {
           // Cuando dos rutas del mismo grupo comparten prefijo (ej. /fire-extinguishers
           // y /fire-extinguishers/audits/new), gana el match más específico — evita que
           // ambos ítems queden marcados como activos a la vez.
@@ -164,13 +190,22 @@ export function Sidebar({ onClose }: SidebarProps) {
       <div className="border-t border-slate-800 p-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0">
-            <span className="text-xs font-semibold text-slate-300">LO</span>
+            <span className="text-xs font-semibold text-slate-300">
+              {user ? getInitials(user.name) : '—'}
+            </span>
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-slate-300 truncate">Administrador</p>
-            <p className="text-xs text-slate-500 truncate">admin@losodwyer.com</p>
+            <p className="text-sm font-medium text-slate-300 truncate">{user?.name ?? '—'}</p>
+            <p className="text-xs text-slate-500 truncate">{user?.email ?? ''}</p>
           </div>
-          <ChevronRight size={14} className="text-slate-600 flex-shrink-0" />
+          <button
+            onClick={logout}
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors flex-shrink-0"
+          >
+            <LogOut size={15} />
+          </button>
         </div>
       </div>
     </div>

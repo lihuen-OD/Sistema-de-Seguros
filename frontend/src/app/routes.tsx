@@ -1,4 +1,5 @@
 export const ROUTES = {
+  LOGIN: '/login',
   DASHBOARD: '/dashboard',
   NOTIFICATIONS: '/notifications',
 
@@ -53,4 +54,5 @@ export const ROUTES = {
   SETTINGS_MODULE_CONFIG_FIRE_EXT: '/settings/module-config/fire-extinguishers',
   SETTINGS_MODULE_CONFIG_TASKS: '/settings/module-config/tasks',
   SETTINGS_MODULE_CONFIG_CLAIMS: '/settings/module-config/claims',
+  SETTINGS_USERS: '/settings/users',
 }

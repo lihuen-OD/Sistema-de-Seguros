@@ -708,3 +708,43 @@ model EmailLog {
   @@index([type, status])
   @@map("email_logs")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Autenticación — usuarios propios (reemplaza el auto-login de desarrollo)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id                 String    @id @default(uuid())
+  name               String
+  email              String    @unique
+  passwordHash       String
+  role               String // ADMIN | AUDITOR_MATAFUEGOS | CONTADOR | PRODUCTOR | VIEWER
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  dismissals NotificationDismissal[]
+
+  @@index([role])
+  @@map("users")
+}
+
+// Notificaciones calculadas en vivo (sin tabla propia) — esto guarda solo
+// el "ya lo vi" de cada usuario. La clave incluye dueDate a propósito: si
+// el vencimiento real cambia (ej. se renueva una póliza), el descarte viejo
+// deja de aplicar y la alerta vuelve a aparecer sin limpiar nada a mano.
+model NotificationDismissal {
+  id             String   @id @default(uuid())
+  userId         String
+  notificationId String
+  dueDate        String
+  dismissedAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, notificationId, dueDate])
+  @@index([userId])
+  @@map("notification_dismissals")
+}

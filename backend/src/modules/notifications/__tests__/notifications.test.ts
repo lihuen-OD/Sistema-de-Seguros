@@ -4,11 +4,12 @@ import { adminToken } from '../../../__tests__/helpers/auth'
 
 jest.mock('../../../config/database', () => ({
   prisma: {
-    policy: { count: jest.fn(), findMany: jest.fn() },
-    fireExtinguisher: { count: jest.fn(), findMany: jest.fn() },
-    documentInstallment: { count: jest.fn(), findMany: jest.fn() },
-    assetAttachment: { count: jest.fn(), findMany: jest.fn() },
-    policyAttachment: { count: jest.fn(), findMany: jest.fn() },
+    policy: { findMany: jest.fn() },
+    fireExtinguisher: { findMany: jest.fn() },
+    documentInstallment: { findMany: jest.fn() },
+    assetAttachment: { findMany: jest.fn() },
+    policyAttachment: { findMany: jest.fn() },
+    notificationDismissal: { findMany: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
   },
 }))
 
@@ -23,6 +24,44 @@ function daysFromNow(n: number): Date {
   return d
 }
 
+function fakePolicy(id: string, endDate = daysFromNow(20)) {
+  return { id, policyNumber: `POL-${id}`, insuredName: 'Cliente Test', endDate, company: { name: 'La Segunda' } }
+}
+
+function fakeExtinguisher(id: string, expirationDate = daysFromNow(-5)) {
+  return {
+    id,
+    code: `MAT-${id}`,
+    location: 'Planta Baja',
+    locationType: 'Edificio',
+    expirationDate,
+    manufacturingYear: null,
+    hydraulicTestExpirationDate: null,
+  }
+}
+
+function fakeInstallment(id: string, dueDate: Date) {
+  return {
+    id,
+    installmentNumber: 1,
+    dueDate,
+    document: { id: `doc-${id}`, documentNumber: `A-${id}`, insuranceCompany: 'La Segunda' },
+  }
+}
+
+function fakeAssetAttachment(id: string, expirationDate = daysFromNow(10)) {
+  return { id, name: `${id}.pdf`, expirationDate, asset: { id: `asset-${id}`, name: 'Toyota Hilux' } }
+}
+
+function fakePolicyAttachment(id: string, expirationDate = daysFromNow(-1)) {
+  return { id, name: `${id}.pdf`, expirationDate, policy: { id: `policy-${id}`, policyNumber: `POL-${id}` } }
+}
+
+// Setup común: sin descartes previos, salvo que un test los sobreescriba.
+beforeEach(() => {
+  db.notificationDismissal.findMany.mockResolvedValue([])
+})
+
 describe('Notifications API', () => {
   describe('GET /api/v1/notifications/preview', () => {
     it('returns 401 without token', async () => {
@@ -31,11 +70,17 @@ describe('Notifications API', () => {
     })
 
     it('returns the 5 counts and hasAlerts', async () => {
-      db.policy.count.mockResolvedValue(2)
-      db.fireExtinguisher.count.mockResolvedValue(1)
-      db.documentInstallment.count.mockResolvedValueOnce(3).mockResolvedValueOnce(0)
-      db.assetAttachment.count.mockResolvedValue(1)
-      db.policyAttachment.count.mockResolvedValue(1)
+      db.policy.findMany.mockResolvedValue([fakePolicy('1'), fakePolicy('2')])
+      db.fireExtinguisher.findMany.mockResolvedValue([fakeExtinguisher('1')])
+      db.documentInstallment.findMany
+        .mockResolvedValueOnce([
+          fakeInstallment('o1', daysFromNow(-3)),
+          fakeInstallment('o2', daysFromNow(-2)),
+          fakeInstallment('o3', daysFromNow(-1)),
+        ])
+        .mockResolvedValueOnce([])
+      db.assetAttachment.findMany.mockResolvedValue([fakeAssetAttachment('1')])
+      db.policyAttachment.findMany.mockResolvedValue([fakePolicyAttachment('1')])
 
       const res = await request(app)
         .get('/api/v1/notifications/preview')
@@ -53,17 +98,37 @@ describe('Notifications API', () => {
     })
 
     it('hasAlerts es false cuando todos los conteos son cero', async () => {
-      db.policy.count.mockResolvedValue(0)
-      db.fireExtinguisher.count.mockResolvedValue(0)
-      db.documentInstallment.count.mockResolvedValue(0)
-      db.assetAttachment.count.mockResolvedValue(0)
-      db.policyAttachment.count.mockResolvedValue(0)
+      db.policy.findMany.mockResolvedValue([])
+      db.fireExtinguisher.findMany.mockResolvedValue([])
+      db.documentInstallment.findMany.mockResolvedValue([])
+      db.assetAttachment.findMany.mockResolvedValue([])
+      db.policyAttachment.findMany.mockResolvedValue([])
 
       const res = await request(app)
         .get('/api/v1/notifications/preview')
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(200)
+      expect(res.body.data.hasAlerts).toBe(false)
+    })
+
+    it('no cuenta un ítem ya revisado por el usuario actual', async () => {
+      const policy = fakePolicy('1')
+      db.policy.findMany.mockResolvedValue([policy])
+      db.fireExtinguisher.findMany.mockResolvedValue([])
+      db.documentInstallment.findMany.mockResolvedValue([])
+      db.assetAttachment.findMany.mockResolvedValue([])
+      db.policyAttachment.findMany.mockResolvedValue([])
+      db.notificationDismissal.findMany.mockResolvedValue([
+        { notificationId: 'policy:1', dueDate: policy.endDate.toISOString().slice(0, 10) },
+      ])
+
+      const res = await request(app)
+        .get('/api/v1/notifications/preview')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.expiringPolicies).toBe(0)
       expect(res.body.data.hasAlerts).toBe(false)
     })
   })
@@ -136,6 +201,7 @@ describe('Notifications API', () => {
       expect(res.status).toBe(200)
       const items = res.body.data as any[]
       expect(items).toHaveLength(6)
+      expect(items.every((i) => i.reviewed === false)).toBe(true)
 
       const byCategory = Object.fromEntries(items.map((i) => [i.category, i]))
 
@@ -182,6 +248,91 @@ describe('Notifications API', () => {
       // Ordenado por dueDate ascendente — el más vencido primero
       const dueDates = items.map((i) => i.dueDate)
       expect(dueDates).toEqual([...dueDates].sort())
+    })
+
+    it('marca un ítem como reviewed cuando coincide con un descarte del usuario', async () => {
+      const policy = fakePolicy('1')
+      db.policy.findMany.mockResolvedValue([policy])
+      db.fireExtinguisher.findMany.mockResolvedValue([])
+      db.documentInstallment.findMany.mockResolvedValue([])
+      db.assetAttachment.findMany.mockResolvedValue([])
+      db.policyAttachment.findMany.mockResolvedValue([])
+      const dueDateStr = policy.endDate.toISOString().slice(0, 10)
+      db.notificationDismissal.findMany.mockResolvedValue([
+        { notificationId: 'policy:1', dueDate: dueDateStr },
+      ])
+
+      const res = await request(app)
+        .get('/api/v1/notifications')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].reviewed).toBe(true)
+    })
+
+    it('no considera reviewed un descarte con una dueDate distinta (ej. la póliza se renovó)', async () => {
+      const policy = fakePolicy('1', daysFromNow(20))
+      db.policy.findMany.mockResolvedValue([policy])
+      db.fireExtinguisher.findMany.mockResolvedValue([])
+      db.documentInstallment.findMany.mockResolvedValue([])
+      db.assetAttachment.findMany.mockResolvedValue([])
+      db.policyAttachment.findMany.mockResolvedValue([])
+      // Descarte guardado para un vencimiento viejo, distinto al actual.
+      db.notificationDismissal.findMany.mockResolvedValue([
+        { notificationId: 'policy:1', dueDate: daysFromNow(-100).toISOString().slice(0, 10) },
+      ])
+
+      const res = await request(app)
+        .get('/api/v1/notifications')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].reviewed).toBe(false)
+    })
+  })
+
+  describe('POST /api/v1/notifications/review', () => {
+    it('returns 401 without token', async () => {
+      const res = await request(app).post('/api/v1/notifications/review').send({ items: [] })
+      expect(res.status).toBe(401)
+    })
+
+    it('marca los ítems enviados como revisados (createMany con skipDuplicates)', async () => {
+      db.notificationDismissal.createMany.mockResolvedValue({ count: 2 })
+
+      const res = await request(app)
+        .post('/api/v1/notifications/review')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ items: [{ notificationId: 'policy:1', dueDate: '2026-08-01' }, { notificationId: 'fire_extinguisher:2', dueDate: '2026-07-01' }] })
+
+      expect(res.status).toBe(200)
+      expect(db.notificationDismissal.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skipDuplicates: true }),
+      )
+    })
+
+    it('returns 422 when items is empty', async () => {
+      const res = await request(app)
+        .post('/api/v1/notifications/review')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ items: [] })
+
+      expect(res.status).toBe(422)
+    })
+  })
+
+  describe('POST /api/v1/notifications/unreview', () => {
+    it('elimina el descarte de los ítems enviados', async () => {
+      db.notificationDismissal.deleteMany.mockResolvedValue({ count: 1 })
+
+      const res = await request(app)
+        .post('/api/v1/notifications/unreview')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ items: [{ notificationId: 'policy:1', dueDate: '2026-08-01' }] })
+
+      expect(res.status).toBe(200)
+      expect(db.notificationDismissal.deleteMany).toHaveBeenCalled()
     })
   })
 })

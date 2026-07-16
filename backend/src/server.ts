@@ -6,8 +6,7 @@ const server = app.listen(env.PORT, () => {
   console.log(`✅  Server running on http://localhost:${env.PORT} [${env.NODE_ENV}]`)
 
   if (env.NODE_ENV === 'development') {
-    console.log(`🔑  Dev token endpoint: POST http://localhost:${env.PORT}/dev/token`)
-    console.log(`❤️   Health check:       GET  http://localhost:${env.PORT}/health`)
+    console.log(`❤️   Health check: GET  http://localhost:${env.PORT}/health`)
   }
 })
 

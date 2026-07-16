@@ -7,7 +7,8 @@ import morgan from 'morgan'
 import { env } from './config/env'
 import { errorMiddleware } from './middleware/error.middleware'
 import { healthRouter } from './modules/health/health.router'
-import { devRouter } from './modules/dev/dev.router'
+import { authRouter } from './modules/auth/auth.router'
+import { usersRouter } from './modules/users/users.router'
 import { companiesRouter } from './modules/companies/companies.router'
 import { costCentersRouter } from './modules/cost-centers/cost-centers.router'
 import { insuranceTypesRouter } from './modules/insurance-types/insurance-types.router'
@@ -82,12 +83,11 @@ if (env.NODE_ENV !== 'test') {
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/health', healthRouter)
 
-// Endpoint de desarrollo para generar tokens JWT — solo en NODE_ENV=development
-if (env.NODE_ENV === 'development') {
-  app.use('/dev', devRouter)
-}
-
 // ─── API v1 ───────────────────────────────────────────────────────────────────
+// Autenticación — login propio, reemplaza el auto-login de desarrollo
+app.use('/api/v1/auth', authRouter)
+// Administración de usuarios (ADMIN only)
+app.use('/api/v1/users', usersRouter)
 // Fase 2 — Catálogos
 app.use('/api/v1/companies', companiesRouter)
 app.use('/api/v1/cost-centers', costCentersRouter)
