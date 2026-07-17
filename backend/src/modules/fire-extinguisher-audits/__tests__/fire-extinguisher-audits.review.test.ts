@@ -310,6 +310,22 @@ describe('Fire Extinguisher Audits — Review API', () => {
       expect(res.status).toBe(200)
     })
 
+    it('returns 403 SELF_REVIEW_FORBIDDEN when the reviewer is the same person who audited it', async () => {
+      // adminToken() resuelve a mockDbUser() por default, cuyo email es
+      // 'test@losodwyer.com' — coincide a propósito con auditedBy acá.
+      db.fireExtinguisherAudit.findUnique.mockResolvedValue(
+        makeAuditRow({ auditedBy: 'test@losodwyer.com', proposedChanges: [] }),
+      )
+
+      const res = await request(app)
+        .post(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/review`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ decisions: [], auditDecision: 'APPROVED' })
+
+      expect(res.status).toBe(403)
+      expect(res.body.error.code).toBe('SELF_REVIEW_FORBIDDEN')
+    })
+
     it('returns 422 DECISIONS_MISMATCH when a pending change is missing from decisions', async () => {
       db.fireExtinguisherAudit.findUnique.mockResolvedValue(makeAuditRow({ proposedChanges: threeProposedChanges }))
 

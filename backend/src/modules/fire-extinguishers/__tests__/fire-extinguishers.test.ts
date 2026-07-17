@@ -106,8 +106,20 @@ describe('Fire Extinguishers API', () => {
       expect(res.status).toBe(401)
     })
 
-    it('a USER with no modules can still list (lecturas abiertas a cualquier autenticado)', async () => {
+    it('a USER without a relevant module gets 403', async () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+      db.fireExtinguisher.findMany.mockResolvedValue([])
+      db.fireExtinguisher.count.mockResolvedValue(0)
+
+      const res = await request(app)
+        .get('/api/v1/fire-extinguishers')
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(403)
+    })
+
+    it('a USER with the fire_extinguishers module can list', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguishers'] }))
       db.fireExtinguisher.findMany.mockResolvedValue([])
       db.fireExtinguisher.count.mockResolvedValue(0)
 

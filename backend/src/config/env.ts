@@ -44,3 +44,17 @@ if (!parsed.success) {
 
 export const env = parsed.data
 export type Env = typeof env
+
+// EMAIL_FORCE_TO redirige TODOS los emails salientes (incluido el envío
+// manual de documentos a productores/clientes) a una sola casilla. Es una
+// herramienta de demo/staging — si queda cargada en producción por error, los
+// clientes reales dejan de recibir mail sin que nadie lo note. No bloquea el
+// arranque (podría ser intencional en un ambiente de pruebas con
+// NODE_ENV=production), pero se avisa fuerte en los logs de arranque.
+if (env.NODE_ENV === 'production' && env.EMAIL_FORCE_TO) {
+  console.warn(
+    `⚠️  EMAIL_FORCE_TO está seteado en producción ("${env.EMAIL_FORCE_TO}") — ` +
+      'TODOS los emails salientes se están redirigiendo a esa dirección en vez de a sus destinatarios reales. ' +
+      'Si esto no es intencional, sacá la variable de entorno.',
+  )
+}

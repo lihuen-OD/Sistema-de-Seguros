@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
+import { requireModule } from '../../middleware/roles.middleware'
 import { validateQuery } from '../../middleware/validate.middleware'
 import { dashboardController } from './dashboard.controller'
 import {
@@ -11,6 +12,7 @@ import {
 export const dashboardRouter = Router()
 
 dashboardRouter.use(authMiddleware)
+dashboardRouter.use(requireModule('dashboard'))
 
 dashboardRouter.get('/kpis', dashboardController.getKpis)
 dashboardRouter.get(

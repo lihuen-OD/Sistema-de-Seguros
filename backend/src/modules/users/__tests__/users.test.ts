@@ -10,6 +10,9 @@ jest.mock('../../../config/database', () => ({
       create: jest.fn(),
       update: jest.fn(),
     },
+    userAuditLog: {
+      create: jest.fn(),
+    },
   },
 }))
 
@@ -92,6 +95,15 @@ describe('Users API (admin)', () => {
       expect(db.user.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ mustChangePassword: true }) }),
       )
+      expect(db.userAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            targetUserId: OTHER_ID,
+            action: 'CREATE',
+            performedBy: 'test@losodwyer.com',
+          }),
+        }),
+      )
     })
 
     it('returns 409 when the email is already taken', async () => {
@@ -131,6 +143,30 @@ describe('Users API (admin)', () => {
 
       expect(res.status).toBe(200)
       expect(res.body.data.isActive).toBe(false)
+      expect(db.userAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            targetUserId: OTHER_ID,
+            action: 'UPDATE',
+            performedBy: 'test@losodwyer.com',
+            previousData: { isActive: true },
+            newData: { isActive: false },
+          }),
+        }),
+      )
+    })
+
+    it('does not write an audit log entry when nothing actually changed', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser()) // auth: ADMIN actor
+      db.user.findUnique.mockResolvedValueOnce(fakeUser) // business: usuario existente
+      db.user.update.mockResolvedValue(fakeUser)
+
+      await request(app)
+        .put(`/api/v1/users/${OTHER_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ name: fakeUser.name })
+
+      expect(db.userAuditLog.create).not.toHaveBeenCalled()
     })
 
     it('returns 404 when the user does not exist', async () => {
@@ -162,6 +198,15 @@ describe('Users API (admin)', () => {
         where: { id: OTHER_ID },
         data: { passwordHash: 'hashed-password', mustChangePassword: true },
       })
+      expect(db.userAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            targetUserId: OTHER_ID,
+            action: 'RESET_PASSWORD',
+            performedBy: 'test@losodwyer.com',
+          }),
+        }),
+      )
     })
   })
 })

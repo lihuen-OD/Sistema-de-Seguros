@@ -22,7 +22,7 @@ export const documentsRouter = Router()
 documentsRouter.use(authMiddleware)
 
 // ── Documentos ────────────────────────────────────────────────────────────────
-documentsRouter.get('/', validateQuery(ListDocumentsQuerySchema), documentsController.list)
+documentsRouter.get('/', requireModule('documents'), validateQuery(ListDocumentsQuerySchema), documentsController.list)
 documentsRouter.post(
   '/',
   requireModule('documents'),
@@ -31,19 +31,19 @@ documentsRouter.post(
 )
 
 // ── Tipos de documento controlados (debe ir antes de /:id) ───────────────────
-documentsRouter.get('/types', documentsController.getTypes)
+documentsRouter.get('/types', requireModule('documents'), documentsController.getTypes)
 
 // ── Verificación de número duplicado (debe ir antes de /:id) ─────────────────
-documentsRouter.get('/check-number', documentsController.checkNumber)
+documentsRouter.get('/check-number', requireModule('documents'), documentsController.checkNumber)
 
 // ── Análisis financiero (debe ir antes de /:id para evitar conflicto de ruta) ─
-documentsRouter.get('/financial', documentsController.getFinancial)
+documentsRouter.get('/financial', requireModule('financial_analysis'), documentsController.getFinancial)
 
 // ── Bulk (deben ir antes de /:id para evitar conflicto de ruta) ───────────────
-documentsRouter.get('/bulk/installments', validateQuery(BulkIdsQuerySchema), documentsController.getBulkInstallments)
-documentsRouter.get('/bulk/allocations', validateQuery(BulkIdsQuerySchema), documentsController.getBulkAllocations)
+documentsRouter.get('/bulk/installments', requireModule('documents'), validateQuery(BulkIdsQuerySchema), documentsController.getBulkInstallments)
+documentsRouter.get('/bulk/allocations', requireModule('documents'), validateQuery(BulkIdsQuerySchema), documentsController.getBulkAllocations)
 
-documentsRouter.get('/:id', documentsController.getById)
+documentsRouter.get('/:id', requireModule('documents'), documentsController.getById)
 documentsRouter.put(
   '/:id',
   requireModule('documents'),
@@ -53,7 +53,7 @@ documentsRouter.put(
 documentsRouter.delete('/:id', requireModule('documents'), documentsController.remove)
 
 // ── Saldo y ciclo de aplicación (Fase 2) ──────────────────────────────────────
-documentsRouter.get('/:id/balance', documentsController.getBalance)
+documentsRouter.get('/:id/balance', requireModule('documents'), documentsController.getBalance)
 documentsRouter.post('/:id/apply', requireModule('documents'), documentsController.apply)
 documentsRouter.post(
   '/:id/cancel',
@@ -69,10 +69,10 @@ documentsRouter.post(
 )
 
 // ── Auditoría (Fase 4) ────────────────────────────────────────────────────────
-documentsRouter.get('/:id/audit-log', documentsController.getAuditLog)
+documentsRouter.get('/:id/audit-log', requireModule('documents'), documentsController.getAuditLog)
 
 // ── Cuotas ────────────────────────────────────────────────────────────────────
-documentsRouter.get('/:id/installments', documentsController.getInstallments)
+documentsRouter.get('/:id/installments', requireModule('documents'), documentsController.getInstallments)
 documentsRouter.put(
   '/:id/installments',
   requireModule('documents'),
@@ -87,7 +87,7 @@ documentsRouter.put(
 )
 
 // ── Asignaciones de pólizas ───────────────────────────────────────────────────
-documentsRouter.get('/:id/allocations', documentsController.getAllocations)
+documentsRouter.get('/:id/allocations', requireModule('documents'), documentsController.getAllocations)
 documentsRouter.put(
   '/:id/allocations',
   requireModule('documents'),
@@ -96,7 +96,7 @@ documentsRouter.put(
 )
 
 // ── Adjuntos ──────────────────────────────────────────────────────────────────
-documentsRouter.get('/:id/attachments', documentsController.getAttachments)
+documentsRouter.get('/:id/attachments', requireModule('documents'), documentsController.getAttachments)
 documentsRouter.post(
   '/:id/attachments',
   requireModule('documents'),
@@ -109,4 +109,4 @@ documentsRouter.delete(
   requireModule('documents'),
   documentsController.deleteAttachment,
 )
-documentsRouter.get('/:id/attachments/:attachmentId/download', documentsController.downloadAttachment)
+documentsRouter.get('/:id/attachments/:attachmentId/download', requireModule('documents'), documentsController.downloadAttachment)

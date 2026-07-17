@@ -13,14 +13,19 @@ export const costCentersRouter = Router()
 
 costCentersRouter.use(authMiddleware)
 
-costCentersRouter.get('/', validateQuery(ListCostCentersQuerySchema), costCentersController.list)
+// CostCenter es dato de referencia consumido como selector por varios
+// módulos (Assets, Pólizas, Empresas, Dashboard, Análisis financiero/económico)
+// además de su propia pantalla de configuración.
+const COST_CENTERS_READ_MODULES = ['cost_centers', 'companies', 'dashboard', 'assets', 'policies', 'financial_analysis', 'economic_analysis'] as const
+
+costCentersRouter.get('/', requireModule(...COST_CENTERS_READ_MODULES), validateQuery(ListCostCentersQuerySchema), costCentersController.list)
 costCentersRouter.post(
   '/',
   requireModule('cost_centers'),
   validate(CreateCostCenterSchema),
   costCentersController.create,
 )
-costCentersRouter.get('/:id', costCentersController.getById)
+costCentersRouter.get('/:id', requireModule(...COST_CENTERS_READ_MODULES), costCentersController.getById)
 costCentersRouter.put(
   '/:id',
   requireModule('cost_centers'),

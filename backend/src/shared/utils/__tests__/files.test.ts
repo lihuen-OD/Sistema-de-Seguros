@@ -25,10 +25,26 @@ describe('detectFileType', () => {
     expect(detectFileType('text/csv')).toBe('excel')
   })
 
+  it('detects Word types', () => {
+    expect(detectFileType('application/msword')).toBe('word')
+    expect(
+      detectFileType(
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ),
+    ).toBe('word')
+  })
+
+  it('detects video types', () => {
+    expect(detectFileType('video/mp4')).toBe('video')
+    expect(detectFileType('video/quicktime')).toBe('video')
+    expect(detectFileType('video/x-msvideo')).toBe('video')
+    expect(detectFileType('video/webm')).toBe('video')
+  })
+
   it('returns other for unknown MIME types', () => {
     expect(detectFileType('application/zip')).toBe('other')
     expect(detectFileType('text/plain')).toBe('other')
-    expect(detectFileType('video/mp4')).toBe('other')
+    expect(detectFileType('application/x-msdownload')).toBe('other')
     expect(detectFileType('')).toBe('other')
   })
 })
@@ -51,10 +67,26 @@ describe('isAllowedMimetype', () => {
     expect(isAllowedMimetype('text/csv')).toBe(true)
   })
 
+  it('allows Word', () => {
+    expect(isAllowedMimetype('application/msword')).toBe(true)
+    expect(
+      isAllowedMimetype(
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ),
+    ).toBe(true)
+  })
+
+  it('allows video', () => {
+    expect(isAllowedMimetype('video/mp4')).toBe(true)
+    expect(isAllowedMimetype('video/quicktime')).toBe(true)
+    expect(isAllowedMimetype('video/x-msvideo')).toBe(true)
+    expect(isAllowedMimetype('video/webm')).toBe(true)
+  })
+
   it('rejects disallowed types', () => {
     expect(isAllowedMimetype('application/zip')).toBe(false)
     expect(isAllowedMimetype('text/html')).toBe(false)
-    expect(isAllowedMimetype('video/mp4')).toBe(false)
+    expect(isAllowedMimetype('application/x-msdownload')).toBe(false)
     expect(isAllowedMimetype('application/javascript')).toBe(false)
     expect(isAllowedMimetype('')).toBe(false)
   })

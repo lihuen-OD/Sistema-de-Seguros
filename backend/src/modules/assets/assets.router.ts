@@ -18,14 +18,14 @@ export const assetsRouter = Router()
 assetsRouter.use(authMiddleware)
 
 // CRUD principal
-assetsRouter.get('/', validateQuery(ListAssetsQuerySchema), assetsController.list)
+assetsRouter.get('/', requireModule('assets'), validateQuery(ListAssetsQuerySchema), assetsController.list)
 assetsRouter.post(
   '/',
   requireModule('assets'),
   validate(CreateAssetSchema),
   assetsController.create,
 )
-assetsRouter.get('/:id', assetsController.getById)
+assetsRouter.get('/:id', requireModule('assets'), assetsController.getById)
 assetsRouter.put(
   '/:id',
   requireModule('assets'),
@@ -43,10 +43,10 @@ assetsRouter.put(
 )
 
 // Status history
-assetsRouter.get('/:id/status-history', assetsController.getStatusHistory)
+assetsRouter.get('/:id/status-history', requireModule('assets'), assetsController.getStatusHistory)
 
 // Value history
-assetsRouter.get('/:id/value-history', assetsController.getValueHistory)
+assetsRouter.get('/:id/value-history', requireModule('assets'), assetsController.getValueHistory)
 assetsRouter.post(
   '/:id/value-history',
   requireModule('assets'),
@@ -55,7 +55,7 @@ assetsRouter.post(
 )
 
 // Attachments
-assetsRouter.get('/:id/attachments', assetsController.getAttachments)
+assetsRouter.get('/:id/attachments', requireModule('assets'), assetsController.getAttachments)
 assetsRouter.post(
   '/:id/attachments',
   requireModule('assets'),
@@ -68,4 +68,4 @@ assetsRouter.delete(
   requireModule('assets'),
   assetsController.deleteAttachment,
 )
-assetsRouter.get('/:id/attachments/:attachmentId/download', assetsController.downloadAttachment)
+assetsRouter.get('/:id/attachments/:attachmentId/download', requireModule('assets'), assetsController.downloadAttachment)

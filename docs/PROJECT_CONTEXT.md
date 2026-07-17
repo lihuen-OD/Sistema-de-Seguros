@@ -70,9 +70,22 @@ Tipo de producto:
 
 ## Current project status
 
-**Initial stage: frontend mock-first.**
+> **Actualizado 2026-07-17 — esta sección quedó desactualizada, léase con cuidado.**
+> El proyecto **ya superó la etapa mock-first** descripta debajo: hoy tiene un backend real
+> (Node/Express/TypeScript/Prisma), base de datos real (PostgreSQL en Neon, no Supabase),
+> autenticación real (JWT + bcrypt) y servicios externos reales conectados (Cloudinary para
+> archivos, Resend para emails). El frontend consume esa API real, no datos ficticios. Ver
+> el estado real y actualizado en `docs/BUSINESS_DOMAIN.md` (sección "Estado actual del
+> sistema") y en el propio código de `backend/src/` y `frontend/src/`.
+>
+> El texto original de esta sección se conserva debajo sin editar porque describe
+> correctamente cómo arrancó el proyecto (útil como contexto histórico), pero **no
+> describe el estado actual** — no asumir que "sin backend/base de datos/auth real" sigue
+> siendo cierto.
 
-La primera etapa del proyecto debe ser:
+**Initial stage (histórico, ya superado): frontend mock-first.**
+
+La primera etapa del proyecto debía ser (y fue, en su momento):
 
 * Frontend navegable.
 * Datos ficticios realistas.
@@ -1636,74 +1649,94 @@ Crear helpers de formato:
 
 ## Environment variables
 
-### Current mock-first stage
+> **Actualizado 2026-07-17.** Ya no es "pending" — esto es lo que el backend/frontend
+> realmente usan hoy. Ver la lista completa y comentada en `backend/.env.example`.
+
+### Backend (`backend/.env`)
 
 ```bash
-# No required environment variables for the mock-only frontend stage.
+NODE_ENV=development            # development | production | test
+PORT=3001
+FRONTEND_URL=http://localhost:5173   # acepta lista separada por comas (multi-origen CORS)
+
+DATABASE_URL=postgresql://...   # Neon, pooled (runtime)
+DIRECT_URL=postgresql://...     # Neon, directa (migraciones)
+
+JWT_SECRET=                     # obligatorio, mínimo 32 caracteres
+
+SEED_ADMIN_EMAIL=               # solo para prisma/seed-admin.ts
+SEED_ADMIN_PASSWORD=
+SEED_ADMIN_NAME=
+
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+
+EMAIL_PROVIDER=resend
+EMAIL_ENABLED=true
+RESEND_API_KEY=
+EMAIL_FROM_DEFAULT="Sistema Seguros <notificaciones@losodwyer.com>"
+EMAIL_FROM_NOTIFICATIONS="Sistema Seguros <notificaciones@losodwyer.com>"
+EMAIL_FROM_MANUAL="Sistema Seguros <seguros@losodwyer.com>"
+EMAIL_FORCE_TO=                 # si se setea, TODOS los emails van acá — dejar vacío en producción
+EMAIL_LOG_BODY=false            # true solo para debug puntual, no dejar en producción
 ```
 
-### Future backend/database stage
-
-Pending.
-
-Variables posibles cuando se defina arquitectura:
+### Frontend (`frontend/.env`, opcional)
 
 ```bash
-DATABASE_URL=pending
-JWT_SECRET=pending
-APP_ENV=pending
-FILE_STORAGE_PROVIDER=pending
+VITE_API_URL=http://localhost:3001   # default si no se define
 ```
 
-Si se usa frontend separado:
+No hay ninguna otra variable `VITE_*` — el frontend nunca debe leer ni recibir secretos de
+backend (JWT_SECRET, RESEND_API_KEY, CLOUDINARY_API_SECRET, DATABASE_URL).
 
-```bash
-VITE_API_URL=pending
-```
-
-Si se usa PostgreSQL gestionado:
-
-```bash
-DATABASE_URL=postgresql://pending
-```
+No existe todavía un valor "demo" para `NODE_ENV` (`backend/src/config/env.ts` solo acepta
+`development | production | test`) — la separación demo/producción hoy depende de usar
+proyectos/ramas de Neon y cuentas de Cloudinary distintas a nivel de infraestructura, no de
+una bandera en código.
 
 ---
 
 ## Commands
 
-### Install
+### Backend (`backend/`)
 
 ```bash
 npm install
+npm run dev              # ts-node-dev, hot reload
+npm run build            # tsc — type-check + compila a dist/
+npm start                # corre dist/server.js (post-build)
+npm test                 # jest --runInBand (361+ tests, Prisma mockeado, no toca ninguna DB real)
+npm run db:migrate       # prisma migrate dev (desarrollo)
+npm run db:deploy        # prisma migrate deploy (aplica migraciones pendientes, uso en deploy)
+npm run db:studio        # prisma studio
+npm run db:seed          # prisma/seed.ts — BORRA y recrea datos ficticios; exige NODE_ENV != production
+                          # y SEED_CONFIRM=I_UNDERSTAND_THIS_DELETES_ALL_DATA
+npm run db:seed:admin    # prisma/seed-admin.ts — crea el primer ADMIN si la tabla users está vacía
+npm run db:seed:config   # prisma/seed-config.ts — catálogos base
+npm run db:seed:access-profiles  # prisma/seed-access-profiles.ts — perfiles de acceso de ejemplo
 ```
 
-### Development
+### Frontend (`frontend/`)
 
 ```bash
-npm run dev
+npm install
+npm run dev        # vite
+npm run build       # tsc && vite build
+npm run preview     # sirve el build de producción localmente
 ```
 
-### Build
-
-```bash
-npm run build
-```
-
-### Test
-
-```bash
-npm run test
-```
-
-**Status:** Pending validation. Confirmar si existe script `test` en `package.json`.
+No hay script `test` en el frontend todavía (no hay tests automatizados de frontend — ver
+`docs/TESTING_QA_STANDARDS.md` para el checklist manual mientras tanto). Tampoco hay script
+`lint` en ninguno de los dos proyectos (sin ESLint/Prettier configurado todavía).
 
 ### Migrations
 
-```bash
-pending
-```
-
-No hay migraciones en la etapa mock-first.
+Reales, en `backend/prisma/migrations/` (Prisma Migrate). Para aplicar las pendientes en un
+ambiente ya desplegado: `npm run db:deploy` (equivalente a `prisma migrate deploy`, no
+interactivo, no genera migraciones nuevas). Para crear una migración nueva en desarrollo:
+`npm run db:migrate` (equivalente a `prisma migrate dev`, sí es interactivo).
 
 ---
 
@@ -1754,22 +1787,29 @@ No hay migraciones en la etapa mock-first.
 
 ## AI-specific instructions for this project
 
-* Do not invent business rules.
-* Do not modify core flows without checking this file.
+> **Actualizado 2026-07-17.** Las siguientes ítems ya no aplican porque describían la etapa
+> mock-first inicial, hoy superada — se dejan tachados para que quede explícito que fueron
+> revisados a propósito, no que se pasaron por alto:
+> ~~Do not assume Supabase as confirmed architecture~~ (confirmado: no se usa Supabase, es
+> PostgreSQL directo en Neon). ~~Do not assume PostgreSQL is final until confirmed~~
+> (confirmado: PostgreSQL/Neon). ~~Do not connect external services unless explicitly
+> requested~~ (ya conectados y en uso: Cloudinary, Resend). ~~Do not create backend
+> complexity in the mock-first stage~~ / ~~Keep the first stage mock-first~~ (no hay etapa
+> mock-first vigente — el backend real es la mayor parte del sistema hoy).
+
+* Do not invent business rules, endpoints, tablas, campos, variables de entorno o servicios sin chequear el código real primero.
+* Do not modify core flows without checking this file **and the real implementation in `backend/src/modules/` / `frontend/src/modules/`** — este documento describe intención, el código es la fuente de verdad sobre el comportamiento actual.
 * Do not change API contracts without reviewing frontend/backend impact.
-* Do not modify database schema without documenting migration impact.
-* Do not assume Supabase as confirmed architecture.
-* Do not assume PostgreSQL is final until confirmed, but treat it as the most likely relational option.
-* Do not connect external services unless explicitly requested.
-* Do not create backend complexity in the mock-first stage.
+* Do not modify database schema without documenting migration impact, and never run `prisma migrate reset`/`db push` against a real database without explicit confirmation.
+* Do not connect a new external service unless explicitly requested (Cloudinary y Resend ya están conectados y en uso — no son "futuro").
 * Do not change the global layout without checking `docs/PROJECT_UI_CONTEXT.md`.
 * Do not create generic AI-looking UI.
 * Do not modify shared components without checking all screens that use them.
 * Do not mix financial analysis and economic analysis.
 * Do not allow accounting documents without associated policies.
 * Do not allow policies without asset unless company and cost center are provided.
-* Keep the first stage mock-first.
-* Keep the architecture backend-ready and database-ready.
+* Do not hardcode secrets, tokens or credentials, and never leave security checks only in the frontend — the backend must enforce them (`requireModule`/`requireRole` on every route, incluidas las de lectura).
+* Keep the architecture backend-ready and database-ready — ya lo está; no reintroducir mocks donde ya hay datos reales.
 * Use Spanish labels in the UI.
 * Maintain professional enterprise UX.
 * Document every assumption.

@@ -39,7 +39,10 @@ const DocumentBaseSchema = z.object({
   insuranceCompany: z.string().max(300).optional().nullable(),
   paymentMethod: z.string().max(100).optional().nullable(),
   linkedDocumentId: z.string().uuid('ID de documento vinculado inválido').optional().nullable(),
-  documentStatus: z.enum(['ISSUED', 'APPLIED', 'CANCELLED', 'OBSERVED']).optional(),
+  // documentStatus NO es un campo que el cliente pueda escribir — el estado
+  // inicial siempre es ISSUED (ver create()) y el único camino para cambiarlo
+  // es POST /:id/apply o POST /:id/cancel, que validan saldo, tipo de
+  // documento y transiciones válidas antes de tocarlo.
   relationType: z.enum(['CREDITS', 'DEBITS', 'REPLACES', 'ADJUSTS', 'ENDORSES']).optional().nullable(),
   adjustmentReason: z.string().max(100).optional().nullable(),
   adjustmentSign: z.enum(['POSITIVE', 'NEGATIVE']).optional().nullable(),

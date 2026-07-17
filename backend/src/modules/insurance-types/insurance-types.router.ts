@@ -14,8 +14,12 @@ export const insuranceTypesRouter = Router()
 
 insuranceTypesRouter.use(authMiddleware)
 
+// También lo consume el formulario de Pólizas (selector de tipo de seguro).
+const INSURANCE_TYPES_READ_MODULES = ['insurance_types', 'policies'] as const
+
 insuranceTypesRouter.get(
   '/',
+  requireModule(...INSURANCE_TYPES_READ_MODULES),
   validateQuery(ListInsuranceTypesQuerySchema),
   insuranceTypesController.list,
 )
@@ -25,7 +29,7 @@ insuranceTypesRouter.post(
   validate(CreateInsuranceTypeSchema),
   insuranceTypesController.create,
 )
-insuranceTypesRouter.get('/:id', insuranceTypesController.getById)
+insuranceTypesRouter.get('/:id', requireModule(...INSURANCE_TYPES_READ_MODULES), insuranceTypesController.getById)
 insuranceTypesRouter.put(
   '/:id',
   requireModule('insurance_types'),

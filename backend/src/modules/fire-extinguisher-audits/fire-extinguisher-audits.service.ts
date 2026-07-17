@@ -577,6 +577,13 @@ export const fireExtinguisherAuditsService = {
     if (audit.status !== 'SUBMITTED') {
       throw new AppError(409, 'Esta auditoría ya fue revisada', 'ALREADY_REVIEWED')
     }
+    if (audit.auditedBy === reviewedBy) {
+      throw new AppError(
+        403,
+        'No podés revisar/aprobar una auditoría que vos mismo auditaste',
+        'SELF_REVIEW_FORBIDDEN',
+      )
+    }
 
     const pending = audit.proposedChanges.filter((pc) => pc.status === 'PENDING')
     const reviewedAt = new Date()

@@ -451,6 +451,39 @@ describe('Claims API', () => {
       expect(res.body.data.type).toBe('nota_agregada')
     })
 
+    it('ignores a createdBy sent in the body and always uses the authenticated user', async () => {
+      db.claim.findUnique.mockResolvedValue(fakeClaim) // assertExists
+      db.claimEvent.create.mockResolvedValue(fakeEvent)
+
+      await request(app)
+        .post('/api/v1/claims/claim-uuid-1/events')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          type: 'nota_agregada',
+          description: 'Se agrega nota de seguimiento',
+          date: '2026-01-15',
+          createdBy: 'Otro Usuario Falsificado',
+        })
+
+      expect(db.claimEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ createdBy: 'test@losodwyer.com' }),
+        }),
+      )
+    })
+
+    it('returns 422 when trying to log a system-only event type (estado_cambiado)', async () => {
+      db.claim.findUnique.mockResolvedValue(fakeClaim)
+
+      const res = await request(app)
+        .post('/api/v1/claims/claim-uuid-1/events')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ type: 'estado_cambiado', description: 'Intento de fabricar un cambio de estado', date: '2026-01-15' })
+
+      expect(res.status).toBe(422)
+      expect(db.claimEvent.create).not.toHaveBeenCalled()
+    })
+
     it('returns 403 when a USER without the claims module tries to add an event', async () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
 

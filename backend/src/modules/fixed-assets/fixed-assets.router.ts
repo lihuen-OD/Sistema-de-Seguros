@@ -13,14 +13,16 @@ export const fixedAssetsRouter = Router()
 
 fixedAssetsRouter.use(authMiddleware)
 
-fixedAssetsRouter.get('/', validateQuery(ListFixedAssetsQuerySchema), fixedAssetsController.list)
+// El listado también lo usa el selector de "Bien de Uso" del formulario de
+// Activos (BienDeUsoField), por eso acepta también el módulo `assets`.
+fixedAssetsRouter.get('/', requireModule('fixed_assets', 'assets'), validateQuery(ListFixedAssetsQuerySchema), fixedAssetsController.list)
 fixedAssetsRouter.post(
   '/',
   requireModule('fixed_assets'),
   validate(CreateFixedAssetSchema),
   fixedAssetsController.create,
 )
-fixedAssetsRouter.get('/:id', fixedAssetsController.getById)
+fixedAssetsRouter.get('/:id', requireModule('fixed_assets'), fixedAssetsController.getById)
 fixedAssetsRouter.put(
   '/:id',
   requireModule('fixed_assets'),

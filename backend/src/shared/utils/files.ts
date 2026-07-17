@@ -1,4 +1,4 @@
-export type FileType = 'pdf' | 'image' | 'excel' | 'other'
+export type FileType = 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
 
 const MIME_TO_TYPE: Record<string, FileType> = {
   'application/pdf': 'pdf',
@@ -10,6 +10,12 @@ const MIME_TO_TYPE: Record<string, FileType> = {
   'application/vnd.ms-excel': 'excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'excel',
   'text/csv': 'excel',
+  'application/msword': 'word',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'word',
+  'video/mp4': 'video',
+  'video/quicktime': 'video',
+  'video/x-msvideo': 'video',
+  'video/webm': 'video',
 }
 
 const ALLOWED_MIMETYPES = new Set(Object.keys(MIME_TO_TYPE))

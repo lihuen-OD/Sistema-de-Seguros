@@ -6,7 +6,31 @@ function d(dateStr: string): string {
   return new Date(dateStr + 'T00:00:00.000Z').toISOString()
 }
 
+// Este seed borra TODOS los datos de negocio (pólizas, documentos, siniestros,
+// activos, matafuegos, etc.) antes de insertar datos ficticios de desarrollo.
+// Nunca debe correr contra producción, y contra cualquier otra base requiere
+// confirmación explícita para evitar un `npm run db:seed` accidental con la
+// DATABASE_URL equivocada en la terminal.
+function assertSafeToRunDestructiveSeed(): void {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('❌ seed.ts no se puede correr con NODE_ENV=production.')
+    console.error('   Este script borra TODOS los datos de negocio — es solo para desarrollo/demo.')
+    process.exit(1)
+  }
+  if (process.env.SEED_CONFIRM !== 'I_UNDERSTAND_THIS_DELETES_ALL_DATA') {
+    console.error('❌ seed.ts borra TODOS los datos de negocio de la base antes de insertar datos ficticios.')
+    console.error('   Si DATABASE_URL apunta a una base de desarrollo/demo que podés vaciar con seguridad,')
+    console.error('   volvé a correrlo así:')
+    console.error('')
+    console.error('   SEED_CONFIRM=I_UNDERSTAND_THIS_DELETES_ALL_DATA npm run db:seed')
+    console.error('')
+    process.exit(1)
+  }
+}
+
 async function main() {
+  assertSafeToRunDestructiveSeed()
+
   console.log('Limpiando base de datos...')
 
   await prisma.catalogItem.deleteMany()

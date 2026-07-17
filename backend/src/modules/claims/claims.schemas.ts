@@ -12,6 +12,14 @@ export const CLAIM_EVENT_TYPES = [
   'documento_adjunto', 'siniestro_editado', 'gasto_agregado', 'gasto_editado', 'gasto_eliminado',
 ] as const
 
+// Subset que se puede cargar a mano vía POST /claims/:id/events. El resto
+// (siniestro_creado, estado_cambiado, monto_actualizado, documento_adjunto,
+// gasto_*) sólo los genera el propio servicio (create/update/addAttachment/
+// addExpense/...) — permitirlos acá dejaría fabricar un historial falso.
+export const MANUAL_CLAIM_EVENT_TYPES = [
+  'liquidacion_registrada', 'franquicia_aplicada', 'nota_agregada', 'siniestro_editado',
+] as const
+
 export const OWNERSHIP_TYPES = ['propio', 'terceros'] as const
 
 const ClaimBaseSchema = z.object({
@@ -74,7 +82,7 @@ export const ListClaimsQuerySchema = PaginationSchema.extend({
 })
 
 export const AddEventSchema = z.object({
-  type: z.enum(CLAIM_EVENT_TYPES),
+  type: z.enum(MANUAL_CLAIM_EVENT_TYPES),
   description: z.string().min(1).max(1000),
   date: ISODate,
   previousStatus: z.string().max(100).optional().nullable(),
@@ -82,7 +90,8 @@ export const AddEventSchema = z.object({
   amountLabel: z.string().max(100).optional().nullable(),
   previousAmount: z.number().optional().nullable(),
   newAmount: z.number().optional().nullable(),
-  createdBy: z.string().max(200).optional().nullable(),
+  // createdBy NO es un campo que el cliente pueda escribir — siempre se toma
+  // de req.user.email en el controller, nunca del body (ver claims.controller.ts).
 })
 
 export const AddClaimAttachmentSchema = z.object({

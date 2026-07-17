@@ -27,6 +27,15 @@ import { notificationsRouter } from './modules/notifications/notifications.route
 
 const app = express()
 
+// ─── Trust proxy ─────────────────────────────────────────────────────────────
+// En producción (Render y proveedores similares) el tráfico llega detrás de un
+// reverse proxy/load balancer con X-Forwarded-For. Sin esto, express-rate-limit
+// vería la IP del proxy para todos los requests — el rate limit de /auth/login
+// se aplicaría global (cualquier usuario bloquea a todos) en vez de por IP real.
+if (env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1)
+}
+
 // ─── Security headers ────────────────────────────────────────────────────────
 app.use(helmet())
 

@@ -211,7 +211,7 @@ export const policiesService = {
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
 
     if (!isAllowedMimetype(file.mimetype)) {
-      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel', 'UNSUPPORTED_MEDIA_TYPE')
+      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video', 'UNSUPPORTED_MEDIA_TYPE')
     }
 
     let fileUrl = `local://${file.originalname}`

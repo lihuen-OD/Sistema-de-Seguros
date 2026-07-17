@@ -19,14 +19,14 @@ export const claimsRouter = Router()
 claimsRouter.use(authMiddleware)
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
-claimsRouter.get('/', validateQuery(ListClaimsQuerySchema), claimsController.list)
+claimsRouter.get('/', requireModule('claims'), validateQuery(ListClaimsQuerySchema), claimsController.list)
 claimsRouter.post(
   '/',
   requireModule('claims'),
   validate(CreateClaimSchema),
   claimsController.create,
 )
-claimsRouter.get('/:id', claimsController.getById)
+claimsRouter.get('/:id', requireModule('claims'), claimsController.getById)
 claimsRouter.put(
   '/:id',
   requireModule('claims'),
@@ -36,7 +36,7 @@ claimsRouter.put(
 claimsRouter.delete('/:id', requireModule('claims'), claimsController.remove)
 
 // ── Eventos ───────────────────────────────────────────────────────────────────
-claimsRouter.get('/:id/events', claimsController.getEvents)
+claimsRouter.get('/:id/events', requireModule('claims'), claimsController.getEvents)
 claimsRouter.post(
   '/:id/events',
   requireModule('claims'),
@@ -50,7 +50,7 @@ claimsRouter.delete(
 )
 
 // ── Gastos ────────────────────────────────────────────────────────────────────
-claimsRouter.get('/:id/expenses', claimsController.getExpenses)
+claimsRouter.get('/:id/expenses', requireModule('claims'), claimsController.getExpenses)
 claimsRouter.post(
   '/:id/expenses',
   requireModule('claims'),
@@ -70,7 +70,7 @@ claimsRouter.delete(
 )
 
 // ── Attachments ───────────────────────────────────────────────────────────────
-claimsRouter.get('/:id/attachments', claimsController.getAttachments)
+claimsRouter.get('/:id/attachments', requireModule('claims'), claimsController.getAttachments)
 claimsRouter.post(
   '/:id/attachments',
   requireModule('claims'),
@@ -83,4 +83,4 @@ claimsRouter.delete(
   requireModule('claims'),
   claimsController.deleteAttachment,
 )
-claimsRouter.get('/:id/attachments/:attachmentId/download', claimsController.downloadAttachment)
+claimsRouter.get('/:id/attachments/:attachmentId/download', requireModule('claims'), claimsController.downloadAttachment)

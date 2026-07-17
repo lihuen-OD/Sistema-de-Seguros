@@ -212,16 +212,33 @@ describe('GET /api/v1/fire-extinguisher-audits/findings-report', () => {
     expect(res.body.data.establishments[0].establishment).toBe('Sin establecimiento')
   })
 
-  it.each([
-    ['ADMIN', 'ADMIN'],
-    ['a USER with no modules', 'USER'],
-  ] as const)('returns 200 for any authenticated role (%s) — no role restriction', async (_label, role) => {
-    if (role === 'USER') db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+  it('returns 200 for ADMIN (bypass total)', async () => {
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/findings-report')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+  })
+
+  it('returns 403 for a USER without the fire_extinguisher_audits module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
 
     const res = await request(app)
       .get('/api/v1/fire-extinguisher-audits/findings-report')
       .query({ period: PERIOD })
-      .set('Authorization', `Bearer ${role === 'ADMIN' ? adminToken() : userToken()}`)
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 200 for a USER with the fire_extinguisher_audits module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguisher_audits'] }))
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/findings-report')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${userToken()}`)
 
     expect(res.status).toBe(200)
   })

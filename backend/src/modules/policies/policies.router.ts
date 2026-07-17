@@ -16,14 +16,14 @@ export const policiesRouter = Router()
 policiesRouter.use(authMiddleware)
 
 // CRUD principal
-policiesRouter.get('/', validateQuery(ListPoliciesQuerySchema), policiesController.list)
+policiesRouter.get('/', requireModule('policies'), validateQuery(ListPoliciesQuerySchema), policiesController.list)
 policiesRouter.post(
   '/',
   requireModule('policies'),
   validate(CreatePolicySchema),
   policiesController.create,
 )
-policiesRouter.get('/:id', policiesController.getById)
+policiesRouter.get('/:id', requireModule('policies'), policiesController.getById)
 policiesRouter.put(
   '/:id',
   requireModule('policies'),
@@ -33,10 +33,10 @@ policiesRouter.put(
 policiesRouter.delete('/:id', requireModule('policies'), policiesController.remove)
 
 // Tasks
-policiesRouter.get('/:id/tasks', policiesController.getTasks)
+policiesRouter.get('/:id/tasks', requireModule('policies'), policiesController.getTasks)
 
 // Attachments
-policiesRouter.get('/:id/attachments', policiesController.getAttachments)
+policiesRouter.get('/:id/attachments', requireModule('policies'), policiesController.getAttachments)
 policiesRouter.post(
   '/:id/attachments',
   requireModule('policies'),
@@ -49,4 +49,4 @@ policiesRouter.delete(
   requireModule('policies'),
   policiesController.deleteAttachment,
 )
-policiesRouter.get('/:id/attachments/:attachmentId/download', policiesController.downloadAttachment)
+policiesRouter.get('/:id/attachments/:attachmentId/download', requireModule('policies'), policiesController.downloadAttachment)

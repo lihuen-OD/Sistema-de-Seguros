@@ -330,8 +330,10 @@ export const documentsService = {
       id,
     )
 
-    const documentStatus = docData.documentStatus ?? existing.documentStatus
-    if (!typeDef.documentStatusOptions.includes(documentStatus as (typeof typeDef.documentStatusOptions)[number])) {
+    // documentStatus nunca viene del cliente (ver documents.schemas.ts) — esto
+    // solo revalida que el estado actual siga siendo válido para el tipo
+    // efectivo tras la edición (ej. si se cambia documentType en la edición).
+    if (!typeDef.documentStatusOptions.includes(existing.documentStatus as (typeof typeDef.documentStatusOptions)[number])) {
       throw new AppError(400, 'Estado de documento inválido para este tipo', 'BAD_REQUEST')
     }
 
@@ -376,7 +378,32 @@ export const documentsService = {
   },
 
   async delete(id: string) {
-    await this.assertDocumentExists(id)
+    const existing = await this.assertDocumentExists(id)
+
+    if (existing.documentStatus === 'APPLIED') {
+      throw new AppError(
+        400,
+        'No se puede eliminar un documento aplicado. Cancelalo primero si necesitás corregirlo.',
+        'BAD_REQUEST',
+      )
+    }
+
+    // linkedDocumentId no tiene FK real en el schema (permite números
+    // compartidos entre compañías/tipos) — sin este chequeo, borrar una
+    // factura dejaría notas de crédito/débito/ajuste con una referencia
+    // colgante y su propio DocumentAuditLog cascadeado en silencio.
+    const dependent = await prisma.accountingDocument.findFirst({
+      where: { linkedDocumentId: id },
+      select: { id: true, documentNumber: true, documentType: true },
+    })
+    if (dependent) {
+      throw new AppError(
+        409,
+        `No se puede eliminar: el documento ${dependent.documentNumber} está vinculado a este`,
+        'HAS_DEPENDENTS',
+      )
+    }
+
     // Cascade handled by Prisma (onDelete: Cascade on installments, allocations, attachments)
     await prisma.accountingDocument.delete({ where: { id } })
   },
@@ -769,7 +796,7 @@ export const documentsService = {
     if (!isAllowedMimetype(file.mimetype)) {
       throw new AppError(
         415,
-        'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel',
+        'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video',
         'UNSUPPORTED_MEDIA_TYPE',
       )
     }

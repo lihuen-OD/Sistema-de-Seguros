@@ -2,13 +2,16 @@
 
 export type Role = 'ADMIN' | 'USER'
 
-// Un módulo = una pantalla otorgable por perfil de acceso. `dashboard`,
-// `financial_analysis`, `economic_analysis` y `fire_extinguisher_dashboard`
-// no tienen rutas de escritura propias que proteger — solo se usan para
-// ocultar/mostrar en el frontend — el resto sí se hace cumplir vía
-// requireModule() en el router correspondiente. Notificaciones NO es un
-// módulo otorgable — agrega datos de todos los módulos sin filtrar por
-// permisos, así que queda exclusivo del ADMIN (requireRole en su router).
+// Un módulo = una pantalla otorgable por perfil de acceso. Todos se hacen
+// cumplir vía requireModule() en el router correspondiente — incluidas las
+// lecturas (GET), no solo las escrituras: un módulo de solo-lectura como
+// `dashboard`/`financial_analysis`/`economic_analysis`/`fire_extinguisher_dashboard`
+// igual expone datos sensibles y necesita el mismo gate que un POST/PUT/DELETE.
+// `economic_analysis` no tiene un endpoint propio — la página compone datos de
+// policies/assets/documents(financial)/companies/cost_centers, cada uno ya
+// protegido por su propio módulo. Notificaciones NO es un módulo otorgable —
+// agrega datos de todos los módulos sin filtrar por permisos, así que queda
+// exclusivo del ADMIN (requireRole en su router).
 export const MODULE_KEYS = [
   'dashboard',
   'assets',

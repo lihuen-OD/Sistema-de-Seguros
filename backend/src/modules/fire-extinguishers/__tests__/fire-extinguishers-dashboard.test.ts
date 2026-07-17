@@ -205,15 +205,30 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     ])
   })
 
-  it.each([
-    ['ADMIN', 'ADMIN'],
-    ['a USER with no modules', 'USER'],
-  ] as const)('returns 200 for any authenticated role (%s) — no role restriction', async (_label, role) => {
-    if (role === 'USER') db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+  it('returns 200 for ADMIN (bypass total)', async () => {
+    const res = await request(app)
+      .get('/api/v1/fire-extinguishers/dashboard/summary')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+  })
+
+  it('returns 403 for a USER without the fire_extinguisher_dashboard module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
 
     const res = await request(app)
       .get('/api/v1/fire-extinguishers/dashboard/summary')
-      .set('Authorization', `Bearer ${role === 'ADMIN' ? adminToken() : userToken()}`)
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 200 for a USER with the fire_extinguisher_dashboard module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguisher_dashboard'] }))
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguishers/dashboard/summary')
+      .set('Authorization', `Bearer ${userToken()}`)
 
     expect(res.status).toBe(200)
   })

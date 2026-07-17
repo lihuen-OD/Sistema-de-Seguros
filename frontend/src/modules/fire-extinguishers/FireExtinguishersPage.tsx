@@ -29,10 +29,21 @@ import type { FireExtinguisher, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 
+// `fe.status` ya es el peor de tres estados (carga, vida útil por
+// fabricación y prueba hidráulica — ver computeFireExtinguisherStatus en el
+// backend). Antes acá se recalculaba isExp/isSoon SOLO con expirationDate
+// (carga), lo que podía mostrar "Vigente"/364d en la columna Días mientras
+// la columna Estado decía "Próx. a Vencer" por una prueba hidráulica a 9
+// días — misma fila, dos respuestas distintas. Ahora ambas columnas
+// respetan el mismo status, y "días" muestra la fecha exacta más próxima
+// entre las que sí tienen fecha (carga y prueba hidráulica; la vida útil
+// por fabricación es solo un año, sin fecha exacta que mostrar acá).
 function getExpiryFlags(fe: FireExtinguisher) {
-  const days = daysUntil(fe.expirationDate)
-  const isExp = days < 0
-  const isSoon = !isExp && days <= 30
+  const chargeDays = daysUntil(fe.expirationDate)
+  const hydraulicDays = fe.hydraulicTestExpirationDate ? daysUntil(fe.hydraulicTestExpirationDate) : null
+  const days = hydraulicDays != null ? Math.min(chargeDays, hydraulicDays) : chargeDays
+  const isExp = fe.status === 'vencido'
+  const isSoon = fe.status === 'proximo_vencer'
   return { days, isExp, isSoon }
 }
 

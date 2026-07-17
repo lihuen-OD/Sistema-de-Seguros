@@ -15,15 +15,18 @@ export const producersRouter = Router()
 
 producersRouter.use(authMiddleware)
 
-// CRUD principal
-producersRouter.get('/', validateQuery(ListProducersQuerySchema), producersController.list)
+// CRUD principal — el listado también lo consumen Tareas, Dashboard y
+// Pólizas (selector/agregado de productor), de ahí el OR de módulos.
+const PRODUCERS_LIST_MODULES = ['producers', 'tasks', 'dashboard', 'policies'] as const
+
+producersRouter.get('/', requireModule(...PRODUCERS_LIST_MODULES), validateQuery(ListProducersQuerySchema), producersController.list)
 producersRouter.post(
   '/',
   requireModule('producers'),
   validate(CreateProducerSchema),
   producersController.create,
 )
-producersRouter.get('/:id', producersController.getById)
+producersRouter.get('/:id', requireModule('producers'), producersController.getById)
 producersRouter.put(
   '/:id',
   requireModule('producers'),
@@ -32,8 +35,8 @@ producersRouter.put(
 )
 producersRouter.delete('/:id', requireModule('producers'), producersController.remove)
 
-// Tasks
-producersRouter.get('/:id/tasks', producersController.getTasks)
+// Tasks — agregado también por Tareas y Dashboard (tareas de todos los productores)
+producersRouter.get('/:id/tasks', requireModule('producers', 'tasks', 'dashboard'), producersController.getTasks)
 producersRouter.post(
   '/:id/tasks',
   requireModule('tasks'),

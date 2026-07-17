@@ -13,14 +13,19 @@ export const companiesRouter = Router()
 
 companiesRouter.use(authMiddleware)
 
-companiesRouter.get('/', validateQuery(ListCompaniesQuerySchema), companiesController.list)
+// Company es dato de referencia consumido como selector por varios módulos
+// (Assets, Pólizas, Dashboard, Análisis financiero/económico) además de su
+// propia pantalla de configuración — de ahí la lista amplia de módulos.
+const COMPANIES_READ_MODULES = ['companies', 'dashboard', 'assets', 'policies', 'financial_analysis', 'economic_analysis'] as const
+
+companiesRouter.get('/', requireModule(...COMPANIES_READ_MODULES), validateQuery(ListCompaniesQuerySchema), companiesController.list)
 companiesRouter.post(
   '/',
   requireModule('companies'),
   validate(CreateCompanySchema),
   companiesController.create,
 )
-companiesRouter.get('/:id', companiesController.getById)
+companiesRouter.get('/:id', requireModule(...COMPANIES_READ_MODULES), companiesController.getById)
 companiesRouter.put(
   '/:id',
   requireModule('companies'),

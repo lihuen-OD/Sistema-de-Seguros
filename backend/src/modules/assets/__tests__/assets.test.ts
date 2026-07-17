@@ -142,8 +142,20 @@ describe('Assets API', () => {
       expect(res.status).toBe(401)
     })
 
-    it('a USER with no modules can still list assets (lecturas abiertas a cualquier autenticado)', async () => {
+    it('a USER without the assets module gets 403', async () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+      db.asset.findMany.mockResolvedValue([])
+      db.asset.count.mockResolvedValue(0)
+
+      const res = await request(app)
+        .get('/api/v1/assets')
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(403)
+    })
+
+    it('a USER with the assets module can list assets', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['assets'] }))
       db.asset.findMany.mockResolvedValue([])
       db.asset.count.mockResolvedValue(0)
 

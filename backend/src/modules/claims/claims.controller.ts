@@ -44,7 +44,7 @@ export const claimsController = {
   }),
 
   addEvent: asyncHandler(async (req: Request<IdParam>, res: Response) => {
-    const event = await claimsService.addEvent(req.params.id, req.body as AddEventDTO)
+    const event = await claimsService.addEvent(req.params.id, req.body as AddEventDTO, req.user?.email)
     res.status(201).json({ data: event })
   }),
 

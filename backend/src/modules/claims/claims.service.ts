@@ -299,7 +299,7 @@ export const claimsService = {
     return events.map((e) => mapEvent(e as unknown as Record<string, unknown>))
   },
 
-  async addEvent(claimId: string, data: AddEventDTO) {
+  async addEvent(claimId: string, data: AddEventDTO, createdBy?: string) {
     await this.assertExists(claimId)
 
     const event = await prisma.claimEvent.create({
@@ -313,7 +313,7 @@ export const claimsService = {
         amountLabel: data.amountLabel ?? null,
         previousAmount: data.previousAmount ?? null,
         newAmount: data.newAmount ?? null,
-        createdBy: data.createdBy ?? null,
+        createdBy: createdBy ?? null,
       },
     })
 
@@ -446,7 +446,7 @@ export const claimsService = {
     await this.assertExists(claimId)
 
     if (!isAllowedMimetype(file.mimetype)) {
-      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word', 'UNSUPPORTED_MEDIA_TYPE')
+      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video', 'UNSUPPORTED_MEDIA_TYPE')
     }
 
     let fileUrl = `local://${file.originalname}`

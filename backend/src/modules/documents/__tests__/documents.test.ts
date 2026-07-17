@@ -621,6 +621,29 @@ describe('Documents API', () => {
       expect(res.body.error.code).toBe('BAD_REQUEST')
       expect(db.accountingDocument.update).not.toHaveBeenCalled()
     })
+
+    it('ignores a documentStatus sent in the body — the status can only change via /apply or /cancel', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(fakeDocument) // ISSUED
+      db.accountingDocument.update.mockResolvedValue({
+        ...fakeDocument,
+        netAmount: 2000,
+        installments: [],
+        allocations: [],
+        attachments: [],
+      })
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ netAmount: 2000, documentStatus: 'APPLIED' })
+
+      expect(res.status).toBe(200)
+      expect(db.accountingDocument.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({ documentStatus: expect.anything() }),
+        }),
+      )
+    })
   })
 
   // ── PUT /api/v1/documents/:id/installments ──────────────────────────────────
@@ -737,6 +760,7 @@ describe('Documents API', () => {
   describe('DELETE /api/v1/documents/:id', () => {
     it('returns 200 when ADMIN deletes document', async () => {
       db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
+      db.accountingDocument.findFirst.mockResolvedValueOnce(null) // sin dependientes
       db.accountingDocument.delete.mockResolvedValue(fakeDocument)
 
       const res = await request(app)
@@ -744,6 +768,35 @@ describe('Documents API', () => {
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(200)
+    })
+
+    it('returns 400 and blocks deleting when the document is already APPLIED', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, documentStatus: 'APPLIED' })
+
+      const res = await request(app)
+        .delete(`/api/v1/documents/${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('BAD_REQUEST')
+      expect(db.accountingDocument.delete).not.toHaveBeenCalled()
+    })
+
+    it('returns 409 and blocks deleting when another document is linked to it', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
+      db.accountingDocument.findFirst.mockResolvedValueOnce({
+        id: OTHER_ID,
+        documentNumber: 'NC-001',
+        documentType: 'CREDIT_NOTE',
+      })
+
+      const res = await request(app)
+        .delete(`/api/v1/documents/${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('HAS_DEPENDENTS')
+      expect(db.accountingDocument.delete).not.toHaveBeenCalled()
     })
 
     it('returns 403 when a USER without the documents module tries to delete', async () => {

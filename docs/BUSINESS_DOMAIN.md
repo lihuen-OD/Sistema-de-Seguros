@@ -462,6 +462,48 @@ Estos campos se calculan en runtime, no se guardan como dato fijo:
 
 ## Estado actual del sistema
 
+> **Actualizado 2026-07-17.** Esta sección reemplaza la tabla "mock-first" anterior — ya
+> quedó desactualizada: el sistema tiene backend real (Node/Express/TypeScript/Prisma),
+> base de datos real (PostgreSQL en Neon) y frontend conectado a esa API, no a datos
+> mockeados. Se conserva más abajo, marcada como histórica, para contexto de cómo arrancó
+> el proyecto.
+
+| Módulo | Backend real | Frontend conectado | Notas |
+|--------|:---:|:---:|-------|
+| Activos (assets) | ✅ | ✅ | Con historial de valores/estado y adjuntos |
+| Bienes de Uso (fixed-assets) | ✅ | ✅ | Catálogo contable, distinto de Activos |
+| Pólizas | ✅ | ✅ | Con adjuntos y tareas asociadas |
+| Documentos contables | ✅ | ✅ | Ciclo aplicar/anular, notas de crédito/débito, ajustes, refacturación, endosos |
+| Cuotas | ✅ | ✅ | Por documento, con estado de pago propio |
+| Productores + tareas | ✅ | ✅ | |
+| Matafuegos + auditorías | ✅ | ✅ | Auditoría con flujo de revisión/aprobación separado |
+| Siniestros | ✅ | ✅ | Con eventos, gastos y adjuntos |
+| Análisis Financiero / Económico | ✅ | ✅ | Compone datos de varios módulos |
+| Dashboard | ✅ | ✅ | KPIs agregados en vivo |
+| Empresas / Centros de costo / Tipos de seguro | ✅ | ✅ | Datos de referencia |
+| Usuarios / Perfiles de acceso | ✅ | ✅ | Roles ADMIN/USER + módulos otorgables por perfil |
+| Emails (Resend) | ✅ | ✅ | Envío manual de documentos, con `EmailLog` de auditoría |
+| Notificaciones | ✅ | ✅ | Exclusivo ADMIN |
+
+**Etapa actual:** backend y base de datos reales en desarrollo activo, con despliegue documentado a Render (backend) y Netlify (frontend). Ver `docs/DEVOPS_DEPLOYMENT_STANDARDS.md`.
+
+---
+
+## Decisiones de negocio ya resueltas (antes "pendientes de validar")
+
+Estas preguntas se planteaban antes de construir el backend. Así quedaron resueltas en la implementación actual (ver `backend/src/modules/documents/document-types.ts` y `documents.service.ts`):
+
+1. **Endoso** (`ENDORSEMENT`): se asocia a una póliza (`policyId`), no genera cuotas propias; `endorsementType` y `economicImpactType` describen si aumenta/disminuye costo o no tiene impacto económico.
+2. **Nota de crédito** (`CREDIT_NOTE`): requiere `linkedDocumentId` a una factura existente y no anulada; al aplicarse (`POST /:id/apply`) genera una asignación (`DocumentPolicyAllocation`) negativa proporcional, validada contra el saldo disponible de la factura.
+3. **Estado de pago**: se registra **por cuota** (`DocumentInstallment.paymentStatus`), no por documento completo.
+4. **Cuotas**: las define el documento al crearse/editarse (`installments[]` en el payload), no se ajustan automáticamente por póliza.
+5. **Multiempresa**: sí — `Company` es una entidad propia y activos/pólizas/documentos se asignan a una o más empresas vía `AssetAllocation`/`companyId`.
+6. **Integración con sistema contable externo**: no implementada; los documentos contables viven enteramente en este sistema.
+7. **Tipo de cambio**: se registra por documento (`exchangeRate` al momento de la operación), no hay tabla de historial de cotizaciones.
+
+<details>
+<summary>Versión histórica de esta sección (etapa mock-first, ya superada)</summary>
+
 | Módulo | Datos mock | Pantallas | Estado |
 |--------|-----------|-----------|--------|
 | Activos | ✅ 17 activos | ✅ Lista, detalle, ficha, nuevo, edición | Completo |
@@ -477,13 +519,9 @@ Estos campos se calculan en runtime, no se guardan como dato fijo:
 | Empresas | ✅ Mock data | ✅ Pantalla | Completo |
 | Centros de costo | ✅ Mock data | ✅ Pantalla | Completo |
 
-**Etapa actual:** frontend mock-first navegable. Sin backend ni base de datos real.
+**Etapa (histórica):** frontend mock-first navegable. Sin backend ni base de datos real.
 
----
-
-## Decisiones pendientes de validar con el negocio
-
-Antes de construir el backend estas preguntas deben resolverse:
+Preguntas que en su momento estaban pendientes de validar con el negocio antes de construir el backend (ver arriba cómo se resolvieron):
 
 1. ¿Cómo afecta un **endoso** a la póliza? ¿Suma suma asegurada? ¿Cambia la vigencia? ¿Modifica el importe?
 2. ¿Cómo se procesa una **nota de crédito**? ¿Resta del total de la factura original?
@@ -492,3 +530,5 @@ Antes de construir el backend estas preguntas deben resolverse:
 5. ¿El sistema será **multiempresa** (un solo login ve varias empresas) o monempresa?
 6. ¿Se requerirá integración con sistema contable externo (SAP, Tango, etc.)?
 7. ¿Se va a manejar el historial de tipos de cambio o solo el tipo de cambio al momento de la operación?
+
+</details>

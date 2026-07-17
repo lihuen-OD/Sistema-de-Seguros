@@ -14,10 +14,16 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
+// `fire_extinguisher_audit_coverage` (auditar/crear) y `fire_extinguisher_audits`
+// (revisar/aprobar) están separados a propósito y NUNCA deben coexistir en el
+// mismo perfil — si no, la misma persona podría auditar y aprobar su propia
+// auditoría (ver el chequeo `audit.auditedBy === reviewedBy` en
+// fire-extinguisher-audits.service.ts#review).
 const PROFILES = [
   { name: 'Seguros', modules: ['assets', 'policies', 'documents'] },
   { name: 'Siniestros', modules: ['claims'] },
-  { name: 'Auditor de Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits'] },
+  { name: 'Auditor de Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audit_coverage'] },
+  { name: 'Revisor de Auditorías de Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits'] },
 ]
 
 async function main() {

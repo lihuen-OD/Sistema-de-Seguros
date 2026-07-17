@@ -751,6 +751,22 @@ model User {
   @@map("users")
 }
 
+// Sin relación formal a User a propósito: un audit log debe sobrevivir aunque
+// el usuario referenciado se borre en el futuro (hoy no hay DELETE de
+// usuarios, pero no queremos que este log dependa de que eso siga así).
+model UserAuditLog {
+  id           String   @id @default(uuid())
+  targetUserId String
+  action       String // CREATE | UPDATE | RESET_PASSWORD
+  previousData Json?
+  newData      Json?
+  performedBy  String?
+  createdAt    DateTime @default(now())
+
+  @@index([targetUserId])
+  @@map("user_audit_logs")
+}
+
 // Perfil de acceso reutilizable: el ADMIN lo crea con un nombre y una lista
 // de módulos (pantallas) habilitados; varios usuarios pueden compartir un
 // mismo perfil. Editar `modules` acá afecta a todos sus usuarios de inmediato

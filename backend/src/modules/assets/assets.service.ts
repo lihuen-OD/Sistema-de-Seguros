@@ -361,7 +361,7 @@ export const assetsService = {
     await assertAssetExists(assetId)
 
     if (!isAllowedMimetype(file.mimetype)) {
-      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel', 'UNSUPPORTED_MEDIA_TYPE')
+      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video', 'UNSUPPORTED_MEDIA_TYPE')
     }
 
     let fileUrl = `local://${file.originalname}`

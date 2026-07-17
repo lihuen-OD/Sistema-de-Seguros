@@ -315,7 +315,12 @@ export default function FireExtinguisherDetailPage() {
                 value={FIRE_EXT_STATUS_LABELS[fe.status] ?? fe.status}
                 description="Estado actual del matafuego"
                 icon={Flame}
-                variant={isExpired ? 'danger' : isSoon ? 'warning' : 'success'}
+                // Variant en base a fe.status (el peor entre carga, vida útil y
+                // prueba hidráulica) — no a isExpired/isSoon, que son solo de
+                // la fecha de carga. Si no, esta tarjeta podía decir "Próx. a
+                // Vencer" en verde cuando lo que vencía pronto era la prueba
+                // hidráulica, no la carga.
+                variant={fe.status === 'vencido' ? 'danger' : fe.status === 'proximo_vencer' ? 'warning' : 'success'}
               />
               {asset ? (
                 <KpiCard
