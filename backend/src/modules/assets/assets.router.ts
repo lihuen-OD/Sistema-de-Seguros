@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
-import { requireRole } from '../../middleware/roles.middleware'
+import { requireModule } from '../../middleware/roles.middleware'
 import { validate, validateQuery } from '../../middleware/validate.middleware'
 import { upload } from '../../middleware/upload.middleware'
 import {
@@ -21,23 +21,23 @@ assetsRouter.use(authMiddleware)
 assetsRouter.get('/', validateQuery(ListAssetsQuerySchema), assetsController.list)
 assetsRouter.post(
   '/',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('assets'),
   validate(CreateAssetSchema),
   assetsController.create,
 )
 assetsRouter.get('/:id', assetsController.getById)
 assetsRouter.put(
   '/:id',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('assets'),
   validate(UpdateAssetSchema),
   assetsController.update,
 )
-assetsRouter.delete('/:id', requireRole('ADMIN'), assetsController.remove)
+assetsRouter.delete('/:id', requireModule('assets'), assetsController.remove)
 
 // Allocations
 assetsRouter.put(
   '/:id/allocations',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('assets'),
   validate(ReplaceAllocationsSchema),
   assetsController.replaceAllocations,
 )
@@ -49,7 +49,7 @@ assetsRouter.get('/:id/status-history', assetsController.getStatusHistory)
 assetsRouter.get('/:id/value-history', assetsController.getValueHistory)
 assetsRouter.post(
   '/:id/value-history',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('assets'),
   validate(AddValueHistorySchema),
   assetsController.addValueHistory,
 )
@@ -58,14 +58,14 @@ assetsRouter.post(
 assetsRouter.get('/:id/attachments', assetsController.getAttachments)
 assetsRouter.post(
   '/:id/attachments',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('assets'),
   upload.single('file'),
   validate(AddAttachmentSchema),
   assetsController.addAttachment,
 )
 assetsRouter.delete(
   '/:id/attachments/:attachmentId',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('assets'),
   assetsController.deleteAttachment,
 )
 assetsRouter.get('/:id/attachments/:attachmentId/download', assetsController.downloadAttachment)

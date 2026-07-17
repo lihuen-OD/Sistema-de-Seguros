@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
-import { requireRole } from '../../middleware/roles.middleware'
+import { requireModule } from '../../middleware/roles.middleware'
 import { validate, validateQuery } from '../../middleware/validate.middleware'
 import { upload } from '../../middleware/upload.middleware'
 import { documentsController } from './documents.controller'
@@ -25,7 +25,7 @@ documentsRouter.use(authMiddleware)
 documentsRouter.get('/', validateQuery(ListDocumentsQuerySchema), documentsController.list)
 documentsRouter.post(
   '/',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('documents'),
   validate(CreateDocumentSchema),
   documentsController.create,
 )
@@ -46,24 +46,24 @@ documentsRouter.get('/bulk/allocations', validateQuery(BulkIdsQuerySchema), docu
 documentsRouter.get('/:id', documentsController.getById)
 documentsRouter.put(
   '/:id',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('documents'),
   validate(UpdateDocumentSchema),
   documentsController.update,
 )
-documentsRouter.delete('/:id', requireRole('ADMIN', 'CONTADOR'), documentsController.remove)
+documentsRouter.delete('/:id', requireModule('documents'), documentsController.remove)
 
 // ── Saldo y ciclo de aplicación (Fase 2) ──────────────────────────────────────
 documentsRouter.get('/:id/balance', documentsController.getBalance)
-documentsRouter.post('/:id/apply', requireRole('ADMIN', 'CONTADOR'), documentsController.apply)
+documentsRouter.post('/:id/apply', requireModule('documents'), documentsController.apply)
 documentsRouter.post(
   '/:id/cancel',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('documents'),
   validate(CancelDocumentSchema),
   documentsController.cancel,
 )
 documentsRouter.post(
   '/:id/send-email',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('documents'),
   validate(SendDocumentEmailSchema),
   documentsController.sendEmail,
 )
@@ -75,13 +75,13 @@ documentsRouter.get('/:id/audit-log', documentsController.getAuditLog)
 documentsRouter.get('/:id/installments', documentsController.getInstallments)
 documentsRouter.put(
   '/:id/installments',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('documents'),
   validate(ReplaceInstallmentsSchema),
   documentsController.replaceInstallments,
 )
 documentsRouter.put(
   '/:id/installments/:installmentId',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('documents'),
   validate(UpdateInstallmentSchema),
   documentsController.updateInstallment,
 )
@@ -90,7 +90,7 @@ documentsRouter.put(
 documentsRouter.get('/:id/allocations', documentsController.getAllocations)
 documentsRouter.put(
   '/:id/allocations',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('documents'),
   validate(ReplaceAllocationsSchema),
   documentsController.replaceAllocations,
 )
@@ -99,14 +99,14 @@ documentsRouter.put(
 documentsRouter.get('/:id/attachments', documentsController.getAttachments)
 documentsRouter.post(
   '/:id/attachments',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('documents'),
   upload.single('file'),
   validate(AddDocumentAttachmentSchema),
   documentsController.addAttachment,
 )
 documentsRouter.delete(
   '/:id/attachments/:attachmentId',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('documents'),
   documentsController.deleteAttachment,
 )
 documentsRouter.get('/:id/attachments/:attachmentId/download', documentsController.downloadAttachment)

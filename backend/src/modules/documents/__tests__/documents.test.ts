@@ -1,11 +1,12 @@
 import request from 'supertest'
 import { app } from '../../../app'
-import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     accountingDocument: {
       findMany:   jest.fn(),
       count:      jest.fn(),
@@ -112,6 +113,7 @@ describe('Documents API', () => {
   // sin importar si el código real llama a `prisma.X` o `tx.X`. También cubre
   // la forma en array ($transaction([...])) que sigue usando replaceInstallments.
   beforeEach(() => {
+    db.user.findUnique.mockResolvedValue(mockDbUser())
     db.$transaction.mockImplementation((arg: unknown) =>
       typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(db) : Promise.all(arg as unknown[]),
     )
@@ -235,22 +237,25 @@ describe('Documents API', () => {
       expect(auditCall.data.performedBy).toBeTruthy()
     })
 
-    it('returns 201 when CONTADOR creates document', async () => {
+    it('returns 201 when a USER with the documents module creates document', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['documents'] }))
       db.accountingDocument.findUnique.mockResolvedValue(null)
       db.accountingDocument.create.mockResolvedValue(fakeDocument)
 
       const res = await request(app)
         .post('/api/v1/documents')
-        .set('Authorization', `Bearer ${contadorToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send(validDocumentBody)
 
       expect(res.status).toBe(201)
     })
 
-    it('returns 403 when VIEWER tries to create document', async () => {
+    it('returns 403 when a USER without the documents module tries to create document', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post('/api/v1/documents')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send(validDocumentBody)
 
       expect(res.status).toBe(403)
@@ -741,10 +746,12 @@ describe('Documents API', () => {
       expect(res.status).toBe(200)
     })
 
-    it('returns 403 when VIEWER tries to delete', async () => {
+    it('returns 403 when a USER without the documents module tries to delete', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .delete(`/api/v1/documents/${DOC_ID}`)
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(403)
     })
@@ -1087,10 +1094,12 @@ describe('Documents API', () => {
       expect(db.documentPolicyAllocation.createMany).not.toHaveBeenCalled()
     })
 
-    it('returns 403 when VIEWER tries to apply', async () => {
+    it('returns 403 when a USER without the documents module tries to apply', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post(`/api/v1/documents/${DOC_ID}/apply`)
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(403)
     })
@@ -1122,10 +1131,12 @@ describe('Documents API', () => {
       expect(db.accountingDocument.update.mock.calls[0][0].data.documentStatus).toBe('CANCELLED')
     })
 
-    it('returns 403 when VIEWER tries to cancel', async () => {
+    it('returns 403 when a USER without the documents module tries to cancel', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post(`/api/v1/documents/${DOC_ID}/cancel`)
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(403)
     })

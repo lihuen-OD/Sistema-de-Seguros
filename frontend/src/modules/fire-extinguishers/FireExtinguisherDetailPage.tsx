@@ -32,7 +32,7 @@ import { ROUTES } from '../../app/routes'
 import { fireExtinguishersApi, fireExtinguisherKeys, fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
 import { assetQueries } from '../../shared/api/assets.api'
-import { LOCATION_TYPES, FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
+import { FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import type { FireExtinguisherHistory } from '../../shared/types'
 
@@ -409,9 +409,7 @@ export default function FireExtinguisherDetailPage() {
             </div>
             <div>
               <dt className="text-xs text-slate-500 mb-0.5">Tipo de Ubicación</dt>
-              <dd className="text-sm text-slate-700">
-                {LOCATION_TYPES[fe.associatedLocationType] ?? fe.associatedLocationType}
-              </dd>
+              <dd className="text-sm text-slate-700">{fe.associatedLocationType}</dd>
             </div>
             <div>
               <dt className="text-xs text-slate-500 mb-0.5">Activo Asociado</dt>

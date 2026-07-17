@@ -1,17 +1,21 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
-import type { Role } from '../types'
+import type { ModuleKey, Role } from '../types'
 
 export interface CurrentUser {
   id: string
   name: string
   email: string
   role: Role
+  mustChangePassword: boolean
+  accessProfileId: string | null
+  accessProfileName: string | null
+  modules: ModuleKey[]
 }
 
 export interface LoginResult {
   token: string
-  user: CurrentUser & { mustChangePassword: boolean }
+  user: CurrentUser
 }
 
 export const authApi = {

@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
-import { requireRole } from '../../middleware/roles.middleware'
+import { requireModule } from '../../middleware/roles.middleware'
 import { validate, validateQuery } from '../../middleware/validate.middleware'
 import { fireExtinguishersController } from './fire-extinguishers.controller'
 import {
@@ -24,7 +24,7 @@ fireExtinguishersRouter.get(
 fireExtinguishersRouter.get('/dashboard/summary', fireExtinguishersController.getDashboardSummary)
 fireExtinguishersRouter.post(
   '/bulk-recharge',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('fire_extinguishers'),
   validate(BulkRechargeSchema),
   fireExtinguishersController.bulkRecharge,
 )
@@ -37,23 +37,23 @@ fireExtinguishersRouter.get(
 )
 fireExtinguishersRouter.post(
   '/',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('fire_extinguishers'),
   validate(CreateFireExtinguisherSchema),
   fireExtinguishersController.create,
 )
 fireExtinguishersRouter.get('/:id', fireExtinguishersController.getById)
 fireExtinguishersRouter.put(
   '/:id',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('fire_extinguishers'),
   validate(UpdateFireExtinguisherSchema),
   fireExtinguishersController.update,
 )
-fireExtinguishersRouter.delete('/:id', requireRole('ADMIN'), fireExtinguishersController.remove)
+fireExtinguishersRouter.delete('/:id', requireModule('fire_extinguishers'), fireExtinguishersController.remove)
 
 // ── Recarga (actualiza fechas + registra historial) ───────────────────────────
 fireExtinguishersRouter.post(
   '/:id/recharge',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('fire_extinguishers'),
   validate(RechargeSchema),
   fireExtinguishersController.recharge,
 )
@@ -62,7 +62,7 @@ fireExtinguishersRouter.post(
 fireExtinguishersRouter.get('/:id/history', fireExtinguishersController.getHistory)
 fireExtinguishersRouter.post(
   '/:id/history',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('fire_extinguishers'),
   validate(AddHistorySchema),
   fireExtinguishersController.addHistory,
 )

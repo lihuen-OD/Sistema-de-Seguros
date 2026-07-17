@@ -25,7 +25,7 @@ export const costCentersController = {
   }),
 
   remove: asyncHandler(async (req: Request<{ id: string }>, res: Response) => {
-    await costCentersService.softDelete(req.params.id)
-    res.json({ data: { message: 'Centro de costo desactivado correctamente' } })
+    await costCentersService.remove(req.params.id)
+    res.json({ data: { message: 'Centro de costo eliminado correctamente' } })
   }),
 }

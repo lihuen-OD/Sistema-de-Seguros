@@ -10,6 +10,7 @@ import {
   Flame,
   Building2,
   Layers,
+  Boxes,
   X,
   LogOut,
   ShieldAlert,
@@ -20,10 +21,11 @@ import {
   BarChart3,
   Bell,
   UserCog,
+  KeyRound,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useCurrentUser } from '../../../app/auth/AuthContext'
-import { isAllowedForAuditorMatafuegos } from '../../../app/auth/roleScope'
+import { hasModuleAccess } from '../../../app/auth/roleScope'
 
 interface SidebarProps {
   onClose?: () => void
@@ -33,7 +35,6 @@ interface NavItem {
   label: string
   to: string
   icon: React.ElementType
-  adminOnly?: boolean
 }
 
 interface NavGroup {
@@ -85,9 +86,11 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Empresas', to: '/settings/companies', icon: Building2 },
       { label: 'Centros de Costo', to: '/settings/cost-centers', icon: Layers },
+      { label: 'Bienes de Uso', to: '/settings/fixed-assets', icon: Boxes },
       { label: 'Tipos de Seguro', to: '/settings/insurance-types', icon: Shield },
       { label: 'Config. de Módulos', to: '/settings/module-config', icon: SlidersHorizontal },
-      { label: 'Usuarios', to: '/settings/users', icon: UserCog, adminOnly: true },
+      { label: 'Usuarios', to: '/settings/users', icon: UserCog },
+      { label: 'Perfiles de Acceso', to: '/settings/access-profiles', icon: KeyRound },
     ],
   },
 ]
@@ -103,17 +106,12 @@ export function Sidebar({ onClose }: SidebarProps) {
   const location = useLocation()
   const { user, logout } = useCurrentUser()
 
-  // AUDITOR_MATAFUEGOS solo ve el flujo de auditoría — mismo criterio que
-  // ya aplica el guard de rutas, reusado acá para no duplicar la lista.
-  // "Usuarios" además queda oculto para cualquiera que no sea ADMIN.
+  // Mismo criterio que ya aplica el guard de rutas (hasModuleAccess), reusado
+  // acá para no duplicar la lista de módulos por rol/perfil.
   const visibleGroups = navGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => {
-        if (item.adminOnly && user?.role !== 'ADMIN') return false
-        if (user?.role === 'AUDITOR_MATAFUEGOS' && !isAllowedForAuditorMatafuegos(item.to)) return false
-        return true
-      }),
+      items: group.items.filter((item) => hasModuleAccess(user, item.to)),
     }))
     .filter((group) => group.items.length > 0)
 

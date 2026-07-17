@@ -1,11 +1,12 @@
 import request from 'supertest'
 import { app } from '../../../app'
-import { adminToken, viewerToken, auditorMatafuegosToken } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     fireExtinguisher: {
       count: jest.fn(),
       findMany: jest.fn(),
@@ -31,6 +32,7 @@ const ESTABLISHMENT_CATALOG = ['LA SUCHO', 'LA HONORIA', 'PLANTA', 'TALLER', 'OF
 describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    db.user.findUnique.mockResolvedValue(mockDbUser())
     // Defaults: parque vacío, sin auditorías — cada test sobreescribe lo que necesita.
     db.fireExtinguisher.count.mockResolvedValue(0)
     db.fireExtinguisher.findMany.mockResolvedValue([])
@@ -56,9 +58,9 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
 
   it('always returns every establishment from the catalog, zero-filled when empty', async () => {
     db.fireExtinguisher.findMany.mockResolvedValue([
-      { establishment: 'PLANTA', expirationDate: new Date('2020-01-01'), manufacturingYear: 2000 }, // vencido
-      { establishment: 'PLANTA', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024 }, // vigente
-      { establishment: 'TALLER', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024 }, // vigente
+      { establishment: 'PLANTA', locationType: 'Edificio', expirationDate: new Date('2020-01-01'), manufacturingYear: 2000 }, // vencido
+      { establishment: 'PLANTA', locationType: 'Edificio', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024 }, // vigente
+      { establishment: 'TALLER', locationType: 'Maquinaria', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024 }, // vigente
     ])
 
     const res = await request(app)
@@ -74,6 +76,32 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     expect(planta).toMatchObject({ total: 2, vigente: 1, vencido: 1, proximo_vencer: 0 })
     const laSucho = byEstablishment.find((b: any) => b.establishment === 'LA SUCHO')
     expect(laSucho).toMatchObject({ total: 0, vigente: 0, proximo_vencer: 0, vencido: 0 })
+    expect(laSucho.byLocationType).toEqual([])
+  })
+
+  it('breaks each establishment down by locationType ("asignación física")', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      { establishment: 'LA SUCHO', locationType: 'Maternidad', expirationDate: new Date('2020-01-01'), manufacturingYear: 2000 }, // vencido
+      { establishment: 'LA SUCHO', locationType: 'Maternidad', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024 }, // vigente
+      { establishment: 'LA SUCHO', locationType: 'Engorde', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024 }, // vigente
+      { establishment: 'PLANTA', locationType: 'Vehículo', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024 }, // vigente, único tipo
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguishers/dashboard/summary')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    const byEstablishment = res.body.data.byEstablishment
+    const laSucho = byEstablishment.find((b: any) => b.establishment === 'LA SUCHO')
+    expect(laSucho.byLocationType).toEqual([
+      { locationType: 'Maternidad', total: 2, vigente: 1, proximo_vencer: 0, vencido: 1 },
+      { locationType: 'Engorde', total: 1, vigente: 1, proximo_vencer: 0, vencido: 0 },
+    ])
+    const planta = byEstablishment.find((b: any) => b.establishment === 'PLANTA')
+    expect(planta.byLocationType).toEqual([
+      { locationType: 'Vehículo', total: 1, vigente: 1, proximo_vencer: 0, vencido: 0 },
+    ])
   })
 
   it('ignores rows with an unrecognized or null establishment without crashing', async () => {
@@ -178,13 +206,14 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
   })
 
   it.each([
-    ['ADMIN', adminToken],
-    ['VIEWER', viewerToken],
-    ['AUDITOR_MATAFUEGOS', auditorMatafuegosToken],
-  ])('returns 200 for any authenticated role (%s) — no role restriction', async (_label, tokenFn) => {
+    ['ADMIN', 'ADMIN'],
+    ['a USER with no modules', 'USER'],
+  ] as const)('returns 200 for any authenticated role (%s) — no role restriction', async (_label, role) => {
+    if (role === 'USER') db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
     const res = await request(app)
       .get('/api/v1/fire-extinguishers/dashboard/summary')
-      .set('Authorization', `Bearer ${tokenFn()}`)
+      .set('Authorization', `Bearer ${role === 'ADMIN' ? adminToken() : userToken()}`)
 
     expect(res.status).toBe(200)
   })

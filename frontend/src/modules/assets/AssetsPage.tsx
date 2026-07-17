@@ -203,10 +203,15 @@ export default function AssetsPage() {
     },
     {
       id: 'fixedAssetCode',
-      key: 'fixedAssetCode',
+      key: 'fixedAssetId',
       label: 'Bien de Uso',
       defaultVisible: false,
-      render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
+      render: (_, row) => (
+        <span className="font-mono text-xs text-slate-600" title={row.fixedAsset?.name}>
+          {row.fixedAsset?.code || '—'}
+        </span>
+      ),
+      exportValue: (row) => row.fixedAsset?.code ?? '',
     },
     {
       id: 'patrimonialValueNew',

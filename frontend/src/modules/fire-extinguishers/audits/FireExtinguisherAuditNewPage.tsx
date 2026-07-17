@@ -63,12 +63,24 @@ export default function FireExtinguisherAuditNewPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
+  // Valor "vigente" de vencimiento tras el Paso 3: el corregido si se marcó
+  // Modificar, si no el del maestro — para no pedir de nuevo en el checklist
+  // un dato que ya se validó ahí.
+  const expirationValidation = fieldValidations.expirationDate
+  const effectiveExpirationDate =
+    expirationValidation?.modified && expirationValidation.newValue
+      ? expirationValidation.newValue
+      : selectedExtinguisher?.expirationDate ?? ''
+
   function goToStep(next: WizardStep) {
     if (next <= maxStepReached) setStep(next)
   }
 
   function advance() {
     const next = (Math.min(step + 1, 5) as WizardStep)
+    if (step === 3 && !checklist.chargeExpirationDateObserved && effectiveExpirationDate) {
+      setChecklist((prev) => ({ ...prev, chargeExpirationDateObserved: effectiveExpirationDate }))
+    }
     setStep(next)
     setMaxStepReached((prev) => (prev > next ? prev : next))
   }
@@ -118,7 +130,7 @@ export default function FireExtinguisherAuditNewPage() {
       queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.detail(selectedExtinguisher.id) })
       queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.history(selectedExtinguisher.id) })
       toast.success('Auditoría registrada correctamente')
-      navigate(ROUTES.FIRE_EXTINGUISHERS_DETAIL(selectedExtinguisher.id))
+      navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(created.id))
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Error al registrar la auditoría')
       setSubmitting(false)
@@ -210,6 +222,7 @@ export default function FireExtinguisherAuditNewPage() {
               onChangeComments={setChecklistComments}
               pendingPhotos={pendingPhotos}
               onChangePhotos={setPendingPhotos}
+              masterExpirationDate={effectiveExpirationDate}
             />
           )}
 

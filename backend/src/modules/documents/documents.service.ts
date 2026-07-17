@@ -531,8 +531,10 @@ export const documentsService = {
           existingAsset.percentage += perAssetPercentage
         } else {
           assetBreakdown.set(asset.id, {
+            // Nombre del bien de uso del catálogo si está vinculado; si no,
+            // se cae al nombre del activo para no dejar la fila vacía.
             code: asset.fixedAssetCode,
-            name: asset.name,
+            name: asset.fixedAssetName ?? asset.name,
             amount: perAssetAmount,
             percentage: perAssetPercentage,
           })
@@ -558,7 +560,6 @@ export const documentsService = {
     // documento — nunca con montos/distribución que pudiera mandar el
     // cliente en el body de este endpoint.
     const templateData: ManualDocumentEmailData = {
-      documentId: doc.id,
       documentTypeLabel: typeDef?.label ?? doc.documentType,
       documentNumber: doc.documentNumber,
       insuranceCompany: doc.insuranceCompany,

@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import clsx from 'clsx'
+import { CheckCircle2 } from 'lucide-react'
 import { FormField, FormInput, FormSelect } from '../../../shared/components/forms/FormSection'
+import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import type { ChoiceOption } from '../../../shared/components/forms/ChoiceGroup'
 
 export interface FieldValidationState {
@@ -23,6 +26,19 @@ interface ValidatedFieldProps {
 
 /** "Valor actual: X [Confirmar] [Modificar]" — usado en el Paso 3 para cada campo maestro validable. */
 export function ValidatedField({ label, currentValue, inputType, options, state, onChange }: ValidatedFieldProps) {
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+
+  function handleNoChangesClick() {
+    // Si ya había un cambio propuesto con algo escrito, tocar "Sin cambios" lo
+    // descartaría en silencio — Modificar y Sin cambios están uno al lado del
+    // otro y es fácil tocar el que no se quería.
+    if (state.modified && (state.newValue.trim() || state.reason.trim())) {
+      setConfirmDiscard(true)
+      return
+    }
+    onChange({ modified: false, newValue: '', reason: '' })
+  }
+
   return (
     <div className="border border-slate-200 rounded-lg p-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -33,7 +49,7 @@ export function ValidatedField({ label, currentValue, inputType, options, state,
         <div className="flex gap-2 flex-shrink-0">
           <button
             type="button"
-            onClick={() => onChange({ ...state, modified: false })}
+            onClick={handleNoChangesClick}
             className={clsx(
               'px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors',
               !state.modified
@@ -41,7 +57,7 @@ export function ValidatedField({ label, currentValue, inputType, options, state,
                 : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50',
             )}
           >
-            Confirmar
+            Sin cambios
           </button>
           <button
             type="button"
@@ -86,8 +102,31 @@ export function ValidatedField({ label, currentValue, inputType, options, state,
               placeholder="Ej: se reemplazó el cilindro"
             />
           </FormField>
+
+          {state.newValue.trim() && (
+            <div className="sm:col-span-2 flex items-center gap-2 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+              <CheckCircle2 size={14} className="flex-shrink-0" />
+              <span>
+                Este cambio se va a guardar al enviar la auditoría: {currentValue || '—'} → <strong>{state.newValue}</strong>
+              </span>
+            </div>
+          )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="Descartar cambio propuesto"
+        description={`¿Descartar el cambio propuesto para "${label}"? El valor y el motivo que escribiste se van a borrar.`}
+        confirmLabel="Descartar"
+        cancelLabel="Seguir editando"
+        danger
+        onConfirm={() => {
+          onChange({ modified: false, newValue: '', reason: '' })
+          setConfirmDiscard(false)
+        }}
+        onCancel={() => setConfirmDiscard(false)}
+      />
     </div>
   )
 }

@@ -1,11 +1,12 @@
 import request from 'supertest'
 import { app } from '../../../app'
-import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     claim: {
       findMany:          jest.fn(),
       count:             jest.fn(),
@@ -44,6 +45,7 @@ import { prisma } from '../../../config/database'
 const db = prisma as any
 
 beforeEach(() => {
+  db.user.findUnique.mockResolvedValue(mockDbUser())
   db.$transaction.mockImplementation((arg: unknown) =>
     typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(db) : Promise.all(arg as unknown[]),
   )
@@ -154,7 +156,7 @@ describe('Claims API', () => {
 
       const res = await request(app)
         .get('/api/v1/claims')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(200)
       expect(res.body.data).toHaveLength(0)
@@ -208,22 +210,25 @@ describe('Claims API', () => {
       expect(db.$queryRaw).toHaveBeenCalledTimes(1)
     })
 
-    it('returns 201 when CONTADOR creates a claim', async () => {
+    it('returns 201 when a USER with the claims module creates a claim', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['claims'] }))
       db.$queryRaw.mockResolvedValue([{ nextval: BigInt(2) }])
       db.claim.create.mockResolvedValue({ ...fakeClaim, claimNumber: 'SIN-2026-00002' })
 
       const res = await request(app)
         .post('/api/v1/claims')
-        .set('Authorization', `Bearer ${contadorToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send(validClaimBody)
 
       expect(res.status).toBe(201)
     })
 
-    it('returns 403 when VIEWER tries to create a claim', async () => {
+    it('returns 403 when a USER without the claims module tries to create a claim', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post('/api/v1/claims')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send(validClaimBody)
 
       expect(res.status).toBe(403)
@@ -360,10 +365,12 @@ describe('Claims API', () => {
       })
     })
 
-    it('returns 403 when VIEWER tries to update', async () => {
+    it('returns 403 when a USER without the claims module tries to update', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .put('/api/v1/claims/claim-uuid-1')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send({ status: 'en_tramite' })
 
       expect(res.status).toBe(403)
@@ -398,10 +405,12 @@ describe('Claims API', () => {
       expect(db.claim.update.mock.calls[0][0].data.isActive).toBe(false)
     })
 
-    it('returns 403 when CONTADOR tries to delete', async () => {
+    it('returns 403 when a USER without the claims module tries to delete', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .delete('/api/v1/claims/claim-uuid-1')
-        .set('Authorization', `Bearer ${contadorToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(403)
     })
@@ -442,10 +451,12 @@ describe('Claims API', () => {
       expect(res.body.data.type).toBe('nota_agregada')
     })
 
-    it('returns 403 when VIEWER tries to add an event', async () => {
+    it('returns 403 when a USER without the claims module tries to add an event', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post('/api/v1/claims/claim-uuid-1/events')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send({ type: 'nota_agregada', description: 'Nota', date: '2026-01-15' })
 
       expect(res.status).toBe(403)
@@ -500,10 +511,12 @@ describe('Claims API', () => {
       expect(db.$transaction).toHaveBeenCalledTimes(1)
     })
 
-    it('returns 403 when VIEWER tries to add an expense', async () => {
+    it('returns 403 when a USER without the claims module tries to add an expense', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post('/api/v1/claims/claim-uuid-1/expenses')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send({ date: '2026-01-15', provider: 'Proveedor', netAmount: 1000 })
 
       expect(res.status).toBe(403)
@@ -563,10 +576,12 @@ describe('Claims API', () => {
       expect(db.$transaction).toHaveBeenCalledTimes(1)
     })
 
-    it('returns 403 when VIEWER tries to edit an expense', async () => {
+    it('returns 403 when a USER without the claims module tries to edit an expense', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .put('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send({ netAmount: 220000 })
 
       expect(res.status).toBe(403)

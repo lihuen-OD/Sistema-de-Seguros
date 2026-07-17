@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
-import { requireRole } from '../../middleware/roles.middleware'
+import { requireModule } from '../../middleware/roles.middleware'
 import { validate, validateQuery } from '../../middleware/validate.middleware'
 import {
   CreateCostCenterSchema,
@@ -16,15 +16,15 @@ costCentersRouter.use(authMiddleware)
 costCentersRouter.get('/', validateQuery(ListCostCentersQuerySchema), costCentersController.list)
 costCentersRouter.post(
   '/',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('cost_centers'),
   validate(CreateCostCenterSchema),
   costCentersController.create,
 )
 costCentersRouter.get('/:id', costCentersController.getById)
 costCentersRouter.put(
   '/:id',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('cost_centers'),
   validate(UpdateCostCenterSchema),
   costCentersController.update,
 )
-costCentersRouter.delete('/:id', requireRole('ADMIN'), costCentersController.remove)
+costCentersRouter.delete('/:id', requireModule('cost_centers'), costCentersController.remove)

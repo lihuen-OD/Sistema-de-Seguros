@@ -25,6 +25,7 @@ const ASSET_LIST_INCLUDE = {
     },
     orderBy: { percentage: 'desc' as const },
   },
+  fixedAsset: { select: { id: true, code: true, name: true } },
   _count: { select: { attachments: true, fireExtinguishers: true } },
 }
 
@@ -37,10 +38,27 @@ const ASSET_DETAIL_INCLUDE = {
     },
     orderBy: { percentage: 'desc' as const },
   },
+  fixedAsset: { select: { id: true, code: true, name: true } },
   _count: { select: { attachments: true, fireExtinguishers: true } },
   valueHistory: { orderBy: { date: 'desc' as const }, take: 100 },
   statusHistory: { orderBy: { date: 'asc' as const } },
   attachments: { orderBy: { uploadedAt: 'desc' as const }, take: 50 },
+}
+
+// El FK (fixedAssetId) es la fuente de verdad; fixedAssetCode queda como
+// columna denormalizada para no romper a los consumidores que la leen como
+// texto plano (resolveAssetsSummary, documents.service.ts en el envío de mail).
+async function resolveFixedAssetCode(
+  fixedAssetId: string | null | undefined,
+): Promise<string | null | undefined> {
+  if (fixedAssetId === undefined) return undefined
+  if (fixedAssetId === null) return null
+  const fixedAsset = await prisma.fixedAsset.findUnique({
+    where: { id: fixedAssetId },
+    select: { code: true },
+  })
+  if (!fixedAsset) throw new AppError(400, 'El bien de uso seleccionado no existe', 'INVALID_REFERENCE')
+  return fixedAsset.code
 }
 
 // expirationDate es @db.Date — normalizarlo a YYYY-MM-DD antes de exponerlo,
@@ -120,12 +138,14 @@ export const assetsService = {
 
     const seqResult = await prisma.$queryRaw<[{ nextval: bigint }]>`SELECT nextval('asset_code_seq')`
     const code = `ACT-${String(Number(seqResult[0].nextval)).padStart(5, '0')}`
+    const fixedAssetCode = await resolveFixedAssetCode(assetData.fixedAssetId)
 
     const created = await prisma.$transaction(async (tx) => {
       const asset = await tx.asset.create({
         data: {
           ...assetData,
           code,
+          fixedAssetCode,
           metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
         },
       })
@@ -194,6 +214,8 @@ export const assetsService = {
     })
     if (!current) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
 
+    const fixedAssetCode = await resolveFixedAssetCode(assetData.fixedAssetId)
+
     if (assetData.status && assetData.status !== current.status) {
       const statusDate = assetData.status === 'baja' ? assetData.dischargeDate
         : assetData.status === 'vendido' ? assetData.saleDate
@@ -204,6 +226,7 @@ export const assetsService = {
           where: { id },
           data: {
             ...assetData,
+            ...(fixedAssetCode !== undefined && { fixedAssetCode }),
             metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
           },
           select: { id: true },
@@ -225,6 +248,7 @@ export const assetsService = {
         where: { id },
         data: {
           ...assetData,
+          ...(fixedAssetCode !== undefined && { fixedAssetCode }),
           metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
         },
         select: { id: true },
@@ -403,6 +427,7 @@ export const assetsService = {
         name: true,
         assetType: true,
         fixedAssetCode: true,
+        fixedAsset: { select: { name: true } },
         allocations: {
           orderBy: { percentage: 'desc' as const },
           take: 1,
@@ -419,6 +444,7 @@ export const assetsService = {
       name: a.name,
       assetType: a.assetType,
       fixedAssetCode: a.fixedAssetCode,
+      fixedAssetName: a.fixedAsset?.name ?? null,
       costCenterName: a.allocations[0]?.costCenter?.name ?? null,
       costCenterCode: a.allocations[0]?.costCenter?.code ?? null,
     }))

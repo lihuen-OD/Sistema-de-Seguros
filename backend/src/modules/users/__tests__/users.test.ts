@@ -1,6 +1,6 @@
 import request from 'supertest'
-import jwt from 'jsonwebtoken'
 import { app } from '../../../app'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 jest.mock('../../../config/database', () => ({
   prisma: {
@@ -21,29 +21,16 @@ jest.mock('bcrypt', () => ({
 import { prisma } from '../../../config/database'
 const db = prisma as any
 
-const ADMIN_ID = '80000000-0000-0000-0000-000000000001'
 const OTHER_ID = '80000000-0000-0000-0000-000000000002'
-
-function adminToken() {
-  return jwt.sign({ userId: ADMIN_ID, role: 'ADMIN', email: 'admin@losodwyer.com' }, process.env.JWT_SECRET!, {
-    expiresIn: '1h',
-  })
-}
-
-function auditorToken() {
-  return jwt.sign(
-    { userId: OTHER_ID, role: 'AUDITOR_MATAFUEGOS', email: 'auditor@losodwyer.com' },
-    process.env.JWT_SECRET!,
-    { expiresIn: '1h' },
-  )
-}
 
 const fakeUser = {
   id: OTHER_ID,
-  name: 'Auditor Uno',
-  email: 'auditor@losodwyer.com',
+  name: 'Usuario Uno',
+  email: 'usuario@losodwyer.com',
   passwordHash: 'hashed-password',
-  role: 'AUDITOR_MATAFUEGOS',
+  role: 'USER',
+  accessProfileId: null,
+  accessProfile: null,
   isActive: true,
   mustChangePassword: true,
   lastLoginAt: null,
@@ -58,11 +45,14 @@ describe('Users API (admin)', () => {
 
   describe('GET /api/v1/users', () => {
     it('returns 403 for a non-ADMIN role', async () => {
-      const res = await request(app).get('/api/v1/users').set('Authorization', `Bearer ${auditorToken()}`)
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', id: OTHER_ID }))
+
+      const res = await request(app).get('/api/v1/users').set('Authorization', `Bearer ${userToken()}`)
       expect(res.status).toBe(403)
     })
 
     it('returns the user list without passwordHash for ADMIN', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser())
       db.user.findMany.mockResolvedValue([fakeUser])
 
       const res = await request(app).get('/api/v1/users').set('Authorization', `Bearer ${adminToken()}`)
@@ -70,28 +60,31 @@ describe('Users API (admin)', () => {
       expect(res.status).toBe(200)
       expect(res.body.data).toHaveLength(1)
       expect(res.body.data[0].passwordHash).toBeUndefined()
-      expect(res.body.data[0].email).toBe('auditor@losodwyer.com')
+      expect(res.body.data[0].email).toBe('usuario@losodwyer.com')
     })
   })
 
   describe('POST /api/v1/users', () => {
     it('returns 403 for a non-ADMIN role', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', id: OTHER_ID }))
+
       const res = await request(app)
         .post('/api/v1/users')
-        .set('Authorization', `Bearer ${auditorToken()}`)
-        .send({ name: 'Nuevo', email: 'nuevo@losodwyer.com', role: 'AUDITOR_MATAFUEGOS', password: 'Password1' })
+        .set('Authorization', `Bearer ${userToken()}`)
+        .send({ name: 'Nuevo', email: 'nuevo@losodwyer.com', role: 'USER', password: 'Password1' })
 
       expect(res.status).toBe(403)
     })
 
     it('creates a user with mustChangePassword true', async () => {
-      db.user.findUnique.mockResolvedValue(null)
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser()) // auth: ADMIN actor
+      db.user.findUnique.mockResolvedValueOnce(null) // business: email libre
       db.user.create.mockResolvedValue({ ...fakeUser, mustChangePassword: true })
 
       const res = await request(app)
         .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ name: 'Auditor Uno', email: 'auditor@losodwyer.com', role: 'AUDITOR_MATAFUEGOS', password: 'Password1' })
+        .send({ name: 'Usuario Uno', email: 'usuario@losodwyer.com', role: 'USER', password: 'Password1' })
 
       expect(res.status).toBe(201)
       expect(res.body.data.mustChangePassword).toBe(true)
@@ -102,17 +95,20 @@ describe('Users API (admin)', () => {
     })
 
     it('returns 409 when the email is already taken', async () => {
-      db.user.findUnique.mockResolvedValue(fakeUser)
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser()) // auth: ADMIN actor
+      db.user.findUnique.mockResolvedValueOnce(fakeUser) // business: email ya existe
 
       const res = await request(app)
         .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ name: 'Dup', email: 'auditor@losodwyer.com', role: 'AUDITOR_MATAFUEGOS', password: 'Password1' })
+        .send({ name: 'Dup', email: 'usuario@losodwyer.com', role: 'USER', password: 'Password1' })
 
       expect(res.status).toBe(409)
     })
 
     it('returns 422 for a role outside the assignable set', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser()) // auth: ADMIN actor
+
       const res = await request(app)
         .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken()}`)
@@ -124,7 +120,8 @@ describe('Users API (admin)', () => {
 
   describe('PUT /api/v1/users/:id', () => {
     it('deactivates a user', async () => {
-      db.user.findUnique.mockResolvedValue(fakeUser)
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser()) // auth: ADMIN actor
+      db.user.findUnique.mockResolvedValueOnce(fakeUser) // business: usuario existente
       db.user.update.mockResolvedValue({ ...fakeUser, isActive: false })
 
       const res = await request(app)
@@ -137,7 +134,8 @@ describe('Users API (admin)', () => {
     })
 
     it('returns 404 when the user does not exist', async () => {
-      db.user.findUnique.mockResolvedValue(null)
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser()) // auth: ADMIN actor
+      db.user.findUnique.mockResolvedValueOnce(null) // business: no existe
 
       const res = await request(app)
         .put(`/api/v1/users/${OTHER_ID}`)
@@ -150,7 +148,8 @@ describe('Users API (admin)', () => {
 
   describe('POST /api/v1/users/:id/reset-password', () => {
     it('resets the password and sets mustChangePassword back to true', async () => {
-      db.user.findUnique.mockResolvedValue(fakeUser)
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser()) // auth: ADMIN actor
+      db.user.findUnique.mockResolvedValueOnce(fakeUser) // business: usuario existente
       db.user.update.mockResolvedValue({ ...fakeUser, passwordHash: 'hashed-password' })
 
       const res = await request(app)

@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
-import { requireRole } from '../../middleware/roles.middleware'
+import { requireModule } from '../../middleware/roles.middleware'
 import { validate, validateQuery } from '../../middleware/validate.middleware'
 import {
   CreateInsuranceTypeSchema,
@@ -21,28 +21,28 @@ insuranceTypesRouter.get(
 )
 insuranceTypesRouter.post(
   '/',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('insurance_types'),
   validate(CreateInsuranceTypeSchema),
   insuranceTypesController.create,
 )
 insuranceTypesRouter.get('/:id', insuranceTypesController.getById)
 insuranceTypesRouter.put(
   '/:id',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('insurance_types'),
   validate(UpdateInsuranceTypeSchema),
   insuranceTypesController.update,
 )
-insuranceTypesRouter.delete('/:id', requireRole('ADMIN'), insuranceTypesController.remove)
+insuranceTypesRouter.delete('/:id', requireModule('insurance_types'), insuranceTypesController.remove)
 
 // Coberturas anidadas
 insuranceTypesRouter.post(
   '/:id/coverages',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('insurance_types'),
   validate(CreateCoverageSchema),
   insuranceTypesController.addCoverage,
 )
 insuranceTypesRouter.delete(
   '/:id/coverages/:coverageId',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('insurance_types'),
   insuranceTypesController.removeCoverage,
 )

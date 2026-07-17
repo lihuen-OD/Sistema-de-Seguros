@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
-import { requireRole } from '../../middleware/roles.middleware'
+import { requireModule } from '../../middleware/roles.middleware'
 import { validate, validateQuery } from '../../middleware/validate.middleware'
 import { upload } from '../../middleware/upload.middleware'
 import {
@@ -23,7 +23,7 @@ fireExtinguisherAuditsRouter.get('/coverage', validateQuery(CoverageQuerySchema)
 
 fireExtinguisherAuditsRouter.post(
   '/',
-  requireRole('ADMIN', 'CONTADOR', 'AUDITOR_MATAFUEGOS'),
+  requireModule('fire_extinguisher_audits'),
   validate(CreateFireExtinguisherAuditSchema),
   fireExtinguisherAuditsController.create,
 )
@@ -32,7 +32,7 @@ fireExtinguisherAuditsRouter.get('/:id', fireExtinguisherAuditsController.getByI
 
 fireExtinguisherAuditsRouter.post(
   '/:id/attachments',
-  requireRole('ADMIN', 'CONTADOR', 'AUDITOR_MATAFUEGOS'),
+  requireModule('fire_extinguisher_audits'),
   upload.single('file'),
   validate(AddFireExtinguisherAuditAttachmentSchema),
   fireExtinguisherAuditsController.addAttachment,
@@ -40,7 +40,7 @@ fireExtinguisherAuditsRouter.post(
 
 fireExtinguisherAuditsRouter.post(
   '/:id/review',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('fire_extinguisher_audits'),
   validate(ReviewFireExtinguisherAuditSchema),
   fireExtinguisherAuditsController.review,
 )

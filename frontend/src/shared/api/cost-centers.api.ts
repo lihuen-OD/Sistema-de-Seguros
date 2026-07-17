@@ -57,6 +57,10 @@ export const costCentersApi = {
     const res = await apiClient.put<{ data: BackendCostCenter }>(`/cost-centers/${id}`, body)
     return mapCostCenter(res.data.data)
   },
+
+  async remove(id: string): Promise<void> {
+    await apiClient.delete(`/cost-centers/${id}`)
+  },
 }
 
 // ── Query keys / query options (categoría A — estático, TTL largo) ──────────────

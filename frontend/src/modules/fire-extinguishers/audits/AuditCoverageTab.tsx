@@ -15,10 +15,17 @@ interface AuditCoverageTabProps {
   isLoading: boolean
 }
 
+interface LocationTypeCoverage {
+  locationType: string
+  audited: number
+  total: number
+}
+
 interface EstablishmentGroup {
   establishment: string
   items: FireExtinguisherCoverageItem[]
   auditedCount: number
+  byLocationType: LocationTypeCoverage[]
 }
 
 function groupByEstablishment(data: FireExtinguisherCoverageItem[]): EstablishmentGroup[] {
@@ -28,12 +35,26 @@ function groupByEstablishment(data: FireExtinguisherCoverageItem[]): Establishme
     map.set(key, [...(map.get(key) ?? []), item])
   }
   return Array.from(map.entries())
-    .map(([establishment, items]) => ({
-      establishment,
-      // Pendientes primero, para verlos de un vistazo.
-      items: [...items].sort((a, b) => Number(a.audited) - Number(b.audited)),
-      auditedCount: items.filter((i) => i.audited).length,
-    }))
+    .map(([establishment, items]) => {
+      const byLocationTypeMap = new Map<string, LocationTypeCoverage>()
+      for (const item of items) {
+        const entry = byLocationTypeMap.get(item.associatedLocationType) ?? {
+          locationType: item.associatedLocationType,
+          audited: 0,
+          total: 0,
+        }
+        entry.total += 1
+        if (item.audited) entry.audited += 1
+        byLocationTypeMap.set(item.associatedLocationType, entry)
+      }
+      return {
+        establishment,
+        // Pendientes primero, para verlos de un vistazo.
+        items: [...items].sort((a, b) => Number(a.audited) - Number(b.audited)),
+        auditedCount: items.filter((i) => i.audited).length,
+        byLocationType: [...byLocationTypeMap.values()].sort((a, b) => b.total - a.total),
+      }
+    })
     .sort((a, b) => a.establishment.localeCompare(b.establishment))
 }
 
@@ -77,14 +98,25 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading }: Au
       ) : (
         groups.map((group) => (
           <SectionCard key={group.establishment} noPadding>
-            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <Building2 size={15} className="text-slate-400 flex-shrink-0" />
-                <span className="text-sm font-semibold text-slate-800 truncate">{group.establishment}</span>
+            <div className="px-5 py-3 border-b border-slate-100">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Building2 size={15} className="text-slate-400 flex-shrink-0" />
+                  <span className="text-sm font-semibold text-slate-800 truncate">{group.establishment}</span>
+                </div>
+                <span className="text-xs font-medium text-slate-500 whitespace-nowrap flex-shrink-0">
+                  {group.auditedCount}/{group.items.length} auditados
+                </span>
               </div>
-              <span className="text-xs font-medium text-slate-500 whitespace-nowrap flex-shrink-0">
-                {group.auditedCount}/{group.items.length} auditados
-              </span>
+              {group.byLocationType.length > 1 && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 pl-[23px]">
+                  {group.byLocationType.map((lt) => (
+                    <span key={lt.locationType} className="text-xs text-slate-400">
+                      {lt.locationType}: <span className="text-slate-600 font-medium">{lt.audited}/{lt.total}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="divide-y divide-slate-100">
               {group.items.map((item) => {
@@ -116,8 +148,7 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading }: Au
                           {item.cylinderNumber ? ` · ${item.cylinderNumber}` : ''}
                         </p>
                         <p className="text-xs text-slate-500 truncate">
-                          {item.type}
-                          {item.location ? ` · ${item.location}` : ''}
+                          {[item.type, item.associatedLocationType, item.location].filter(Boolean).join(' · ')}
                         </p>
                       </div>
                     </div>

@@ -19,7 +19,7 @@ export const CreateAssetSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido').max(300),
   assetType: z.string().min(1, 'El tipo de activo es requerido').max(100),
   status: z.string().max(50).default('activo'),
-  fixedAssetCode: z.string().max(100).optional(),
+  fixedAssetId: z.string().uuid('ID de bien de uso inválido').optional().nullable(),
   brand: z.string().max(100).optional(),
   model: z.string().max(100).optional(),
   year: z.coerce.number().int().min(1900).max(2030).optional().nullable(),

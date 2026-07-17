@@ -44,6 +44,20 @@ model CostCenter {
   @@map("cost_centers")
 }
 
+model FixedAsset {
+  id          String   @id @default(uuid())
+  name        String
+  code        String?  @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assets Asset[]
+
+  @@map("fixed_assets")
+}
+
 model InsuranceType {
   id          String   @id @default(uuid())
   name        String   @unique
@@ -80,6 +94,7 @@ model Asset {
   assetType      String
   status         String   @default("activo")
   fixedAssetCode String?
+  fixedAssetId   String?
   brand          String?
   model          String?
   year           Int?
@@ -106,11 +121,13 @@ model Asset {
   attachments       AssetAttachment[]
   fireExtinguishers FireExtinguisher[]
   claims            Claim[]
+  fixedAsset        FixedAsset?          @relation(fields: [fixedAssetId], references: [id])
 
   @@index([isActive, status])
   @@index([isActive, assetType])
   @@index([name])
   @@index([brand])
+  @@index([fixedAssetId])
   @@map("assets")
 }
 
@@ -718,17 +735,37 @@ model User {
   name               String
   email              String    @unique
   passwordHash       String
-  role               String // ADMIN | AUDITOR_MATAFUEGOS | CONTADOR | PRODUCTOR | VIEWER
+  role               String // ADMIN | USER
+  accessProfileId    String?
   isActive           Boolean   @default(true)
   mustChangePassword Boolean   @default(false)
   lastLoginAt        DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  dismissals NotificationDismissal[]
+  accessProfile AccessProfile?          @relation(fields: [accessProfileId], references: [id])
+  dismissals    NotificationDismissal[]
 
   @@index([role])
+  @@index([accessProfileId])
   @@map("users")
+}
+
+// Perfil de acceso reutilizable: el ADMIN lo crea con un nombre y una lista
+// de módulos (pantallas) habilitados; varios usuarios pueden compartir un
+// mismo perfil. Editar `modules` acá afecta a todos sus usuarios de inmediato
+// (se resuelve fresco en cada request, no viaja cacheado en el JWT).
+model AccessProfile {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  modules   String[]
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[]
+
+  @@map("access_profiles")
 }
 
 // Notificaciones calculadas en vivo (sin tabla propia) — esto guarda solo

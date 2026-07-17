@@ -70,41 +70,7 @@ export const CATEGORY_LABEL: Record<AssetCategory, string> = {
 
 export const IMPL_TYPES = ['Sembradora', 'Arado', 'Rastra', 'Fertilizadora', 'Cincel', 'Rolo', 'Acoplado', 'Otro']
 
-/** Maps AssetCategory → Finnegans accounting categories (used in create form) */
-export const CATEGORY_TO_FINNEGANS: Partial<Record<AssetCategory, string[]>> = {
-  vehiculo:        ['Rodados'],
-  camioneta:       ['Rodados'],
-  camion:          ['Rodados'],
-  moto:            ['Rodados'],
-  tractor:         ['Maquinaria y Equipo'],
-  cosechadora:     ['Maquinaria y Equipo'],
-  pulverizadora:   ['Maquinaria y Equipo'],
-  implemento:      ['Maquinaria y Equipo', 'Implementos Agrícolas'],
-  equipo:          ['Maquinaria y Equipo'],
-  maquinaria:      ['Maquinaria y Equipo'],
-  edificio:        ['Inmuebles'],
-  establecimiento: ['Inmuebles'],
-  infraestructura: ['Infraestructura y Mejoras'],
-}
-
 /** Reverse map: stored assetType label → AssetCategory key (used in edit form) */
 export const LABEL_TO_CATEGORY: Record<string, AssetCategory> = Object.fromEntries(
   Object.entries(CATEGORY_LABEL).map(([key, label]) => [label, key as AssetCategory]),
 )
-
-/** Maps stored assetType string → Finnegans accounting categories (used in edit form) */
-export const ASSET_TYPE_TO_FINNEGANS: Record<string, string[]> = {
-  'Vehículo':        ['Rodados'],
-  'Camioneta':       ['Rodados'],
-  'Camión':          ['Rodados'],
-  'Moto':            ['Rodados'],
-  'Tractor':         ['Maquinaria y Equipo'],
-  'Cosechadora':     ['Maquinaria y Equipo'],
-  'Pulverizadora':   ['Maquinaria y Equipo'],
-  'Implemento':      ['Maquinaria y Equipo', 'Implementos Agrícolas'],
-  'Equipo':          ['Maquinaria y Equipo'],
-  'Maquinaria':      ['Maquinaria y Equipo'],
-  'Edificio':        ['Inmuebles'],
-  'Establecimiento': ['Inmuebles'],
-  'Infraestructura': ['Infraestructura y Mejoras'],
-}

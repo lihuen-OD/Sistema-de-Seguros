@@ -4,6 +4,8 @@ import { ShieldCheck, Loader2 } from 'lucide-react'
 import { authApi } from '../../shared/api/auth.api'
 import { setToken } from '../../shared/api/auth'
 import { FormField, FormInput } from '../../shared/components/forms/FormSection'
+import { PasswordInput } from '../../shared/components/forms/PasswordInput'
+import { firstAllowedPath } from '../../app/auth/roleScope'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -13,16 +15,16 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  const redirectTo = (location.state as { from?: string } | null)?.from ?? '/dashboard'
+  const explicitRedirect = (location.state as { from?: string } | null)?.from
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
     try {
-      const { token } = await authApi.login(email, password)
+      const { token, user } = await authApi.login(email, password)
       setToken(token)
-      navigate(redirectTo, { replace: true })
+      navigate(explicitRedirect ?? firstAllowedPath(user), { replace: true })
     } catch {
       setError('Credenciales inválidas')
     } finally {
@@ -62,8 +64,7 @@ export default function LoginPage() {
           </FormField>
 
           <FormField label="Contraseña" fullWidth>
-            <FormInput
-              type="password"
+            <PasswordInput
               autoComplete="current-password"
               required
               value={password}

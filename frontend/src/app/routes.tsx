@@ -47,6 +47,7 @@ export const ROUTES = {
 
   SETTINGS_COMPANIES: '/settings/companies',
   SETTINGS_COST_CENTERS: '/settings/cost-centers',
+  SETTINGS_FIXED_ASSETS: '/settings/fixed-assets',
   SETTINGS_INSURANCE_TYPES: '/settings/insurance-types',
   SETTINGS_MODULE_CONFIG: '/settings/module-config',
   SETTINGS_MODULE_CONFIG_ASSETS: '/settings/module-config/assets',
@@ -55,4 +56,5 @@ export const ROUTES = {
   SETTINGS_MODULE_CONFIG_TASKS: '/settings/module-config/tasks',
   SETTINGS_MODULE_CONFIG_CLAIMS: '/settings/module-config/claims',
   SETTINGS_USERS: '/settings/users',
+  SETTINGS_ACCESS_PROFILES: '/settings/access-profiles',
 }

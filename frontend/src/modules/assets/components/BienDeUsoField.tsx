@@ -1,32 +1,25 @@
 import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { X, Search } from 'lucide-react'
-import { BIENES_DE_USO } from '../data/bienes-de-uso'
-
-const ALL_BIENES_DE_USO = BIENES_DE_USO
+import { fixedAssetQueries } from '../../../shared/api/fixed-assets.api'
 
 interface BienDeUsoFieldProps {
   value: string
   onChange: (id: string) => void
-  categoryFilter?: string[]
 }
 
-export function BienDeUsoField({ value, onChange, categoryFilter }: BienDeUsoFieldProps) {
+export function BienDeUsoField({ value, onChange }: BienDeUsoFieldProps) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
-  const allBienesDeUso = ALL_BIENES_DE_USO
-
-  const filteredCatalog = useMemo(() => {
-    if (!categoryFilter?.length) return allBienesDeUso
-    return allBienesDeUso.filter((b) => categoryFilter.includes(b.category))
-  }, [categoryFilter, allBienesDeUso])
+  const { data: allBienesDeUso = [] } = useQuery(fixedAssetQueries.list())
 
   const results = useMemo(() => {
-    if (!query.trim()) return filteredCatalog.slice(0, 8)
+    if (!query.trim()) return allBienesDeUso.slice(0, 8)
     const q = query.toLowerCase()
-    return filteredCatalog.filter(
-      (b) => b.code.toLowerCase().includes(q) || b.description.toLowerCase().includes(q),
+    return allBienesDeUso.filter(
+      (b) => b.code.toLowerCase().includes(q) || b.name.toLowerCase().includes(q),
     ).slice(0, 8)
-  }, [query, filteredCatalog])
+  }, [query, allBienesDeUso])
 
   const selected = allBienesDeUso.find((b) => b.id === value)
 
@@ -37,22 +30,8 @@ export function BienDeUsoField({ value, onChange, categoryFilter }: BienDeUsoFie
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2">
               <p className="text-xs font-bold text-blue-700 font-mono tracking-wide">{selected.code}</p>
-              <span className="text-xs text-blue-400 bg-blue-100 px-1.5 py-0.5 rounded font-medium">{selected.category}</span>
             </div>
-            <p className="text-sm font-medium text-slate-700">{selected.description}</p>
-            <div className="flex items-center gap-3 pt-0.5">
-              <span className="text-xs text-slate-500">
-                Incorporación: <span className="font-medium">{selected.incorporationDate}</span>
-              </span>
-              <span className="text-xs text-slate-400">·</span>
-              <span className="text-xs text-slate-500">
-                VU: <span className="font-medium">{selected.usefulLifeYears} años</span>
-              </span>
-              <span className="text-xs text-slate-400">·</span>
-              <span className="text-xs text-slate-500">
-                Amort: <span className="font-medium">{selected.depreciationRate}% anual</span>
-              </span>
-            </div>
+            <p className="text-sm font-medium text-slate-700">{selected.name}</p>
           </div>
           <button
             type="button"
@@ -72,7 +51,7 @@ export function BienDeUsoField({ value, onChange, categoryFilter }: BienDeUsoFie
             onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
             onFocus={() => setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 150)}
-            placeholder="Buscar por código o descripción en Finnegans…"
+            placeholder="Buscar por código o nombre…"
             className="w-full pl-8 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           {open && results.length > 0 && (
@@ -86,14 +65,10 @@ export function BienDeUsoField({ value, onChange, categoryFilter }: BienDeUsoFie
                 >
                   <span className="text-xs font-mono font-semibold text-blue-600 flex-shrink-0 w-[72px]">{b.code}</span>
                   <div className="min-w-0">
-                    <p className="text-sm text-slate-800 truncate">{b.description}</p>
-                    <p className="text-xs text-slate-400">{b.category}</p>
+                    <p className="text-sm text-slate-800 truncate">{b.name}</p>
                   </div>
                 </button>
               ))}
-              <div className="px-3 py-2 border-t border-slate-100 text-xs text-slate-400 italic">
-                Catálogo de muestra — en producción conecta con Finnegans
-              </div>
             </div>
           )}
         </div>

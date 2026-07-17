@@ -9,7 +9,8 @@ interface BackendProducer { id: string; name: string }
 interface BackendCoverage { id: string; name: string; description: string | null }
 interface BackendPolicyAsset {
   id: string; code: string | null; name: string; assetType: string
-  fixedAssetCode: string | null; costCenterName: string | null; costCenterCode: string | null
+  fixedAssetCode: string | null; fixedAssetName: string | null
+  costCenterName: string | null; costCenterCode: string | null
 }
 interface BackendPolicy {
   id: string; policyNumber: string; insuranceTypeId: string; companyId: string
@@ -74,6 +75,7 @@ function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
     name: a.name,
     assetType: a.assetType,
     fixedAssetCode: a.fixedAssetCode,
+    fixedAssetName: a.fixedAssetName,
     costCenterName: a.costCenterName,
     costCenterCode: a.costCenterCode,
   }

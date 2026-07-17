@@ -290,7 +290,7 @@ export default function PolicyDetailPage() {
                       <p className="text-xs text-slate-500">{asset.internalCode} — {asset.assetType}</p>
                       {asset.fixedAssetCode && (
                         <p className="text-xs text-slate-400 mt-0.5">
-                          Bien de uso: <span className="font-mono">{asset.fixedAssetCode}</span>
+                          Bien de uso: <span className="font-mono">{asset.fixedAssetCode}</span>{asset.fixedAssetName ? ` — ${asset.fixedAssetName}` : ''}
                         </p>
                       )}
                       {asset.costCenterCode && (

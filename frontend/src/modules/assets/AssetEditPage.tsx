@@ -14,7 +14,7 @@ import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ASSET_STATUS_LABELS, PROVINCES } from '../../shared/constants'
-import { ASSET_TYPE_TO_FINNEGANS, LABEL_TO_CATEGORY } from '../../shared/constants/asset-categories'
+import { LABEL_TO_CATEGORY } from '../../shared/constants/asset-categories'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { BienDeUsoField } from './components/BienDeUsoField'
 import { AllocationEditor } from './components/AllocationEditor'
@@ -31,7 +31,7 @@ import type {
 type FormErrors = Partial<Record<string, string>>
 
 type EditForm = {
-  fixedAssetCode: string
+  fixedAssetId: string
   name: string
   status: string
   assetType: string
@@ -53,7 +53,7 @@ type EditForm = {
 }
 
 const EMPTY_FORM: EditForm = {
-  fixedAssetCode: '', name: '', status: 'activo', assetType: '',
+  fixedAssetId: '', name: '', status: 'activo', assetType: '',
   brand: '', model: '', year: '', serialNumber: '', chassisNumber: '',
   plate: '', engineNumber: '', color: '', fuelType: '',
   powerHp: '', cutWidth: '', tankCapacity: '', workWidth: '', implementType: '',
@@ -186,7 +186,7 @@ export default function AssetEditPage() {
     const str = (v: unknown) => (v !== undefined && v !== null ? String(v) : '')
     setForm({
       ...EMPTY_FORM,
-      fixedAssetCode: asset.fixedAssetCode ?? '',
+      fixedAssetId: asset.fixedAssetId ?? '',
       name: asset.name,
       status: asset.status,
       assetType: asset.assetType,
@@ -429,7 +429,7 @@ export default function AssetEditPage() {
           name: form.name.trim(),
           assetType: form.assetType.trim(),
           status: form.status,
-          fixedAssetCode: form.fixedAssetCode?.trim() || undefined,
+          fixedAssetId: form.fixedAssetId?.trim() || undefined,
           brand: form.brand.trim() || undefined,
           model: form.model.trim() || undefined,
           year: form.year ? parseInt(form.year, 10) : undefined,
@@ -508,20 +508,19 @@ export default function AssetEditPage() {
                 <AutoCodeDisplay code={asset.internalCode} />
               </FormField>
               {isCarga ? (
-                <FormField label="Bien de Uso (Finnegans)" fullWidth>
+                <FormField label="Bien de Uso" fullWidth>
                   <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-lg border border-amber-200 bg-amber-50">
                     <Info size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
                     <p className="text-sm text-amber-800">
-                      Este tipo de activo <strong>no requiere código de Bien de Uso de Finnegans</strong>.
+                      Este tipo de activo <strong>no requiere Bien de Uso asignado</strong>.
                     </p>
                   </div>
                 </FormField>
               ) : (
-                <FormField label="Bien de Uso (Finnegans)" fullWidth>
+                <FormField label="Bien de Uso" fullWidth>
                   <BienDeUsoField
-                    value={form.fixedAssetCode}
-                    onChange={(id) => setForm((p) => ({ ...p, fixedAssetCode: id }))}
-                    categoryFilter={ASSET_TYPE_TO_FINNEGANS[asset.assetType]}
+                    value={form.fixedAssetId}
+                    onChange={(id) => setForm((p) => ({ ...p, fixedAssetId: id }))}
                   />
                 </FormField>
               )}

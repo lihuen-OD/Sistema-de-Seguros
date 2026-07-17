@@ -13,6 +13,8 @@
     "db:seed": "ts-node -r dotenv/config prisma/seed.ts",
     "db:seed:config": "ts-node -r dotenv/config prisma/seed-config.ts",
     "db:seed:admin": "ts-node -r dotenv/config prisma/seed-admin.ts",
+    "db:seed:fixed-assets": "ts-node -r dotenv/config prisma/seed-fixed-assets.ts",
+    "db:seed:access-profiles": "ts-node -r dotenv/config prisma/seed-access-profiles.ts",
     "test": "jest --runInBand",
     "test:watch": "jest --watch"
   },

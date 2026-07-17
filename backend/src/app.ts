@@ -9,8 +9,10 @@ import { errorMiddleware } from './middleware/error.middleware'
 import { healthRouter } from './modules/health/health.router'
 import { authRouter } from './modules/auth/auth.router'
 import { usersRouter } from './modules/users/users.router'
+import { accessProfilesRouter } from './modules/access-profiles/access-profiles.router'
 import { companiesRouter } from './modules/companies/companies.router'
 import { costCentersRouter } from './modules/cost-centers/cost-centers.router'
+import { fixedAssetsRouter } from './modules/fixed-assets/fixed-assets.router'
 import { insuranceTypesRouter } from './modules/insurance-types/insurance-types.router'
 import { assetsRouter } from './modules/assets/assets.router'
 import { producersRouter } from './modules/producers/producers.router'
@@ -88,9 +90,11 @@ app.use('/health', healthRouter)
 app.use('/api/v1/auth', authRouter)
 // Administración de usuarios (ADMIN only)
 app.use('/api/v1/users', usersRouter)
+app.use('/api/v1/access-profiles', accessProfilesRouter)
 // Fase 2 — Catálogos
 app.use('/api/v1/companies', companiesRouter)
 app.use('/api/v1/cost-centers', costCentersRouter)
+app.use('/api/v1/fixed-assets', fixedAssetsRouter)
 app.use('/api/v1/insurance-types', insuranceTypesRouter)
 // Fase 3 — Activos
 app.use('/api/v1/assets', assetsRouter)

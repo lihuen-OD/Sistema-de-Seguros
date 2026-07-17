@@ -19,7 +19,7 @@ import {
   PROVINCES,
 } from '../../shared/constants'
 import {
-  CATEGORY_LABEL, CATEGORY_TO_FINNEGANS,
+  CATEGORY_LABEL,
 } from '../../shared/constants/asset-categories'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { CategoryPicker } from './components/CategoryPicker'
@@ -321,7 +321,7 @@ export default function AssetNewPage() {
         name: form.name.trim(),
         assetType: CATEGORY_LABEL[category],
         status: form.status,
-        fixedAssetCode: form.bienDeUsoId || undefined,
+        fixedAssetId: form.bienDeUsoId || undefined,
         brand: form.brand.trim() || undefined,
         model: form.model.trim() || undefined,
         year: form.year ? parseInt(form.year, 10) : undefined,
@@ -392,27 +392,26 @@ export default function AssetNewPage() {
             {/* 2. Identificación */}
             <SectionCard
               title="Identificación"
-              subtitle="Código de Bien de Uso (Finnegans), nombre y estado."
+              subtitle="Código de Bien de Uso, nombre y estado."
             >
               <FormSection title="">
                 <FormField label="Código de activo (sistema)">
                   <AutoCodeDisplay code="Asignado al guardar" />
                 </FormField>
                 {IS_CARGA(category) ? (
-                  <FormField label="Bien de Uso (Finnegans)" fullWidth>
+                  <FormField label="Bien de Uso" fullWidth>
                     <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-lg border border-amber-200 bg-amber-50">
                       <Info size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
                       <p className="text-sm text-amber-800">
-                        Este tipo de activo <strong>no requiere código de Bien de Uso de Finnegans</strong>. La carga animal se contabiliza como inventario, no como bien de uso fijo.
+                        Este tipo de activo <strong>no requiere Bien de Uso asignado</strong>. La carga animal se contabiliza como inventario, no como bien de uso fijo.
                       </p>
                     </div>
                   </FormField>
                 ) : (
-                  <FormField label="Bien de Uso (Finnegans)" fullWidth>
+                  <FormField label="Bien de Uso" fullWidth>
                     <BienDeUsoField
                       value={form.bienDeUsoId}
                       onChange={(id) => setForm((prev) => ({ ...prev, bienDeUsoId: id }))}
-                      categoryFilter={category ? CATEGORY_TO_FINNEGANS[category] : undefined}
                     />
                   </FormField>
                 )}

@@ -21,14 +21,13 @@ import { fireExtinguishersApi, fireExtinguisherKeys, fireExtinguisherQueries } f
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
-import { FIRE_EXT_STATUS_LABELS, LOCATION_TYPES } from '../../shared/constants'
+import { FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { FireExtinguisher, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
-const LOCATION_OPTIONS = Object.entries(LOCATION_TYPES).map(([value, label]) => ({ value, label }))
 
 function getExpiryFlags(fe: FireExtinguisher) {
   const days = daysUntil(fe.expirationDate)
@@ -57,6 +56,11 @@ export default function FireExtinguishersPage() {
   const ESTABLISHMENT_OPTIONS = useMemo(
     () => establishmentCatalog.map((e) => ({ value: e.label, label: e.label })),
     [establishmentCatalog],
+  )
+  const { data: locationTypeCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_location_type'))
+  const LOCATION_OPTIONS = useMemo(
+    () => locationTypeCatalog.map((lt) => ({ value: lt.label, label: lt.label })),
+    [locationTypeCatalog],
   )
 
   const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
@@ -130,7 +134,16 @@ export default function FireExtinguishersPage() {
       label: 'Establecimiento',
       defaultVisible: true,
       hideable: true,
-      render: (v) => (v ? <span className="text-xs text-slate-600">{v as string}</span> : <span className="text-slate-400">—</span>),
+      exportValue: (row) => [row.establishment, row.associatedLocationType].filter(Boolean).join(' — '),
+      render: (v, row) =>
+        v ? (
+          <div className="min-w-0">
+            <span className="block text-xs text-slate-600">{v as string}</span>
+            <span className="block text-xs text-slate-400 mt-0.5">{row.associatedLocationType}</span>
+          </div>
+        ) : (
+          <span className="text-slate-400">—</span>
+        ),
     },
     {
       id: 'assetId',
@@ -140,12 +153,12 @@ export default function FireExtinguishersPage() {
       hideable: true,
       exportValue: (row) => {
         const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
-        const locationLabel = LOCATION_TYPES[row.associatedLocationType] ?? row.associatedLocationType
+        const locationLabel = row.associatedLocationType
         return asset ? `${asset.name} — ${locationLabel}` : locationLabel
       },
       render: (_, row) => {
         const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
-        const locationLabel = LOCATION_TYPES[row.associatedLocationType] ?? row.associatedLocationType
+        const locationLabel = row.associatedLocationType
         return asset ? (
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/assets/${asset.id}`) }}
@@ -291,6 +304,23 @@ export default function FireExtinguishersPage() {
     vencido:        all.filter((f) => f.status === 'vencido').length,
   }), [all])
 
+  // Desglose del banner de vencidos por establecimiento + asignación física —
+  // solo tiene sentido mostrarlo cuando afecta a más de un sector, si no
+  // duplicaría la misma info que ya dice la oración principal del banner.
+  const vencidoBreakdown = useMemo(() => {
+    const groups = new Map<string, number>()
+    for (const fe of all) {
+      if (fe.status !== 'vencido') continue
+      const key = [fe.establishment, fe.associatedLocationType].filter(Boolean).join(' — ') || 'Sin establecimiento'
+      groups.set(key, (groups.get(key) ?? 0) + 1)
+    }
+    if (groups.size <= 1) return null
+    return [...groups.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([key, count]) => `${count} en ${key}`)
+      .join(', ')
+  }, [all])
+
   const filtered = useMemo(() => {
     return all.filter((fe) => {
       const q = search.toLowerCase()
@@ -372,7 +402,7 @@ export default function FireExtinguishersPage() {
             <strong>
               {counts.vencido} matafuego{counts.vencido !== 1 ? 's' : ''} vencido{counts.vencido !== 1 ? 's' : ''}
             </strong>{' '}
-            requieren recarga inmediata. Seleccionálos en la tabla para registrar la recarga en bloque.
+            requieren recarga inmediata{vencidoBreakdown ? ` (${vencidoBreakdown})` : ''}. Seleccionálos en la tabla para registrar la recarga en bloque.
           </span>
         </div>
       )}

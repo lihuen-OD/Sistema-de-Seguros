@@ -167,12 +167,21 @@ export const fireExtinguisherQueries = {
 
 // ── Dashboard propio del módulo (Fase 5) ────────────────────────────────────────
 
+export interface FireExtinguisherLocationTypeBucket {
+  locationType: string
+  total: number
+  vigente: number
+  proximo_vencer: number
+  vencido: number
+}
+
 export interface FireExtinguisherStatusBucket {
   establishment: string
   total: number
   vigente: number
   proximo_vencer: number
   vencido: number
+  byLocationType: FireExtinguisherLocationTypeBucket[]
 }
 
 export interface FireExtinguisherDashboardSummary {

@@ -1,11 +1,12 @@
 import request from 'supertest'
 import { app } from '../../../app'
-import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     fireExtinguisher: {
       findMany: jest.fn(),
       update: jest.fn(),
@@ -41,6 +42,7 @@ const validBody = {
 describe('POST /api/v1/fire-extinguishers/bulk-recharge', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    db.user.findUnique.mockResolvedValue(mockDbUser())
     db.fireExtinguisherHistory.create.mockResolvedValue({})
     db.fireExtinguisher.update.mockImplementation((args: any) =>
       Promise.resolve({ ...fakeFireExt(args.where.id), ...args.data }),
@@ -117,21 +119,24 @@ describe('POST /api/v1/fire-extinguishers/bulk-recharge', () => {
     expect(res.status).toBe(422)
   })
 
-  it('returns 403 for VIEWER', async () => {
+  it('returns 403 for a USER without the fire_extinguishers module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
     const res = await request(app)
       .post('/api/v1/fire-extinguishers/bulk-recharge')
-      .set('Authorization', `Bearer ${viewerToken()}`)
+      .set('Authorization', `Bearer ${userToken()}`)
       .send(validBody)
 
     expect(res.status).toBe(403)
   })
 
-  it('returns 200 for CONTADOR', async () => {
+  it('returns 200 for a USER with the fire_extinguishers module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguishers'] }))
     db.fireExtinguisher.findMany.mockResolvedValue([ID_1, ID_2, ID_3].map(fakeFireExt))
 
     const res = await request(app)
       .post('/api/v1/fire-extinguishers/bulk-recharge')
-      .set('Authorization', `Bearer ${contadorToken()}`)
+      .set('Authorization', `Bearer ${userToken()}`)
       .send(validBody)
 
     expect(res.status).toBe(200)

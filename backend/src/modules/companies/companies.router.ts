@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
-import { requireRole } from '../../middleware/roles.middleware'
+import { requireModule } from '../../middleware/roles.middleware'
 import { validate, validateQuery } from '../../middleware/validate.middleware'
 import {
   CreateCompanySchema,
@@ -16,15 +16,15 @@ companiesRouter.use(authMiddleware)
 companiesRouter.get('/', validateQuery(ListCompaniesQuerySchema), companiesController.list)
 companiesRouter.post(
   '/',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('companies'),
   validate(CreateCompanySchema),
   companiesController.create,
 )
 companiesRouter.get('/:id', companiesController.getById)
 companiesRouter.put(
   '/:id',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('companies'),
   validate(UpdateCompanySchema),
   companiesController.update,
 )
-companiesRouter.delete('/:id', requireRole('ADMIN'), companiesController.remove)
+companiesRouter.delete('/:id', requireModule('companies'), companiesController.remove)

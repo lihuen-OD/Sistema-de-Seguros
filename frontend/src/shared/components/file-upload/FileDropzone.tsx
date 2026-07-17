@@ -1,4 +1,4 @@
-import { Upload, FileText, X, Loader2, CheckCircle2 } from 'lucide-react'
+import { Upload, FileText, X, Loader2, CheckCircle2, Camera } from 'lucide-react'
 import { useState, useRef } from 'react'
 import clsx from 'clsx'
 
@@ -22,6 +22,8 @@ interface FileDropzoneProps {
   onFilesSelected?: (files: File[]) => Promise<void>
   /** Solo captura los File[] en estado del padre (para creación, donde el ID aún no existe). */
   onFilesPicked?: (files: File[]) => void
+  /** Suma un botón "Tomar foto" que abre la cámara directo en mobile (solo tiene sentido si accept es de imágenes). */
+  enableCamera?: boolean
 }
 
 export function FileDropzone({
@@ -31,10 +33,12 @@ export function FileDropzone({
   className,
   onFilesSelected,
   onFilesPicked,
+  enableCamera = false,
 }: FileDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [pending, setPending] = useState<PendingFile[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   const buildPending = (files: File[]): PendingFile[] =>
     files.map((f) => ({
@@ -92,13 +96,33 @@ export function FileDropzone({
     if (inputRef.current) inputRef.current.value = ''
   }
 
+  const handleCameraChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleFiles(Array.from(e.target.files ?? []))
+    if (cameraInputRef.current) cameraInputRef.current.value = ''
+  }
+
   const removeFile = (id: string) => {
     setPending((prev) => prev.filter((p) => p.id !== id))
   }
 
   return (
     <div className={className}>
-      <label className="text-xs font-medium text-slate-600 block mb-1.5">{label}</label>
+      <div className="flex items-center justify-between gap-3 mb-1.5">
+        <label className="text-xs font-medium text-slate-600">{label}</label>
+        {enableCamera && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              cameraInputRef.current?.click()
+            }}
+            className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 flex-shrink-0"
+          >
+            <Camera size={13} />
+            Tomar foto
+          </button>
+        )}
+      </div>
       <div
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
         onDragLeave={() => setIsDragging(false)}
@@ -127,6 +151,16 @@ export function FileDropzone({
           onChange={handleChange}
           className="hidden"
         />
+        {enableCamera && (
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleCameraChange}
+            className="hidden"
+          />
+        )}
       </div>
 
       {pending.length > 0 && (

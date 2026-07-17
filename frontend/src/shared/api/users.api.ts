@@ -7,6 +7,8 @@ export interface AppUser {
   name: string
   email: string
   role: Role
+  accessProfileId: string | null
+  accessProfileName: string | null
   isActive: boolean
   mustChangePassword: boolean
   lastLoginAt: string | null
@@ -17,6 +19,7 @@ export interface CreateUserInput {
   name: string
   email: string
   role: Role
+  accessProfileId?: string | null
   password: string
 }
 
@@ -24,6 +27,7 @@ export interface UpdateUserInput {
   name?: string
   email?: string
   role?: Role
+  accessProfileId?: string | null
   isActive?: boolean
 }
 

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Hash, Plus, Edit2, CheckCircle2, XCircle, X, Save, Loader2 } from 'lucide-react'
+import { Hash, Plus, Edit2, Trash2, CheckCircle2, XCircle, X, Save, Loader2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -11,6 +11,7 @@ import { OverflowCell } from '../../../shared/components/data-table/OverflowCell
 import { FilterBar } from '../../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
+import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import {
   FormField,
   FormInput,
@@ -154,6 +155,7 @@ export default function CostCentersPage() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [modalCC, setModalCC] = useState<CostCenter | null | undefined>(undefined)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -190,6 +192,12 @@ export default function CostCentersPage() {
     }
     setModalCC(undefined)
     queryClient.invalidateQueries({ queryKey: costCenterKeys.all })
+  }
+
+  async function handleDelete(id: string) {
+    await costCentersApi.remove(id)
+    queryClient.invalidateQueries({ queryKey: costCenterKeys.all })
+    setDeleteId(null)
   }
 
   const columns: TableColumn<CostCenter>[] = [
@@ -229,15 +237,24 @@ export default function CostCentersPage() {
       key: 'id',
       label: '',
       render: (_, row) => (
-        <button
-          onClick={(e) => { e.stopPropagation(); setModalCC(row) }}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-          title="Editar centro de costo"
-        >
-          <Edit2 size={15} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); setModalCC(row) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            title="Editar centro de costo"
+          >
+            <Edit2 size={15} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            title="Eliminar centro de costo"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
       ),
-      className: 'w-10',
+      className: 'w-20',
     },
   ]
 
@@ -321,6 +338,15 @@ export default function CostCentersPage() {
           onSave={handleSave}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteId !== null}
+        title="Eliminar centro de costo"
+        description={`¿Eliminar "${allCostCenters.find((cc) => cc.id === deleteId)?.name ?? 'este centro de costo'}"? Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        onConfirm={() => deleteId && handleDelete(deleteId)}
+        onCancel={() => setDeleteId(null)}
+      />
     </PageContent>
   )
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Edit2, KeyRound, Save, Loader2, Users as UsersIcon, ShieldCheck, Flame, UserCheck } from 'lucide-react'
+import { Plus, Edit2, KeyRound, Save, Loader2, Users as UsersIcon, ShieldCheck, UserCheck } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -10,6 +10,7 @@ import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { Modal } from '../../../shared/components/modals/Modal'
 import { FormField, FormInput, FormSelect } from '../../../shared/components/forms/FormSection'
+import { PasswordInput } from '../../../shared/components/forms/PasswordInput'
 import { formatDate } from '../../../shared/utils/format'
 import {
   usersApi,
@@ -19,16 +20,17 @@ import {
   type CreateUserInput,
   type UpdateUserInput,
 } from '../../../shared/api/users.api'
+import { accessProfileQueries } from '../../../shared/api/access-profiles.api'
 import type { Role, TableColumn } from '../../../shared/types'
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Administrador',
-  AUDITOR_MATAFUEGOS: 'Auditor de Matafuegos',
+  USER: 'Usuario',
 }
 
 const ROLE_ICONS: Record<string, React.ElementType> = {
   ADMIN: ShieldCheck,
-  AUDITOR_MATAFUEGOS: Flame,
+  USER: UserCheck,
 }
 
 // ─── Modal de alta / edición ────────────────────────────────────────────────────
@@ -44,12 +46,16 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
 
   const [name, setName] = useState(user?.name ?? '')
   const [email, setEmail] = useState(user?.email ?? '')
-  const [role, setRole] = useState<Role>(user?.role ?? 'AUDITOR_MATAFUEGOS')
+  const [role, setRole] = useState<Role>(user?.role ?? 'USER')
+  const [accessProfileId, setAccessProfileId] = useState(user?.accessProfileId ?? '')
   const [password, setPassword] = useState('')
   const [isActive, setIsActive] = useState(user?.isActive ?? true)
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({})
   const [apiError, setApiError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  const { data: profiles = [] } = useQuery(accessProfileQueries.list())
+  const activeProfiles = profiles.filter((p) => p.isActive || p.id === accessProfileId)
 
   function validate(): boolean {
     const e: typeof errors = {}
@@ -65,11 +71,12 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
     if (!validate()) return
     setSubmitting(true)
     setApiError('')
+    const profileField = { accessProfileId: role === 'USER' ? (accessProfileId || null) : null }
     try {
       if (isEdit) {
-        await onSave({ name, email, role, isActive })
+        await onSave({ name, email, role, isActive, ...profileField })
       } else {
-        await onSave({ name, email, role, password })
+        await onSave({ name, email, role, password, ...profileField })
       }
     } catch (err) {
       setApiError(err instanceof Error ? err.message : 'Error al guardar')
@@ -98,14 +105,25 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
 
         <FormField label="Rol" required fullWidth>
           <FormSelect value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            <option value="USER">Usuario</option>
             <option value="ADMIN">Administrador</option>
-            <option value="AUDITOR_MATAFUEGOS">Auditor de Matafuegos</option>
           </FormSelect>
         </FormField>
 
+        {role === 'USER' && (
+          <FormField label="Perfil de acceso" fullWidth>
+            <FormSelect value={accessProfileId} onChange={(e) => setAccessProfileId(e.target.value)}>
+              <option value="">Sin perfil (sin acceso a ningún módulo)</option>
+              {activeProfiles.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </FormSelect>
+          </FormField>
+        )}
+
         {!isEdit && (
           <FormField label="Contraseña temporal" required error={errors.password} fullWidth>
-            <FormInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} />
           </FormField>
         )}
 
@@ -188,7 +206,7 @@ function ResetPasswordModal({ user, onClose, onReset }: ResetPasswordModalProps)
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <FormField label="Contraseña temporal nueva" required error={error} fullWidth>
-          <FormInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+          <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
         </FormField>
 
         {apiError && (
@@ -260,13 +278,20 @@ export default function UsersPage() {
     {
       key: 'role',
       label: 'Rol',
-      render: (v) => {
+      render: (v, row) => {
         const Icon = ROLE_ICONS[String(v)] ?? UserCheck
         return (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
-            <Icon size={13} className="text-slate-400" />
-            {ROLE_LABELS[String(v)] ?? String(v)}
-          </span>
+          <div>
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
+              <Icon size={13} className="text-slate-400" />
+              {ROLE_LABELS[String(v)] ?? String(v)}
+            </span>
+            {row.role === 'USER' && (
+              <span className="text-xs text-slate-400 block mt-0.5">
+                {row.accessProfileName ?? 'Sin perfil'}
+              </span>
+            )}
+          </div>
         )
       },
     },

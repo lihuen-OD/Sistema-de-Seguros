@@ -147,7 +147,7 @@ export default function AssetFichaPage() {
               <div className="space-y-2.5">
                 <FichaRow label="Tipo de activo" value={asset.assetType || '—'} />
                 <FichaRow label="Estado" value={ASSET_STATUS_LABELS[asset.status] ?? asset.status} />
-                {asset.fixedAssetCode && <FichaRow label="Código bien de uso" value={asset.fixedAssetCode} />}
+                {asset.fixedAsset && <FichaRow label="Bien de uso" value={`${asset.fixedAsset.code} — ${asset.fixedAsset.name}`} />}
 
                 {/* Campos específicos de vehículo */}
                 {isVehicle && (

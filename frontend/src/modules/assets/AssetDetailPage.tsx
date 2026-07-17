@@ -459,7 +459,7 @@ export default function AssetDetailPage() {
                 {asset.serialNumber && <InfoRow label="N° de Serie" value={asset.serialNumber} mono />}
                 {asset.chassisNumber && <InfoRow label="N° de Chasis" value={asset.chassisNumber} mono />}
                 {asset.engineNumber && <InfoRow label="N° de Motor" value={asset.engineNumber} mono />}
-                {asset.fixedAssetCode && <InfoRow label="Cód. Bien de Uso" value={asset.fixedAssetCode} mono />}
+                {asset.fixedAsset && <InfoRow label="Bien de Uso" value={`${asset.fixedAsset.code} — ${asset.fixedAsset.name}`} mono />}
                 <InfoRow label="Fecha Valuación" value={formatDate(asset.valuationDate)} />
                 <InfoRow label="Fecha de Alta" value={formatDate(asset.createdAt)} />
                 {asset.dischargeDate && <InfoRow label="Fecha de Baja" value={formatDate(asset.dischargeDate)} />}

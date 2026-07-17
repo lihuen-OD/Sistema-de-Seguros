@@ -3,26 +3,40 @@ import jwt from 'jsonwebtoken'
 import { prisma } from '../../config/database'
 import { env } from '../../config/env'
 import { AppError } from '../../shared/errors/AppError'
-import type { Role } from '../../shared/types'
 import type { LoginDTO, ChangePasswordDTO } from './auth.schemas'
 
 const BCRYPT_COST = 12
 const TOKEN_EXPIRES_IN = '12h'
 const GENERIC_LOGIN_ERROR = 'Credenciales inválidas'
 
-function safeUser(user: { id: string; name: string; email: string; role: string; mustChangePassword: boolean }) {
+type UserWithProfile = {
+  id: string
+  name: string
+  email: string
+  role: string
+  mustChangePassword: boolean
+  accessProfile: { id: string; name: string; modules: string[] } | null
+}
+
+function safeUser(user: UserWithProfile) {
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     role: user.role,
     mustChangePassword: user.mustChangePassword,
+    accessProfileId: user.accessProfile?.id ?? null,
+    accessProfileName: user.accessProfile?.name ?? null,
+    modules: user.role === 'ADMIN' ? [] : (user.accessProfile?.modules ?? []),
   }
 }
 
 export const authService = {
   async login(data: LoginDTO) {
-    const user = await prisma.user.findUnique({ where: { email: data.email } })
+    const user = await prisma.user.findUnique({
+      where: { email: data.email },
+      include: { accessProfile: true },
+    })
 
     // Mismo error genérico sin importar el motivo (no existe, inactivo,
     // contraseña incorrecta) — nunca revelar cuál de los tres fue.
@@ -37,21 +51,22 @@ export const authService = {
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
 
-    const token = jwt.sign(
-      { userId: user.id, role: user.role as Role, email: user.email },
-      env.JWT_SECRET,
-      { expiresIn: TOKEN_EXPIRES_IN },
-    )
+    // El JWT solo lleva el id — role, isActive y módulos se resuelven
+    // fresco desde la base en cada request (ver auth.middleware.ts).
+    const token = jwt.sign({ userId: user.id }, env.JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN })
 
     return { token, user: safeUser(user) }
   },
 
   async me(userId: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId } })
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { accessProfile: true },
+    })
     if (!user || !user.isActive) {
       throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
     }
-    return { id: user.id, name: user.name, email: user.email, role: user.role }
+    return safeUser(user)
   },
 
   async changePassword(userId: string, data: ChangePasswordDTO) {

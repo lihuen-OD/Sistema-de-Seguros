@@ -1,12 +1,13 @@
 import request from 'supertest'
 import { Prisma } from '@prisma/client'
 import { app } from '../../../app'
-import { adminToken, contadorToken, viewerToken, auditorMatafuegosToken } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     fireExtinguisher: {
       findUnique: jest.fn(),
     },
@@ -108,6 +109,7 @@ const validCreateBody = {
 
 describe('Fire Extinguisher Audits API', () => {
   beforeEach(() => {
+    db.user.findUnique.mockResolvedValue(mockDbUser())
     db.fireExtinguisher.findUnique.mockResolvedValue(fakeFireExt)
     db.fireExtinguisherAudit.create.mockResolvedValue({ id: AUDIT_ID })
     db.fireExtinguisherAuditProposedChange.create.mockResolvedValue({})
@@ -185,23 +187,28 @@ describe('Fire Extinguisher Audits API', () => {
       expect(res.body.error.code).toBe('DUPLICATE_AUDIT_PERIOD')
     })
 
-    it('returns 403 as VIEWER', async () => {
+    it('returns 403 for a USER without the fire_extinguisher_audits module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post('/api/v1/fire-extinguisher-audits')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send(validCreateBody)
 
       expect(res.status).toBe(403)
     })
 
     it.each([
-      ['ADMIN', adminToken],
-      ['CONTADOR', contadorToken],
-      ['AUDITOR_MATAFUEGOS', auditorMatafuegosToken],
-    ])('returns 201 for %s', async (_label, tokenFn) => {
+      ['ADMIN', 'ADMIN', undefined],
+      ['a USER with the fire_extinguisher_audits module', 'USER', ['fire_extinguisher_audits']],
+    ] as const)('returns 201 for %s', async (_label, role, modules) => {
+      if (role === 'USER') {
+        db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [...modules!] }))
+      }
+
       const res = await request(app)
         .post('/api/v1/fire-extinguisher-audits')
-        .set('Authorization', `Bearer ${tokenFn()}`)
+        .set('Authorization', `Bearer ${role === 'ADMIN' ? adminToken() : userToken()}`)
         .send(validCreateBody)
 
       expect(res.status).toBe(201)

@@ -10,6 +10,10 @@ interface StatusBucket {
   vencido: number
 }
 
+interface LocationTypeBucket extends StatusBucket {
+  locationType: string
+}
+
 function emptyBucket(): StatusBucket {
   return { total: 0, vigente: 0, proximo_vencer: 0, vencido: 0 }
 }
@@ -37,6 +41,7 @@ export const fireExtinguishersDashboardService = {
         where: { isActive: true },
         select: {
           establishment: true,
+          locationType: true,
           expirationDate: true,
           manufacturingYear: true,
           hydraulicTestExpirationDate: true,
@@ -69,16 +74,26 @@ export const fireExtinguishersDashboardService = {
     const byEstablishmentMap = new Map<string, StatusBucket>(
       establishments.map((e) => [e, emptyBucket()]),
     )
+    const byLocationTypeMap = new Map<string, Map<string, LocationTypeBucket>>(
+      establishments.map((e) => [e, new Map()]),
+    )
     for (const row of establishmentRows) {
       const bucket = row.establishment ? byEstablishmentMap.get(row.establishment) : undefined
       if (!bucket) continue // establecimiento legacy sin valor reconocido — no rompe el desglose
       const status = computeFireExtinguisherStatus(row.expirationDate, row.manufacturingYear, row.hydraulicTestExpirationDate)
       bucket.total += 1
       bucket[status] += 1
+
+      const locationTypeMap = byLocationTypeMap.get(row.establishment!)!
+      const locationTypeBucket = locationTypeMap.get(row.locationType) ?? { locationType: row.locationType, ...emptyBucket() }
+      locationTypeBucket.total += 1
+      locationTypeBucket[status] += 1
+      locationTypeMap.set(row.locationType, locationTypeBucket)
     }
     const byEstablishment = establishments.map((establishment) => ({
       establishment,
       ...byEstablishmentMap.get(establishment)!,
+      byLocationType: [...byLocationTypeMap.get(establishment)!.values()].sort((a, b) => b.total - a.total),
     }))
 
     const byType = byTypeRaw.map((row) => ({ type: row.type, count: row._count._all }))

@@ -161,7 +161,12 @@ export default function PolicyFichaPage() {
                       <FichaRow label="Código interno" value={a.internalCode} mono />
                       <FichaRow label="Nombre" value={a.name} />
                       <FichaRow label="Tipo" value={a.assetType} />
-                      {a.fixedAssetCode && <FichaRow label="Bien de uso" value={a.fixedAssetCode} />}
+                      {a.fixedAssetCode && (
+                        <FichaRow
+                          label="Bien de uso"
+                          value={a.fixedAssetName ? `${a.fixedAssetCode} — ${a.fixedAssetName}` : a.fixedAssetCode}
+                        />
+                      )}
                       {a.costCenterCode && (
                         <FichaRow
                           label="Centro de costo"

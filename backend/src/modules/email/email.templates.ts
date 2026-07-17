@@ -1,5 +1,3 @@
-import { env } from '../../config/env'
-
 // Escapa texto libre antes de interpolarlo en HTML — nunca se acepta HTML
 // crudo proveniente del frontend (ver mensaje libre del usuario).
 function escapeHtml(text: string): string {
@@ -62,7 +60,6 @@ export interface ManualDocumentEmailAttachment {
 }
 
 export interface ManualDocumentEmailData {
-  documentId: string
   documentTypeLabel: string
   documentNumber: string
   insuranceCompany: string | null
@@ -145,8 +142,6 @@ export function buildManualDocumentSendEmail(data: ManualDocumentEmailData): { s
       </div>`
     : ''
 
-  const link = `${env.FRONTEND_URL}/insurance/documents/${data.documentId}`
-
   const bodyHtml = `
     <table style="width:100%; border-collapse:collapse; margin-bottom:16px;">${rows.join('')}</table>
     <p style="font-size:13px; font-weight:600; color:#374151; margin:16px 0 4px;">Centros de Costo</p>
@@ -155,12 +150,7 @@ export function buildManualDocumentSendEmail(data: ManualDocumentEmailData): { s
     ${assetsHtml}
     <p style="font-size:13px; font-weight:600; color:#374151; margin:16px 0 4px;">Adjuntos (${data.attachments.length})</p>
     ${attachmentsHtml}
-    ${messageHtml}
-    <div style="margin-top:24px; text-align:center;">
-      <a href="${link}" style="display:inline-block; padding:10px 20px; background:${HEADER_COLOR}; color:#fff; text-decoration:none; border-radius:6px; font-size:13px; font-weight:600;">
-        Ver en la plataforma
-      </a>
-    </div>`
+    ${messageHtml}`
 
   const html = wrapEmailShell('Sistema de Seguros LO', `${data.documentTypeLabel} — ${formatDate(new Date().toISOString().slice(0, 10))}`, bodyHtml)
 

@@ -26,6 +26,13 @@ function buildReportRows(data: FireExtinguisherDashboardSummary): { section: str
     { section: 'Parque', concept: 'Próximos a Vencer', value: String(data.totals.proximo_vencer) },
     { section: 'Parque', concept: 'Vencidos', value: String(data.totals.vencido) },
     ...data.byEstablishment.map((z) => ({ section: 'Establecimiento', concept: z.establishment, value: String(z.total) })),
+    ...data.byEstablishment.flatMap((z) =>
+      z.byLocationType.map((lt) => ({
+        section: 'Establecimiento — Asignación física',
+        concept: `${z.establishment} — ${lt.locationType}`,
+        value: String(lt.total),
+      })),
+    ),
     ...data.byType.map((t) => ({ section: 'Tipo', concept: t.type, value: String(t.count) })),
     { section: 'Auditoría', concept: `Cobertura (${data.audits.currentPeriod})`, value: `${data.audits.coveragePercent}%` },
     { section: 'Auditoría', concept: 'Pendientes de revisión', value: String(data.audits.pendingReview) },

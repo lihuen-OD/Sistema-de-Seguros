@@ -28,6 +28,7 @@ async function main() {
   await prisma.assetStatusHistory.deleteMany()
   await prisma.assetAllocation.deleteMany()
   await prisma.asset.deleteMany()
+  await prisma.fixedAsset.deleteMany()
   await prisma.insuranceCoverage.deleteMany()
   await prisma.insuranceType.deleteMany()
   await prisma.costCenter.deleteMany()
@@ -198,7 +199,44 @@ async function main() {
   console.log('  OK Productores (3)')
 
   // ─────────────────────────────────────────────────────────────────────────
-  // PASO 5 — Activos (con fixedAssetCode / Bien de Uso)
+  // PASO 4b — Bienes de Uso (catálogo contable, antes mock de Finnegans)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const fixedAssetsData = [
+    { code: 'ROD-001', name: 'Camioneta doble cabina 4×4 — Flota agrícola' },
+    { code: 'ROD-002', name: 'Camioneta doble cabina 4×4 — Flota agrícola II' },
+    { code: 'ROD-003', name: 'Camioneta 4×4 doble cabina — Jefatura producción' },
+    { code: 'ROD-004', name: 'Camión semirremolque tractor — Transporte de cereales I' },
+    { code: 'ROD-005', name: 'Camión semirremolque tractor — Transporte de cereales II' },
+    { code: 'ROD-006', name: 'Camión semirremolque tractor — Transporte (baja)' },
+    { code: 'ROD-007', name: 'Camioneta cabina simple 4×2 — Mantenimiento' },
+    { code: 'ROD-008', name: 'Vehículo de dirección — Gerencia' },
+    { code: 'ROD-009', name: 'Moto utilitaria — Campo norte' },
+    { code: 'ROD-010', name: 'Camioneta 4×4 — Pendiente de registro' },
+    { code: 'MAQ-001', name: 'Tractor alta potencia — Campaña agrícola norte' },
+    { code: 'MAQ-002', name: 'Cosechadora de granos autopropulsada' },
+    { code: 'MAQ-003', name: 'Pulverizadora autopropulsada — Zona sur' },
+    { code: 'MAQ-004', name: 'Tractor mediana potencia — Campaña agrícola sur' },
+    { code: 'MAQ-005', name: 'Sembradora de precisión — Pendiente de alta en sistema' },
+    { code: 'MAQ-006', name: 'Mixer unifeed ganadero — Sin asignar' },
+    { code: 'IMP-001', name: 'Plataforma draper flexhea para cosechadora' },
+    { code: 'IMP-002', name: 'Plataforma girasolera 12 surcos — Sin asignar' },
+    { code: 'INM-001', name: 'Campo agrícola zona núcleo — 1.200 ha' },
+    { code: 'INM-002', name: 'Inmueble oficinas — CABA, planta baja y 3 pisos' },
+    { code: 'INM-003', name: 'Lote industrial — Área logística, pendiente de registro' },
+    { code: 'INF-001', name: 'Planta de almacenamiento cereales — Puerto Rosario' },
+    { code: 'INF-002', name: 'Batería de silos metálicos — Est. El Ombú, lote 3' },
+    { code: 'INF-003', name: 'Red de riego por goteo — Sin asignar' },
+  ]
+
+  const createdFixedAssets = await Promise.all(
+    fixedAssetsData.map((fa) => prisma.fixedAsset.create({ data: fa })),
+  )
+  const faByCode = new Map(createdFixedAssets.map((fa) => [fa.code, fa]))
+  console.log(`  OK Bienes de Uso (${createdFixedAssets.length})`)
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 5 — Activos (con fixedAssetId → Bien de Uso real)
   // ─────────────────────────────────────────────────────────────────────────
 
   const [
@@ -214,7 +252,7 @@ async function main() {
     prisma.asset.create({
       data: {
         code: 'INM-001',
-        fixedAssetCode: 'BU-000001',
+        fixedAssetId: faByCode.get('INM-002')!.id,
         name: 'Edificio Principal — Planta Córdoba',
         assetType: 'inmueble',
         status: 'activo',
@@ -239,7 +277,7 @@ async function main() {
     prisma.asset.create({
       data: {
         code: 'VEH-001',
-        fixedAssetCode: 'BU-000002',
+        fixedAssetId: faByCode.get('ROD-004')!.id,
         name: 'Camión Scania R450 — Patente AB 123 CD',
         assetType: 'vehiculo',
         status: 'activo',
@@ -263,7 +301,7 @@ async function main() {
     prisma.asset.create({
       data: {
         code: 'MAQ-001',
-        fixedAssetCode: 'BU-000003',
+        fixedAssetId: faByCode.get('MAQ-002')!.id,
         name: 'Cosechadora John Deere S770',
         assetType: 'maquinaria_agricola',
         status: 'activo',
@@ -287,7 +325,7 @@ async function main() {
     prisma.asset.create({
       data: {
         code: 'INM-002',
-        fixedAssetCode: 'BU-000004',
+        fixedAssetId: faByCode.get('INM-003')!.id,
         name: 'Galpón de Almacenamiento — Depósito Norte',
         assetType: 'inmueble',
         status: 'activo',
@@ -311,7 +349,7 @@ async function main() {
     prisma.asset.create({
       data: {
         code: 'MAQ-002',
-        fixedAssetCode: 'BU-000005',
+        fixedAssetId: faByCode.get('MAQ-001')!.id,
         name: 'Tractor John Deere 6135B',
         assetType: 'vehiculo',
         status: 'activo',
@@ -334,7 +372,7 @@ async function main() {
     prisma.asset.create({
       data: {
         code: 'INF-001',
-        fixedAssetCode: 'BU-000006',
+        fixedAssetId: faByCode.get('INF-002')!.id,
         name: 'Silo Metálico 1500 tn — Jesús María',
         assetType: 'silo',
         status: 'activo',
@@ -356,7 +394,7 @@ async function main() {
     prisma.asset.create({
       data: {
         code: 'VEH-002',
-        fixedAssetCode: 'BU-000007',
+        fixedAssetId: faByCode.get('ROD-001')!.id,
         name: 'Toyota Hilux GR-S 4x4 — Patente GH 456 IJ',
         assetType: 'vehiculo',
         status: 'activo',
@@ -380,7 +418,7 @@ async function main() {
     prisma.asset.create({
       data: {
         code: 'IMP-001',
-        fixedAssetCode: 'BU-000008',
+        fixedAssetId: faByCode.get('IMP-001')!.id,
         name: 'Sembradora Crucianelli Gringa 8000 (32 líneas)',
         assetType: 'maquinaria_agricola',
         status: 'activo',
@@ -402,7 +440,7 @@ async function main() {
       },
     }),
   ])
-  console.log('  OK Activos (8) + Imputaciones + fixedAssetCode')
+  console.log('  OK Activos (8) + Imputaciones + Bienes de Uso vinculados')
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 5b — Historial de Valores
@@ -1177,7 +1215,7 @@ async function main() {
 
   console.log('\nSeed completado exitosamente.')
   console.log('  Empresas: 3 | Centros de Costo: 4 | Tipos de Seguro: 6 + 25 coberturas')
-  console.log('  Productores: 3 | Activos: 8 con fixedAssetCode | Historial valores: 11')
+  console.log('  Productores: 3 | Bienes de Uso: 24 | Activos: 8 con Bien de Uso vinculado | Historial valores: 11')
   console.log('  Pólizas: 6 con coverageIds reales | Tareas: 10 | Documentos: 5 + 10 cuotas')
   console.log('  Matafuegos: 5 | Siniestros: 3 + 8 eventos | Catálogos: 18 categorías')
   console.log('  CORRECCIONES: assetId campo simple en Claim, FireExtinguisher y ProducerTask')

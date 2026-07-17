@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
@@ -64,20 +65,35 @@ export const costCentersService = {
     return prisma.costCenter.update({ where: { id }, data })
   },
 
-  async softDelete(id: string) {
+  async remove(id: string) {
     await costCentersService.findById(id)
 
-    const linkedAllocations = await prisma.assetAllocation.count({
-      where: { costCenterId: id },
-    })
+    const [linkedAllocations, linkedPolicies] = await Promise.all([
+      prisma.assetAllocation.count({ where: { costCenterId: id } }),
+      prisma.policy.count({ where: { costCenterId: id } }),
+    ])
     if (linkedAllocations > 0) {
       throw new AppError(
         409,
-        `No se puede desactivar: el centro de costo tiene ${linkedAllocations} activo(s) asignado(s)`,
+        `No se puede eliminar: el centro de costo tiene ${linkedAllocations} activo(s) asignado(s)`,
+        'CONFLICT',
+      )
+    }
+    if (linkedPolicies > 0) {
+      throw new AppError(
+        409,
+        `No se puede eliminar: el centro de costo está asignado a ${linkedPolicies} póliza(s)`,
         'CONFLICT',
       )
     }
 
-    return prisma.costCenter.update({ where: { id }, data: { isActive: false } })
+    try {
+      await prisma.costCenter.delete({ where: { id } })
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
+        throw new AppError(409, 'No se puede eliminar: el centro de costo todavía está en uso', 'CONFLICT')
+      }
+      throw e
+    }
   },
 }

@@ -50,7 +50,7 @@ export default function FireExtinguisherAuditDetailPage() {
       }),
     onSuccess: () => {
       setShowConfirm(false)
-      toast.success('Revisión guardada')
+      toast.success('Revisión guardada correctamente')
       queryClient.invalidateQueries({ queryKey: fireExtinguisherAuditKeys.all })
       if (audit) {
         queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.detail(audit.fireExtinguisherId) })

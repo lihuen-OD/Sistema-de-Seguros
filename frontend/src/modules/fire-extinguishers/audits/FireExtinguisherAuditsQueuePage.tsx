@@ -65,7 +65,14 @@ export default function FireExtinguisherAuditsQueuePage() {
       const matchStatus = filterStatus.length === 0 || filterStatus.includes(a.status)
       const matchSearch =
         !q ||
-        [a.extinguisher?.code, a.extinguisher?.cylinderNumber, a.extinguisher?.type, a.extinguisher?.establishment, a.auditedBy]
+        [
+          a.extinguisher?.code,
+          a.extinguisher?.cylinderNumber,
+          a.extinguisher?.type,
+          a.extinguisher?.establishment,
+          a.extinguisher?.associatedLocationType,
+          a.auditedBy,
+        ]
           .filter(Boolean)
           .some((v) => v!.toLowerCase().includes(q))
       const matchDateFrom = !filterDateFrom || a.auditPeriod >= filterDateFrom
@@ -95,7 +102,15 @@ export default function FireExtinguisherAuditsQueuePage() {
     {
       key: 'establishment',
       label: 'Establecimiento',
-      render: (_, row) => <span className="text-sm text-slate-600">{row.extinguisher?.establishment ?? '—'}</span>,
+      render: (_, row) =>
+        row.extinguisher?.establishment ? (
+          <div className="min-w-0">
+            <span className="block text-sm text-slate-600">{row.extinguisher.establishment}</span>
+            <span className="block text-xs text-slate-400 mt-0.5">{row.extinguisher.associatedLocationType}</span>
+          </div>
+        ) : (
+          <span className="text-slate-400">—</span>
+        ),
     },
     { key: 'auditPeriod', label: 'Período', render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
     { key: 'auditedBy', label: 'Auditor', render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },

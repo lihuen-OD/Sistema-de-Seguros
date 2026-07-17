@@ -28,8 +28,9 @@ export function AuditStep2Location({
           Ubicación registrada
         </div>
         <p className="text-sm font-semibold text-slate-800">
-          {extinguisher.establishment ?? '—'}
-          {extinguisher.location ? ` · ${extinguisher.location}` : ''}
+          {[extinguisher.establishment, extinguisher.associatedLocationType, extinguisher.location]
+            .filter(Boolean)
+            .join(' · ') || '—'}
         </p>
       </div>
 

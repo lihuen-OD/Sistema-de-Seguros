@@ -105,14 +105,6 @@ export const TASK_TYPES = [
   'Revisar vencimiento',
 ]
 
-export const LOCATION_TYPES: Record<string, string> = {
-  vehiculo: 'Vehículo',
-  maquinaria: 'Maquinaria',
-  establecimiento: 'Establecimiento',
-  edificio: 'Edificio',
-  infraestructura: 'Infraestructura',
-}
-
 export const PRODUCTIVE_UNITS = [
   'Agrícola Norte',
   'Agrícola Sur',

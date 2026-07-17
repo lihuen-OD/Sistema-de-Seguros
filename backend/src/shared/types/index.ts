@@ -1,12 +1,38 @@
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export type Role = 'ADMIN' | 'CONTADOR' | 'PRODUCTOR' | 'VIEWER' | 'AUDITOR_MATAFUEGOS'
+export type Role = 'ADMIN' | 'USER'
 
-// Payload que viene del JWT (emitido por la plataforma externa)
+// Un módulo = una pantalla otorgable por perfil de acceso. `dashboard`,
+// `notifications`, `financial_analysis`, `economic_analysis` y
+// `fire_extinguisher_dashboard` no tienen rutas de escritura propias que
+// proteger — solo se usan para ocultar/mostrar en el frontend — el resto sí
+// se hace cumplir vía requireModule() en el router correspondiente.
+export const MODULE_KEYS = [
+  'dashboard', 'notifications',
+  'assets',
+  'policies', 'documents', 'financial_analysis', 'economic_analysis',
+  'claims',
+  'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_dashboard',
+  'producers', 'tasks',
+  'companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config',
+] as const
+
+export type ModuleKey = typeof MODULE_KEYS[number]
+
+// Lo único que viaja firmado en el JWT — todo lo demás (role, isActive,
+// módulos del perfil) se resuelve fresco desde la base en cada request, para
+// que desactivar a alguien o cambiarle el perfil surta efecto de inmediato
+// sin esperar a que el token (12hs) expire.
+export interface JwtPayload {
+  userId: string
+}
+
+// Lo que queda en req.user después de authMiddleware.
 export interface RequestUser {
   userId: string
-  role: Role
   email: string
+  role: Role
+  modules: ModuleKey[] // [] si role === 'ADMIN' (bypass total) o si no tiene perfil asignado
 }
 
 // Augment Express Request para que req.user esté tipado globalmente

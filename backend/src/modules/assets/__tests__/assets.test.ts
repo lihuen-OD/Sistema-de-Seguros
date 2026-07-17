@@ -1,12 +1,13 @@
 import request from 'supertest'
 import { Prisma } from '@prisma/client'
 import { app } from '../../../app'
-import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     asset: {
       findMany:         jest.fn(),
       count:            jest.fn(),
@@ -48,6 +49,10 @@ jest.mock('../../../config/cloudinary', () => ({
 
 import { prisma } from '../../../config/database'
 const db = prisma as any
+
+beforeEach(() => {
+  db.user.findUnique.mockResolvedValue(mockDbUser())
+})
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -137,13 +142,14 @@ describe('Assets API', () => {
       expect(res.status).toBe(401)
     })
 
-    it('VIEWER can list assets', async () => {
+    it('a USER with no modules can still list assets (lecturas abiertas a cualquier autenticado)', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
       db.asset.findMany.mockResolvedValue([])
       db.asset.count.mockResolvedValue(0)
 
       const res = await request(app)
         .get('/api/v1/assets')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(200)
     })
@@ -218,19 +224,22 @@ describe('Assets API', () => {
         }),
       )
       db.asset.findUniqueOrThrow.mockResolvedValue(fakeAsset)
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['assets'] }))
 
       const res = await request(app)
         .post('/api/v1/assets')
-        .set('Authorization', `Bearer ${contadorToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send(validAssetBody)
 
       expect(res.status).toBe(201)
     })
 
-    it('returns 403 when VIEWER tries to create asset', async () => {
+    it('returns 403 when a USER without the assets module tries to create asset', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post('/api/v1/assets')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send(validAssetBody)
 
       expect(res.status).toBe(403)
@@ -315,10 +324,12 @@ describe('Assets API', () => {
       expect(res.status).toBe(404)
     })
 
-    it('returns 403 when VIEWER tries to update', async () => {
+    it('returns 403 when a USER without the assets module tries to update', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .put(`/api/v1/assets/${ASSET_ID}`)
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send({ name: 'Updated' })
 
       expect(res.status).toBe(403)
@@ -343,10 +354,12 @@ describe('Assets API', () => {
       expect(db.asset.update.mock.calls[0][0].data.isActive).toBe(false)
     })
 
-    it('returns 403 when CONTADOR tries to delete', async () => {
+    it('returns 403 when a USER without the assets module tries to delete', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .delete(`/api/v1/assets/${ASSET_ID}`)
-        .set('Authorization', `Bearer ${contadorToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(403)
     })

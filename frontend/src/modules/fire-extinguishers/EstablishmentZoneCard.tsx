@@ -55,6 +55,21 @@ export function EstablishmentZoneCard({ zone }: EstablishmentZoneCardProps) {
             <span>Próx.: <strong className="text-slate-700">{zone.proximo_vencer}</strong></span>
             <span>Vencidos: <strong className="text-slate-700">{zone.vencido}</strong></span>
           </div>
+
+          {zone.byLocationType.length > 1 && (
+            <div className="pt-2 border-t border-slate-100 space-y-1">
+              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Por asignación física</p>
+              {zone.byLocationType.map((lt) => (
+                <div key={lt.locationType} className="flex items-center justify-between text-xs">
+                  <span className="text-slate-600 truncate">{lt.locationType}</span>
+                  <span className="text-slate-500 flex-shrink-0">
+                    {lt.total}
+                    {lt.vencido > 0 && <span className="text-red-500 font-medium"> ({lt.vencido} venc.)</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>

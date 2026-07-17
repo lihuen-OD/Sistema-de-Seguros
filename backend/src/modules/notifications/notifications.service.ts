@@ -137,7 +137,7 @@ export const notificationsService = {
             ? 'vencido'
             : 'proximo_vencer',
         title: e.code ?? e.id.substring(0, 8),
-        subtitle: e.location ?? e.locationType,
+        subtitle: [e.establishment, e.locationType, e.location].filter(Boolean).join(' · '),
         dueDate: toDateStr(e.expirationDate),
         entityType: 'FireExtinguisher',
         entityId: e.id,

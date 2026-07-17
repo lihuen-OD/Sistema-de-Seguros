@@ -1,11 +1,12 @@
 import request from 'supertest'
 import { app } from '../../../app'
-import { adminToken, contadorToken, auditorMatafuegosToken } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     fireExtinguisher: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -108,6 +109,7 @@ const threeProposedChanges = [
 describe('Fire Extinguisher Audits — Review API', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    db.user.findUnique.mockResolvedValue(mockDbUser())
     db.fireExtinguisher.findUnique.mockResolvedValue(fakeFireExt)
     db.fireExtinguisher.update.mockResolvedValue(fakeFireExt)
     db.fireExtinguisherHistory.create.mockResolvedValue({})
@@ -278,24 +280,31 @@ describe('Fire Extinguisher Audits — Review API', () => {
       expect(res.status).toBe(404)
     })
 
-    it('returns 403 for AUDITOR_MATAFUEGOS', async () => {
+    it('returns 403 for a USER without the fire_extinguisher_audits module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/review`)
-        .set('Authorization', `Bearer ${auditorMatafuegosToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send({ decisions: [], auditDecision: 'APPROVED' })
 
       expect(res.status).toBe(403)
     })
 
     it.each([
-      ['ADMIN', adminToken],
-      ['CONTADOR', contadorToken],
-    ])('returns 200 for %s', async (_label, tokenFn) => {
+      ['ADMIN', 'ADMIN'],
+      // Con el modelo de perfiles "todo o nada", cualquier USER con el
+      // módulo puede revisar — ya no hay una excepción tipo AUDITOR_MATAFUEGOS.
+      ['a USER with the fire_extinguisher_audits module', 'USER'],
+    ] as const)('returns 200 for %s', async (_label, role) => {
+      if (role === 'USER') {
+        db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguisher_audits'] }))
+      }
       db.fireExtinguisherAudit.findUnique.mockResolvedValue(makeAuditRow({ proposedChanges: [] }))
 
       const res = await request(app)
         .post(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/review`)
-        .set('Authorization', `Bearer ${tokenFn()}`)
+        .set('Authorization', `Bearer ${role === 'ADMIN' ? adminToken() : userToken()}`)
         .send({ decisions: [], auditDecision: 'APPROVED' })
 
       expect(res.status).toBe(200)

@@ -1,9 +1,10 @@
 import request from 'supertest'
 import { app } from '../../../app'
-import { adminToken } from '../../../__tests__/helpers/auth'
+import { adminToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     policy: { findMany: jest.fn() },
     fireExtinguisher: { findMany: jest.fn() },
     documentInstallment: { findMany: jest.fn() },
@@ -59,6 +60,7 @@ function fakePolicyAttachment(id: string, expirationDate = daysFromNow(-1)) {
 
 // Setup común: sin descartes previos, salvo que un test los sobreescriba.
 beforeEach(() => {
+  db.user.findUnique.mockResolvedValue(mockDbUser())
   db.notificationDismissal.findMany.mockResolvedValue([])
 })
 

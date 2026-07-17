@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Plus, Trash2, ChevronDown, ChevronUp, Tag, Shield } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
+import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { insuranceTypesApi, insuranceTypeQueries, insuranceTypeKeys } from '../../../shared/api/insurance-types.api'
+
+type DeleteTarget = { kind: 'type'; id: string; label: string } | { kind: 'coverage'; typeId: string; coverage: string }
 
 export default function InsuranceTypesPage() {
   const queryClient = useQueryClient()
@@ -15,6 +19,7 @@ export default function InsuranceTypesPage() {
   const [newTypeLabel, setNewTypeLabel] = useState('')
   const [newTypeError, setNewTypeError] = useState('')
   const [newCoverage, setNewCoverage] = useState<Record<string, string>>({})
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
 
   // Set first type as expanded once data loads
   useEffect(() => {
@@ -47,7 +52,7 @@ export default function InsuranceTypesPage() {
       await queryClient.invalidateQueries({ queryKey: insuranceTypeKeys.all })
       if (expandedId === id) setExpandedId(null)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error al eliminar el tipo')
+      toast.error(err instanceof Error ? err.message : 'Error al eliminar el tipo')
     }
   }
 
@@ -59,7 +64,7 @@ export default function InsuranceTypesPage() {
       await queryClient.invalidateQueries({ queryKey: insuranceTypeKeys.all })
       setNewCoverage((prev) => ({ ...prev, [typeId]: '' }))
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error al agregar cobertura')
+      toast.error(err instanceof Error ? err.message : 'Error al agregar cobertura')
     }
   }
 
@@ -68,8 +73,18 @@ export default function InsuranceTypesPage() {
       await insuranceTypesApi.removeCoverage(typeId, coverage)
       await queryClient.invalidateQueries({ queryKey: insuranceTypeKeys.all })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error al eliminar cobertura')
+      toast.error(err instanceof Error ? err.message : 'Error al eliminar cobertura')
     }
+  }
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return
+    if (deleteTarget.kind === 'type') {
+      removeType(deleteTarget.id)
+    } else {
+      removeCoverage(deleteTarget.typeId, deleteTarget.coverage)
+    }
+    setDeleteTarget(null)
   }
 
   return (
@@ -113,7 +128,7 @@ export default function InsuranceTypesPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => removeType(type.id)}
+                      onClick={() => setDeleteTarget({ kind: 'type', id: type.id, label: type.label })}
                       className="ml-3 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
                       title="Eliminar tipo"
                     >
@@ -136,7 +151,7 @@ export default function InsuranceTypesPage() {
                               {cov}
                               <button
                                 type="button"
-                                onClick={() => removeCoverage(type.id, cov)}
+                                onClick={() => setDeleteTarget({ kind: 'coverage', typeId: type.id, coverage: cov })}
                                 className="text-slate-300 hover:text-red-500 transition-colors ml-0.5"
                               >
                                 ×
@@ -206,6 +221,22 @@ export default function InsuranceTypesPage() {
         </SectionCard>
 
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={deleteTarget?.kind === 'type' ? 'Eliminar tipo de seguro' : 'Eliminar cobertura'}
+        description={
+          deleteTarget?.kind === 'type'
+            ? `¿Eliminar "${deleteTarget.label}"? Esta acción no se puede deshacer.`
+            : deleteTarget?.kind === 'coverage'
+              ? `¿Eliminar la cobertura "${deleteTarget.coverage}"? Esta acción no se puede deshacer.`
+              : ''
+        }
+        confirmLabel="Eliminar"
+        danger
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </PageContent>
   )
 }

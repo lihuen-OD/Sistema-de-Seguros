@@ -1,12 +1,13 @@
 import request from 'supertest'
 import { Prisma } from '@prisma/client'
 import { app } from '../../../app'
-import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     catalogItem: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -33,6 +34,7 @@ function fakeItem(overrides: Record<string, unknown> = {}) {
 describe('Catalogs API', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    db.user.findUnique.mockResolvedValue(mockDbUser())
     db.fireExtinguisher.count.mockResolvedValue(0)
     db.claim.count.mockResolvedValue(0)
     db.accountingDocument.count.mockResolvedValue(0)
@@ -80,10 +82,12 @@ describe('Catalogs API', () => {
       expect(res.status).toBe(400)
     })
 
-    it('returns 403 for VIEWER', async () => {
+    it('returns 403 for a USER without the module_config module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post('/api/v1/catalogs/fire_ext_type')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send({ label: 'CO2' })
 
       expect(res.status).toBe(403)
@@ -144,10 +148,12 @@ describe('Catalogs API', () => {
       expect(db.catalogItem.delete).toHaveBeenCalled()
     })
 
-    it('returns 403 for CONTADOR (delete is ADMIN-only)', async () => {
+    it('returns 403 for a USER without the module_config module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .delete(`/api/v1/catalogs/fire_ext_type/${ITEM_ID}`)
-        .set('Authorization', `Bearer ${contadorToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(403)
     })

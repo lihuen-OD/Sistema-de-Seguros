@@ -116,7 +116,10 @@ describe('Auth API', () => {
         .send({ email: '  ADMIN@losodwyer.com  ', password: 'CorrectPassword1' })
 
       expect(res.status).toBe(200)
-      expect(db.user.findUnique).toHaveBeenCalledWith({ where: { email: 'admin@losodwyer.com' } })
+      expect(db.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'admin@losodwyer.com' },
+        include: { accessProfile: true },
+      })
     })
 
     it('returns 422 when the body is malformed', async () => {
@@ -146,6 +149,10 @@ describe('Auth API', () => {
         name: 'Administrador',
         email: 'admin@losodwyer.com',
         role: 'ADMIN',
+        mustChangePassword: false,
+        accessProfileId: null,
+        accessProfileName: null,
+        modules: [],
       })
     })
 
@@ -174,6 +181,8 @@ describe('Auth API', () => {
 
   describe('POST /api/v1/auth/logout', () => {
     it('returns 200 for an authenticated user', async () => {
+      db.user.findUnique.mockResolvedValue(fakeUser)
+
       const res = await request(app)
         .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${tokenFor(fakeUser)}`)

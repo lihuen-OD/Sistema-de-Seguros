@@ -1,9 +1,10 @@
 import request from 'supertest'
 import { app } from '../../../app'
-import { adminToken, viewerToken } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser, ADMIN_USER_ID } from '../../../__tests__/helpers/auth'
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     accountingDocument: { findUnique: jest.fn() },
     policy: { findMany: jest.fn() },
     asset: { findMany: jest.fn() },
@@ -79,6 +80,7 @@ const fakeAssetWithCostCenter = [
 
 describe('POST /api/v1/documents/:id/send-email', () => {
   beforeEach(() => {
+    db.user.findUnique.mockResolvedValue(mockDbUser())
     db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
     db.policy.findMany.mockResolvedValue(fakePolicyAssetIds)
     db.asset.findMany.mockResolvedValue(fakeAssetWithCostCenter)
@@ -104,7 +106,7 @@ describe('POST /api/v1/documents/:id/send-email', () => {
         entityId: DOC_ID,
         to: ['destinatario@empresa.com'],
         subjectOverride: 'Asunto custom',
-        actor: { userId: 'test-user-id', email: 'test@losodwyer.com' },
+        actor: { userId: ADMIN_USER_ID, email: 'test@losodwyer.com' },
         templateData: expect.objectContaining({
           documentTypeLabel: 'Factura',
           documentNumber: 'A-0001-00012345',
@@ -151,10 +153,12 @@ describe('POST /api/v1/documents/:id/send-email', () => {
     expect(mockedEmailService.sendManualEntityEmail).not.toHaveBeenCalled()
   })
 
-  it('devuelve 403 para un rol sin permiso (VIEWER)', async () => {
+  it('devuelve 403 para un usuario sin el módulo documents', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
     const res = await request(app)
       .post(`/api/v1/documents/${DOC_ID}/send-email`)
-      .set('Authorization', `Bearer ${viewerToken()}`)
+      .set('Authorization', `Bearer ${userToken()}`)
       .send({ to: ['destinatario@empresa.com'] })
 
     expect(res.status).toBe(403)

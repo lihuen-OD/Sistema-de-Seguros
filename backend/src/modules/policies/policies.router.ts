@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
-import { requireRole } from '../../middleware/roles.middleware'
+import { requireModule } from '../../middleware/roles.middleware'
 import { validate, validateQuery } from '../../middleware/validate.middleware'
 import { upload } from '../../middleware/upload.middleware'
 import {
@@ -19,18 +19,18 @@ policiesRouter.use(authMiddleware)
 policiesRouter.get('/', validateQuery(ListPoliciesQuerySchema), policiesController.list)
 policiesRouter.post(
   '/',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('policies'),
   validate(CreatePolicySchema),
   policiesController.create,
 )
 policiesRouter.get('/:id', policiesController.getById)
 policiesRouter.put(
   '/:id',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('policies'),
   validate(UpdatePolicySchema),
   policiesController.update,
 )
-policiesRouter.delete('/:id', requireRole('ADMIN'), policiesController.remove)
+policiesRouter.delete('/:id', requireModule('policies'), policiesController.remove)
 
 // Tasks
 policiesRouter.get('/:id/tasks', policiesController.getTasks)
@@ -39,14 +39,14 @@ policiesRouter.get('/:id/tasks', policiesController.getTasks)
 policiesRouter.get('/:id/attachments', policiesController.getAttachments)
 policiesRouter.post(
   '/:id/attachments',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('policies'),
   upload.single('file'),
   validate(AddPolicyAttachmentSchema),
   policiesController.addAttachment,
 )
 policiesRouter.delete(
   '/:id/attachments/:attachmentId',
-  requireRole('ADMIN', 'CONTADOR'),
+  requireModule('policies'),
   policiesController.deleteAttachment,
 )
 policiesRouter.get('/:id/attachments/:attachmentId/download', policiesController.downloadAttachment)

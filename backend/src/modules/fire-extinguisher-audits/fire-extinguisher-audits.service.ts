@@ -123,6 +123,7 @@ function mapAuditListItem(row: Record<string, unknown>) {
           cylinderNumber: fe.cylinderNumber ?? null,
           type: fe.type,
           establishment: fe.establishment ?? null,
+          associatedLocationType: fe.locationType,
           location: fe.location ?? null,
         }
       : null,
@@ -308,7 +309,15 @@ export const fireExtinguisherAuditsService = {
         orderBy: { createdAt: 'desc' },
         include: {
           extinguisher: {
-            select: { id: true, code: true, cylinderNumber: true, type: true, establishment: true, location: true },
+            select: {
+              id: true,
+              code: true,
+              cylinderNumber: true,
+              type: true,
+              establishment: true,
+              locationType: true,
+              location: true,
+            },
           },
           _count: { select: { proposedChanges: true } },
         },
@@ -331,7 +340,15 @@ export const fireExtinguisherAuditsService = {
     const [extinguishers, audits] = await Promise.all([
       prisma.fireExtinguisher.findMany({
         where: { isActive: true },
-        select: { id: true, code: true, cylinderNumber: true, type: true, establishment: true, location: true },
+        select: {
+          id: true,
+          code: true,
+          cylinderNumber: true,
+          type: true,
+          establishment: true,
+          locationType: true,
+          location: true,
+        },
         orderBy: [{ establishment: 'asc' }, { code: 'asc' }],
       }),
       prisma.fireExtinguisherAudit.findMany({
@@ -356,6 +373,7 @@ export const fireExtinguisherAuditsService = {
         cylinderNumber: fe.cylinderNumber ?? null,
         type: fe.type,
         establishment: fe.establishment ?? null,
+        associatedLocationType: fe.locationType,
         location: fe.location ?? null,
         audited: audit !== undefined,
         auditStatus: audit?.status ?? null,

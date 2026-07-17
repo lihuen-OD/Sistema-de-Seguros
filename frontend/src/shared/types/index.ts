@@ -1,6 +1,59 @@
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export type Role = 'ADMIN' | 'CONTADOR' | 'PRODUCTOR' | 'VIEWER' | 'AUDITOR_MATAFUEGOS'
+export type Role = 'ADMIN' | 'USER'
+
+// Un módulo = una pantalla otorgable por perfil de acceso (ver Configuración
+// → Perfiles de Acceso). Mismo listado que el backend
+// (backend/src/shared/types/index.ts) — se mantiene duplicado a propósito,
+// igual que ya pasaba con Role antes de este cambio.
+export const MODULE_KEYS = [
+  'dashboard', 'notifications',
+  'assets',
+  'policies', 'documents', 'financial_analysis', 'economic_analysis',
+  'claims',
+  'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_dashboard',
+  'producers', 'tasks',
+  'companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config',
+] as const
+
+export type ModuleKey = typeof MODULE_KEYS[number]
+
+export const MODULE_LABELS: Record<ModuleKey, string> = {
+  dashboard: 'Dashboard',
+  notifications: 'Notificaciones',
+  assets: 'Activos',
+  policies: 'Pólizas',
+  documents: 'Documentos',
+  financial_analysis: 'Análisis Financiero',
+  economic_analysis: 'Análisis Económico',
+  claims: 'Siniestros',
+  fire_extinguishers: 'Matafuegos',
+  fire_extinguisher_audits: 'Auditoría de Matafuegos',
+  fire_extinguisher_dashboard: 'Dashboard de Matafuegos',
+  producers: 'Productores',
+  tasks: 'Tareas',
+  companies: 'Empresas',
+  cost_centers: 'Centros de Costo',
+  fixed_assets: 'Bienes de Uso',
+  insurance_types: 'Tipos de Seguro',
+  module_config: 'Config. de Módulos',
+}
+
+export interface ModuleGroup {
+  label: string
+  modules: ModuleKey[]
+}
+
+// Mismo agrupamiento visual que ya usa el sidebar — para pintar el picker de
+// módulos en Perfiles de Acceso agrupado en vez de una lista plana.
+export const MODULE_GROUPS: ModuleGroup[] = [
+  { label: 'Principal', modules: ['dashboard', 'notifications'] },
+  { label: 'Patrimonio', modules: ['assets'] },
+  { label: 'Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_dashboard'] },
+  { label: 'Seguros', modules: ['policies', 'documents', 'financial_analysis', 'economic_analysis', 'claims'] },
+  { label: 'Operaciones', modules: ['producers', 'tasks'] },
+  { label: 'Configuración', modules: ['companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config'] },
+]
 
 // ─── Status types ────────────────────────────────────────────────────────────
 
@@ -222,8 +275,9 @@ export interface Asset {
   costCenterId: string
   /** Asignaciones multi-empresa con porcentaje */
   allocations?: AssetAllocation[]
-  /** Código de Bien de Uso de Finnegans — obtenido desde la API externa al seleccionar el bien */
-  fixedAssetCode: string
+  /** Bien de uso contable asignado — id de la FK y ficha resuelta para mostrar */
+  fixedAssetId: string | null
+  fixedAsset?: Pick<BienDeUso, 'id' | 'code' | 'name'> | null
   productiveUnit: string
   area: string
   /** Coordenadas para mapa (extraídas de URL de Google Maps) */
@@ -274,6 +328,7 @@ export interface PolicyAsset {
   name: string
   assetType: string
   fixedAssetCode?: string | null
+  fixedAssetName?: string | null
   costCenterName?: string | null
   costCenterCode?: string | null
 }
@@ -549,20 +604,16 @@ export interface FireExtinguisherHistory {
   changes?: FireExtinguisherHistoryChange[] | null
 }
 
-// ─── Bien de Uso (Finnegans API response) ────────────────────────────────────
-// Represents a fixed-asset record from Finnegans. NOT the same as a physical
-// asset — it is the accounting ledger entry that our assets can reference.
+// ─── Bien de Uso (catálogo) ───────────────────────────────────────────────────
+// Catálogo simple de bienes de uso — mismo shape que CostCenter. NO es lo
+// mismo que un activo físico: es la ficha patrimonial que los activos referencian.
 
 export interface BienDeUso {
-  id: string                 // Finnegans internal UUID
-  code: string               // Finnegans display code  (e.g. ROD-001)
-  description: string        // Accounting description
-  category: string           // Accounting category (Rodados, Maquinaria, etc.)
-  incorporationDate: string  // Fecha de incorporación al patrimonio
-  usefulLifeYears: number    // Vida útil contable (años)
-  depreciationRate: number   // Tasa de amortización anual (%)
-  originalValueArs: number   // Valor de incorporación en ARS
-  bookValueArs: number       // Valor residual contable actual en ARS
+  id: string
+  code: string
+  name: string
+  description: string
+  status: 'activo' | 'inactivo'
 }
 
 // ─── Filter / UI types ────────────────────────────────────────────────────────

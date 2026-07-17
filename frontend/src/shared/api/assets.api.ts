@@ -14,9 +14,10 @@ interface BackendAllocation {
 interface BackendValueHistory {
   id: string; assetId: string; date: string; value: number; type: string; note: string | null
 }
+interface BackendFixedAssetRef { id: string; code: string; name: string }
 interface BackendAsset {
   id: string; code: string | null; name: string; assetType: string
-  status: string | null; fixedAssetCode: string | null
+  status: string | null; fixedAssetId: string | null; fixedAsset: BackendFixedAssetRef | null
   brand: string | null; model: string | null
   year: number | null; serialNumber: string | null
   purchaseDate: string | null; dischargeDate: string | null; saleDate: string | null
@@ -49,7 +50,8 @@ function mapAsset(b: BackendAsset): Asset {
   return {
     id: b.id,
     internalCode: b.code ?? `ACT-${b.id.slice(0, 8).toUpperCase()}`,
-    fixedAssetCode: b.fixedAssetCode ?? '',
+    fixedAssetId: b.fixedAssetId,
+    fixedAsset: b.fixedAsset,
     name: b.name,
     assetType: b.assetType,
     brand: b.brand ?? '',
@@ -119,7 +121,7 @@ export interface AssetCreateInput {
   name: string
   assetType: string
   status?: string
-  fixedAssetCode?: string
+  fixedAssetId?: string | null
   brand?: string
   model?: string
   year?: number

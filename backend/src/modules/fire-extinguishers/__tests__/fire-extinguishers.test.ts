@@ -1,11 +1,12 @@
 import request from 'supertest'
 import { app } from '../../../app'
-import { adminToken, contadorToken, viewerToken } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 
 jest.mock('../../../config/database', () => ({
   prisma: {
+    user: { findUnique: jest.fn() },
     fireExtinguisher: {
       findMany: jest.fn(),
       count: jest.fn(),
@@ -73,6 +74,7 @@ const validCreateBody = {
 
 describe('Fire Extinguishers API', () => {
   beforeEach(() => {
+    db.user.findUnique.mockResolvedValue(mockDbUser())
     db.$queryRaw.mockResolvedValue([{ nextval: BigInt(1) }])
     db.fireExtinguisherHistory.create.mockResolvedValue({})
     // Genérico: soporta tanto $transaction(async (tx) => {...}) — usado por create(),
@@ -104,13 +106,14 @@ describe('Fire Extinguishers API', () => {
       expect(res.status).toBe(401)
     })
 
-    it('VIEWER can list', async () => {
+    it('a USER with no modules can still list (lecturas abiertas a cualquier autenticado)', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
       db.fireExtinguisher.findMany.mockResolvedValue([])
       db.fireExtinguisher.count.mockResolvedValue(0)
 
       const res = await request(app)
         .get('/api/v1/fire-extinguishers')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(200)
     })
@@ -172,21 +175,24 @@ describe('Fire Extinguishers API', () => {
       expect(res.body.data.hydraulicTestExpirationDate).toBe('2028-01-01')
     })
 
-    it('returns 201 as CONTADOR', async () => {
+    it('returns 201 for a USER with the fire_extinguishers module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguishers'] }))
       db.fireExtinguisher.create.mockResolvedValue(fakeFireExt)
 
       const res = await request(app)
         .post('/api/v1/fire-extinguishers')
-        .set('Authorization', `Bearer ${contadorToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send(validCreateBody)
 
       expect(res.status).toBe(201)
     })
 
-    it('returns 403 as VIEWER', async () => {
+    it('returns 403 for a USER without the fire_extinguishers module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .post('/api/v1/fire-extinguishers')
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send(validCreateBody)
 
       expect(res.status).toBe(403)
@@ -376,10 +382,12 @@ describe('Fire Extinguishers API', () => {
       expect(res.status).toBe(404)
     })
 
-    it('returns 403 as VIEWER', async () => {
+    it('returns 403 for a USER without the fire_extinguishers module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .put(`/api/v1/fire-extinguishers/${FE_ID}`)
-        .set('Authorization', `Bearer ${viewerToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
         .send({ location: 'x' })
 
       expect(res.status).toBe(403)
@@ -403,10 +411,12 @@ describe('Fire Extinguishers API', () => {
       expect(db.fireExtinguisherHistory.create.mock.calls[0][0].data.action).toBe('Baja')
     })
 
-    it('returns 403 as CONTADOR', async () => {
+    it('returns 403 for a USER without the fire_extinguishers module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
       const res = await request(app)
         .delete(`/api/v1/fire-extinguishers/${FE_ID}`)
-        .set('Authorization', `Bearer ${contadorToken()}`)
+        .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(403)
     })

@@ -10,6 +10,8 @@ interface AuditStep4ChecklistProps {
   onChangeComments: (value: string) => void
   pendingPhotos: File[]
   onChangePhotos: (files: File[]) => void
+  /** Vencimiento vigente (ya validado en el Paso 3) — precarga el observado y explica por qué. */
+  masterExpirationDate: string
 }
 
 export function AuditStep4Checklist({
@@ -19,6 +21,7 @@ export function AuditStep4Checklist({
   onChangeComments,
   pendingPhotos,
   onChangePhotos,
+  masterExpirationDate,
 }: AuditStep4ChecklistProps) {
   function setField(key: string, value: string) {
     onChangeChecklist({ ...checklist, [key]: value })
@@ -35,12 +38,19 @@ export function AuditStep4Checklist({
               onChange={(v) => setField(field.key, v)}
             />
           ) : (
-            <FormInput
-              type={field.type}
-              value={checklist[field.key] ?? ''}
-              onChange={(e) => setField(field.key, e.target.value)}
-              className="sm:max-w-xs"
-            />
+            <>
+              <FormInput
+                type={field.type}
+                value={checklist[field.key] ?? ''}
+                onChange={(e) => setField(field.key, e.target.value)}
+                className="sm:max-w-xs"
+              />
+              {field.key === 'chargeExpirationDateObserved' && checklist[field.key] && checklist[field.key] === masterExpirationDate && (
+                <p className="text-xs text-slate-400">
+                  Precargada con el vencimiento ya validado en Datos maestros — cambiala solo si la carga física indica otra fecha.
+                </p>
+              )}
+            </>
           )}
         </FormField>
       ))}
@@ -58,6 +68,7 @@ export function AuditStep4Checklist({
         label="Fotos del matafuego (hasta 10)"
         accept="image/jpeg,image/png,image/webp"
         maxFiles={10}
+        enableCamera
         onFilesPicked={(files) => onChangePhotos([...pendingPhotos, ...files].slice(0, 10))}
       />
     </div>

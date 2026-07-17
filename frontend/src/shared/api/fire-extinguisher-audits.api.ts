@@ -93,6 +93,7 @@ export interface FireExtinguisherAuditListItem {
     cylinderNumber: string | null
     type: string
     establishment: string | null
+    associatedLocationType: string
     location: string | null
   } | null
 }
@@ -116,6 +117,7 @@ export interface FireExtinguisherCoverageItem {
   cylinderNumber: string | null
   type: string
   establishment: string | null
+  associatedLocationType: string
   location: string | null
   audited: boolean
   auditStatus: FireExtinguisherAuditStatus | null

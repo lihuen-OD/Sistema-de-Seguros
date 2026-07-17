@@ -70,6 +70,7 @@ const FireExtinguisherAuditDetailPage = lazy(() => import('../modules/fire-extin
 // Settings
 const CompaniesPage = lazy(() => import('../modules/settings/companies/CompaniesPage'))
 const CostCentersPage = lazy(() => import('../modules/settings/cost-centers/CostCentersPage'))
+const FixedAssetsPage = lazy(() => import('../modules/settings/fixed-assets/FixedAssetsPage'))
 const InsuranceTypesPage = lazy(() => import('../modules/settings/insurance-types/InsuranceTypesPage'))
 const ModuleConfigPage = lazy(() => import('../modules/settings/module-config/ModuleConfigPage'))
 const AssetsConfigPage = lazy(() => import('../modules/settings/module-config/AssetsConfigPage'))
@@ -78,6 +79,7 @@ const FireExtConfigPage = lazy(() => import('../modules/settings/module-config/F
 const TasksConfigPage = lazy(() => import('../modules/settings/module-config/TasksConfigPage'))
 const ClaimsConfigPage = lazy(() => import('../modules/settings/module-config/ClaimsConfigPage'))
 const UsersPage = lazy(() => import('../modules/settings/users/UsersPage'))
+const AccessProfilesPage = lazy(() => import('../modules/settings/access-profiles/AccessProfilesPage'))
 
 function PageFallback() {
   return (
@@ -163,6 +165,7 @@ export default function App() {
           {/* Settings */}
           <Route path="/settings/companies" element={<CompaniesPage />} />
           <Route path="/settings/cost-centers" element={<CostCentersPage />} />
+          <Route path="/settings/fixed-assets" element={<FixedAssetsPage />} />
           <Route path="/settings/insurance-types" element={<InsuranceTypesPage />} />
           <Route path="/settings/module-config" element={<ModuleConfigPage />} />
           <Route path="/settings/module-config/assets" element={<AssetsConfigPage />} />
@@ -171,6 +174,7 @@ export default function App() {
           <Route path="/settings/module-config/tasks" element={<TasksConfigPage />} />
           <Route path="/settings/module-config/claims" element={<ClaimsConfigPage />} />
           <Route path="/settings/users" element={<UsersPage />} />
+          <Route path="/settings/access-profiles" element={<AccessProfilesPage />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

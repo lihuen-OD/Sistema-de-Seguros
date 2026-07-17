@@ -214,7 +214,7 @@ export default function PolicyEditPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: policyKeys.all })
       queryClient.invalidateQueries({ queryKey: policyKeys.detail(id!) })
-      toast.success('Cambios guardados correctamente')
+      toast.success('Póliza actualizada correctamente')
       navigate(`/insurance/policies/${id}`)
     },
   })
