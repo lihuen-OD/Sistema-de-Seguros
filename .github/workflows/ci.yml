@@ -16,6 +16,11 @@ jobs:
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://test:test@localhost:5432/test_db
+      # prisma validate/generate solo necesitan que la variable exista (no se
+      # conectan a ninguna base) — pero schema.prisma la referencia como
+      # directUrl, así que sin esto falla con P1012 "Environment variable not
+      # found: DIRECT_URL" antes de llegar siquiera a correr los tests.
+      DIRECT_URL: postgresql://test:test@localhost:5432/test_db
       JWT_SECRET: ci-only-secret-that-is-at-least-32-characters-long
       FRONTEND_URL: http://localhost:5173
     steps:
