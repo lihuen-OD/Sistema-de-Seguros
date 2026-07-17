@@ -14,6 +14,7 @@ export const CLEANLINESS_OPTIONS: ChoiceOption[] = [
 export const CHARGE_FILL_STATUS_OPTIONS: ChoiceOption[] = [
   { value: 'CARGADO', label: 'Cargado' },
   { value: 'DESCARGADO', label: 'Descargado' },
+  { value: 'SOBRECARGADO', label: 'Sobrecargado' },
 ]
 
 export const PLATE_CONDITION_OPTIONS: ChoiceOption[] = [

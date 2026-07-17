@@ -1,4 +1,5 @@
 import type { TableColumn } from '../types'
+import { packIntoPages } from './pdfPagination'
 
 // ─── Excel (.xlsx) ────────────────────────────────────────────────────────────
 
@@ -114,8 +115,10 @@ export async function printTableAsPDF(
   // breaking wide tables with many time-period columns).
   container.style.cssText = 'visibility:hidden;position:absolute;top:0;left:0;background:#ffffff;padding:24px;font-family:Helvetica Neue,Arial,sans-serif;color:#1e293b;'
   container.innerHTML = `
-    <h1 style="font-size:14px;font-weight:700;margin:0 0 4px">${title}</h1>
-    <p style="font-size:9px;color:#64748b;margin:0 0 16px">${subtitle}</p>
+    <div data-pdf-header>
+      <h1 style="font-size:14px;font-weight:700;margin:0 0 4px">${title}</h1>
+      <p style="font-size:9px;color:#64748b;margin:0 0 16px">${subtitle}</p>
+    </div>
     <table style="border-collapse:collapse;width:100%">
       <thead><tr>${thCells}</tr></thead>
       <tbody>${trRows}</tbody>
@@ -128,30 +131,54 @@ export async function printTableAsPDF(
     const renderWidth = Math.max(container.scrollWidth, 900)
     container.style.width = renderWidth + 'px'
 
-    const canvas = await html2canvas(container, {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: '#ffffff',
-      windowWidth: renderWidth,
-      windowHeight: container.scrollHeight + 40,
-    })
-
     const pdf = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4' })
     const pageW = pdf.internal.pageSize.getWidth()
     const pageH = pdf.internal.pageSize.getHeight()
-    const mmPerPx = pageW / canvas.width
-    const contentH = canvas.height * mmPerPx
-    const imgData = canvas.toDataURL('image/jpeg', 0.92)
+    const mmPerCssPx = pageW / renderWidth
 
-    if (contentH <= pageH) {
-      pdf.addImage(imgData, 'JPEG', 0, 0, pageW, contentH)
-    } else {
-      let yOffset = 0
-      while (yOffset < contentH) {
-        pdf.addImage(imgData, 'JPEG', 0, -yOffset, pageW, contentH)
-        yOffset += pageH
-        if (yOffset < contentH) pdf.addPage()
+    // Se repiten en cada página (nunca se ocultan) — título/subtítulo + encabezados de columna.
+    const headerBlock = container.querySelector<HTMLElement>('[data-pdf-header]')
+    const thead = container.querySelector<HTMLElement>('thead')
+    const headerHeightMm = ((headerBlock?.offsetHeight ?? 0) + (thead?.offsetHeight ?? 0)) * mmPerCssPx
+    const availablePerPage = Math.max(pageH - headerHeightMm, pageH * 0.5)
+
+    const trEls = Array.from(container.querySelectorAll<HTMLElement>('tbody tr'))
+    const rowHeightsMm = trEls.map((tr) => tr.offsetHeight * mmPerCssPx)
+    const pages = trEls.length > 0 ? packIntoPages(rowHeightsMm, availablePerPage) : [[]]
+
+    const captureContainer = async () => {
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: renderWidth,
+      })
+      const mmPerPx = pageW / canvas.width
+      const imgHmm = canvas.height * mmPerPx
+      return { imgData: canvas.toDataURL('image/jpeg', 0.92), imgHmm }
+    }
+
+    for (let p = 0; p < pages.length; p++) {
+      const rowIndexesOnPage = new Set(pages[p])
+      trEls.forEach((tr, i) => {
+        tr.style.display = rowIndexesOnPage.has(i) ? '' : 'none'
+      })
+
+      const { imgData, imgHmm } = await captureContainer()
+      if (p > 0) pdf.addPage()
+
+      if (imgHmm <= pageH) {
+        pdf.addImage(imgData, 'JPEG', 0, 0, pageW, imgHmm)
+      } else {
+        // Última página con más contenido del que entra en una hoja (caso
+        // extremo, ej. una sola fila gigantesca) — se corta como último recurso.
+        let yOffset = 0
+        while (yOffset < imgHmm) {
+          pdf.addImage(imgData, 'JPEG', 0, -yOffset, pageW, imgHmm)
+          yOffset += pageH
+          if (yOffset < imgHmm) pdf.addPage()
+        }
       }
     }
 

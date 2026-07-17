@@ -3,16 +3,18 @@
 export type Role = 'ADMIN' | 'USER'
 
 // Un módulo = una pantalla otorgable por perfil de acceso. `dashboard`,
-// `notifications`, `financial_analysis`, `economic_analysis` y
-// `fire_extinguisher_dashboard` no tienen rutas de escritura propias que
-// proteger — solo se usan para ocultar/mostrar en el frontend — el resto sí
-// se hace cumplir vía requireModule() en el router correspondiente.
+// `financial_analysis`, `economic_analysis` y `fire_extinguisher_dashboard`
+// no tienen rutas de escritura propias que proteger — solo se usan para
+// ocultar/mostrar en el frontend — el resto sí se hace cumplir vía
+// requireModule() en el router correspondiente. Notificaciones NO es un
+// módulo otorgable — agrega datos de todos los módulos sin filtrar por
+// permisos, así que queda exclusivo del ADMIN (requireRole en su router).
 export const MODULE_KEYS = [
-  'dashboard', 'notifications',
+  'dashboard',
   'assets',
   'policies', 'documents', 'financial_analysis', 'economic_analysis',
   'claims',
-  'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_dashboard',
+  'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
   'producers', 'tasks',
   'companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config',
 ] as const

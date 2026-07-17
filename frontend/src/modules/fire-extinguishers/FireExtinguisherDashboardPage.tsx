@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { Flame, ShieldCheck, ShieldOff, AlertTriangle, ClipboardCheck, ClipboardList, FileSpreadsheet, FileDown, Loader2 } from 'lucide-react'
+import { Flame, ShieldCheck, ShieldOff, AlertTriangle, ClipboardCheck, ClipboardList, FileDown, Loader2 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -12,33 +12,12 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatDate } from '../../shared/utils/format'
-import { downloadXLSX, printTableAsPDF, type PrintRow } from '../../shared/utils/export'
-import { fireExtinguisherQueries, type FireExtinguisherDashboardSummary } from '../../shared/api/fire-extinguishers.api'
+import { buildFireExtinguisherDashboardPdf } from '../../shared/utils/buildFireExtinguisherDashboardPdf'
+import { fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
 import { ROUTES } from '../../app/routes'
 import { EstablishmentZoneCard } from './EstablishmentZoneCard'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
-
-function buildReportRows(data: FireExtinguisherDashboardSummary): { section: string; concept: string; value: string }[] {
-  return [
-    { section: 'Parque', concept: 'Total', value: String(data.totals.total) },
-    { section: 'Parque', concept: 'Vigentes', value: String(data.totals.vigente) },
-    { section: 'Parque', concept: 'Próximos a Vencer', value: String(data.totals.proximo_vencer) },
-    { section: 'Parque', concept: 'Vencidos', value: String(data.totals.vencido) },
-    ...data.byEstablishment.map((z) => ({ section: 'Establecimiento', concept: z.establishment, value: String(z.total) })),
-    ...data.byEstablishment.flatMap((z) =>
-      z.byLocationType.map((lt) => ({
-        section: 'Establecimiento — Asignación física',
-        concept: `${z.establishment} — ${lt.locationType}`,
-        value: String(lt.total),
-      })),
-    ),
-    ...data.byType.map((t) => ({ section: 'Tipo', concept: t.type, value: String(t.count) })),
-    { section: 'Auditoría', concept: `Cobertura (${data.audits.currentPeriod})`, value: `${data.audits.coveragePercent}%` },
-    { section: 'Auditoría', concept: 'Pendientes de revisión', value: String(data.audits.pendingReview) },
-    { section: 'Auditoría', concept: 'Necesitan corrección', value: String(data.audits.needsCorrection) },
-  ]
-}
 
 export default function FireExtinguisherDashboardPage() {
   const navigate = useNavigate()
@@ -46,35 +25,11 @@ export default function FireExtinguisherDashboardPage() {
 
   const { data, isLoading } = useQuery(fireExtinguisherQueries.dashboardSummary())
 
-  async function handleExportExcel() {
-    if (!data) return
-    const rows = buildReportRows(data)
-    const date = new Date().toISOString().slice(0, 10)
-    await downloadXLSX(
-      [['Sección', 'Concepto', 'Valor'], ...rows.map((r) => [r.section, r.concept, r.value])],
-      `dashboard-matafuegos-${date}.xlsx`,
-    )
-  }
-
   async function handleExportPDF() {
     if (!data) return
     setPdfLoading(true)
     try {
-      const rows = buildReportRows(data)
-      const printRows: PrintRow[] = rows.map((r) => ({
-        cells: [r.section, r.concept, r.value],
-        isTotal: r.concept === 'Total',
-      }))
-      await printTableAsPDF(
-        'Dashboard de Matafuegos',
-        `Estado del parque y cobertura de auditoría · ${data.audits.currentPeriod}`,
-        [
-          { label: 'Sección', align: 'left' },
-          { label: 'Concepto', align: 'left' },
-          { label: 'Valor', align: 'right' },
-        ],
-        printRows,
-      )
+      await buildFireExtinguisherDashboardPdf(data)
     } finally {
       setPdfLoading(false)
     }
@@ -102,25 +57,15 @@ export default function FireExtinguisherDashboardPage() {
         title="Dashboard de Matafuegos"
         subtitle="Estado del parque, distribución por zona y cobertura de auditoría"
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportExcel}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-emerald-700 hover:border-emerald-200 transition-colors"
-              title="Exportar a Excel"
-            >
-              <FileSpreadsheet size={13} />
-              Excel
-            </button>
-            <button
-              onClick={handleExportPDF}
-              disabled={pdfLoading}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              title="Exportar a PDF"
-            >
-              {pdfLoading ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
-              {pdfLoading ? 'Generando…' : 'PDF'}
-            </button>
-          </div>
+          <button
+            onClick={handleExportPDF}
+            disabled={pdfLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            title="Exportar a PDF"
+          >
+            {pdfLoading ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
+            {pdfLoading ? 'Generando…' : 'Descargar PDF'}
+          </button>
         }
       />
 

@@ -6,7 +6,7 @@ export const FIRE_EXT_AUDIT_CLEANLINESS = [
   'SUCIEDAD_ACUMULADA',
 ] as const
 
-export const FIRE_EXT_AUDIT_CHARGE_FILL_STATUS = ['CARGADO', 'DESCARGADO'] as const
+export const FIRE_EXT_AUDIT_CHARGE_FILL_STATUS = ['CARGADO', 'DESCARGADO', 'SOBRECARGADO'] as const
 
 // Fusiona "¿tiene chapa baliza?" + "estado de la chapa" en un solo campo.
 export const FIRE_EXT_AUDIT_PLATE_CONDITION = ['SANA', 'ROTA_LEVE', 'ROTA_REQUIERE_CAMBIO', 'NO_TIENE'] as const

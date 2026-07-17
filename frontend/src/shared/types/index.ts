@@ -7,11 +7,11 @@ export type Role = 'ADMIN' | 'USER'
 // (backend/src/shared/types/index.ts) — se mantiene duplicado a propósito,
 // igual que ya pasaba con Role antes de este cambio.
 export const MODULE_KEYS = [
-  'dashboard', 'notifications',
+  'dashboard',
   'assets',
   'policies', 'documents', 'financial_analysis', 'economic_analysis',
   'claims',
-  'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_dashboard',
+  'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
   'producers', 'tasks',
   'companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config',
 ] as const
@@ -20,7 +20,6 @@ export type ModuleKey = typeof MODULE_KEYS[number]
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   dashboard: 'Dashboard',
-  notifications: 'Notificaciones',
   assets: 'Activos',
   policies: 'Pólizas',
   documents: 'Documentos',
@@ -29,6 +28,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   claims: 'Siniestros',
   fire_extinguishers: 'Matafuegos',
   fire_extinguisher_audits: 'Auditoría de Matafuegos',
+  fire_extinguisher_audit_coverage: 'Cobertura de Matafuegos',
   fire_extinguisher_dashboard: 'Dashboard de Matafuegos',
   producers: 'Productores',
   tasks: 'Tareas',
@@ -47,9 +47,9 @@ export interface ModuleGroup {
 // Mismo agrupamiento visual que ya usa el sidebar — para pintar el picker de
 // módulos en Perfiles de Acceso agrupado en vez de una lista plana.
 export const MODULE_GROUPS: ModuleGroup[] = [
-  { label: 'Principal', modules: ['dashboard', 'notifications'] },
+  { label: 'Principal', modules: ['dashboard'] },
   { label: 'Patrimonio', modules: ['assets'] },
-  { label: 'Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_dashboard'] },
+  { label: 'Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard'] },
   { label: 'Seguros', modules: ['policies', 'documents', 'financial_analysis', 'economic_analysis', 'claims'] },
   { label: 'Operaciones', modules: ['producers', 'tasks'] },
   { label: 'Configuración', modules: ['companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config'] },

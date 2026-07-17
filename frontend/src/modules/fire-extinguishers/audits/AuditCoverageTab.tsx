@@ -13,6 +13,8 @@ interface AuditCoverageTabProps {
   onPeriodChange: (period: string) => void
   data: FireExtinguisherCoverageItem[]
   isLoading: boolean
+  /** Puede crear auditorías — controla si las filas dejan "Auditar". */
+  canAudit: boolean
 }
 
 interface LocationTypeCoverage {
@@ -58,7 +60,7 @@ function groupByEstablishment(data: FireExtinguisherCoverageItem[]): Establishme
     .sort((a, b) => a.establishment.localeCompare(b.establishment))
 }
 
-export function AuditCoverageTab({ period, onPeriodChange, data, isLoading }: AuditCoverageTabProps) {
+export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canAudit }: AuditCoverageTabProps) {
   const navigate = useNavigate()
   const groups = useMemo(() => groupByEstablishment(data), [data])
   const totalAudited = data.filter((i) => i.audited).length
@@ -123,21 +125,21 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading }: Au
                 // Recorrección permitida solo si NEEDS_CORRECTION/sin auditar —
                 // una auditoría SUBMITTED/APPROVED ya bloquea una nueva en el
                 // mismo período (ver índice único parcial del backend).
-                const canAudit = !item.audited || item.auditStatus === 'NEEDS_CORRECTION'
+                const isAuditable = canAudit && (!item.audited || item.auditStatus === 'NEEDS_CORRECTION')
                 return (
                   <div
                     key={item.id}
-                    role={canAudit ? 'button' : undefined}
-                    tabIndex={canAudit ? 0 : undefined}
-                    onClick={canAudit ? () => goToAudit(item.id) : undefined}
+                    role={isAuditable ? 'button' : undefined}
+                    tabIndex={isAuditable ? 0 : undefined}
+                    onClick={isAuditable ? () => goToAudit(item.id) : undefined}
                     onKeyDown={
-                      canAudit
+                      isAuditable
                         ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToAudit(item.id) } }
                         : undefined
                     }
                     className={clsx(
                       'flex items-center justify-between gap-3 px-5 py-2.5',
-                      canAudit && 'cursor-pointer hover:bg-slate-50 transition-colors',
+                      isAuditable && 'cursor-pointer hover:bg-slate-50 transition-colors',
                     )}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -165,7 +167,7 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading }: Au
                           Sin auditar
                         </span>
                       )}
-                      {canAudit && (
+                      {isAuditable && (
                         <span className="flex items-center gap-1 text-xs font-medium text-blue-600">
                           <ClipboardCheck size={13} />
                           Auditar

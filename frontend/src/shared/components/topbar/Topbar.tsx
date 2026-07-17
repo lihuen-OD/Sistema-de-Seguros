@@ -2,6 +2,7 @@ import { Menu, Search, Settings } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { NotificationBell } from '../notifications/NotificationBell'
+import { useCurrentUser } from '../../../app/auth/AuthContext'
 
 interface TopbarProps {
   onMenuClick: () => void
@@ -47,6 +48,7 @@ function getPageTitle(pathname: string): string {
 export function Topbar({ onMenuClick }: TopbarProps) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { user } = useCurrentUser()
   const [searchQuery, setSearchQuery] = useState('')
   const title = getPageTitle(location.pathname)
 
@@ -84,8 +86,8 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       </div>
 
       <div className="flex items-center gap-1 ml-auto">
-        {/* Notifications */}
-        <NotificationBell />
+        {/* Notifications — agrega datos de todos los módulos, exclusivo del ADMIN */}
+        {user?.role === 'ADMIN' && <NotificationBell />}
 
         {/* Settings */}
         <button

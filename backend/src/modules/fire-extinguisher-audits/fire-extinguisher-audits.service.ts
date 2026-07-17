@@ -5,12 +5,90 @@ import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/u
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import { todayDate, currentYearMonth, toDateStr } from '../../shared/utils/dates'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { computeFireExtinguisherStatus } from '../fire-extinguishers/fire-extinguishers.expiration'
 import type {
   CreateFireExtinguisherAuditDTO,
   AddFireExtinguisherAuditAttachmentDTO,
   ReviewFireExtinguisherAuditDTO,
   ListFireExtinguisherAuditsQueryDTO,
 } from './fire-extinguisher-audits.schemas'
+
+// ── Informe de auditoría — categorías de cada campo del checklist para el
+// reporte (ver getFindingsReport). "Vencimiento" no viene del checklist: se
+// calcula en vivo con el mismo cálculo que usa todo el resto de la app
+// (computeFireExtinguisherStatus).
+//
+// Limpieza, Carga y Manguera/Tobera son los campos "principales" del informe
+// — muestran el valor REAL tal cual se carga en la auditoría (mapeo 1 a 1 a
+// su label), sin colapsar nada.
+const CLEANLINESS_LABELS: Record<string, string> = {
+  IMPECABLE: 'Impecable',
+  LEVE_POLVO: 'Polvo leve',
+  SUCIEDAD_VISIBLE: 'Suciedad visible',
+  MUY_SUCIO: 'Muy sucio',
+  SUCIEDAD_ACUMULADA: 'Suciedad acumulada con el tiempo',
+}
+const CHARGE_FILL_LABELS: Record<string, string> = {
+  CARGADO: 'Cargados',
+  DESCARGADO: 'Descargados',
+  SOBRECARGADO: 'Sobrecargados',
+}
+const HOSE_NOZZLE_LABELS: Record<string, string> = {
+  SANA: 'Sana',
+  ROTA_LEVE: 'Rota (leve)',
+  ROTA_REQUIERE_CAMBIO: 'Rota (requiere cambio)',
+  NO_TIENE: 'No tiene',
+}
+
+// Chapa Baliza, Precinto y Anillo son "secundarios" — se muestran más simples
+// (el frontend no lista matafuegos ahí), y Chapa Baliza sigue colapsado como
+// antes (Sana/Rota/No tiene), a diferencia de Manguera y Tobera de arriba.
+const CONDITION_TIERS: Record<string, string> = {
+  SANA: 'Sana',
+  ROTA_LEVE: 'Rota',
+  ROTA_REQUIERE_CAMBIO: 'Rota',
+  NO_TIENE: 'No tiene',
+}
+// Compartido por sealStatus y ringStatus.
+const HAS_STATUS_TIERS: Record<string, string> = { TIENE: 'Tiene', NO_TIENE: 'No tiene' }
+const EXPIRATION_TIERS: Record<string, string> = {
+  vigente: 'Vigente',
+  proximo_vencer: 'Próximo a vencer',
+  vencido: 'Vencido',
+}
+
+const FINDINGS_REPORT_FIELDS = [
+  'cleanliness',
+  'chargeFillStatus',
+  'beaconPlateCondition',
+  'sealStatus',
+  'ringStatus',
+  'hoseNozzleCondition',
+  'expiration',
+] as const
+
+interface FindingBucket {
+  count: number
+  items: { id: string; code: string }[]
+}
+
+function addToBucket(breakdown: Record<string, FindingBucket>, tier: string, item: { id: string; code: string }) {
+  if (!breakdown[tier]) breakdown[tier] = { count: 0, items: [] }
+  breakdown[tier].count += 1
+  breakdown[tier].items.push(item)
+}
+
+function emptyFieldBreakdowns(): Record<(typeof FINDINGS_REPORT_FIELDS)[number], Record<string, FindingBucket>> {
+  return {
+    cleanliness: {},
+    chargeFillStatus: {},
+    beaconPlateCondition: {},
+    sealStatus: {},
+    ringStatus: {},
+    hoseNozzleCondition: {},
+    expiration: {},
+  }
+}
 
 const MAX_ATTACHMENTS_PER_AUDIT = 10
 
@@ -380,6 +458,114 @@ export const fireExtinguisherAuditsService = {
         auditDate: audit ? toDateStr(audit.auditDate) : null,
       }
     })
+  },
+
+  // Informe de auditoría de un período: por establecimiento y sector, el
+  // desglose de cada campo del checklist en categorías simples (Bien/Mal/Muy
+  // mal, Sana/Rota/No tiene, etc.) con los códigos afectados en las
+  // categorías problemáticas. Vencimiento se calcula sobre TODOS los
+  // matafuegos activos del sector (auditados o no, es un dato del maestro);
+  // el resto de los campos solo sobre los auditados en ese período puntual
+  // (mismo criterio de "gana la auditoría más reciente" que getCoverage).
+  async getFindingsReport(period: string) {
+    const [extinguishers, audits] = await Promise.all([
+      prisma.fireExtinguisher.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          code: true,
+          establishment: true,
+          locationType: true,
+          expirationDate: true,
+          manufacturingYear: true,
+          hydraulicTestExpirationDate: true,
+        },
+        orderBy: [{ establishment: 'asc' }, { locationType: 'asc' }, { code: 'asc' }],
+      }),
+      prisma.fireExtinguisherAudit.findMany({
+        where: { auditPeriod: period, status: { not: 'REJECTED' } },
+        select: {
+          fireExtinguisherId: true,
+          auditDate: true,
+          cleanliness: true,
+          chargeFillStatus: true,
+          beaconPlateCondition: true,
+          sealStatus: true,
+          ringStatus: true,
+          hoseNozzleCondition: true,
+        },
+        orderBy: { auditDate: 'desc' },
+      }),
+    ])
+
+    const latestAuditByExtinguisher = new Map<string, (typeof audits)[number]>()
+    for (const a of audits) {
+      if (!latestAuditByExtinguisher.has(a.fireExtinguisherId)) {
+        latestAuditByExtinguisher.set(a.fireExtinguisherId, a)
+      }
+    }
+
+    interface SectorAcc {
+      total: number
+      audited: number
+      fields: ReturnType<typeof emptyFieldBreakdowns>
+    }
+    const establishmentMap = new Map<string, { total: number; audited: number; sectors: Map<string, SectorAcc> }>()
+
+    for (const fe of extinguishers) {
+      const establishment = fe.establishment ?? 'Sin establecimiento'
+      if (!establishmentMap.has(establishment)) {
+        establishmentMap.set(establishment, { total: 0, audited: 0, sectors: new Map() })
+      }
+      const estAcc = establishmentMap.get(establishment)!
+      estAcc.total += 1
+
+      if (!estAcc.sectors.has(fe.locationType)) {
+        estAcc.sectors.set(fe.locationType, { total: 0, audited: 0, fields: emptyFieldBreakdowns() })
+      }
+      const sectorAcc = estAcc.sectors.get(fe.locationType)!
+      sectorAcc.total += 1
+      const item = { id: fe.id, code: fe.code }
+
+      // Vencimiento — siempre, tenga o no auditoría este período.
+      const expirationStatus = computeFireExtinguisherStatus(
+        fe.expirationDate,
+        fe.manufacturingYear,
+        fe.hydraulicTestExpirationDate,
+      )
+      addToBucket(sectorAcc.fields.expiration, EXPIRATION_TIERS[expirationStatus], item)
+
+      const audit = latestAuditByExtinguisher.get(fe.id)
+      if (!audit) continue
+
+      estAcc.audited += 1
+      sectorAcc.audited += 1
+
+      addToBucket(sectorAcc.fields.cleanliness, CLEANLINESS_LABELS[audit.cleanliness], item)
+      addToBucket(sectorAcc.fields.chargeFillStatus, CHARGE_FILL_LABELS[audit.chargeFillStatus], item)
+      addToBucket(sectorAcc.fields.beaconPlateCondition, CONDITION_TIERS[audit.beaconPlateCondition], item)
+      addToBucket(sectorAcc.fields.sealStatus, HAS_STATUS_TIERS[audit.sealStatus], item)
+      addToBucket(sectorAcc.fields.ringStatus, HAS_STATUS_TIERS[audit.ringStatus], item)
+      addToBucket(sectorAcc.fields.hoseNozzleCondition, HOSE_NOZZLE_LABELS[audit.hoseNozzleCondition], item)
+    }
+
+    const establishments = [...establishmentMap.entries()]
+      .map(([establishment, estAcc]) => ({
+        establishment,
+        total: estAcc.total,
+        audited: estAcc.audited,
+        sectors: [...estAcc.sectors.entries()]
+          .map(([locationType, sectorAcc]) => ({
+            locationType,
+            total: sectorAcc.total,
+            audited: sectorAcc.audited,
+            fields: sectorAcc.fields,
+          }))
+          .sort((a, b) => b.total - a.total),
+      }))
+      .sort((a, b) => a.establishment.localeCompare(b.establishment))
+
+    return { period, establishments }
   },
 
   async review(id: string, data: ReviewFireExtinguisherAuditDTO, reviewedBy: string) {

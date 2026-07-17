@@ -124,6 +124,41 @@ export interface FireExtinguisherCoverageItem {
   auditDate: string | null
 }
 
+// ── Informe de auditoría por establecimiento/sector ─────────────────────────────
+
+export interface FireExtinguisherFindingBucket {
+  count: number
+  items: { id: string; code: string }[]
+}
+
+export type FireExtinguisherFindingsField =
+  | 'cleanliness'
+  | 'chargeFillStatus'
+  | 'beaconPlateCondition'
+  | 'sealStatus'
+  | 'ringStatus'
+  | 'hoseNozzleCondition'
+  | 'expiration'
+
+export interface FireExtinguisherFindingsSector {
+  locationType: string
+  total: number
+  audited: number
+  fields: Record<FireExtinguisherFindingsField, Record<string, FireExtinguisherFindingBucket>>
+}
+
+export interface FireExtinguisherFindingsEstablishment {
+  establishment: string
+  total: number
+  audited: number
+  sectors: FireExtinguisherFindingsSector[]
+}
+
+export interface FireExtinguisherFindingsReport {
+  period: string
+  establishments: FireExtinguisherFindingsEstablishment[]
+}
+
 export const fireExtinguisherAuditKeys = {
   all: ['fire-extinguisher-audits'] as const,
   detail: (id: string) => [...fireExtinguisherAuditKeys.all, id] as const,
@@ -169,6 +204,14 @@ export const fireExtinguisherAuditsApi = {
     })
     return res.data.data
   },
+
+  async getFindingsReport(period: string): Promise<FireExtinguisherFindingsReport> {
+    const res = await apiClient.get<{ data: FireExtinguisherFindingsReport }>(
+      '/fire-extinguisher-audits/findings-report',
+      { params: { period } },
+    )
+    return res.data.data
+  },
 }
 
 // ── Query options (categoría B — semi-dinámico) ──────────────────────────────────
@@ -191,6 +234,12 @@ export const fireExtinguisherAuditQueries = {
     queryOptions({
       queryKey: [...fireExtinguisherAuditKeys.all, 'coverage', period] as const,
       queryFn: () => fireExtinguisherAuditsApi.getCoverage(period),
+      staleTime: 60 * 1000,
+    }),
+  findingsReport: (period: string) =>
+    queryOptions({
+      queryKey: [...fireExtinguisherAuditKeys.all, 'findings-report', period] as const,
+      queryFn: () => fireExtinguisherAuditsApi.getFindingsReport(period),
       staleTime: 60 * 1000,
     }),
 }

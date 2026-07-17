@@ -1,6 +1,6 @@
 import request from 'supertest'
 import { app } from '../../../app'
-import { adminToken, mockDbUser } from '../../../__tests__/helpers/auth'
+import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
 jest.mock('../../../config/database', () => ({
   prisma: {
@@ -65,6 +65,29 @@ beforeEach(() => {
 })
 
 describe('Notifications API', () => {
+  // Agrega datos de todos los módulos (pólizas, cuotas, matafuegos, documentos)
+  // sin filtrar por permisos de cada uno — por eso es exclusivo del ADMIN,
+  // no otorgable por perfil (ver requireRole('ADMIN') en notifications.router.ts).
+  describe('acceso exclusivo de ADMIN', () => {
+    it.each([
+      ['GET', '/api/v1/notifications/preview'],
+      ['GET', '/api/v1/notifications'],
+      ['POST', '/api/v1/notifications/review'],
+      ['POST', '/api/v1/notifications/unreview'],
+    ] as const)('returns 403 for a non-admin USER on %s %s, regardless of modules', async (method, path) => {
+      db.user.findUnique.mockResolvedValueOnce(
+        mockDbUser({ role: 'USER', modules: ['dashboard', 'assets', 'policies', 'claims'] }),
+      )
+
+      const res = await request(app)
+        [method.toLowerCase() as 'get' | 'post'](path)
+        .set('Authorization', `Bearer ${userToken()}`)
+        .send({ items: [] })
+
+      expect(res.status).toBe(403)
+    })
+  })
+
   describe('GET /api/v1/notifications/preview', () => {
     it('returns 401 without token', async () => {
       const res = await request(app).get('/api/v1/notifications/preview')

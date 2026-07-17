@@ -187,8 +187,19 @@ describe('Fire Extinguisher Audits API', () => {
       expect(res.body.error.code).toBe('DUPLICATE_AUDIT_PERIOD')
     })
 
-    it('returns 403 for a USER without the fire_extinguisher_audits module', async () => {
+    it('returns 403 for a USER without the fire_extinguisher_audit_coverage module', async () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits')
+        .set('Authorization', `Bearer ${userToken()}`)
+        .send(validCreateBody)
+
+      expect(res.status).toBe(403)
+    })
+
+    it('returns 403 for a USER with only the fire_extinguisher_audits (review) module — auditing and reviewing are separate permissions', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguisher_audits'] }))
 
       const res = await request(app)
         .post('/api/v1/fire-extinguisher-audits')
@@ -200,7 +211,7 @@ describe('Fire Extinguisher Audits API', () => {
 
     it.each([
       ['ADMIN', 'ADMIN', undefined],
-      ['a USER with the fire_extinguisher_audits module', 'USER', ['fire_extinguisher_audits']],
+      ['a USER with the fire_extinguisher_audit_coverage module', 'USER', ['fire_extinguisher_audit_coverage']],
     ] as const)('returns 201 for %s', async (_label, role, modules) => {
       if (role === 'USER') {
         db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [...modules!] }))

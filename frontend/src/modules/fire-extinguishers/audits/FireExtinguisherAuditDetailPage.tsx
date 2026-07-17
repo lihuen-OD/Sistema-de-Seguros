@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -20,6 +20,7 @@ import {
 } from '../../../shared/api/fire-extinguisher-audits.api'
 import { fireExtinguisherKeys, fireExtinguisherQueries } from '../../../shared/api/fire-extinguishers.api'
 import { ROUTES } from '../../../app/routes'
+import { useCurrentUser } from '../../../app/auth/AuthContext'
 
 const AUDIT_DECISION_OPTIONS = [
   { value: 'APPROVED', label: 'Aprobar auditoría' },
@@ -31,6 +32,15 @@ export default function FireExtinguisherAuditDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useCurrentUser()
+  // Revisar/aprobar es un permiso distinto de auditar — quien solo puede
+  // auditar no tiene forma de navegar hasta acá (la pestaña "Auditorías" ni
+  // se le muestra), pero esto cierra el caso de una URL escrita a mano.
+  const canReview = user?.role === 'ADMIN' || (user?.modules.includes('fire_extinguisher_audits') ?? false)
+
+  useEffect(() => {
+    if (user && !canReview) navigate(ROUTES.FIRE_EXTINGUISHERS_AUDITS, { replace: true })
+  }, [user, canReview, navigate])
 
   const [decisions, setDecisions] = useState<Record<string, 'APPROVED' | 'REJECTED'>>({})
   const [auditDecision, setAuditDecision] = useState<'APPROVED' | 'REJECTED' | 'NEEDS_CORRECTION' | null>(null)
@@ -61,7 +71,7 @@ export default function FireExtinguisherAuditDetailPage() {
     onError: () => setShowConfirm(false),
   })
 
-  if (isLoading || !audit) {
+  if (!canReview || isLoading || !audit) {
     return (
       <PageContent>
         <p className="text-sm text-slate-400 py-10 text-center">Cargando auditoría…</p>

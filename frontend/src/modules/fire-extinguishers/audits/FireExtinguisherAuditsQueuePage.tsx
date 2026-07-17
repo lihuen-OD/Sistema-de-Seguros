@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, X } from 'lucide-react'
+import { Plus, ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, X, FileText } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -14,6 +14,7 @@ import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRan
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { Tabs, type TabItem } from '../../../shared/components/tabs/Tabs'
 import { formatDate } from '../../../shared/utils/format'
+import { useCurrentUser } from '../../../app/auth/AuthContext'
 import {
   fireExtinguisherAuditQueries,
   type FireExtinguisherAuditListItem,
@@ -31,7 +32,13 @@ function currentPeriod(): string {
 
 export default function FireExtinguisherAuditsQueuePage() {
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'auditorias' | 'cobertura'>('auditorias')
+  const { user } = useCurrentUser()
+  // Auditar y revisar/aprobar son permisos separados — ver el detalle en
+  // fire-extinguisher-audits.router.ts (requireModule distinto en cada ruta).
+  const canReview = user?.role === 'ADMIN' || (user?.modules.includes('fire_extinguisher_audits') ?? false)
+  const canAudit = user?.role === 'ADMIN' || (user?.modules.includes('fire_extinguisher_audit_coverage') ?? false)
+
+  const [activeTab, setActiveTab] = useState<'auditorias' | 'cobertura'>('cobertura')
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string[]>([])
   const [filterDateFrom, setFilterDateFrom] = useState('')
@@ -44,10 +51,14 @@ export default function FireExtinguisherAuditsQueuePage() {
 
   const pendingCoverageCount = useMemo(() => coverage.filter((c) => !c.audited).length, [coverage])
 
-  const tabs: TabItem[] = [
-    { id: 'auditorias', label: 'Auditorías' },
-    { id: 'cobertura', label: 'Cobertura', count: pendingCoverageCount },
-  ]
+  // Sin permiso de revisión no hay pestaña "Auditorías" para elegir — el
+  // auditor cae directo (y solo puede caer) en Cobertura.
+  const tabs: TabItem[] = canReview
+    ? [
+        { id: 'auditorias', label: 'Auditorías' },
+        { id: 'cobertura', label: 'Cobertura', count: pendingCoverageCount },
+      ]
+    : []
 
   const counts = useMemo(
     () => ({
@@ -142,21 +153,25 @@ export default function FireExtinguisherAuditsQueuePage() {
         title="Auditorías de Matafuegos"
         subtitle="Revisión y aprobación de auditorías enviadas por los auditores"
         actions={
-          <button
-            onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_NEW)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus size={16} />
-            Nueva auditoría
-          </button>
+          canAudit ? (
+            <button
+              onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_NEW)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus size={16} />
+              Nueva auditoría
+            </button>
+          ) : undefined
         }
       />
 
-      <SectionCard noPadding className="mb-5">
-        <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => setActiveTab(id as 'auditorias' | 'cobertura')} />
-      </SectionCard>
+      {canReview && (
+        <SectionCard noPadding className="mb-5">
+          <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => setActiveTab(id as 'auditorias' | 'cobertura')} />
+        </SectionCard>
+      )}
 
-      {activeTab === 'auditorias' && (
+      {activeTab === 'auditorias' && canReview && (
         <>
           <MetricGrid cols={4} className="mb-5">
             <KpiCard
@@ -220,6 +235,14 @@ export default function FireExtinguisherAuditsQueuePage() {
               <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
                 {filtered.length} de {all.length} auditorías
               </span>
+              <button
+                type="button"
+                onClick={() => navigate(`${ROUTES.FIRE_EXTINGUISHERS_AUDIT_FINDINGS_REPORT}?period=${coveragePeriod}`)}
+                className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors whitespace-nowrap"
+              >
+                <FileText size={13} />
+                Ver informe de auditoría
+              </button>
             </div>
 
             <DataTable
@@ -236,12 +259,13 @@ export default function FireExtinguisherAuditsQueuePage() {
         </>
       )}
 
-      {activeTab === 'cobertura' && (
+      {(activeTab === 'cobertura' || !canReview) && (
         <AuditCoverageTab
           period={coveragePeriod}
           onPeriodChange={setCoveragePeriod}
           data={coverage}
           isLoading={coverageLoading}
+          canAudit={canAudit}
         />
       )}
     </PageContent>

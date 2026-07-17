@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
+import { requireRole } from '../../middleware/roles.middleware'
 import { validate } from '../../middleware/validate.middleware'
 import { ReviewNotificationsSchema } from './notifications.schemas'
 import { notificationsController } from './notifications.controller'
@@ -7,6 +8,10 @@ import { notificationsController } from './notifications.controller'
 export const notificationsRouter = Router()
 
 notificationsRouter.use(authMiddleware)
+// Agrega datos de todos los módulos (pólizas, cuotas, documentos, matafuegos)
+// sin filtrar por permisos de cada uno — por eso queda exclusivo del ADMIN,
+// no otorgable por perfil (mismo criterio que /settings/users).
+notificationsRouter.use(requireRole('ADMIN'))
 
 // GET /api/v1/notifications/preview — conteos por categoría, para la campanita
 notificationsRouter.get('/preview', notificationsController.previewExpirations)

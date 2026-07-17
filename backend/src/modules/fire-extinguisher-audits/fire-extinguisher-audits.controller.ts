@@ -23,6 +23,12 @@ export const fireExtinguisherAuditsController = {
     res.json({ data })
   }),
 
+  findingsReport: asyncHandler(async (req: Request, res: Response) => {
+    const { period } = req.query as unknown as CoverageQueryDTO
+    const data = await fireExtinguisherAuditsService.getFindingsReport(period)
+    res.json({ data })
+  }),
+
   getById: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     const audit = await fireExtinguisherAuditsService.findById(req.params.id)
     res.json({ data: audit })

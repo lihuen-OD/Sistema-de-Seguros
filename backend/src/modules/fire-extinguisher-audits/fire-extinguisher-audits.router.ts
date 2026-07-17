@@ -18,12 +18,17 @@ fireExtinguisherAuditsRouter.use(authMiddleware)
 
 fireExtinguisherAuditsRouter.get('/', validateQuery(ListFireExtinguisherAuditsQuerySchema), fireExtinguisherAuditsController.list)
 
-// Antes de "/:id" — si no, Express interpreta "coverage" como un :id.
+// Antes de "/:id" — si no, Express interpreta "coverage"/"findings-report" como un :id.
 fireExtinguisherAuditsRouter.get('/coverage', validateQuery(CoverageQuerySchema), fireExtinguisherAuditsController.coverage)
+fireExtinguisherAuditsRouter.get(
+  '/findings-report',
+  validateQuery(CoverageQuerySchema),
+  fireExtinguisherAuditsController.findingsReport,
+)
 
 fireExtinguisherAuditsRouter.post(
   '/',
-  requireModule('fire_extinguisher_audits'),
+  requireModule('fire_extinguisher_audit_coverage'),
   validate(CreateFireExtinguisherAuditSchema),
   fireExtinguisherAuditsController.create,
 )
@@ -32,7 +37,7 @@ fireExtinguisherAuditsRouter.get('/:id', fireExtinguisherAuditsController.getByI
 
 fireExtinguisherAuditsRouter.post(
   '/:id/attachments',
-  requireModule('fire_extinguisher_audits'),
+  requireModule('fire_extinguisher_audit_coverage'),
   upload.single('file'),
   validate(AddFireExtinguisherAuditAttachmentSchema),
   fireExtinguisherAuditsController.addAttachment,
