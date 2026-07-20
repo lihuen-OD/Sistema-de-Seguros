@@ -31,8 +31,18 @@ function safeUser(user: UserWithProfile) {
   }
 }
 
+// Log de seguridad de intentos fallidos — nunca la contraseña, solo lo
+// necesario para detectar fuerza bruta/credential stuffing en los logs de
+// Render. No es una tabla propia a propósito: el rate-limit de /auth/login
+// ya acota el volumen, esto es solo para poder investigar después un pico.
+function logFailedLogin(email: string, reason: string, ip?: string) {
+  console.warn(
+    `[auth] Intento de login fallido — email=${email} reason=${reason} ip=${ip ?? 'desconocida'} at=${new Date().toISOString()}`,
+  )
+}
+
 export const authService = {
-  async login(data: LoginDTO) {
+  async login(data: LoginDTO, ip?: string) {
     const user = await prisma.user.findUnique({
       where: { email: data.email },
       include: { accessProfile: true },
@@ -41,11 +51,13 @@ export const authService = {
     // Mismo error genérico sin importar el motivo (no existe, inactivo,
     // contraseña incorrecta) — nunca revelar cuál de los tres fue.
     if (!user || !user.isActive) {
+      logFailedLogin(data.email, !user ? 'no existe' : 'inactivo', ip)
       throw new AppError(401, GENERIC_LOGIN_ERROR, 'INVALID_CREDENTIALS')
     }
 
     const passwordMatches = await bcrypt.compare(data.password, user.passwordHash)
     if (!passwordMatches) {
+      logFailedLogin(data.email, 'contraseña incorrecta', ip)
       throw new AppError(401, GENERIC_LOGIN_ERROR, 'INVALID_CREDENTIALS')
     }
 

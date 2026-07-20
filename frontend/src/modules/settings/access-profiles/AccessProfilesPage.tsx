@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeyRound, Plus, Edit2, Trash2, CheckCircle2, XCircle, X, Save, Loader2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
@@ -168,7 +169,7 @@ export default function AccessProfilesPage() {
 
   const queryClient = useQueryClient()
 
-  const { data: allProfiles = [], isLoading } = useQuery(accessProfileQueries.list())
+  const { data: allProfiles = [], isLoading, isError } = useQuery(accessProfileQueries.list())
 
   const filtered = useMemo(() => {
     return allProfiles.filter((p) => {
@@ -249,6 +250,8 @@ export default function AccessProfilesPage() {
       className: 'w-20',
     },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

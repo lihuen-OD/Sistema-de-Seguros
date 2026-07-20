@@ -1,5 +1,5 @@
 import { prisma } from '../../config/database'
-import { toISODate, toDateStr, dateOffset, todayDate } from '../../shared/utils/dates'
+import { toDateStr, dateOffset, todayDate } from '../../shared/utils/dates'
 import { buildFireExtinguisherStatusFilter } from '../fire-extinguishers/fire-extinguishers.expiration'
 
 export const dashboardService = {

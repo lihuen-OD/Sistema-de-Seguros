@@ -16,6 +16,7 @@ import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
+import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { producerQueries } from '../../shared/api/producers.api'
 import { policyQueries } from '../../shared/api/policies.api'
@@ -50,9 +51,9 @@ export default function TaskDetailPage() {
   const navigate = useNavigate()
 
   // All hooks must be called unconditionally at the top
-  const { data: allProducers = [] } = useQuery(producerQueries.list())
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  const { data: allProducers = [], isError: isErrorProducers } = useQuery(producerQueries.list())
+  const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list())
+  const { data: allAssets = [], isError: isErrorAssets } = useQuery(assetQueries.list())
 
   const taskQueries = useQueries({
     queries: allProducers.map((p) => ({ ...producerQueries.tasks(p.id), enabled: allProducers.length > 0 })),
@@ -63,6 +64,7 @@ export default function TaskDetailPage() {
   )
 
   const tasksLoading = allProducers.length > 0 && taskQueries.some((q) => q.isLoading)
+  const isError = isErrorProducers || isErrorPolicies || isErrorAssets || taskQueries.some((q) => q.isError)
   const task = allTasks.find((t) => t.id === id)
 
   if (tasksLoading) {
@@ -71,6 +73,17 @@ export default function TaskDetailPage() {
         <div className="flex items-center justify-center py-20 text-sm text-slate-400">
           Cargando tarea…
         </div>
+      </PageContent>
+    )
+  }
+
+  // Antes de esto: si allProducers fallaba, quedaba [] por el default y la
+  // página caía derecho en "Tarea no encontrada" — un error de red se veía
+  // igual que una tarea genuinamente inexistente.
+  if (isError) {
+    return (
+      <PageContent>
+        <ErrorState />
       </PageContent>
     )
   }

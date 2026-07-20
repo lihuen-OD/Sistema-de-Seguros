@@ -12,6 +12,8 @@ import type {
   BulkIdsQueryDTO,
   CancelDocumentDTO,
   SendDocumentEmailDTO,
+  CheckDocumentNumberQueryDTO,
+  FinancialQueryDTO,
 } from './documents.schemas'
 
 type IdParam = { id: string }
@@ -30,11 +32,7 @@ export const documentsController = {
   }),
 
   checkNumber: asyncHandler(async (req: Request, res: Response) => {
-    const { documentNumber, documentType, insuranceCompany } = req.query as {
-      documentNumber?: string
-      documentType?: string
-      insuranceCompany?: string
-    }
+    const { documentNumber, documentType, insuranceCompany } = req.query as unknown as CheckDocumentNumberQueryDTO
     if (!documentNumber?.trim()) {
       res.json({ data: { exists: false } })
       return
@@ -48,7 +46,7 @@ export const documentsController = {
   }),
 
   getFinancial: asyncHandler(async (req: Request, res: Response) => {
-    const { from, to } = req.query as { from?: string; to?: string }
+    const { from, to } = req.query as unknown as FinancialQueryDTO
     const docs = await documentsService.findAllForFinancial({ from, to })
     res.json({ data: docs })
   }),

@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
-import { detectFileType, formatFileSize, isAllowedMimetype, sanitizeFileName } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
 import { toDateStr } from '../../shared/utils/dates'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import {
@@ -200,10 +200,12 @@ export const documentsService = {
 
     await this.validateTypeConstraints(typeDef, docData)
 
-    // No hay @unique en documentNumber a propósito: distintas compañías o
-    // distintos tipos de documento pueden compartir numeración. El duplicado
-    // real es la combinación tipo + compañía + número (documentNumber es
-    // inmutable después del alta, así que este chequeo solo aplica en create).
+    // El duplicado real es la combinación tipo + compañía + número
+    // (documentNumber es inmutable después del alta, así que este chequeo
+    // solo aplica en create). Este pre-chequeo da un mensaje claro en el
+    // caso común; el @@unique de schema.prisma (mismas 3 columnas) es la
+    // garantía real ante dos altas concurrentes — el catch de P2002 más
+    // abajo la traduce al mismo error 409 en vez de un 500 genérico.
     const duplicate = await prisma.accountingDocument.findFirst({
       where: {
         documentNumber: docData.documentNumber,
@@ -225,54 +227,66 @@ export const documentsService = {
     // arrancan ya APPLIED/CANCELLED o con un relationType inconsistente.
     // Create + audit log en una sola transacción: si el audit log fallara,
     // no debe quedar un documento creado sin su rastro de auditoría.
-    const doc = await prisma.$transaction(async (tx) => {
-      const created = await tx.accountingDocument.create({
-        data: {
-          ...docData,
-          documentStatus: 'ISSUED',
-          relationType: typeDef.relationType ?? null,
-          paymentStatus: typeDef.hasPaymentStatus ? 'PENDING' : 'NOT_APPLICABLE',
-          ...(installments.length > 0 && typeDef.hasInstallments && {
-            installments: {
-              create: installments.map((inst) => ({
-                installmentNumber: inst.installmentNumber,
-                dueDate: inst.dueDate,
-                amount: inst.amount,
-                currency: docData.currency,
-              })),
-            },
-          }),
-          ...(allocations.length > 0 && {
-            allocations: {
-              create: allocations.map((alloc) => ({
-                policyId: alloc.policyId,
-                allocatedAmount: alloc.allocatedAmount,
-                allocationPercentage: alloc.allocationPercentage,
-              })),
-            },
-          }),
-        },
-        include: DOCUMENT_DETAIL_INCLUDE,
+    let doc
+    try {
+      doc = await prisma.$transaction(async (tx) => {
+        const created = await tx.accountingDocument.create({
+          data: {
+            ...docData,
+            documentStatus: 'ISSUED',
+            relationType: typeDef.relationType ?? null,
+            paymentStatus: typeDef.hasPaymentStatus ? 'PENDING' : 'NOT_APPLICABLE',
+            ...(installments.length > 0 && typeDef.hasInstallments && {
+              installments: {
+                create: installments.map((inst) => ({
+                  installmentNumber: inst.installmentNumber,
+                  dueDate: inst.dueDate,
+                  amount: inst.amount,
+                  currency: docData.currency,
+                })),
+              },
+            }),
+            ...(allocations.length > 0 && {
+              allocations: {
+                create: allocations.map((alloc) => ({
+                  policyId: alloc.policyId,
+                  allocatedAmount: alloc.allocatedAmount,
+                  allocationPercentage: alloc.allocationPercentage,
+                })),
+              },
+            }),
+          },
+          include: DOCUMENT_DETAIL_INCLUDE,
+        })
+
+        await this.recordAudit(created.id, {
+          action: 'CREATE',
+          description: `${typeDef.label} creada`,
+          newData: {
+            documentType: created.documentType,
+            documentStatus: created.documentStatus,
+            paymentStatus: created.paymentStatus,
+            netAmount: created.netAmount,
+            vatAmount: created.vatAmount,
+            otherTaxesAmount: created.otherTaxesAmount,
+            currency: created.currency,
+            linkedDocumentId: created.linkedDocumentId,
+          },
+          performedBy,
+        }, tx)
+
+        return created
       })
-
-      await this.recordAudit(created.id, {
-        action: 'CREATE',
-        description: `${typeDef.label} creada`,
-        newData: {
-          documentType: created.documentType,
-          documentStatus: created.documentStatus,
-          paymentStatus: created.paymentStatus,
-          netAmount: created.netAmount,
-          vatAmount: created.vatAmount,
-          otherTaxesAmount: created.otherTaxesAmount,
-          currency: created.currency,
-          linkedDocumentId: created.linkedDocumentId,
-        },
-        performedBy,
-      }, tx)
-
-      return created
-    })
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new AppError(
+          409,
+          'Ya existe un documento del mismo tipo y compañía con ese número',
+          'CONFLICT',
+        )
+      }
+      throw err
+    }
 
     return {
       ...withTotalAmount(doc),
@@ -404,6 +418,20 @@ export const documentsService = {
       )
     }
 
+    // El cascade de Prisma borra las filas de DocumentAttachment, pero no los
+    // archivos reales en Cloudinary — sin este paso quedarían huérfanos ahí
+    // para siempre. Se borran antes del delete (best-effort: un fallo acá no
+    // debe bloquear el borrado del documento).
+    const attachments = await prisma.documentAttachment.findMany({
+      where: { accountingDocumentId: id },
+      select: { cloudinaryPublicId: true },
+    })
+    await Promise.all(
+      attachments
+        .filter((a) => a.cloudinaryPublicId)
+        .map((a) => deleteFromCloudinary(a.cloudinaryPublicId!).catch(() => undefined)),
+    )
+
     // Cascade handled by Prisma (onDelete: Cascade on installments, allocations, attachments)
     await prisma.accountingDocument.delete({ where: { id } })
   },
@@ -425,58 +453,73 @@ export const documentsService = {
       throw new AppError(400, 'No se puede aplicar un documento anulado', 'BAD_REQUEST')
     }
 
-    let negativeAllocations: { policyId: string; allocatedAmount: number; allocationPercentage: number }[] = []
+    // El saldo se relee DENTRO de la transacción (con tx, no con el prisma
+    // global) y la transacción corre con aislamiento serializable — sin
+    // esto, dos Notas de Crédito aplicadas concurrentemente podrían, cada
+    // una individualmente dentro de saldo al momento de leerlo, superarlo en
+    // conjunto. Con serializable, Postgres aborta una de las dos (P2034) en
+    // vez de dejar que ambas escriban un resultado inconsistente.
+    let updated
+    try {
+      updated = await prisma.$transaction(
+        async (tx) => {
+          if (doc.documentType === 'CREDIT_NOTE' && doc.linkedDocumentId) {
+            const balance = await documentsBalanceService.getBalance(doc.linkedDocumentId, tx)
+            const creditAmount = Math.abs(computeTotalAmount(doc))
+            if (creditAmount > balance.effectiveAmount) {
+              throw new AppError(400, 'La Nota de Crédito supera el saldo disponible de la factura', 'BAD_REQUEST')
+            }
 
-    if (doc.documentType === 'CREDIT_NOTE' && doc.linkedDocumentId) {
-      const balance = await documentsBalanceService.getBalance(doc.linkedDocumentId)
-      const creditAmount = Math.abs(computeTotalAmount(doc))
-      if (creditAmount > balance.effectiveAmount) {
-        throw new AppError(400, 'La Nota de Crédito supera el saldo disponible de la factura', 'BAD_REQUEST')
-      }
+            // Genera asignaciones negativas proporcionales a la distribución
+            // de la factura vinculada, para que los reportes por póliza
+            // reflejen el neto. Si la factura no tiene asignaciones, se
+            // aplica igual sin crear ninguna (queda pendiente de
+            // distribución manual — limitación conocida de Fase 3).
+            const invoiceAllocations = await tx.documentPolicyAllocation.findMany({
+              where: { accountingDocumentId: doc.linkedDocumentId },
+            })
+            const negativeAllocations = invoiceAllocations.map((a) => ({
+              policyId: a.policyId,
+              allocatedAmount: -(creditAmount * (a.allocationPercentage / 100)),
+              allocationPercentage: a.allocationPercentage,
+            }))
 
-      // Genera asignaciones negativas proporcionales a la distribución de la
-      // factura vinculada, para que los reportes por póliza reflejen el neto.
-      // Si la factura no tiene asignaciones, se aplica igual sin crear ninguna
-      // (queda pendiente de distribución manual — limitación conocida de Fase 3).
-      const invoiceAllocations = await prisma.documentPolicyAllocation.findMany({
-        where: { accountingDocumentId: doc.linkedDocumentId },
-      })
-      negativeAllocations = invoiceAllocations.map((a) => ({
-        policyId: a.policyId,
-        allocatedAmount: -(creditAmount * (a.allocationPercentage / 100)),
-        allocationPercentage: a.allocationPercentage,
-      }))
-    }
+            await tx.documentPolicyAllocation.deleteMany({ where: { accountingDocumentId: id } })
+            if (negativeAllocations.length > 0) {
+              await tx.documentPolicyAllocation.createMany({
+                data: negativeAllocations.map((a) => ({ ...a, accountingDocumentId: id })),
+              })
+            }
+          }
 
-    // Las 3 escrituras (allocations negativas, cambio de estado, audit log)
-    // deben ser atómicas — un crash a mitad no puede dejar allocations
-    // desincronizadas con el estado o el documento aplicado sin auditoría.
-    const updated = await prisma.$transaction(async (tx) => {
-      if (doc.documentType === 'CREDIT_NOTE') {
-        await tx.documentPolicyAllocation.deleteMany({ where: { accountingDocumentId: id } })
-        if (negativeAllocations.length > 0) {
-          await tx.documentPolicyAllocation.createMany({
-            data: negativeAllocations.map((a) => ({ ...a, accountingDocumentId: id })),
+          const doc2 = await tx.accountingDocument.update({
+            where: { id },
+            data: { documentStatus: 'APPLIED' },
+            include: DOCUMENT_DETAIL_INCLUDE,
           })
-        }
+
+          await this.recordAudit(id, {
+            action: 'APPLY',
+            description: `${typeDef.label} aplicada`,
+            previousData: { documentStatus: 'ISSUED' },
+            newData: { documentStatus: 'APPLIED' },
+            performedBy,
+          }, tx)
+
+          return doc2
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      )
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') {
+        throw new AppError(
+          409,
+          'No se pudo aplicar el documento por otra operación simultánea sobre el mismo saldo. Reintentá de nuevo.',
+          'CONCURRENT_UPDATE',
+        )
       }
-
-      const doc2 = await tx.accountingDocument.update({
-        where: { id },
-        data: { documentStatus: 'APPLIED' },
-        include: DOCUMENT_DETAIL_INCLUDE,
-      })
-
-      await this.recordAudit(id, {
-        action: 'APPLY',
-        description: `${typeDef.label} aplicada`,
-        previousData: { documentStatus: 'ISSUED' },
-        newData: { documentStatus: 'APPLIED' },
-        performedBy,
-      }, tx)
-
-      return doc2
-    })
+      throw err
+    }
 
     return {
       ...withTotalAmount(updated),
@@ -801,6 +844,10 @@ export const documentsService = {
       )
     }
 
+    if (!matchesDeclaredMimetype(file.buffer, file.mimetype)) {
+      throw new AppError(415, 'El contenido del archivo no coincide con su tipo declarado', 'FILE_TYPE_MISMATCH')
+    }
+
     let fileUrl = `local://${file.originalname}`
     let cloudinaryPublicId: string | null = null
 
@@ -988,6 +1035,18 @@ export const documentsService = {
       ((input.netAmount ?? 0) !== 0 || (input.vatAmount ?? 0) !== 0 || (input.otherTaxesAmount ?? 0) !== 0)
     ) {
       throw new AppError(400, 'Este tipo de documento no admite importes propios', 'BAD_REQUEST')
+    }
+
+    // Los importes son siempre una magnitud (>= 0), incluido Asiento de
+    // Ajuste: ahí el signo del efecto lo da adjustmentSign por separado (ver
+    // documents-balance.service.ts), no el monto — si se permitiera un
+    // netAmount negativo con adjustmentSign=NEGATIVE, el efecto se
+    // invertiría (doble signo) en vez de aplicarse una sola vez.
+    if (
+      typeDef.hasOwnAmounts &&
+      ((input.netAmount ?? 0) < 0 || (input.vatAmount ?? 0) < 0 || (input.otherTaxesAmount ?? 0) < 0)
+    ) {
+      throw new AppError(400, 'Los importes no pueden ser negativos', 'BAD_REQUEST')
     }
   },
 

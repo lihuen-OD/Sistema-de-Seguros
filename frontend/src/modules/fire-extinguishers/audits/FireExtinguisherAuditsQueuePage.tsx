@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, X, FileText } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
@@ -45,7 +46,7 @@ export default function FireExtinguisherAuditsQueuePage() {
   const [filterDateTo, setFilterDateTo] = useState('')
   const [coveragePeriod, setCoveragePeriod] = useState(currentPeriod())
 
-  const { data: all = [], isLoading } = useQuery(fireExtinguisherAuditQueries.list())
+  const { data: all = [], isLoading, isError } = useQuery(fireExtinguisherAuditQueries.list())
 
   const { data: coverage = [], isLoading: coverageLoading } = useQuery(fireExtinguisherAuditQueries.coverage(coveragePeriod))
 
@@ -146,6 +147,8 @@ export default function FireExtinguisherAuditsQueuePage() {
     },
     { key: 'status', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

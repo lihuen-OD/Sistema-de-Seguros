@@ -22,6 +22,8 @@ jest.mock('../../../config/database', () => ({
     fireExtinguisherAttachment: {
       count: jest.fn(),
       create: jest.fn(),
+      findFirst: jest.fn(),
+      delete: jest.fn(),
     },
     $transaction: jest.fn(),
   },
@@ -43,6 +45,10 @@ const FE_ID = '60000000-0000-0000-0000-000000000001'
 const OTHER_FE_ID = '60000000-0000-0000-0000-000000000099'
 const AUDIT_ID = '70000000-0000-0000-0000-000000000001'
 const OTHER_AUDIT_ID = '70000000-0000-0000-0000-000000000099'
+
+// Firma JPEG real (FF D8 FF) — necesaria para pasar la validación de magic
+// bytes que compara el contenido real contra el Content-Type declarado.
+const FAKE_JPEG_BUFFER = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.from('fake-image-bytes')])
 
 const fakeFireExt = {
   id: FE_ID,
@@ -333,7 +339,7 @@ describe('Fire Extinguisher Audits API', () => {
       const res = await request(app)
         .post(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/attachments`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .attach('file', Buffer.from('fake-image-bytes'), { filename: 'photo.jpg', contentType: 'image/jpeg' })
+        .attach('file', FAKE_JPEG_BUFFER, { filename: 'photo.jpg', contentType: 'image/jpeg' })
 
       expect(res.status).toBe(201)
       expect(res.body.data.auditId).toBe(AUDIT_ID)
@@ -355,7 +361,7 @@ describe('Fire Extinguisher Audits API', () => {
       const res = await request(app)
         .post(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/attachments`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .attach('file', Buffer.from('fake-image-bytes'), { filename: 'photo.jpg', contentType: 'image/jpeg' })
+        .attach('file', FAKE_JPEG_BUFFER, { filename: 'photo.jpg', contentType: 'image/jpeg' })
 
       expect(res.status).toBe(400)
       expect(res.body.error.code).toBe('MAX_ATTACHMENTS_EXCEEDED')
@@ -367,6 +373,80 @@ describe('Fire Extinguisher Audits API', () => {
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(400)
+    })
+  })
+
+  // ── DELETE /api/v1/fire-extinguisher-audits/:id/attachments/:attachmentId ──
+
+  describe('DELETE /api/v1/fire-extinguisher-audits/:id/attachments/:attachmentId', () => {
+    const ATTACHMENT_ID = 'att1'
+
+    it('deletes the Cloudinary file and the DB row', async () => {
+      const { deleteFromCloudinary } = jest.requireMock('../../../config/cloudinary') as {
+        deleteFromCloudinary: jest.Mock
+      }
+      db.fireExtinguisherAttachment.findFirst.mockResolvedValue({
+        id: ATTACHMENT_ID,
+        auditId: AUDIT_ID,
+        cloudinaryPublicId: 'fire-extinguisher-audits/abc',
+      })
+      db.fireExtinguisherAttachment.delete.mockResolvedValue({})
+      deleteFromCloudinary.mockResolvedValue(undefined)
+
+      const res = await request(app)
+        .delete(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/attachments/${ATTACHMENT_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(deleteFromCloudinary).toHaveBeenCalledWith('fire-extinguisher-audits/abc')
+      expect(db.fireExtinguisherAttachment.delete).toHaveBeenCalledWith({ where: { id: ATTACHMENT_ID } })
+    })
+
+    it('returns 404 when the attachment does not belong to this audit', async () => {
+      db.fireExtinguisherAttachment.findFirst.mockResolvedValue(null)
+
+      const res = await request(app)
+        .delete(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/attachments/${ATTACHMENT_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(404)
+      expect(db.fireExtinguisherAttachment.delete).not.toHaveBeenCalled()
+    })
+
+    it('returns 403 for a USER without the fire_extinguisher_audit_coverage module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+      const res = await request(app)
+        .delete(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/attachments/${ATTACHMENT_ID}`)
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(403)
+    })
+  })
+
+  // ── GET /api/v1/fire-extinguisher-audits/:id/attachments/:attachmentId/download ──
+
+  describe('GET /api/v1/fire-extinguisher-audits/:id/attachments/:attachmentId/download', () => {
+    const ATTACHMENT_ID = 'att1'
+
+    it('returns 404 when the attachment does not belong to this audit', async () => {
+      db.fireExtinguisherAttachment.findFirst.mockResolvedValue(null)
+
+      const res = await request(app)
+        .get(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/attachments/${ATTACHMENT_ID}/download`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(404)
+    })
+
+    it('returns 403 for a USER without a shared read module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+      const res = await request(app)
+        .get(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/attachments/${ATTACHMENT_ID}/download`)
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(403)
     })
   })
 })

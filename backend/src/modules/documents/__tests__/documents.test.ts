@@ -1,4 +1,5 @@
 import request from 'supertest'
+import { Prisma } from '@prisma/client'
 import { app } from '../../../app'
 import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
 
@@ -221,6 +222,25 @@ describe('Documents API', () => {
       expect(res.body.data.documentNumber).toBe('FAC-2026-001')
     })
 
+    it('returns 409 CONFLICT when the DB unique constraint catches a duplicate the pre-check missed (race)', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(null) // pasa el pre-chequeo
+      db.$transaction.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: '5.22.0',
+          meta: { target: ['documentType', 'insuranceCompany', 'documentNumber'] },
+        }),
+      )
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validDocumentBody)
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('CONFLICT')
+    })
+
     it('records a CREATE audit log entry with the performer email', async () => {
       db.accountingDocument.findUnique.mockResolvedValue(null)
       db.accountingDocument.create.mockResolvedValue(fakeDocument)
@@ -306,6 +326,42 @@ describe('Documents API', () => {
         .send(bodyWithoutAmount)
 
       expect(res.status).toBe(422)
+    })
+
+    it('returns 400 when netAmount is negative (amounts are always a magnitude)', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(null)
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ ...validDocumentBody, netAmount: -1000 })
+
+      expect(res.status).toBe(400)
+      expect(db.accountingDocument.create).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when an ADJUSTMENT_ENTRY has a negative netAmount, even with adjustmentSign NEGATIVE', async () => {
+      // El documento vinculado (requerido para ADJUSTMENT_ENTRY) debe existir
+      // y no estar anulado para llegar hasta la validación de monto.
+      db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, documentStatus: 'ISSUED' })
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          documentType: 'ADJUSTMENT_ENTRY',
+          documentNumber: 'AJ-2026-001',
+          issueDate: '2026-01-01',
+          netAmount: -100,
+          vatAmount: 0,
+          otherTaxesAmount: 0,
+          linkedDocumentId: DOC_ID,
+          adjustmentReason: 'ROUNDING_DIFFERENCE',
+          adjustmentSign: 'NEGATIVE',
+        })
+
+      expect(res.status).toBe(400)
+      expect(db.accountingDocument.create).not.toHaveBeenCalled()
     })
 
     it('accepts DEBIT_NOTE as valid documentType', async () => {
@@ -761,6 +817,7 @@ describe('Documents API', () => {
     it('returns 200 when ADMIN deletes document', async () => {
       db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
       db.accountingDocument.findFirst.mockResolvedValueOnce(null) // sin dependientes
+      db.documentAttachment.findMany.mockResolvedValue([])
       db.accountingDocument.delete.mockResolvedValue(fakeDocument)
 
       const res = await request(app)
@@ -768,6 +825,48 @@ describe('Documents API', () => {
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(200)
+    })
+
+    it('deletes the Cloudinary file for every attachment before deleting the document', async () => {
+      const { deleteFromCloudinary } = jest.requireMock('../../../config/cloudinary') as {
+        deleteFromCloudinary: jest.Mock
+      }
+      db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
+      db.accountingDocument.findFirst.mockResolvedValueOnce(null) // sin dependientes
+      db.documentAttachment.findMany.mockResolvedValue([
+        { cloudinaryPublicId: 'seguros/documents/a' },
+        { cloudinaryPublicId: null },
+        { cloudinaryPublicId: 'seguros/documents/b' },
+      ])
+      db.accountingDocument.delete.mockResolvedValue(fakeDocument)
+      deleteFromCloudinary.mockResolvedValue(undefined)
+
+      const res = await request(app)
+        .delete(`/api/v1/documents/${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(deleteFromCloudinary).toHaveBeenCalledTimes(2)
+      expect(deleteFromCloudinary).toHaveBeenCalledWith('seguros/documents/a')
+      expect(deleteFromCloudinary).toHaveBeenCalledWith('seguros/documents/b')
+    })
+
+    it('still deletes the document even if a Cloudinary cleanup fails', async () => {
+      const { deleteFromCloudinary } = jest.requireMock('../../../config/cloudinary') as {
+        deleteFromCloudinary: jest.Mock
+      }
+      db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
+      db.accountingDocument.findFirst.mockResolvedValueOnce(null) // sin dependientes
+      db.documentAttachment.findMany.mockResolvedValue([{ cloudinaryPublicId: 'seguros/documents/a' }])
+      db.accountingDocument.delete.mockResolvedValue(fakeDocument)
+      deleteFromCloudinary.mockRejectedValue(new Error('Cloudinary down'))
+
+      const res = await request(app)
+        .delete(`/api/v1/documents/${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.accountingDocument.delete).toHaveBeenCalled()
     })
 
     it('returns 400 and blocks deleting when the document is already APPLIED', async () => {
@@ -1099,6 +1198,24 @@ describe('Documents API', () => {
 
       expect(res.status).toBe(200)
       expect(db.accountingDocument.update.mock.calls[0][0].data.documentStatus).toBe('APPLIED')
+    })
+
+    it('returns 409 CONCURRENT_UPDATE when the serializable transaction is aborted by Postgres (P2034)', async () => {
+      const creditNote = { ...fakeDocument, documentType: 'CREDIT_NOTE', documentStatus: 'ISSUED', linkedDocumentId: OTHER_ID, netAmount: 300, vatAmount: 0, otherTaxesAmount: 0 }
+      db.accountingDocument.findUnique.mockResolvedValueOnce(creditNote)
+      db.$transaction.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Transaction failed due to a write conflict or a deadlock', {
+          code: 'P2034',
+          clientVersion: '5.22.0',
+        }),
+      )
+
+      const res = await request(app)
+        .post(`/api/v1/documents/${DOC_ID}/apply`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('CONCURRENT_UPDATE')
     })
 
     it('creates proportional negative allocations when applying a CREDIT_NOTE linked to an invoice with allocations', async () => {

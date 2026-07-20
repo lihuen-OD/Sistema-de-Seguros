@@ -16,6 +16,11 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
+  // Prefijo de carpeta por ambiente (ej. "demo", "staging") — sin setear, no
+  // se antepone nada (comportamiento actual, para no romper producción). Evita
+  // que archivos subidos desde un ambiente de pruebas se mezclen con los
+  // reales si ambos comparten la misma cuenta de Cloudinary.
+  CLOUDINARY_ROOT_FOLDER: z.string().optional(),
   EMAIL_PROVIDER: z.string().optional().default('resend'),
   EMAIL_ENABLED: z
     .string()

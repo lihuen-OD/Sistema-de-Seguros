@@ -1,9 +1,11 @@
 /**
  * seed-config.ts
  *
- * Siembra (o actualiza) ÚNICAMENTE los catálogos de Configuración de Módulos.
- * Seguro para correr en producción: elimina solo los catalog_items
- * y los recrea. No toca pólizas, activos, empresas ni ningún otro dato.
+ * Siembra (o actualiza) ÚNICAMENTE los catálogos de Configuración de Módulos,
+ * vía upsert por (category, label). Seguro para correr en producción o para
+ * re-correr varias veces: no borra categorías completas, así que un ítem
+ * agregado desde la UI después del seed inicial nunca se pierde al volver a
+ * correrlo. No toca pólizas, activos, empresas ni ningún otro dato.
  *
  * Uso:
  *   npm run db:seed:config
@@ -234,26 +236,27 @@ const CATALOGS: Record<string, string[]> = {
 
 async function main() {
   console.log('⚙️  Configuración de Módulos — iniciando seed...')
-  console.log('   (solo catálogos — no modifica pólizas, activos ni otros datos)')
+  console.log('   (upsert por category+label — no borra categorías ni ítems agregados desde la UI)')
 
-  let totalCreated = 0
-  let totalDeleted = 0
+  let totalUpserted = 0
 
   for (const [category, labels] of Object.entries(CATALOGS)) {
-    const deleted = await prisma.catalogItem.deleteMany({ where: { category } })
-    totalDeleted += deleted.count
-
-    await prisma.catalogItem.createMany({
-      data: labels.map((label, i) => ({ category, label, sortOrder: i })),
-    })
-    totalCreated += labels.length
+    for (let i = 0; i < labels.length; i++) {
+      const label = labels[i]
+      await prisma.catalogItem.upsert({
+        where: { category_label: { category, label } },
+        create: { category, label, sortOrder: i },
+        update: { sortOrder: i },
+      })
+      totalUpserted += 1
+    }
 
     console.log(`  ✔ ${category.padEnd(30)} → ${labels.length} ítems`)
   }
 
   console.log(`\n✅ Configuración de Módulos completada.`)
   console.log(`   Categorías: ${Object.keys(CATALOGS).length}`)
-  console.log(`   Ítems creados: ${totalCreated} (reemplazaron ${totalDeleted} existentes)`)
+  console.log(`   Ítems verificados/actualizados: ${totalUpserted}`)
 }
 
 main()

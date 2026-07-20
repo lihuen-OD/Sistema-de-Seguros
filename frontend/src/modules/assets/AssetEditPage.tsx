@@ -169,6 +169,7 @@ export default function AssetEditPage() {
   const [buildings, setBuildings] = useState<EstBuilding[]>([])
   const [attachments, setAttachments] = useState<AssetAttachment[]>([])
   const [errors, setErrors] = useState<FormErrors>({})
+  const [submitting, setSubmitting] = useState(false)
 
   // Catalog queries
   const { data: fuelTypes = [] } = useQuery(catalogQueries.byCategory('asset_fuel_type'))
@@ -405,8 +406,6 @@ export default function AssetEditPage() {
     }
     return {}
   }
-
-  const [submitting, setSubmitting] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

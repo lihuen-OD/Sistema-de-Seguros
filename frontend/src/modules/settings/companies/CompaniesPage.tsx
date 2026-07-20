@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, CheckCircle2, XCircle, Hash, Plus, Edit2, X, Save, Loader2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -155,7 +156,7 @@ export default function CompaniesPage() {
 
   const queryClient = useQueryClient()
 
-  const { data: allCompanies = [], isLoading: isLoadingCompanies } = useQuery(companyQueries.list())
+  const { data: allCompanies = [], isLoading: isLoadingCompanies, isError } = useQuery(companyQueries.list())
 
   const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
@@ -242,6 +243,8 @@ export default function CompaniesPage() {
       className: 'w-10',
     },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Edit2, KeyRound, Save, Loader2, Users as UsersIcon, ShieldCheck, UserCheck } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
@@ -243,7 +244,7 @@ export default function UsersPage() {
   const [resetUser, setResetUser] = useState<AppUser | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: users = [], isLoading } = useQuery(userQueries.list())
+  const { data: users = [], isLoading, isError } = useQuery(userQueries.list())
 
   const activeCount = users.filter((u) => u.isActive).length
   const adminCount = users.filter((u) => u.role === 'ADMIN').length
@@ -333,6 +334,8 @@ export default function UsersPage() {
       ),
     },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

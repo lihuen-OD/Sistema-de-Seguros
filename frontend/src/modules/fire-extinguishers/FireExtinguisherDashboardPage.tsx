@@ -163,34 +163,36 @@ export default function FireExtinguisherDashboardPage() {
         {data.recentAudits.length === 0 ? (
           <EmptyState title="Sin actividad reciente" description="Todavía no se registraron auditorías." />
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-500 uppercase tracking-wide">
-                <th className="px-5 py-3 font-medium">Matafuego</th>
-                <th className="px-5 py-3 font-medium">Período</th>
-                <th className="px-5 py-3 font-medium">Auditor</th>
-                <th className="px-5 py-3 font-medium">Fecha</th>
-                <th className="px-5 py-3 font-medium">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.recentAudits.map((audit) => (
-                <tr
-                  key={audit.id}
-                  onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(audit.id))}
-                  className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 cursor-pointer transition-colors"
-                >
-                  <td className="px-5 py-3 font-medium text-slate-800">{audit.extinguisherCode}</td>
-                  <td className="px-5 py-3 text-slate-600">{audit.auditPeriod}</td>
-                  <td className="px-5 py-3 text-slate-600">{audit.auditedBy}</td>
-                  <td className="px-5 py-3 text-slate-500 tabular-nums">{formatDate(audit.createdAt)}</td>
-                  <td className="px-5 py-3">
-                    <StatusPill status={audit.status} size="sm" />
-                  </td>
+          <div className="table-container">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-xs text-slate-500 uppercase tracking-wide">
+                  <th className="px-5 py-3 font-medium">Matafuego</th>
+                  <th className="px-5 py-3 font-medium">Período</th>
+                  <th className="px-5 py-3 font-medium">Auditor</th>
+                  <th className="px-5 py-3 font-medium">Fecha</th>
+                  <th className="px-5 py-3 font-medium">Estado</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.recentAudits.map((audit) => (
+                  <tr
+                    key={audit.id}
+                    onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(audit.id))}
+                    className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 cursor-pointer transition-colors"
+                  >
+                    <td className="px-5 py-3 font-medium text-slate-800">{audit.extinguisherCode}</td>
+                    <td className="px-5 py-3 text-slate-600">{audit.auditPeriod}</td>
+                    <td className="px-5 py-3 text-slate-600">{audit.auditedBy}</td>
+                    <td className="px-5 py-3 text-slate-500 tabular-nums">{formatDate(audit.createdAt)}</td>
+                    <td className="px-5 py-3">
+                      <StatusPill status={audit.status} size="sm" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </SectionCard>
     </PageContent>

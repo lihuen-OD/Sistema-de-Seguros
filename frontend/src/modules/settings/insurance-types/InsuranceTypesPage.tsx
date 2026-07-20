@@ -5,6 +5,7 @@ import { Plus, Trash2, ChevronDown, ChevronUp, Tag, Shield } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { insuranceTypesApi, insuranceTypeQueries, insuranceTypeKeys } from '../../../shared/api/insurance-types.api'
 
@@ -13,7 +14,7 @@ type DeleteTarget = { kind: 'type'; id: string; label: string } | { kind: 'cover
 export default function InsuranceTypesPage() {
   const queryClient = useQueryClient()
 
-  const { data: types = [] } = useQuery(insuranceTypeQueries.list())
+  const { data: types = [], isError } = useQuery(insuranceTypeQueries.list())
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [newTypeLabel, setNewTypeLabel] = useState('')
@@ -86,6 +87,8 @@ export default function InsuranceTypesPage() {
     }
     setDeleteTarget(null)
   }
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

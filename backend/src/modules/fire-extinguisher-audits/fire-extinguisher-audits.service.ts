@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
-import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import { todayDate, currentYearMonth, toDateStr } from '../../shared/utils/dates'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
@@ -57,6 +57,10 @@ const EXPIRATION_TIERS: Record<string, string> = {
   vencido: 'Vencido',
 }
 
+// Se usa solo como fuente del tipo union de abajo (typeof ...[number]) — el
+// array en sí nunca se itera en runtime, por eso ESLint lo marca como "solo
+// usado como tipo"; es el patrón estándar para derivar un union literal.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const FINDINGS_REPORT_FIELDS = [
   'cleanliness',
   'chargeFillStatus',
@@ -343,6 +347,10 @@ export const fireExtinguisherAuditsService = {
       throw new AppError(415, 'Tipo de archivo no permitido. Solo se aceptan fotos (JPG, PNG, WebP)', 'UNSUPPORTED_MEDIA_TYPE')
     }
 
+    if (!matchesDeclaredMimetype(file.buffer, file.mimetype)) {
+      throw new AppError(415, 'El contenido del archivo no coincide con su tipo declarado', 'FILE_TYPE_MISMATCH')
+    }
+
     let fileUrl = `local://${file.originalname}`
     let cloudinaryPublicId: string | null = null
 
@@ -371,6 +379,25 @@ export const fireExtinguisherAuditsService = {
       if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
       throw err
     }
+  },
+
+  async deleteAttachment(auditId: string, attachmentId: string) {
+    const attachment = await prisma.fireExtinguisherAttachment.findFirst({
+      where: { id: attachmentId, auditId },
+    })
+    if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    if (attachment.cloudinaryPublicId) {
+      await deleteFromCloudinary(attachment.cloudinaryPublicId)
+    }
+    await prisma.fireExtinguisherAttachment.delete({ where: { id: attachmentId } })
+  },
+
+  async getAttachmentForDownload(auditId: string, attachmentId: string) {
+    const attachment = await prisma.fireExtinguisherAttachment.findFirst({
+      where: { id: attachmentId, auditId },
+    })
+    if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    return attachment
   },
 
   async findAll(query: ListFireExtinguisherAuditsQueryDTO) {

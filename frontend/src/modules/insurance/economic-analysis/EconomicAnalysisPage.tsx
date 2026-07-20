@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { TrendingUp, Building2, FileText, FileSpreadsheet, FileDown, Loader2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
@@ -241,11 +242,12 @@ export default function EconomicAnalysisPage() {
   // ─── Remote data ─────────────────────────────────────────────────────────────
 
   // Una sola request que devuelve documentos + installments + allocations embebidos
-  const { data: financialDocs = [] } = useQuery(documentQueries.financial())
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
-  const { data: allCompanies = [] } = useQuery(companyQueries.list())
-  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
+  const { data: financialDocs = [], isError: isErrorDocs } = useQuery(documentQueries.financial())
+  const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list())
+  const { data: allAssets = [], isError: isErrorAssets } = useQuery(assetQueries.list())
+  const { data: allCompanies = [], isError: isErrorCompanies } = useQuery(companyQueries.list())
+  const { data: allCostCenters = [], isError: isErrorCostCenters } = useQuery(costCenterQueries.list())
+  const isError = isErrorDocs || isErrorPolicies || isErrorAssets || isErrorCompanies || isErrorCostCenters
 
   // Derivados memoizados para que los useMemo downstream reaccionen correctamente
   const allDocuments = financialDocs
@@ -487,6 +489,8 @@ export default function EconomicAnalysisPage() {
   const handleDateRange = (from: string, to: string) => { setDateFrom(from); setDateTo(to) }
 
   // ─── Render ───────────────────────────────────────────────────────────────────
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

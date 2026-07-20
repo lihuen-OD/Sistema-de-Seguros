@@ -1,7 +1,14 @@
 import { Request, Response, NextFunction } from 'express'
+import multer from 'multer'
 import { ZodError } from 'zod'
 import { AppError } from '../shared/errors/AppError'
 import { env } from '../config/env'
+
+const MULTER_ERROR_MESSAGES: Record<string, string> = {
+  LIMIT_FILE_SIZE: 'El archivo supera el tamaño máximo permitido (20 MB)',
+  LIMIT_FILE_COUNT: 'Solo se puede subir un archivo por vez',
+  LIMIT_UNEXPECTED_FILE: 'Campo de archivo inesperado',
+}
 
 export function errorMiddleware(
   err: unknown,
@@ -32,6 +39,19 @@ export function errorMiddleware(
           field: e.path.join('.'),
           message: e.message,
         })),
+      },
+    })
+    return
+  }
+
+  // Error de Multer (ej. archivo demasiado grande) — antes caía al 500
+  // genérico de más abajo; acá se traduce a un 413/400 con mensaje claro.
+  if (err instanceof multer.MulterError) {
+    const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400
+    res.status(status).json({
+      error: {
+        code: err.code,
+        message: MULTER_ERROR_MESSAGES[err.code] ?? 'Error al procesar el archivo subido',
       },
     })
     return

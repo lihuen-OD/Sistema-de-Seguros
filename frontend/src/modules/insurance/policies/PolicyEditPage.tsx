@@ -219,6 +219,23 @@ export default function PolicyEditPage() {
     },
   })
 
+  // Los hooks deben llamarse siempre en el mismo orden en cada render — si
+  // estos useMemo quedaran después de los early return de abajo, el
+  // componente pasaría de llamar N hooks (mientras loadingPolicy/!policy)
+  // a llamar N+2 (una vez que la póliza carga), lo cual rompe las reglas de
+  // hooks de React para la misma instancia montada.
+  const insuredAmountUsd = useMemo(() => {
+    const ars = parseFloat(form.insuredAmountArs)
+    const rate = parseFloat(form.exchangeRate)
+    if (!isNaN(ars) && !isNaN(rate) && rate > 0) return (ars / rate).toFixed(2)
+    return ''
+  }, [form.insuredAmountArs, form.exchangeRate])
+
+  const filteredCostCenters = useMemo(
+    () => costCenters.filter((cc) => cc.status === 'activo'),
+    [costCenters],
+  )
+
   if (loadingPolicy) {
     return (
       <PageContent>
@@ -269,18 +286,6 @@ export default function PolicyEditPage() {
     }))
     setErrors((prev) => ({ ...prev, assetIds: undefined }))
   }
-
-  const insuredAmountUsd = useMemo(() => {
-    const ars = parseFloat(form.insuredAmountArs)
-    const rate = parseFloat(form.exchangeRate)
-    if (!isNaN(ars) && !isNaN(rate) && rate > 0) return (ars / rate).toFixed(2)
-    return ''
-  }, [form.insuredAmountArs, form.exchangeRate])
-
-  const filteredCostCenters = useMemo(
-    () => costCenters.filter((cc) => cc.status === 'activo'),
-    [costCenters],
-  )
 
   const isAP = form.coverageTypes.includes('Accidentes Personales') || form.insuranceType === 'Personal'
   const showBeneficiaryField = isAP && form.association === 'sin_activo'

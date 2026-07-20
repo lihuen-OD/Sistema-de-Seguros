@@ -6,7 +6,7 @@ import type { LoginDTO, ChangePasswordDTO } from './auth.schemas'
 
 export const authController = {
   login: asyncHandler(async (req: Request<unknown, unknown, LoginDTO>, res: Response) => {
-    const result = await authService.login(req.body)
+    const result = await authService.login(req.body, req.ip)
     res.json({ data: result })
   }),
 

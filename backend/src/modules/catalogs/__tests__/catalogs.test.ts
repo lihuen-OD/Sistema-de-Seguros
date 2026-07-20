@@ -73,13 +73,13 @@ describe('Catalogs API', () => {
       expect(res.body.error.code).toBe('DUPLICATE_CATALOG_ITEM')
     })
 
-    it('returns 400 when label exceeds 200 characters', async () => {
+    it('returns 422 when label exceeds 200 characters', async () => {
       const res = await request(app)
         .post('/api/v1/catalogs/fire_ext_type')
         .set('Authorization', `Bearer ${adminToken()}`)
         .send({ label: 'x'.repeat(201) })
 
-      expect(res.status).toBe(400)
+      expect(res.status).toBe(422)
     })
 
     it('returns 403 for a USER without the module_config module', async () => {
@@ -207,13 +207,13 @@ describe('Catalogs API', () => {
       expect(res.body.error.code).toBe('DUPLICATE_CATALOG_ITEM')
     })
 
-    it('returns 400 when label exceeds 200 characters', async () => {
+    it('returns 422 when label exceeds 200 characters', async () => {
       const res = await request(app)
         .patch(`/api/v1/catalogs/fire_ext_type/${ITEM_ID}`)
         .set('Authorization', `Bearer ${adminToken()}`)
         .send({ label: 'x'.repeat(201) })
 
-      expect(res.status).toBe(400)
+      expect(res.status).toBe(422)
     })
   })
 })

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Boxes, Plus, Edit2, Trash2, CheckCircle2, XCircle, X, Save, Loader2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
@@ -159,7 +160,7 @@ export default function FixedAssetsPage() {
 
   const queryClient = useQueryClient()
 
-  const { data: allFixedAssets = [], isLoading } = useQuery(fixedAssetQueries.list())
+  const { data: allFixedAssets = [], isLoading, isError } = useQuery(fixedAssetQueries.list())
 
   const { data: allAssets = [] } = useQuery(assetQueries.list())
 
@@ -257,6 +258,8 @@ export default function FixedAssetsPage() {
       className: 'w-20',
     },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

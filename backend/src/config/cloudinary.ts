@@ -30,6 +30,8 @@ export function uploadToCloudinary(
     throw new AppError(503, 'Almacenamiento de archivos no configurado', 'STORAGE_NOT_CONFIGURED')
   }
 
+  const fullFolder = env.CLOUDINARY_ROOT_FOLDER ? `${env.CLOUDINARY_ROOT_FOLDER}/${folder}` : folder
+
   // Cloudinary clasifica los PDF subidos con resource_type "auto" como
   // "image" (para poder generar thumbnails), y desde 2024 bloquea por
   // seguridad la entrega directa de PDF/ZIP servidos como "image" salvo que
@@ -40,7 +42,7 @@ export function uploadToCloudinary(
 
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      { folder, resource_type: resourceType },
+      { folder: fullFolder, resource_type: resourceType },
       (error, result) => {
         if (error || !result) return reject(error ?? new Error('Upload fallido'))
         resolve(result as CloudinaryResult)

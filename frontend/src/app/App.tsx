@@ -5,6 +5,7 @@ import { AppLayout } from './AppLayout'
 
 // Auth
 const LoginPage = lazy(() => import('../modules/auth/LoginPage'))
+const ChangePasswordPage = lazy(() => import('../modules/auth/ChangePasswordPage'))
 
 // Dashboard
 const DashboardPage = lazy(() => import('../modules/dashboard/DashboardPage'))
@@ -96,6 +97,10 @@ export default function App() {
       <Routes>
         {/* Login — fuera del AppShell, sin sesión requerida */}
         <Route path="/login" element={<LoginPage />} />
+        {/* Cambio de contraseña — fuera del AppShell a propósito: se usa tanto
+            forzado (mustChangePassword) como voluntario, sin depender del
+            guard de rol/módulos de AppLayout */}
+        <Route path="/change-password" element={<ChangePasswordPage />} />
 
         {/* Todo lo demás vive detrás de AppLayout: guard de sesión + guard de rol + AppShell */}
         <Route element={<AppLayout />}>

@@ -26,6 +26,7 @@ model Company {
   policies         Policy[]
   assetAllocations AssetAllocation[]
 
+  @@index([isActive])
   @@map("companies")
 }
 
@@ -343,6 +344,12 @@ model AccountingDocument {
   @@index([documentStatus])
   @@index([policyId])
   @@index([linkedDocumentId])
+  // El duplicado real es tipo + compañía + número (no el número solo — ver
+  // documents.service.ts#create). Confirmado sin datos duplicados existentes
+  // antes de agregar esta constraint. Nota: Postgres no exige unicidad entre
+  // filas con insuranceCompany NULL (NULL != NULL), igual que ya asume el
+  // chequeo previo a nivel de aplicación.
+  @@unique([documentType, insuranceCompany, documentNumber])
   @@map("accounting_documents")
 }
 

@@ -131,13 +131,6 @@ export type TaskPriority = 'baja' | 'media' | 'alta'
 
 export type FireExtStatus = 'vigente' | 'proximo_vencer' | 'vencido'
 
-export type ClaimStatus =
-  | 'denunciado'
-  | 'en_tramite'
-  | 'liquidado'
-  | 'rechazado'
-  | 'cerrado'
-
 export type ClaimEventType =
   | 'siniestro_creado'
   | 'estado_cambiado'
@@ -166,22 +159,6 @@ export interface ClaimEvent {
   newAmount?: number
   author?: string
 }
-
-export type ClaimType =
-  | 'accidente'
-  | 'robo'
-  | 'hurto'
-  | 'incendio'
-  | 'granizo'
-  | 'granizo_cosecha'
-  | 'inundacion'
-  | 'daños'
-  | 'daños_electricos'
-  | 'rotura_mecanica'
-  | 'responsabilidad_civil'
-  | 'muerte_accidental'
-  | 'incapacidad'
-  | 'otro'
 
 export type AssetCategory =
   | 'vehiculo' | 'camioneta' | 'camion' | 'moto'

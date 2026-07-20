@@ -1,4 +1,4 @@
-import { detectFileType, isAllowedMimetype, formatFileSize, sanitizeFileName } from '../files'
+import { detectFileType, isAllowedMimetype, matchesDeclaredMimetype, formatFileSize, sanitizeFileName } from '../files'
 
 // ── detectFileType ────────────────────────────────────────────────────────────
 
@@ -89,6 +89,72 @@ describe('isAllowedMimetype', () => {
     expect(isAllowedMimetype('application/x-msdownload')).toBe(false)
     expect(isAllowedMimetype('application/javascript')).toBe(false)
     expect(isAllowedMimetype('')).toBe(false)
+  })
+})
+
+// ── matchesDeclaredMimetype ───────────────────────────────────────────────────
+
+describe('matchesDeclaredMimetype', () => {
+  it('accepts a real PDF signature', () => {
+    expect(matchesDeclaredMimetype(Buffer.from('%PDF-1.4 ...'), 'application/pdf')).toBe(true)
+  })
+
+  it('rejects a fake PDF (wrong bytes, right declared mimetype)', () => {
+    expect(matchesDeclaredMimetype(Buffer.from('not-a-real-pdf'), 'application/pdf')).toBe(false)
+  })
+
+  it('accepts a real JPEG signature', () => {
+    expect(matchesDeclaredMimetype(Buffer.from([0xff, 0xd8, 0xff, 0x00, 0x01]), 'image/jpeg')).toBe(true)
+  })
+
+  it('rejects an HTML file renamed to .jpg (declared image/jpeg)', () => {
+    expect(matchesDeclaredMimetype(Buffer.from('<html><script>alert(1)</script></html>'), 'image/jpeg')).toBe(false)
+  })
+
+  it('accepts a real PNG signature', () => {
+    expect(
+      matchesDeclaredMimetype(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]), 'image/png'),
+    ).toBe(true)
+  })
+
+  it('accepts a real GIF signature', () => {
+    expect(matchesDeclaredMimetype(Buffer.from('GIF89a...'), 'image/gif')).toBe(true)
+  })
+
+  it('accepts a real WebP signature', () => {
+    const buf = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0, 0, 0, 0]), Buffer.from('WEBP')])
+    expect(matchesDeclaredMimetype(buf, 'image/webp')).toBe(true)
+  })
+
+  it('rejects a WebP-declared file missing the WEBP tag', () => {
+    const buf = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0, 0, 0, 0]), Buffer.from('AVI ')])
+    expect(matchesDeclaredMimetype(buf, 'image/webp')).toBe(false)
+  })
+
+  it('accepts a real XLSX/DOCX (ZIP) signature', () => {
+    const buf = Buffer.from([0x50, 0x4b, 0x03, 0x04])
+    expect(matchesDeclaredMimetype(buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe(true)
+    expect(matchesDeclaredMimetype(buf, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe(true)
+  })
+
+  it('rejects a non-ZIP file declared as XLSX', () => {
+    expect(
+      matchesDeclaredMimetype(
+        Buffer.from('not a zip'),
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ),
+    ).toBe(false)
+  })
+
+  it('accepts a real legacy XLS/DOC (OLE2) signature', () => {
+    const buf = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00])
+    expect(matchesDeclaredMimetype(buf, 'application/vnd.ms-excel')).toBe(true)
+    expect(matchesDeclaredMimetype(buf, 'application/msword')).toBe(true)
+  })
+
+  it('does not verify formats without a reliable signature (CSV, video) — declared mimetype is trusted', () => {
+    expect(matchesDeclaredMimetype(Buffer.from('a,b,c\n1,2,3'), 'text/csv')).toBe(true)
+    expect(matchesDeclaredMimetype(Buffer.from('anything'), 'video/mp4')).toBe(true)
   })
 })
 

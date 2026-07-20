@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Package,
@@ -13,6 +13,7 @@ import {
   Boxes,
   X,
   LogOut,
+  Lock,
   ShieldAlert,
   Shield,
   ClipboardList,
@@ -104,6 +105,7 @@ function getInitials(name: string): string {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const { user, logout } = useCurrentUser()
 
   // Mismo criterio que ya aplica el guard de rutas (hasModuleAccess), reusado
@@ -196,6 +198,14 @@ export function Sidebar({ onClose }: SidebarProps) {
             <p className="text-sm font-medium text-slate-300 truncate">{user?.name ?? '—'}</p>
             <p className="text-xs text-slate-500 truncate">{user?.email ?? ''}</p>
           </div>
+          <button
+            onClick={() => navigate('/change-password')}
+            title="Cambiar contraseña"
+            aria-label="Cambiar contraseña"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors flex-shrink-0"
+          >
+            <Lock size={15} />
+          </button>
           <button
             onClick={logout}
             title="Cerrar sesión"

@@ -59,7 +59,7 @@ export const companiesService = {
   },
 
   async softDelete(id: string) {
-    const company = await companiesService.findById(id)
+    await companiesService.findById(id) // 404 si no existe
 
     const linkedPolicies = await prisma.policy.count({
       where: { companyId: id, isActive: true },

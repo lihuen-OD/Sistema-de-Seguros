@@ -26,6 +26,12 @@ export default function FireExtinguisherFichaPage() {
   const navigate = useNavigate()
   const fichaRef = useRef<HTMLDivElement>(null)
   const [downloading, setDownloading] = useState(false)
+  // Date.now() es una función impura — no se puede llamar directo en el
+  // cuerpo del render, ni leer un ref durante el render (regla
+  // react-hooks/purity). El inicializador lazy de useState corre una sola
+  // vez al montar, nunca de nuevo en renders posteriores — para una ficha de
+  // solo lectura no hace falta que se actualice sola si queda abierta mucho tiempo.
+  const [now] = useState(() => Date.now())
 
   const { data: fe } = useQuery(fireExtinguisherQueries.detail(id!))
   const { data: history = [] } = useQuery(fireExtinguisherQueries.history(id!))
@@ -43,7 +49,7 @@ export default function FireExtinguisherFichaPage() {
   const recharges = history.filter(h => h.eventType === 'recarga').slice(0, 5)
 
   const daysToExpiry = Math.ceil(
-    (new Date(fe.expirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+    (new Date(fe.expirationDate).getTime() - now) / (1000 * 60 * 60 * 24)
   )
 
   async function handleDownload() {

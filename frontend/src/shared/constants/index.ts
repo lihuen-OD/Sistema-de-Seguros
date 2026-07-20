@@ -95,34 +95,6 @@ export const TASK_PRIORITY_LABELS: Record<string, string> = {
   alta: 'Alta',
 }
 
-export const TASK_TYPES = [
-  'Solicitar cotización',
-  'Renovar póliza',
-  'Enviar documentación',
-  'Gestionar siniestro',
-  'Solicitar endoso',
-  'Reclamar documentación',
-  'Revisar vencimiento',
-]
-
-export const PRODUCTIVE_UNITS = [
-  'Agrícola Norte',
-  'Agrícola Sur',
-  'Ganadería',
-  'Logística',
-  'Administración',
-  'Mantenimiento',
-]
-
-export const AREAS = [
-  'Producción',
-  'Administración',
-  'Logística',
-  'Comercial',
-  'Mantenimiento',
-  'RRHH',
-]
-
 export const PROVINCES = [
   'Buenos Aires', 'Córdoba', 'Santa Fe', 'Entre Ríos', 'La Pampa', 'Mendoza', 'San Luis',
   'San Juan', 'Río Negro', 'Neuquén', 'Chubut', 'Santa Cruz', 'Tierra del Fuego',

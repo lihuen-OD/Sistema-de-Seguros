@@ -107,7 +107,11 @@ export function KpiCard({
             // En touch no hay hover — el tap togglea el popover. stopPropagation
             // evita que además dispare el onClick de la card (si lo tuviera).
             e.stopPropagation()
-            tooltip ? hideValueTooltip() : showValueTooltip()
+            if (tooltip) {
+              hideValueTooltip()
+            } else {
+              showValueTooltip()
+            }
           }}
         >
           {value}

@@ -62,6 +62,12 @@ function AuthGate({ children }: { children: ReactNode }) {
   if (!user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }
+  // Contraseña temporal (alta o reseteo por un ADMIN) — bloquea el resto de
+  // la app hasta que la cambie. /change-password vive fuera de este árbol
+  // (como /login), así que no hay riesgo de loop de redirects acá.
+  if (user.mustChangePassword) {
+    return <Navigate to="/change-password" replace />
+  }
   return <RoleGuard>{children}</RoleGuard>
 }
 

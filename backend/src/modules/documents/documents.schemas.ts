@@ -103,6 +103,19 @@ export const BulkIdsQuerySchema = z.object({
     .transform((s) => s.split(',').map((id) => id.trim()).filter(Boolean)),
 })
 
+export const CheckDocumentNumberQuerySchema = z.object({
+  documentNumber: z.string().max(100).optional(),
+  documentType: z.string().max(100).optional(),
+  insuranceCompany: z.string().max(300).optional(),
+})
+
+const YearMonth = z.string().regex(/^\d{4}-\d{2}$/, 'Formato inválido. Usar YYYY-MM')
+
+export const FinancialQuerySchema = z.object({
+  from: YearMonth.optional(),
+  to: YearMonth.optional(),
+})
+
 export type CreateDocumentDTO = z.infer<typeof CreateDocumentSchema>
 export type UpdateDocumentDTO = z.infer<typeof UpdateDocumentSchema>
 export type ListDocumentsQueryDTO = z.infer<typeof ListDocumentsQuerySchema>
@@ -113,3 +126,5 @@ export type AddDocumentAttachmentDTO = z.infer<typeof AddDocumentAttachmentSchem
 export type CancelDocumentDTO = z.infer<typeof CancelDocumentSchema>
 export type BulkIdsQueryDTO = z.infer<typeof BulkIdsQuerySchema>
 export type SendDocumentEmailDTO = z.infer<typeof SendDocumentEmailSchema>
+export type CheckDocumentNumberQueryDTO = z.infer<typeof CheckDocumentNumberQuerySchema>
+export type FinancialQueryDTO = z.infer<typeof FinancialQuerySchema>

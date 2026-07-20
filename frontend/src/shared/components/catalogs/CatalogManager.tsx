@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { GripVertical, Check, X, Pencil, Plus, EyeOff, Eye, Trash2 } from 'lucide-react'
 import { catalogsApi, catalogQueries, catalogKeys, type CatalogItem } from '../../api/catalogs.api'
+import { ErrorState } from '../empty-states/ErrorState'
 
 interface CatalogManagerProps {
   category: string
@@ -19,7 +20,7 @@ interface RowState {
 export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps) {
   const queryClient = useQueryClient()
 
-  const { data: items = [], isLoading } = useQuery(catalogQueries.allByCategory(category))
+  const { data: items = [], isLoading, isError } = useQuery(catalogQueries.allByCategory(category))
 
   const [rowState, setRowState] = useState<Record<string, RowState>>({})
   const [newLabel, setNewLabel] = useState('')
@@ -87,6 +88,10 @@ export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps
     return (
       <div className="py-6 text-center text-sm text-slate-400">Cargando…</div>
     )
+  }
+
+  if (isError) {
+    return <ErrorState />
   }
 
   return (

@@ -106,6 +106,21 @@ describe('Auth API', () => {
       expect(res.body.error.message).toBe('Credenciales inválidas')
     })
 
+    it('logs failed login attempts without ever including the password', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      db.user.findUnique.mockResolvedValue(fakeUser)
+      mockBcrypt.compare.mockResolvedValue(false)
+
+      await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: 'admin@losodwyer.com', password: 'super-secret-wrong-password' })
+
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('admin@losodwyer.com'))
+      const loggedText = warnSpy.mock.calls.map((c) => c.join(' ')).join(' ')
+      expect(loggedText).not.toContain('super-secret-wrong-password')
+      warnSpy.mockRestore()
+    })
+
     it('normalizes email casing/whitespace before looking it up', async () => {
       db.user.findUnique.mockResolvedValue(fakeUser)
       mockBcrypt.compare.mockResolvedValue(true)

@@ -2,7 +2,7 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { computePolicyStatus, buildPolicyStatusFilter, toDateStr } from '../../shared/utils/dates'
-import { detectFileType, formatFileSize, isAllowedMimetype, sanitizeFileName } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import { assetsService } from '../assets/assets.service'
 import type {
@@ -212,6 +212,10 @@ export const policiesService = {
 
     if (!isAllowedMimetype(file.mimetype)) {
       throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video', 'UNSUPPORTED_MEDIA_TYPE')
+    }
+
+    if (!matchesDeclaredMimetype(file.buffer, file.mimetype)) {
+      throw new AppError(415, 'El contenido del archivo no coincide con su tipo declarado', 'FILE_TYPE_MISMATCH')
     }
 
     let fileUrl = `local://${file.originalname}`

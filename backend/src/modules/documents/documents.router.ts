@@ -15,6 +15,8 @@ import {
   CancelDocumentSchema,
   BulkIdsQuerySchema,
   SendDocumentEmailSchema,
+  CheckDocumentNumberQuerySchema,
+  FinancialQuerySchema,
 } from './documents.schemas'
 
 export const documentsRouter = Router()
@@ -34,10 +36,20 @@ documentsRouter.post(
 documentsRouter.get('/types', requireModule('documents'), documentsController.getTypes)
 
 // ── Verificación de número duplicado (debe ir antes de /:id) ─────────────────
-documentsRouter.get('/check-number', requireModule('documents'), documentsController.checkNumber)
+documentsRouter.get(
+  '/check-number',
+  requireModule('documents'),
+  validateQuery(CheckDocumentNumberQuerySchema),
+  documentsController.checkNumber,
+)
 
 // ── Análisis financiero (debe ir antes de /:id para evitar conflicto de ruta) ─
-documentsRouter.get('/financial', requireModule('financial_analysis'), documentsController.getFinancial)
+documentsRouter.get(
+  '/financial',
+  requireModule('financial_analysis'),
+  validateQuery(FinancialQuerySchema),
+  documentsController.getFinancial,
+)
 
 // ── Bulk (deben ir antes de /:id para evitar conflicto de ruta) ───────────────
 documentsRouter.get('/bulk/installments', requireModule('documents'), validateQuery(BulkIdsQuerySchema), documentsController.getBulkInstallments)

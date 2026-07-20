@@ -25,8 +25,12 @@ export default function LoginPage() {
       const { token, user } = await authApi.login(email, password)
       setToken(token)
       navigate(explicitRedirect ?? firstAllowedPath(user), { replace: true })
-    } catch {
-      setError('Credenciales inválidas')
+    } catch (err) {
+      // El interceptor de apiClient ya resuelve el mensaje real (401 de
+      // credenciales inválidas usa el mismo texto genérico del backend — no
+      // se pierde seguridad — pero un error de red o 500 ahora se distingue
+      // en vez de mostrar siempre "Credenciales inválidas").
+      setError(err instanceof Error ? err.message : 'Credenciales inválidas')
     } finally {
       setSubmitting(false)
     }

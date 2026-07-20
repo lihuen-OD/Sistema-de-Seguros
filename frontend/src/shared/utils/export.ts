@@ -3,24 +3,46 @@ import { packIntoPages } from './pdfPagination'
 
 // ─── Excel (.xlsx) ────────────────────────────────────────────────────────────
 
-// xlsx pesa ~400-500KB — se carga dinámicamente recién al exportar, no en el
-// chunk inicial de cada página de listado que usa ExportPresetsButton.
+// exceljs (no `xlsx`/SheetJS — esa librería quedó con una vulnerabilidad alta
+// sin parche disponible vía npm) — se carga dinámicamente recién al
+// exportar, no en el chunk inicial de cada página de listado que usa
+// ExportPresetsButton.
 export async function downloadXLSX(rows: string[][], filename: string): Promise<void> {
   if (rows.length === 0) return
-  const XLSX = await import('xlsx')
-  const ws = XLSX.utils.aoa_to_sheet(rows)
+  const ExcelJS = await import('exceljs')
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet('Datos')
 
-  // Auto column widths capped at 60 chars
-  ws['!cols'] = rows[0].map((_, colIdx) => ({
-    wch: Math.min(60, Math.max(...rows.map((row) => String(row[colIdx] ?? '').length), 8)),
-  }))
+  sheet.addRows(rows)
+
+  // Auto column widths capped at 60 chars. Nota (verificado con Playwright
+  // contra el bundle real del navegador): el build de exceljs para browser
+  // (dist/exceljs.min.js, resuelto vía su campo "browser" de package.json —
+  // no el mismo código que corre en Node) descarta el ancho seteado en la
+  // primera columna sin importar el método usado (columns=[...] en bloque o
+  // getColumn().width uno por uno). Es cosmético — esa columna queda con el
+  // ancho default de Excel en vez del autoajustado, el resto de las columnas
+  // y todos los datos se exportan bien.
+  rows[0].forEach((_, colIdx) => {
+    const width = Math.min(60, Math.max(...rows.map((row) => String(row[colIdx] ?? '').length), 8))
+    sheet.getColumn(colIdx + 1).width = width
+  })
 
   // Freeze header row
-  ws['!freeze'] = { xSplit: 0, ySplit: 1 }
+  sheet.views = [{ state: 'frozen', ySplit: 1 }]
 
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Datos')
-  XLSX.writeFile(wb, filename)
+  const buffer = await workbook.xlsx.writeBuffer()
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 // ─── CSV ─────────────────────────────────────────────────────────────────────

@@ -21,7 +21,9 @@ export const authMiddleware = asyncHandler(async (req: Request, res: Response, n
 
   let payload: JwtPayload
   try {
-    payload = jwt.verify(token, env.JWT_SECRET) as JwtPayload
+    // algorithms explícito (defensa en profundidad): sin esto, jwt.verify
+    // infiere el algoritmo del propio token en vez de exigir uno fijo.
+    payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as JwtPayload
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {
       return next(new AppError(401, 'Token expirado', 'TOKEN_EXPIRED'))

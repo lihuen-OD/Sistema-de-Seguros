@@ -1,10 +1,12 @@
 import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { AppError } from '../../shared/errors/AppError'
+import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
 import { fireExtinguisherAuditsService } from './fire-extinguisher-audits.service'
 import type { ListFireExtinguisherAuditsQueryDTO, CoverageQueryDTO } from './fire-extinguisher-audits.schemas'
 
 type IdParam = { id: string }
+type AttachmentParam = { id: string; attachmentId: string }
 
 export const fireExtinguisherAuditsController = {
   create: asyncHandler(async (req: Request, res: Response) => {
@@ -48,5 +50,15 @@ export const fireExtinguisherAuditsController = {
       req.user?.email ?? 'sistema',
     )
     res.status(201).json({ data: attachment })
+  }),
+
+  deleteAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
+    await fireExtinguisherAuditsService.deleteAttachment(req.params.id, req.params.attachmentId)
+    res.json({ data: { message: 'Adjunto eliminado correctamente' } })
+  }),
+
+  downloadAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
+    const attachment = await fireExtinguisherAuditsService.getAttachmentForDownload(req.params.id, req.params.attachmentId)
+    await sendAttachmentDownload(res, attachment)
   }),
 }

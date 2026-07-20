@@ -7,6 +7,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, AlertCircle, FileSpreadsheet, FileDown, Loader2,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
@@ -209,11 +210,12 @@ export default function FinancialAnalysisPage() {
   // ─── Remote data ─────────────────────────────────────────────────────────────
 
   // Filtra en el backend por el rango seleccionado — evita cargar todos los documentos en memoria
-  const { data: financialDocs = [] } = useQuery(documentQueries.financial({ from: dateFrom, to: dateTo }))
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
-  const { data: allCompanies = [] } = useQuery(companyQueries.list())
-  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
+  const { data: financialDocs = [], isError: isErrorDocs } = useQuery(documentQueries.financial({ from: dateFrom, to: dateTo }))
+  const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list())
+  const { data: allAssets = [], isError: isErrorAssets } = useQuery(assetQueries.list())
+  const { data: allCompanies = [], isError: isErrorCompanies } = useQuery(companyQueries.list())
+  const { data: allCostCenters = [], isError: isErrorCostCenters } = useQuery(costCenterQueries.list())
+  const isError = isErrorDocs || isErrorPolicies || isErrorAssets || isErrorCompanies || isErrorCostCenters
 
   // Derivados de la misma fuente — memoizados para que los useMemo downstream se actualicen
   const allDocuments = financialDocs
@@ -453,6 +455,8 @@ export default function FinancialAnalysisPage() {
     setDateFrom(from)
     setDateTo(to)
   }
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

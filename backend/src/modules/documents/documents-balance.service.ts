@@ -1,7 +1,15 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getDocumentTypeDef } from './document-types'
 import { computeTotalAmount } from './document-amounts'
+
+// Permite recalcular el saldo con el client de una transacción (tx) en vez
+// del singleton global — necesario para releer el saldo con datos frescos
+// dentro de la misma transacción que aplica una Nota de Crédito (ver
+// documents.service.ts#apply), y así cerrar la ventana de carrera entre
+// leer el saldo y escribir la aplicación.
+type BalanceClient = typeof prisma | Prisma.TransactionClient
 
 export interface RelatedDocSummary {
   id: string
@@ -35,8 +43,8 @@ export interface DocumentBalance {
 // excluida del cálculo numérico por ahora (ver plan de refactor), solo
 // aparece listada en relatedDocs.
 export const documentsBalanceService = {
-  async getBalance(id: string): Promise<DocumentBalance> {
-    const base = await prisma.accountingDocument.findUnique({
+  async getBalance(id: string, client: BalanceClient = prisma): Promise<DocumentBalance> {
+    const base = await client.accountingDocument.findUnique({
       where: { id },
       select: {
         id: true,
@@ -51,7 +59,7 @@ export const documentsBalanceService = {
     if (!base) throw new AppError(404, 'Documento no encontrado', 'NOT_FOUND')
 
     const origin = base.linkedDocumentId
-      ? await prisma.accountingDocument.findUnique({
+      ? await client.accountingDocument.findUnique({
           where: { id: base.linkedDocumentId },
           select: {
             id: true,
@@ -69,7 +77,7 @@ export const documentsBalanceService = {
     const typeDef = getDocumentTypeDef(base.documentType)
     const originalAmount = computeTotalAmount(base)
 
-    const related = await prisma.accountingDocument.findMany({
+    const related = await client.accountingDocument.findMany({
       where: { linkedDocumentId: id },
       select: {
         id: true,
@@ -119,7 +127,7 @@ export const documentsBalanceService = {
 
     let paidAmount = 0
     if (typeDef?.hasPaymentStatus) {
-      const paidInstallments = await prisma.documentInstallment.findMany({
+      const paidInstallments = await client.documentInstallment.findMany({
         where: { accountingDocumentId: id, paymentStatus: 'PAID' },
         select: { amount: true },
       })

@@ -74,53 +74,55 @@ export function ClaimExpensesCard({ claimId, claimedAmountArs }: ClaimExpensesCa
       ) : (
         <>
           <div className="rounded-xl border border-slate-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/80">
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fecha</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Proveedor</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Comprobante</th>
-                  <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Neto</th>
-                  <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">IVA</th>
-                  <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Impuestos</th>
-                  <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total</th>
-                  <th className="px-4 py-2.5 w-12" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {expenses.map((e) => (
-                  <tr key={e.id} className="hover:bg-slate-50/60 transition-colors group">
-                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{formatDate(e.date)}</td>
-                    <td className="px-4 py-3 text-slate-800 font-medium">{e.provider}</td>
-                    <td className="px-4 py-3 text-slate-500">{e.receiptNumber || '—'}</td>
-                    <td className="px-4 py-3 text-right text-slate-700 tabular-nums">{formatCurrencyFull(e.netAmount, 'ARS')}</td>
-                    <td className="px-4 py-3 text-right text-slate-700 tabular-nums">{formatCurrencyFull(e.vatAmount, 'ARS')}</td>
-                    <td className="px-4 py-3 text-right text-slate-700 tabular-nums">{formatCurrencyFull(e.otherTaxesAmount, 'ARS')}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-900 tabular-nums">{formatCurrencyFull(rowTotal(e), 'ARS')}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          type="button"
-                          title="Editar gasto"
-                          onClick={() => setEditingExpense(e)}
-                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          title="Eliminar gasto"
-                          onClick={() => setPendingDeleteId(e.id)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
+            <div className="table-container">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/80">
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fecha</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Proveedor</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Comprobante</th>
+                    <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Neto</th>
+                    <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">IVA</th>
+                    <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Impuestos</th>
+                    <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total</th>
+                    <th className="px-4 py-2.5 w-12" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {expenses.map((e) => (
+                    <tr key={e.id} className="hover:bg-slate-50/60 transition-colors group">
+                      <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{formatDate(e.date)}</td>
+                      <td className="px-4 py-3 text-slate-800 font-medium">{e.provider}</td>
+                      <td className="px-4 py-3 text-slate-500">{e.receiptNumber || '—'}</td>
+                      <td className="px-4 py-3 text-right text-slate-700 tabular-nums">{formatCurrencyFull(e.netAmount, 'ARS')}</td>
+                      <td className="px-4 py-3 text-right text-slate-700 tabular-nums">{formatCurrencyFull(e.vatAmount, 'ARS')}</td>
+                      <td className="px-4 py-3 text-right text-slate-700 tabular-nums">{formatCurrencyFull(e.otherTaxesAmount, 'ARS')}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-900 tabular-nums">{formatCurrencyFull(rowTotal(e), 'ARS')}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            title="Editar gasto"
+                            onClick={() => setEditingExpense(e)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Eliminar gasto"
+                            onClick={() => setPendingDeleteId(e.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">

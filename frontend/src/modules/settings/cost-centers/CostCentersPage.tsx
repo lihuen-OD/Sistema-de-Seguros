@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Hash, Plus, Edit2, Trash2, CheckCircle2, XCircle, X, Save, Loader2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
+import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
@@ -159,7 +160,7 @@ export default function CostCentersPage() {
 
   const queryClient = useQueryClient()
 
-  const { data: allCostCenters = [], isLoading } = useQuery(costCenterQueries.list())
+  const { data: allCostCenters = [], isLoading, isError } = useQuery(costCenterQueries.list())
 
   const { data: allAssets = [] } = useQuery(assetQueries.list())
 
@@ -257,6 +258,8 @@ export default function CostCentersPage() {
       className: 'w-20',
     },
   ]
+
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>

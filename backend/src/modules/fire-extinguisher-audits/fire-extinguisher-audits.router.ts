@@ -48,6 +48,18 @@ fireExtinguisherAuditsRouter.post(
   fireExtinguisherAuditsController.addAttachment,
 )
 
+fireExtinguisherAuditsRouter.delete(
+  '/:id/attachments/:attachmentId',
+  requireModule('fire_extinguisher_audit_coverage'),
+  fireExtinguisherAuditsController.deleteAttachment,
+)
+
+fireExtinguisherAuditsRouter.get(
+  '/:id/attachments/:attachmentId/download',
+  requireModule(...AUDITS_SHARED_READ_MODULES),
+  fireExtinguisherAuditsController.downloadAttachment,
+)
+
 fireExtinguisherAuditsRouter.post(
   '/:id/review',
   requireModule('fire_extinguisher_audits'),
