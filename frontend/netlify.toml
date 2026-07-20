@@ -14,13 +14,11 @@
 # recharts, fuente de Google Fonts, imágenes de Cloudinary) sin violaciones de
 # CSP ni requests bloqueados.
 #
-# IMPORTANTE: reemplazar "https://TU-BACKEND.onrender.com" por la URL real del
-# backend en Render (la misma que usa VITE_API_URL) antes de desplegar — si no,
-# el navegador va a bloquear las llamadas a la API por connect-src.
+# connect-src apunta al backend real en Render (misma URL que usa VITE_API_URL).
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://res.cloudinary.com; connect-src 'self' https://res.cloudinary.com https://TU-BACKEND.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://res.cloudinary.com; connect-src 'self' https://res.cloudinary.com https://sistema-seguros-backend-production.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
