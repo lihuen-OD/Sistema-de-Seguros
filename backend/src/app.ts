@@ -47,7 +47,7 @@ const allowedOrigins = env.FRONTEND_URL.split(',').map((o) => o.trim())
 
 app.use(
   cors({
-    origin: (origin, callback) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       // Requests sin origin (curl, Postman, server-to-server)
       if (!origin) return callback(null, true)
       // Orígenes configurados explícitamente
