@@ -14,11 +14,13 @@
 # recharts, fuente de Google Fonts, imágenes de Cloudinary) sin violaciones de
 # CSP ni requests bloqueados.
 #
-# connect-src apunta al backend real en Render (misma URL que usa VITE_API_URL).
+# connect-src incluye los backends de producción y demo (mismo netlify.toml
+# compartido entre ambos sitios — cada uno solo llama al suyo vía VITE_API_URL,
+# pero el CSP permite los dos para no tener que mantener dos archivos distintos).
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://res.cloudinary.com; connect-src 'self' https://res.cloudinary.com https://sistema-seguros-backend-production.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://res.cloudinary.com; connect-src 'self' https://res.cloudinary.com https://sistema-seguros-backend-production.onrender.com https://sistema-seguros-backend-demo.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
