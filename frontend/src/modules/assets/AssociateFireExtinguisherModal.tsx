@@ -53,7 +53,7 @@ export function AssociateFireExtinguisherModal({ assetId, assetName, onClose }: 
       onClose={onClose}
       size="md"
       icon={Link2}
-      iconClassName="bg-blue-50 text-blue-600"
+      iconClassName="bg-brand-50 text-brand-600"
       title="Asociar matafuego existente"
       description={`Elegí un matafuego sin activo asociado para vincularlo a "${assetName}".`}
       footer={
@@ -69,7 +69,7 @@ export function AssociateFireExtinguisherModal({ assetId, assetName, onClose }: 
             type="button"
             onClick={handleAssociate}
             disabled={!selectedId || submitting}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors disabled:opacity-50"
           >
             Asociar
           </button>
@@ -98,7 +98,7 @@ export function AssociateFireExtinguisherModal({ assetId, assetName, onClose }: 
               type="button"
               onClick={() => setSelectedId(fe.id)}
               className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors ${
-                selectedId === fe.id ? 'bg-blue-50' : 'hover:bg-slate-50'
+                selectedId === fe.id ? 'bg-brand-50' : 'hover:bg-slate-50'
               }`}
             >
               <div className="min-w-0">

@@ -127,7 +127,7 @@ export function RechargeModal({ extinguishers, onConfirm, onClose }: RechargeMod
               Se calcula como +1 año desde la fecha de recarga.{' '}
               <button
                 type="button"
-                className="text-blue-500 hover:underline"
+                className="text-brand-500 hover:underline"
                 onClick={() => setManualExpDate(true)}
               >
                 Cambiar manualmente

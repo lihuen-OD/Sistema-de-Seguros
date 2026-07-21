@@ -41,7 +41,7 @@ function SelectAllCheckbox({
       type="checkbox"
       checked={checked}
       onChange={(e) => onChange(e.target.checked)}
-      className="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer accent-blue-600"
+      className="w-4 h-4 rounded border-slate-300 text-brand-600 cursor-pointer accent-brand-600"
     />
   )
 }
@@ -111,7 +111,7 @@ export function DataTable<T extends object>({
                     'border-b border-slate-100 transition-colors',
                     rowClassName
                       ? rowClassName(row, rowIdx)
-                      : clsx(rowIdx % 2 === 1 && 'bg-slate-50/40', onRowClick && 'hover:bg-blue-50/50'),
+                      : clsx(rowIdx % 2 === 1 && 'bg-slate-50/40', onRowClick && 'hover:bg-brand-50/50'),
                     onRowClick && 'cursor-pointer',
                   )}
                   onClick={() => onRowClick?.(row)}
@@ -122,7 +122,7 @@ export function DataTable<T extends object>({
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => onToggleOne?.(key)}
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer accent-blue-600"
+                        className="w-4 h-4 rounded border-slate-300 text-brand-600 cursor-pointer accent-brand-600"
                       />
                     </td>
                   )}

@@ -141,7 +141,7 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
         backLabel={isEdit ? 'Volver al documento' : 'Volver a documentos'}
       />
 
-      <div className="mb-4 max-w-5xl flex items-start gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 text-blue-700 text-sm rounded-lg">
+      <div className="mb-4 max-w-5xl flex items-start gap-2 px-4 py-2.5 bg-brand-50 border border-brand-200 text-brand-700 text-sm rounded-lg">
         <Info size={14} className="flex-shrink-0 mt-0.5" />
         <span>Este asiento de ajuste es interno. No genera pago ni cuotas. Solo impactará el saldo cuando sea aplicado, desde el detalle del documento.</span>
       </div>

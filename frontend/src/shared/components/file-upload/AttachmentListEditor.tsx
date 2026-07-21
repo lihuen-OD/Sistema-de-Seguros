@@ -29,7 +29,7 @@ export function FileTypeIcon({ fileType }: { fileType: AssetAttachment['fileType
   const base = 'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0'
   const variants: Record<AssetAttachment['fileType'], { bg: string; icon: React.ReactNode }> = {
     pdf:   { bg: 'bg-red-50',    icon: <FileText size={15} className="text-red-600" /> },
-    image: { bg: 'bg-blue-50',   icon: <ImageIcon size={15} className="text-blue-600" /> },
+    image: { bg: 'bg-brand-50',   icon: <ImageIcon size={15} className="text-brand-600" /> },
     excel: { bg: 'bg-green-50',  icon: <FileSpreadsheet size={15} className="text-green-600" /> },
     other: { bg: 'bg-slate-100', icon: <FileIcon size={15} className="text-slate-500" /> },
   }
@@ -73,7 +73,7 @@ function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: () => voi
       aria-checked={checked}
       onClick={onToggle}
       className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-        checked ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white hover:border-blue-400'
+        checked ? 'border-brand-600 bg-brand-600' : 'border-slate-300 bg-white hover:border-brand-400'
       }`}
     >
       {checked && (
@@ -146,8 +146,8 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-              <Paperclip size={16} className="text-blue-600" />
+            <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+              <Paperclip size={16} className="text-brand-600" />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Adjuntar documento</h3>
@@ -174,13 +174,13 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
                 onDrop={handleDrop}
                 onClick={() => inputRef.current?.click()}
                 className={`border-2 border-dashed rounded-xl px-4 py-6 text-center cursor-pointer transition-colors ${
-                  isDragging ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-300 bg-slate-50 hover:bg-blue-50/30'
+                  isDragging ? 'border-brand-400 bg-brand-50' : 'border-slate-200 hover:border-brand-300 bg-slate-50 hover:bg-brand-50/30'
                 }`}
               >
                 <Upload size={20} className="mx-auto text-slate-400 mb-2" />
                 <p className="text-sm text-slate-600">
                   Arrastrá el archivo o{' '}
-                  <span className="text-blue-600 font-medium">hacé clic para seleccionar</span>
+                  <span className="text-brand-600 font-medium">hacé clic para seleccionar</span>
                 </p>
                 <p className="text-xs text-slate-400 mt-1">PDF, Excel, imágenes — máx. 20 MB</p>
                 <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls" className="hidden" onChange={handleFileChange} />
@@ -210,7 +210,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Ej: Cédula verde Toyota Hilux"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 placeholder:text-slate-400 bg-white"
             />
             {errors.name && <p className="text-xs text-red-600 mt-1.5">{errors.name}</p>}
           </div>
@@ -225,7 +225,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Ej: Habilitación municipal vigente"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 placeholder:text-slate-400 bg-white"
             />
           </div>
 
@@ -258,7 +258,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
                   type="date"
                   value={expirationDate}
                   onChange={(e) => setExpirationDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 bg-white"
                 />
                 {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
                 <p className="text-xs text-slate-400 mt-2">
@@ -274,7 +274,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors">
             Cancelar
           </button>
-          <button type="button" onClick={handleSubmit} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+          <button type="button" onClick={handleSubmit} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors">
             <Upload size={14} />
             Guardar adjunto
           </button>
@@ -322,7 +322,7 @@ export function AttachmentListEditor({
         <button
           type="button"
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+          className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
         >
           <Plus size={12} />
           Adjuntar archivo
@@ -332,7 +332,7 @@ export function AttachmentListEditor({
       {attachments.length === 0 ? (
         <div
           onClick={() => setShowModal(true)}
-          className="border-2 border-dashed border-slate-200 rounded-xl py-6 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50/20 transition-colors"
+          className="border-2 border-dashed border-slate-200 rounded-xl py-6 text-center cursor-pointer hover:border-brand-300 hover:bg-brand-50/20 transition-colors"
         >
           <Paperclip size={18} className="mx-auto text-slate-300 mb-1.5" />
           <p className="text-sm text-slate-500">

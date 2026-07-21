@@ -90,7 +90,7 @@ export function ExportPresetsButton<T>({
         onClick={() => { setOpen((v) => !v); setSavingName(null) }}
         className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
           open
-            ? 'bg-blue-50 border-blue-300 text-blue-700'
+            ? 'bg-brand-50 border-brand-300 text-brand-700'
             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
         }`}
         title="Exportar CSV"
@@ -175,7 +175,7 @@ export function ExportPresetsButton<T>({
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onApplyPreset(preset.columnIds); setOpen(false) }}
-                        className="p-1 rounded text-slate-300 hover:text-blue-500 transition-colors flex-shrink-0"
+                        className="p-1 rounded text-slate-300 hover:text-brand-500 transition-colors flex-shrink-0"
                         title="Aplicar este formato"
                       >
                         <Columns2 size={12} />
@@ -215,13 +215,13 @@ export function ExportPresetsButton<T>({
                   onChange={(e) => setSavingName(e.target.value)}
                   onKeyDown={handleSaveKeyDown}
                   placeholder="Nombre del formato…"
-                  className="flex-1 min-w-0 text-sm px-2 py-1 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 min-w-0 text-sm px-2 py-1 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 />
                 <button
                   type="button"
                   onClick={handleSave}
                   disabled={!savingName.trim()}
-                  className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+                  className="p-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
                   title="Guardar"
                 >
                   <Check size={13} />

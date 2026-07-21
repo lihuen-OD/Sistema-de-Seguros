@@ -44,7 +44,7 @@ export function CheckboxGroup({ sections, value, onChange }: CheckboxGroupProps)
                   <span
                     className={clsx(
                       'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors',
-                      checked ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white hover:border-blue-400',
+                      checked ? 'border-brand-600 bg-brand-600' : 'border-slate-300 bg-white hover:border-brand-400',
                     )}
                   >
                     {checked && (

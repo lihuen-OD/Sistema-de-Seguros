@@ -119,7 +119,7 @@ export default function FireExtinguisherAuditDetailPage() {
               <button
                 type="button"
                 onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_DETAIL(extinguisher.id))}
-                className="text-sm text-blue-600 hover:underline"
+                className="text-sm text-brand-600 hover:underline"
               >
                 Ver ficha del matafuego →
               </button>
@@ -166,7 +166,7 @@ export default function FireExtinguisherAuditDetailPage() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
             {photos.map((photo) => (
-              <a key={photo.id} href={photo.fileUrl} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden border border-slate-200 hover:border-blue-300 transition-colors">
+              <a key={photo.id} href={photo.fileUrl} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden border border-slate-200 hover:border-brand-300 transition-colors">
                 <img src={photo.fileUrl} alt={photo.name} className="w-full h-full object-cover" />
               </a>
             ))}
@@ -193,7 +193,7 @@ export default function FireExtinguisherAuditDetailPage() {
                 type="button"
                 onClick={() => setShowConfirm(true)}
                 disabled={!canSubmit}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                className="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
               >
                 Guardar revisión
               </button>

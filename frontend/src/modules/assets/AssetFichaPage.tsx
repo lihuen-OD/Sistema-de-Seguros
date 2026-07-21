@@ -76,7 +76,7 @@ export default function AssetFichaPage() {
         <button
           onClick={handleDownload}
           disabled={downloading}
-          className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
+          className="flex items-center gap-2 px-4 py-2 text-sm bg-brand-600 hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
         >
           {downloading ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />}
           {downloading ? 'Generando…' : 'Descargar PDF'}
@@ -120,7 +120,7 @@ export default function AssetFichaPage() {
           </div>
           <div className="flex-shrink-0 text-right">
             <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Valor patrimonial</p>
-            <p className="text-xl font-bold text-blue-700 tabular-nums">
+            <p className="text-xl font-bold text-brand-700 tabular-nums">
               {formatCurrencyFull(asset.patrimonialValueUsd, 'USD')}
             </p>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -192,7 +192,7 @@ export default function AssetFichaPage() {
                 </div>
                 {asset.mapsUrl && (
                   <p className="text-xs text-slate-400 mt-1 print:hidden">
-                    <a href={asset.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                    <a href={asset.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline">
                       Ver en Google Maps
                     </a>
                   </p>
@@ -384,7 +384,7 @@ function FichaRow({
       <span className="text-xs text-slate-500 flex-shrink-0">{label}</span>
       <span
         className={`text-sm font-medium text-right min-w-0 break-words ${
-          highlight ? 'text-blue-700 font-semibold' : 'text-slate-800'
+          highlight ? 'text-brand-700 font-semibold' : 'text-slate-800'
         }`}
       >
         {value}

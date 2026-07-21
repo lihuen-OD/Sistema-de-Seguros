@@ -110,7 +110,7 @@ export function PolicySelector(props: PolicySelectorProps) {
             <div className="flex items-center gap-1.5 justify-end">
               <div className="w-10 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-500 rounded-full transition-all"
+                  className="h-full bg-brand-500 rounded-full transition-all"
                   style={{ width: `${Math.min(pct, 100)}%` }}
                 />
               </div>
@@ -138,7 +138,7 @@ export function PolicySelector(props: PolicySelectorProps) {
             {currencyPrefix}{' '}
             {totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
-          <span className="text-xs font-bold text-blue-600 text-right pr-1">100%</span>
+          <span className="text-xs font-bold text-brand-600 text-right pr-1">100%</span>
           <span />
         </div>
       )}
@@ -146,7 +146,7 @@ export function PolicySelector(props: PolicySelectorProps) {
       <button
         type="button"
         onClick={addRow}
-        className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+        className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
       >
         <Plus size={13} />
         Agregar póliza

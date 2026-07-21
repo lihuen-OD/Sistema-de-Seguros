@@ -80,7 +80,7 @@ export function SearchableSelect({
         onClick={() => setOpen((v) => !v)}
         className={clsx(
           'w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm bg-white border rounded-lg text-left transition-all',
-          open ? 'border-blue-400 ring-2 ring-blue-500/20' : 'border-slate-200',
+          open ? 'border-brand-400 ring-2 ring-brand-500/20' : 'border-slate-200',
           disabled && 'bg-slate-50 text-slate-500 cursor-not-allowed',
         )}
       >
@@ -142,12 +142,12 @@ export function SearchableSelect({
                     onClick={() => handleSelect(o.value)}
                     className={clsx(
                       'w-full flex items-center px-3 py-2 text-sm text-left transition-colors',
-                      isSelected ? 'bg-blue-50 text-blue-800 font-medium' : 'text-slate-700 hover:bg-slate-50',
+                      isSelected ? 'bg-brand-50 text-brand-800 font-medium' : 'text-slate-700 hover:bg-slate-50',
                     )}
                   >
                     <span className="truncate">
                       {o.label}
-                      {o.sublabel && <span className={clsx('ml-1.5 text-xs', isSelected ? 'text-blue-500' : 'text-slate-400')}>({o.sublabel})</span>}
+                      {o.sublabel && <span className={clsx('ml-1.5 text-xs', isSelected ? 'text-brand-500' : 'text-slate-400')}>({o.sublabel})</span>}
                     </span>
                   </button>
                 )

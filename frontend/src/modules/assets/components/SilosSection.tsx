@@ -24,7 +24,7 @@ export function SilosSection({ silos, siloContents, onAdd, onRemove, onChange }:
         <button
           type="button"
           onClick={onAdd}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex-shrink-0 ml-4"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 border border-brand-200 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors flex-shrink-0 ml-4"
         >
           <Plus size={14} />
           Agregar silo
@@ -35,7 +35,7 @@ export function SilosSection({ silos, siloContents, onAdd, onRemove, onChange }:
         <div className="rounded-xl border-2 border-dashed border-slate-200 py-6 text-center">
           <Wheat size={20} className="mx-auto text-slate-300 mb-2" />
           <p className="text-sm text-slate-500">Sin silos registrados</p>
-          <button type="button" onClick={onAdd} className="mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+          <button type="button" onClick={onAdd} className="mt-2 text-sm text-brand-600 hover:text-brand-700 font-medium">
             + Agregar primer silo
           </button>
         </div>
@@ -54,7 +54,7 @@ export function SilosSection({ silos, siloContents, onAdd, onRemove, onChange }:
                   value={silo.capacityTons || ''}
                   onChange={(e) => onChange(silo.id, 'capacityTons', parseFloat(e.target.value) || 0)}
                   placeholder="Ej: 2200"
-                  className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
               <div className="flex-1 min-w-0">
@@ -77,7 +77,7 @@ export function SilosSection({ silos, siloContents, onAdd, onRemove, onChange }:
             </div>
           ))}
           {totalTons > 0 && (
-            <div className="flex items-center justify-end gap-2 px-2 py-1.5 rounded-lg bg-blue-50 text-sm font-semibold text-blue-700">
+            <div className="flex items-center justify-end gap-2 px-2 py-1.5 rounded-lg bg-brand-50 text-sm font-semibold text-brand-700">
               Capacidad total: {totalTons.toLocaleString('es-AR')} tn ({silos.length} silo{silos.length !== 1 ? 's' : ''})
             </div>
           )}

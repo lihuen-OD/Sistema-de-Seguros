@@ -51,7 +51,7 @@ export function FormInput({
     <input
       {...props}
       className={clsx(
-        'w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all',
+        'w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all',
         props.disabled && 'bg-slate-50 text-slate-500 cursor-not-allowed',
         className,
       )}
@@ -68,7 +68,7 @@ export function FormSelect({
     <select
       {...props}
       className={clsx(
-        'w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all',
+        'w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all',
         props.disabled && 'bg-slate-50 text-slate-500 cursor-not-allowed',
         className,
       )}
@@ -86,7 +86,7 @@ export function FormTextarea({
     <textarea
       {...props}
       className={clsx(
-        'w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all resize-none',
+        'w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all resize-none',
         className,
       )}
     />

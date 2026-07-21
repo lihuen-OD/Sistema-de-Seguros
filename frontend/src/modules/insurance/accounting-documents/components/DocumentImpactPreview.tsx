@@ -15,9 +15,9 @@ function Box({ tone, children }: { tone: 'info' | 'warning'; children: React.Rea
   const cls =
     tone === 'warning'
       ? 'border-amber-200 bg-amber-50 text-amber-800'
-      : 'border-blue-200 bg-blue-50 text-blue-800'
+      : 'border-brand-200 bg-brand-50 text-brand-800'
   const Icon = tone === 'warning' ? AlertTriangle : Info
-  const iconCls = tone === 'warning' ? 'text-amber-500' : 'text-blue-500'
+  const iconCls = tone === 'warning' ? 'text-amber-500' : 'text-brand-500'
   return (
     <div className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 ${cls}`}>
       <Icon size={14} className={`flex-shrink-0 mt-0.5 ${iconCls}`} />

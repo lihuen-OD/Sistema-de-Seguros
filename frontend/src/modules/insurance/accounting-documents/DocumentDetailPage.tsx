@@ -41,7 +41,7 @@ import type { DocumentPolicyAllocation, Installment, InstallmentUpdate, TableCol
 type AuditStyle = { dot: string; icon: string; labelCls: string; label: string; Icon: React.ElementType }
 
 const AUDIT_CONFIG: Record<DocumentAuditLogAction, AuditStyle> = {
-  CREATE: { Icon: PlusCircle, dot: 'bg-blue-50', icon: 'text-blue-500', labelCls: 'text-blue-600', label: 'Creación' },
+  CREATE: { Icon: PlusCircle, dot: 'bg-brand-50', icon: 'text-brand-500', labelCls: 'text-brand-600', label: 'Creación' },
   UPDATE: { Icon: Pencil, dot: 'bg-slate-100', icon: 'text-slate-400', labelCls: 'text-slate-500', label: 'Edición' },
   APPLY: { Icon: CheckCheck, dot: 'bg-emerald-50', icon: 'text-emerald-500', labelCls: 'text-emerald-600', label: 'Aplicación' },
   CANCEL: { Icon: Ban, dot: 'bg-red-50', icon: 'text-red-500', labelCls: 'text-red-600', label: 'Anulación' },
@@ -135,7 +135,7 @@ export default function DocumentDetailPage() {
     return (
       <PageContent>
         <div className="flex items-center justify-center py-24">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
         </div>
       </PageContent>
     )
@@ -241,7 +241,7 @@ export default function DocumentDetailPage() {
       render: (v) => {
         const policy = allPolicies.find((p) => p.id === (v as string))
         return (
-          <span className="font-mono text-xs text-blue-600 hover:text-blue-700 hover:underline">
+          <span className="font-mono text-xs text-brand-600 hover:text-brand-700 hover:underline">
             {policy?.policyNumber ?? (v as string)}
           </span>
         )
@@ -273,11 +273,11 @@ export default function DocumentDetailPage() {
         <div className="flex items-center gap-2 justify-end">
           <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
             <div
-              className="h-full bg-blue-500 rounded-full"
+              className="h-full bg-brand-500 rounded-full"
               style={{ width: `${Math.min(Math.abs(v as number), 100)}%` }}
             />
           </div>
-          <span className="tabular-nums text-xs font-semibold text-blue-700 w-12 text-right">
+          <span className="tabular-nums text-xs font-semibold text-brand-700 w-12 text-right">
             {(v as number).toFixed(1).replace('.', ',')}%
           </span>
         </div>
@@ -308,7 +308,7 @@ export default function DocumentDetailPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => navigate(ROUTES.DOCUMENTS_EDIT(doc.id))}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Edit2 size={15} />
               Editar
@@ -402,12 +402,12 @@ export default function DocumentDetailPage() {
             {formatCurrencyFull(doc.otherTaxesAmount, doc.currency)}
           </p>
         </div>
-        <div className="card p-4 border-blue-200 bg-blue-50/30">
-          <p className="text-xs font-medium text-blue-500 uppercase tracking-wider mb-1">Total</p>
-          <p className="text-lg font-extrabold text-blue-700 tabular-nums truncate">
+        <div className="card p-4 border-brand-200 bg-brand-50/30">
+          <p className="text-xs font-medium text-brand-500 uppercase tracking-wider mb-1">Total</p>
+          <p className="text-lg font-extrabold text-brand-700 tabular-nums truncate">
             {formatCurrencyCompact(computedTotal, doc.currency)}
           </p>
-          <p className="text-xs text-blue-400 mt-0.5 tabular-nums">
+          <p className="text-xs text-brand-400 mt-0.5 tabular-nums">
             {formatCurrencyFull(computedTotal, doc.currency)}
           </p>
         </div>
@@ -462,7 +462,7 @@ export default function DocumentDetailPage() {
                 <button
                   type="button"
                   onClick={() => navigate(ROUTES.POLICIES_DETAIL(doc.policyId!))}
-                  className="font-mono text-sm text-blue-600 hover:text-blue-700 hover:underline"
+                  className="font-mono text-sm text-brand-600 hover:text-brand-700 hover:underline"
                 >
                   {allPolicies.find((p) => p.id === doc.policyId)?.policyNumber ?? doc.policyId}
                 </button>
@@ -595,7 +595,7 @@ export default function DocumentDetailPage() {
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <p className="text-xs font-mono font-semibold text-slate-700 truncate">{r.documentNumber}</p>
                         {r.isOrigin && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full flex-shrink-0">
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-brand-50 text-brand-700 border border-brand-200 rounded-full flex-shrink-0">
                             {linkedDocBadgeLabel}
                           </span>
                         )}
@@ -681,7 +681,7 @@ export default function DocumentDetailPage() {
             maxLength={500}
             rows={2}
             placeholder="Ej: Error en el monto, duplicado, etc."
-            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none"
+            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 resize-none"
           />
         </div>
       </ConfirmDialog>

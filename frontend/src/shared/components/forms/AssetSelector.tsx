@@ -63,12 +63,12 @@ export function AssetSelector({ assets, selected, onToggle, error }: AssetSelect
                 onClick={() => onToggle(asset.id)}
                 onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(asset.id) } }}
                 className={`flex items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors select-none ${
-                  checked ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
+                  checked ? 'bg-brand-50' : 'bg-white hover:bg-slate-50'
                 }`}
               >
                 <div
                   className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                    checked ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
+                    checked ? 'border-brand-600 bg-brand-600' : 'border-slate-300'
                   }`}
                 >
                   {checked && (
@@ -77,7 +77,7 @@ export function AssetSelector({ assets, selected, onToggle, error }: AssetSelect
                     </svg>
                   )}
                 </div>
-                <span className={`text-sm leading-snug min-w-0 ${checked ? 'text-blue-800 font-medium' : 'text-slate-700'}`}>
+                <span className={`text-sm leading-snug min-w-0 ${checked ? 'text-brand-800 font-medium' : 'text-slate-700'}`}>
                   <span className="font-mono text-xs mr-1.5">{asset.internalCode}</span>
                   {asset.name}
                   <span className="text-slate-400 ml-1.5 text-xs">({asset.assetType})</span>

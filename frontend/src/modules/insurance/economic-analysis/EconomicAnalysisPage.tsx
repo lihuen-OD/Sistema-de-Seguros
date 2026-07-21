@@ -511,7 +511,7 @@ export default function EconomicAnalysisPage() {
                   key={c}
                   onClick={() => setCurrency(c)}
                   className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    currency === c ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                    currency === c ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {c}
@@ -531,7 +531,7 @@ export default function EconomicAnalysisPage() {
                   key={btn.value}
                   onClick={() => setColPeriod(btn.value)}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                    colPeriod === btn.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                    colPeriod === btn.value ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {btn.label}
@@ -551,7 +551,7 @@ export default function EconomicAnalysisPage() {
                   key={btn.value}
                   onClick={() => setGrouping(btn.value)}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                    grouping === btn.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                    grouping === btn.value ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {btn.label}
@@ -748,7 +748,7 @@ export default function EconomicAnalysisPage() {
                           {amount !== 0 ? (
                             <span
                               className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                                isNegative ? 'text-amber-700 bg-amber-50' : 'text-blue-700 bg-blue-50'
+                                isNegative ? 'text-amber-700 bg-amber-50' : 'text-brand-700 bg-brand-50'
                               }`}
                             >
                               {fmtCell(amount)}
@@ -806,7 +806,7 @@ export default function EconomicAnalysisPage() {
         {/* Footer */}
         <div className="flex items-center gap-5 px-5 py-3 border-t border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm bg-blue-100 border border-blue-300 inline-block" />
+            <span className="w-3 h-3 rounded-sm bg-brand-100 border border-brand-300 inline-block" />
             <span className="text-xs text-slate-500">Costo</span>
           </div>
           <div className="flex items-center gap-1.5">

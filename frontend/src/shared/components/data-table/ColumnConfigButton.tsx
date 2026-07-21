@@ -55,7 +55,7 @@ function SortableRow({
       ref={setNodeRef}
       style={style}
       className={`flex items-center gap-2.5 px-3 py-2 rounded-lg transition-colors ${
-        isDragging ? 'bg-blue-50 shadow-sm' : 'hover:bg-slate-50'
+        isDragging ? 'bg-brand-50 shadow-sm' : 'hover:bg-slate-50'
       } ${isFixed ? 'opacity-50' : ''}`}
     >
       <button
@@ -77,8 +77,8 @@ function SortableRow({
           isFixed
             ? 'border-slate-200 bg-slate-100 cursor-not-allowed'
             : config.visible
-              ? 'border-blue-600 bg-blue-600 hover:bg-blue-700'
-              : 'border-slate-300 bg-white hover:border-blue-400'
+              ? 'border-brand-600 bg-brand-600 hover:bg-brand-700'
+              : 'border-slate-300 bg-white hover:border-brand-400'
         }`}
       >
         {(config.visible || isFixed) && (
@@ -134,7 +134,7 @@ export function ColumnConfigButton({ columnConfigs, onToggle, onReorder, onReset
         onClick={() => setOpen((v) => !v)}
         className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
           open
-            ? 'bg-blue-50 border-blue-300 text-blue-700'
+            ? 'bg-brand-50 border-brand-300 text-brand-700'
             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
         }`}
         title="Configurar columnas"
@@ -142,7 +142,7 @@ export function ColumnConfigButton({ columnConfigs, onToggle, onReorder, onReset
         <Columns3 size={14} />
         <span className="hidden sm:inline">Columnas</span>
         {visibleCount > 0 && (
-          <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full leading-none">
+          <span className="text-[10px] font-bold bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full leading-none">
             {visibleCount}
           </span>
         )}

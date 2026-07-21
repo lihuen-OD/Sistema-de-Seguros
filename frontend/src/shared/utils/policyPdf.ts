@@ -117,14 +117,14 @@ function buildHtml(data: PolicyPdfData): string {
       justify-content: space-between;
       padding-bottom: 14px;
       margin-bottom: 20px;
-      border-bottom: 2px solid #1d4ed8;
+      border-bottom: 2px solid #2C5530;
     }
     .category {
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: .1em;
-      color: #1d4ed8;
+      color: #2C5530;
       margin-bottom: 5px;
     }
     .title { font-size: 22px; font-weight: 700; color: #0f172a; line-height: 1.2; }
@@ -250,7 +250,7 @@ function buildHtml(data: PolicyPdfData): string {
       </div>
       <div>
         <p class="field-label">Suma Asegurada (USD)</p>
-        <p style="font-size:14px;font-weight:700;color:#1d4ed8;">${formatCurrencyFull(policy.insuredAmountUsd, 'USD')}</p>
+        <p style="font-size:14px;font-weight:700;color:#2C5530;">${formatCurrencyFull(policy.insuredAmountUsd, 'USD')}</p>
       </div>
     </div>
   </section>

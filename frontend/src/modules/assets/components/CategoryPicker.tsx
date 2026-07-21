@@ -27,12 +27,12 @@ export function CategoryPicker({ value, onChange }: CategoryPickerProps) {
                   className={clsx(
                     'relative flex flex-col gap-2.5 p-3.5 rounded-xl border-2 text-left transition-all',
                     selected
-                      ? 'border-blue-600 bg-blue-50/60 shadow-sm'
+                      ? 'border-brand-600 bg-brand-50/60 shadow-sm'
                       : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60',
                   )}
                 >
                   {selected && (
-                    <span className="absolute top-2.5 right-2.5 w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center">
+                    <span className="absolute top-2.5 right-2.5 w-4 h-4 bg-brand-600 rounded-full flex items-center justify-center">
                       <Check size={10} className="text-white" strokeWidth={3} />
                     </span>
                   )}
@@ -40,7 +40,7 @@ export function CategoryPicker({ value, onChange }: CategoryPickerProps) {
                     <item.icon size={17} />
                   </div>
                   <div>
-                    <p className={clsx('text-sm font-semibold leading-tight', selected ? 'text-blue-700' : 'text-slate-800')}>
+                    <p className={clsx('text-sm font-semibold leading-tight', selected ? 'text-brand-700' : 'text-slate-800')}>
                       {item.label}
                     </p>
                     <p className="text-xs text-slate-500 leading-snug mt-0.5 line-clamp-2">{item.desc}</p>

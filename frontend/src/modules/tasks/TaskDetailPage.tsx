@@ -154,7 +154,7 @@ export default function TaskDetailPage() {
                 <DetailRow icon={User} label="Productor asignado">
                   <button
                     onClick={() => navigate(ROUTES.PRODUCERS_DETAIL(producer.id))}
-                    className="text-blue-600 hover:underline font-medium"
+                    className="text-brand-600 hover:underline font-medium"
                   >
                     {producer.name}
                   </button>
@@ -165,7 +165,7 @@ export default function TaskDetailPage() {
                 <DetailRow icon={FileText} label="Póliza asociada">
                   <button
                     onClick={() => navigate(ROUTES.POLICIES_DETAIL(policy.id))}
-                    className="text-blue-600 hover:underline font-medium"
+                    className="text-brand-600 hover:underline font-medium"
                   >
                     {policy.policyNumber}
                   </button>
@@ -176,7 +176,7 @@ export default function TaskDetailPage() {
                 <DetailRow icon={Package} label="Activo asociado">
                   <button
                     onClick={() => navigate(ROUTES.ASSETS_DETAIL(asset.id))}
-                    className="text-blue-600 hover:underline font-medium"
+                    className="text-brand-600 hover:underline font-medium"
                   >
                     {asset.internalCode}
                   </button>
@@ -190,8 +190,8 @@ export default function TaskDetailPage() {
           {task.assignedTo && (
             <SectionCard title="Responsable interno">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                  <User size={14} className="text-blue-600" />
+                <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0">
+                  <User size={14} className="text-brand-600" />
                 </div>
                 <p className="text-sm font-medium text-slate-800">{task.assignedTo}</p>
               </div>

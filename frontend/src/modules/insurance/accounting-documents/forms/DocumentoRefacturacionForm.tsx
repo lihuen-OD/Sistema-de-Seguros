@@ -271,11 +271,11 @@ export default function DocumentoRefacturacionForm({ initialDoc }: DocumentoRefa
                 </span>
               </div>
               {tc > 0 && (
-                <div className="flex items-center justify-between px-4 py-3 bg-blue-50 rounded-xl border border-blue-100">
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-500 uppercase tracking-wider">
+                <div className="flex items-center justify-between px-4 py-3 bg-brand-50 rounded-xl border border-brand-100">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-brand-500 uppercase tracking-wider">
                     <ArrowLeftRight size={12} /> Equivalente
                   </span>
-                  <span className="text-base font-bold text-blue-700 tabular-nums">
+                  <span className="text-base font-bold text-brand-700 tabular-nums">
                     {equivalentPrefix} {equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>

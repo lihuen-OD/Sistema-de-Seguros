@@ -116,8 +116,8 @@ export default function InsuranceTypesPage() {
                       onClick={() => setExpandedId(isOpen ? null : type.id)}
                       className="flex items-center gap-3 flex-1 min-w-0 text-left"
                     >
-                      <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                        <Shield size={13} className="text-blue-600" />
+                      <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+                        <Shield size={13} className="text-brand-600" />
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-slate-800">{type.label}</p>
@@ -171,13 +171,13 @@ export default function InsuranceTypesPage() {
                           onChange={(e) => setNewCoverage((prev) => ({ ...prev, [type.id]: e.target.value }))}
                           onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCoverage(type.id))}
                           placeholder="Nueva cobertura…"
-                          className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400"
+                          className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 placeholder:text-slate-400"
                         />
                         <button
                           type="button"
                           onClick={() => addCoverage(type.id)}
                           disabled={!(newCoverage[type.id] ?? '').trim()}
-                          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-brand-600 border border-brand-200 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
                         >
                           <Plus size={14} />
                           Agregar
@@ -203,7 +203,7 @@ export default function InsuranceTypesPage() {
                 onChange={(e) => { setNewTypeLabel(e.target.value); setNewTypeError('') }}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addType())}
                 placeholder="Ej: Seguro de transporte, Seguro de crédito…"
-                className={`w-full px-3 py-2.5 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 ${
+                className={`w-full px-3 py-2.5 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 placeholder:text-slate-400 ${
                   newTypeError ? 'border-red-300' : 'border-slate-200'
                 }`}
               />
@@ -212,7 +212,7 @@ export default function InsuranceTypesPage() {
             <button
               type="button"
               onClick={addType}
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex-shrink-0"
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex-shrink-0"
             >
               <Plus size={15} />
               Agregar tipo

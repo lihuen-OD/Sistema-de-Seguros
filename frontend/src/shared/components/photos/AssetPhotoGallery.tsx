@@ -81,7 +81,7 @@ export function AssetPhotoGallery({
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
         >
           <Camera size={15} />
           Agregar fotografías
@@ -102,7 +102,7 @@ export function AssetPhotoGallery({
   if (uploading && photos.length === 0) {
     return (
       <div className="py-10 flex flex-col items-center gap-3">
-        <Loader2 size={24} className="text-blue-500 animate-spin" />
+        <Loader2 size={24} className="text-brand-500 animate-spin" />
         <p className="text-sm text-slate-500">Subiendo fotografías…</p>
       </div>
     )
@@ -155,9 +155,9 @@ export function AssetPhotoGallery({
 
         {/* Uploading tile */}
         {uploading && (
-          <div className="aspect-[4/3] rounded-lg border-2 border-dashed border-blue-300 bg-blue-50/40 flex flex-col items-center justify-center gap-1.5">
-            <Loader2 size={20} className="text-blue-500 animate-spin" />
-            <span className="text-xs font-medium text-blue-500">Subiendo…</span>
+          <div className="aspect-[4/3] rounded-lg border-2 border-dashed border-brand-300 bg-brand-50/40 flex flex-col items-center justify-center gap-1.5">
+            <Loader2 size={20} className="text-brand-500 animate-spin" />
+            <span className="text-xs font-medium text-brand-500">Subiendo…</span>
           </div>
         )}
 
@@ -166,7 +166,7 @@ export function AssetPhotoGallery({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="aspect-video rounded-lg border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 transition-colors flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-blue-500"
+            className="aspect-video rounded-lg border-2 border-dashed border-slate-200 hover:border-brand-400 hover:bg-brand-50/40 transition-colors flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-brand-500"
           >
             <Camera size={20} />
             <span className="text-xs font-medium">Agregar</span>

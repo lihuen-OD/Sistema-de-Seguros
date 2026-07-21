@@ -22,10 +22,10 @@ export const CATEGORY_GROUPS: CategoryGroup[] = [
   {
     label: 'Vehículos',
     items: [
-      { key: 'vehiculo',  label: 'Vehículo',  desc: 'Auto, utilitario o pick-up liviana', icon: Car,   color: 'text-blue-600 bg-blue-50' },
-      { key: 'camioneta', label: 'Camioneta', desc: 'Pick-up 4x4 o doble cabina',          icon: Truck, color: 'text-blue-600 bg-blue-50' },
+      { key: 'vehiculo',  label: 'Vehículo',  desc: 'Auto, utilitario o pick-up liviana', icon: Car,   color: 'text-brand-600 bg-brand-50' },
+      { key: 'camioneta', label: 'Camioneta', desc: 'Pick-up 4x4 o doble cabina',          icon: Truck, color: 'text-brand-600 bg-brand-50' },
       { key: 'camion',    label: 'Camión',    desc: 'Camión de carga o transporte pesado', icon: Truck, color: 'text-slate-600 bg-slate-100' },
-      { key: 'moto',      label: 'Moto',      desc: 'Motocicleta o cuatriciclo',           icon: Bike,  color: 'text-blue-600 bg-blue-50' },
+      { key: 'moto',      label: 'Moto',      desc: 'Motocicleta o cuatriciclo',           icon: Bike,  color: 'text-brand-600 bg-brand-50' },
     ],
   },
   {

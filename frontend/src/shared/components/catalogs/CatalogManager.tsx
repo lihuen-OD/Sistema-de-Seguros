@@ -123,7 +123,7 @@ export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps
                     if (e.key === 'Enter') saveEdit(item)
                     if (e.key === 'Escape') cancelEdit(item.id)
                   }}
-                  className="border border-blue-400 rounded-md px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-0 flex-1"
+                  className="border border-brand-400 rounded-md px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/20 min-w-0 flex-1"
                 />
                 <button
                   onClick={() => saveEdit(item)}
@@ -171,7 +171,7 @@ export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps
                   <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => startEdit(item)}
-                      className="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                      className="p-1.5 rounded-md text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
                       title="Editar"
                     >
                       <Pencil size={13} />
@@ -207,12 +207,12 @@ export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps
             if (e.key === 'Enter') handleAdd()
           }}
           placeholder={addPlaceholder ?? 'Nuevo elemento…'}
-          className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-slate-200 rounded-md text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+          className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-slate-200 rounded-md text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all"
         />
         <button
           onClick={handleAdd}
           disabled={adding || !newLabel.trim()}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
         >
           <Plus size={14} />
           Agregar

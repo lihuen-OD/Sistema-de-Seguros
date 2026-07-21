@@ -120,14 +120,14 @@ export function Sidebar({ onClose }: SidebarProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Brand */}
-      <div className="flex items-center justify-between h-16 px-4 border-b border-slate-800 flex-shrink-0">
+      <div className="flex items-center justify-between h-16 px-4 border-b border-brand-800 flex-shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-blue-600 rounded-md flex items-center justify-center flex-shrink-0">
-            <ShieldCheck size={15} className="text-white" />
+          <div className="w-7 h-7 rounded-md bg-white flex items-center justify-center flex-shrink-0 p-0.5">
+            <img src="/logo.png" alt="LOS O'D" className="w-full h-full object-contain" />
           </div>
           <div className="min-w-0">
-            <span className="text-white font-semibold text-sm leading-tight block">Patrimonio Pro</span>
-            <span className="text-slate-500 text-xs leading-tight block">LOS OD</span>
+            <span className="text-white font-semibold text-sm leading-tight block">Seguridad</span>
+            <span className="text-slate-500 text-xs leading-tight block">LOS O'D</span>
           </div>
         </div>
         <button
@@ -170,8 +170,8 @@ export function Sidebar({ onClose }: SidebarProps) {
                       className={clsx(
                         'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150',
                         isActive
-                          ? 'bg-blue-600 text-white'
-                          : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800',
+                          ? 'bg-brand-600 text-white'
+                          : 'text-slate-400 hover:text-slate-100 hover:bg-brand-800',
                       )}
                     >
                       <Icon size={16} className="flex-shrink-0" />
@@ -187,7 +187,7 @@ export function Sidebar({ onClose }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-slate-800 p-4 flex-shrink-0">
+      <div className="border-t border-brand-800 p-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0">
             <span className="text-xs font-semibold text-slate-300">
@@ -202,7 +202,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             onClick={() => navigate('/change-password')}
             title="Cambiar contraseña"
             aria-label="Cambiar contraseña"
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors flex-shrink-0"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-brand-800 transition-colors flex-shrink-0"
           >
             <Lock size={15} />
           </button>
@@ -210,7 +210,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             onClick={logout}
             title="Cerrar sesión"
             aria-label="Cerrar sesión"
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors flex-shrink-0"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-brand-800 transition-colors flex-shrink-0"
           >
             <LogOut size={15} />
           </button>

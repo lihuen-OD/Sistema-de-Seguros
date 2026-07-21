@@ -41,7 +41,7 @@ export function EstBuildingsSection({
         <button
           type="button"
           onClick={onAdd}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex-shrink-0 ml-4"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 border border-brand-200 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors flex-shrink-0 ml-4"
         >
           <Plus size={14} />
           Agregar
@@ -51,7 +51,7 @@ export function EstBuildingsSection({
         <div className="rounded-xl border-2 border-dashed border-slate-200 py-8 text-center">
           <Building2 size={22} className="mx-auto text-slate-300 mb-2" />
           <p className="text-sm text-slate-500">Ningún edificio registrado</p>
-          <button type="button" onClick={onAdd} className="mt-3 text-sm text-blue-600 hover:text-blue-700 font-medium">
+          <button type="button" onClick={onAdd} className="mt-3 text-sm text-brand-600 hover:text-brand-700 font-medium">
             + Agregar primer edificio
           </button>
         </div>
