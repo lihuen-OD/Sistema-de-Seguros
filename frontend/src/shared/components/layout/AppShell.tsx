@@ -22,7 +22,7 @@ export function AppShell({ children }: AppShellProps) {
       {/* Sidebar */}
       <aside
         className={`
-          fixed inset-y-0 left-0 z-30 flex-shrink-0 w-64 bg-slate-900 flex flex-col
+          fixed inset-y-0 left-0 z-30 flex-shrink-0 w-64 bg-brand-900 flex flex-col
           transform transition-transform duration-200 ease-in-out
           lg:relative lg:translate-x-0
           print:hidden

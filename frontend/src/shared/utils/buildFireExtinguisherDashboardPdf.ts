@@ -19,7 +19,7 @@ const KPI_COLORS: Record<'default' | 'success' | 'warning' | 'danger' | 'info', 
   success: '#059669',
   warning: '#d97706',
   danger: '#dc2626',
-  info: '#2563eb',
+  info: '#2C5530',
 }
 
 interface StatBox {

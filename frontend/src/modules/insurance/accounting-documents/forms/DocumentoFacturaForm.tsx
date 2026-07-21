@@ -274,7 +274,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
       />
 
       {sourcePolicy && (
-        <div className="mb-4 max-w-5xl flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 text-blue-700 text-sm rounded-lg">
+        <div className="mb-4 max-w-5xl flex items-center gap-2 px-4 py-2.5 bg-brand-50 border border-brand-200 text-brand-700 text-sm rounded-lg">
           <Info size={14} className="flex-shrink-0" />
           <span>
             Datos pre-completados desde la póliza <strong>{sourcePolicy.policyNumber}</strong> ({sourcePolicy.insuranceCompany}). Podés editarlos.
@@ -355,11 +355,11 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                 </span>
               </div>
               {tc > 0 && (
-                <div className="flex items-center justify-between px-4 py-3 bg-blue-50 rounded-xl border border-blue-100">
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-500 uppercase tracking-wider">
+                <div className="flex items-center justify-between px-4 py-3 bg-brand-50 rounded-xl border border-brand-100">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-brand-500 uppercase tracking-wider">
                     <ArrowLeftRight size={12} /> Equivalente
                   </span>
-                  <span className="text-base font-bold text-blue-700 tabular-nums">
+                  <span className="text-base font-bold text-brand-700 tabular-nums">
                     {equivalentPrefix} {equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
@@ -415,8 +415,8 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
           <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                  <Mail size={16} className="text-blue-600" />
+                <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center">
+                  <Mail size={16} className="text-brand-600" />
                 </div>
                 <h2 className="text-sm font-semibold text-slate-800">Enviar por mail</h2>
               </div>
@@ -453,12 +453,12 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                 <div>
                   <label className="text-xs font-medium text-slate-600 block mb-1">Para <span className="text-red-500">*</span></label>
                   <input type="email" placeholder="destinatario@ejemplo.com" value={emailTo} onChange={(e) => setEmailTo(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
+                    className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-slate-600 block mb-1">Asunto</label>
                   <input type="text" value={emailSubjectEdit} onChange={(e) => setEmailSubjectEdit(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
+                    className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
                 </div>
                 <div className="rounded-xl border border-slate-200 overflow-hidden">
                   <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
@@ -479,7 +479,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                             <div key={i} className="flex items-start justify-between gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
                               <p className="text-xs font-semibold text-slate-700">{policy?.policyNumber ?? '—'}</p>
                               <div className="text-right flex-shrink-0">
-                                <p className="text-xs font-bold text-blue-600">{pct.toFixed(1).replace('.', ',')}%</p>
+                                <p className="text-xs font-bold text-brand-600">{pct.toFixed(1).replace('.', ',')}%</p>
                                 <p className="text-xs text-slate-500 tabular-nums">
                                   {mainPrefix} {amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
@@ -497,7 +497,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                 </div>
                 <div className="flex items-center gap-2 pt-1">
                   <button type="button" onClick={handleSendEmail} disabled={!emailTo.trim() || emailStatus === 'sending'}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                     <Mail size={14} /> {emailStatus === 'sending' ? 'Enviando…' : 'Enviar'}
                   </button>
                   <button type="button" onClick={() => setEmailModalOpen(false)} disabled={emailStatus === 'sending'}

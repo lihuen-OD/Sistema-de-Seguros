@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ShieldCheck, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { authApi } from '../../shared/api/auth.api'
 import { setToken } from '../../shared/api/auth'
 import { FormField, FormInput } from '../../shared/components/forms/FormSection'
@@ -40,11 +40,11 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center gap-2 mb-8">
-          <div className="w-11 h-11 bg-blue-600 rounded-xl flex items-center justify-center">
-            <ShieldCheck size={22} className="text-white" />
+          <div className="w-11 h-11 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center p-1">
+            <img src="/logo.png" alt="LOS O'D" className="w-full h-full object-contain" />
           </div>
-          <span className="text-slate-900 font-semibold text-base">Patrimonio Pro</span>
-          <span className="text-slate-400 text-xs">LOS OD</span>
+          <span className="text-slate-900 font-semibold text-base">Seguridad</span>
+          <span className="text-slate-400 text-xs">LOS O'D</span>
         </div>
 
         <form
@@ -85,7 +85,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="mt-1 inline-flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            className="mt-1 inline-flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
           >
             {submitting && <Loader2 size={15} className="animate-spin" />}
             Ingresar

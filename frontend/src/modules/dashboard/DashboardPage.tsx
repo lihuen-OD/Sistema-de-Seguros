@@ -246,7 +246,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-3">
           {activeFilterCount > 0 && (
             <>
-              <span className="text-xs text-slate-500 bg-blue-50 text-blue-700 border border-blue-100 rounded-full px-2.5 py-0.5 font-medium">
+              <span className="text-xs text-slate-500 bg-brand-50 text-brand-700 border border-brand-100 rounded-full px-2.5 py-0.5 font-medium">
                 {activeFilterCount} {activeFilterCount === 1 ? 'filtro activo' : 'filtros activos'}
               </span>
               <button
@@ -450,7 +450,7 @@ export default function DashboardPage() {
           actions={
             <button
               onClick={() => navigate('/insurance/policies')}
-              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+              className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium"
             >
               Ver todas <ArrowRight size={12} />
             </button>
@@ -494,7 +494,7 @@ export default function DashboardPage() {
           actions={
             <button
               onClick={() => navigate('/insurance/financial-analysis')}
-              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+              className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium"
             >
               Ver análisis <ArrowRight size={12} />
             </button>
@@ -544,7 +544,7 @@ export default function DashboardPage() {
               actions={
                 <button
                   onClick={() => navigate('/fire-extinguishers')}
-                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium"
                 >
                   Ver todos <ArrowRight size={12} />
                 </button>
@@ -573,7 +573,7 @@ export default function DashboardPage() {
               actions={
                 <button
                   onClick={() => navigate('/tasks')}
-                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium"
                 >
                   Ver todas <ArrowRight size={12} />
                 </button>

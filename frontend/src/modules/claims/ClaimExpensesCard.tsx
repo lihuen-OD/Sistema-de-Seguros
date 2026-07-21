@@ -48,7 +48,7 @@ export function ClaimExpensesCard({ claimId, claimedAmountArs }: ClaimExpensesCa
         <button
           type="button"
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
         >
           <Plus size={14} />
           Agregar gasto
@@ -64,7 +64,7 @@ export function ClaimExpensesCard({ claimId, claimedAmountArs }: ClaimExpensesCa
             <button
               type="button"
               onClick={() => setShowModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
             >
               <Plus size={14} />
               Agregar primer gasto
@@ -104,7 +104,7 @@ export function ClaimExpensesCard({ claimId, claimedAmountArs }: ClaimExpensesCa
                             type="button"
                             title="Editar gasto"
                             onClick={() => setEditingExpense(e)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
                           >
                             <Pencil size={14} />
                           </button>
@@ -246,8 +246,8 @@ function ExpenseFormModal({ claimId, expense, onClose, onSuccess }: ExpenseFormM
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-              <Receipt size={16} className="text-blue-600" />
+            <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+              <Receipt size={16} className="text-brand-600" />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900">{isEditing ? 'Editar gasto' : 'Agregar gasto'}</h3>
@@ -320,7 +320,7 @@ function ExpenseFormModal({ claimId, expense, onClose, onSuccess }: ExpenseFormM
               type="button"
               onClick={handleSubmit}
               disabled={submitting}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-brand-600 hover:bg-brand-700 disabled:bg-brand-400 text-white rounded-lg transition-colors"
             >
               {submitting && <Loader2 size={14} className="animate-spin" />}
               {submitting ? 'Guardando...' : isEditing ? 'Guardar cambios' : 'Guardar gasto'}

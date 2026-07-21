@@ -159,7 +159,7 @@ export default function FireExtinguisherAuditsQueuePage() {
           canAudit ? (
             <button
               onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_NEW)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Plus size={16} />
               Nueva auditoría
@@ -241,7 +241,7 @@ export default function FireExtinguisherAuditsQueuePage() {
               <button
                 type="button"
                 onClick={() => navigate(`${ROUTES.FIRE_EXTINGUISHERS_AUDIT_FINDINGS_REPORT}?period=${coveragePeriod}`)}
-                className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors whitespace-nowrap"
+                className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors whitespace-nowrap"
               >
                 <FileText size={13} />
                 Ver informe de auditoría

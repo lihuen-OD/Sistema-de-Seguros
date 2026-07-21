@@ -69,7 +69,7 @@ export function NotificationBell() {
           {/* Body */}
           {isLoading ? (
             <div className="flex items-center justify-center py-10">
-              <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
             </div>
           ) : !data || totalAlerts === 0 ? (
             <div className="px-4 py-8 text-center">
@@ -124,8 +124,8 @@ export function NotificationBell() {
               {data.expiringAttachments > 0 && (
                 <AlertRow
                   icon={Paperclip}
-                  iconColor="text-blue-500"
-                  iconBg="bg-blue-50"
+                  iconColor="text-brand-500"
+                  iconBg="bg-brand-50"
                   label={`${data.expiringAttachments} documento${data.expiringAttachments !== 1 ? 's' : ''} adjunto${data.expiringAttachments !== 1 ? 's' : ''} por vencer`}
                   sub="Adjuntos de Activos y Pólizas"
                   onClick={() => { navigate('/notifications'); setOpen(false) }}

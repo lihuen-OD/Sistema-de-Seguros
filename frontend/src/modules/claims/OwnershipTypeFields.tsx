@@ -53,18 +53,18 @@ export function OwnershipTypeFields({
               className={clsx(
                 'flex flex-col items-start gap-2 p-3 rounded-xl border text-left transition-all',
                 isSelected
-                  ? 'bg-blue-50 border-blue-400 ring-1 ring-blue-300 shadow-sm'
+                  ? 'bg-brand-50 border-brand-400 ring-1 ring-brand-300 shadow-sm'
                   : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50',
               )}
             >
               <div className={clsx(
                 'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
-                isSelected ? 'bg-blue-100' : 'bg-slate-100',
+                isSelected ? 'bg-brand-100' : 'bg-slate-100',
               )}>
-                <Icon size={14} className={isSelected ? 'text-blue-600' : 'text-slate-500'} />
+                <Icon size={14} className={isSelected ? 'text-brand-600' : 'text-slate-500'} />
               </div>
               <div>
-                <p className={clsx('text-xs font-medium leading-tight', isSelected ? 'text-blue-700' : 'text-slate-700')}>
+                <p className={clsx('text-xs font-medium leading-tight', isSelected ? 'text-brand-700' : 'text-slate-700')}>
                   {label}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{description}</p>

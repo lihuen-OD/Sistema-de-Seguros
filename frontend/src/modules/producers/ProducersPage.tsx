@@ -74,7 +74,7 @@ export default function ProducersPage() {
             </button>
             <button
               onClick={() => navigate('/producers/new')}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Plus size={16} />
               Nuevo Productor
@@ -126,7 +126,7 @@ export default function ProducersPage() {
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value as '' | 'activo' | 'inactivo')}
-          className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all min-w-[140px]"
+          className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all min-w-[140px]"
         >
           <option value="">Todos los estados</option>
           <option value="activo">Activo</option>
@@ -174,12 +174,12 @@ function ProducerCard({ producer, policyCount, activeTasks, overdueTasks, onClic
   return (
     <div
       onClick={onClick}
-      className="card p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
+      className="card p-5 cursor-pointer hover:border-brand-300 hover:shadow-md transition-all group"
     >
       {/* Header row */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-slate-800 group-hover:text-blue-700 transition-colors leading-snug truncate">
+          <h3 className="text-sm font-semibold text-slate-800 group-hover:text-brand-700 transition-colors leading-snug truncate">
             {producer.name}
           </h3>
           <p className="text-xs text-slate-400 mt-0.5 font-mono">{producer.registrationNumber || 'Sin matrícula'}</p>
@@ -201,7 +201,7 @@ function ProducerCard({ producer, policyCount, activeTasks, overdueTasks, onClic
 
       {/* Stats */}
       <div className="pt-3 border-t border-slate-100 grid grid-cols-3 gap-2">
-        <StatChip icon={ShieldCheck} value={policyCount} label="Pólizas" colorClass="text-blue-600" bgClass="bg-blue-50" />
+        <StatChip icon={ShieldCheck} value={policyCount} label="Pólizas" colorClass="text-brand-600" bgClass="bg-brand-50" />
         <StatChip icon={ClipboardList} value={activeTasks} label="Activas" colorClass="text-amber-600" bgClass="bg-amber-50" />
         <StatChip
           icon={Clock}

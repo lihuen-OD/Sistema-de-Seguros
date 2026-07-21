@@ -105,7 +105,7 @@ export default function ProducerDetailPage() {
       render: (_, row) => (
         <button
           onClick={(e) => { e.stopPropagation(); navigate(`/insurance/policies/${row.id}`) }}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
         >
           <Eye size={14} />
         </button>

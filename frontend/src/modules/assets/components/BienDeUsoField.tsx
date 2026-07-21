@@ -26,10 +26,10 @@ export function BienDeUsoField({ value, onChange }: BienDeUsoFieldProps) {
   return (
     <div className="relative">
       {selected ? (
-        <div className="flex items-start justify-between gap-2 px-3 py-3 rounded-lg border border-blue-300 bg-blue-50">
+        <div className="flex items-start justify-between gap-2 px-3 py-3 rounded-lg border border-brand-300 bg-brand-50">
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2">
-              <p className="text-xs font-bold text-blue-700 font-mono tracking-wide">{selected.code}</p>
+              <p className="text-xs font-bold text-brand-700 font-mono tracking-wide">{selected.code}</p>
             </div>
             <p className="text-sm font-medium text-slate-700">{selected.name}</p>
           </div>
@@ -52,7 +52,7 @@ export function BienDeUsoField({ value, onChange }: BienDeUsoFieldProps) {
             onFocus={() => setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 150)}
             placeholder="Buscar por código o nombre…"
-            className="w-full pl-8 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-8 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
           />
           {open && results.length > 0 && (
             <div className="absolute z-20 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
@@ -61,9 +61,9 @@ export function BienDeUsoField({ value, onChange }: BienDeUsoFieldProps) {
                   key={b.id}
                   type="button"
                   onMouseDown={() => { onChange(b.id); setQuery(''); setOpen(false) }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-blue-50 text-left transition-colors"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-brand-50 text-left transition-colors"
                 >
-                  <span className="text-xs font-mono font-semibold text-blue-600 flex-shrink-0 w-[72px]">{b.code}</span>
+                  <span className="text-xs font-mono font-semibold text-brand-600 flex-shrink-0 w-[72px]">{b.code}</span>
                   <div className="min-w-0">
                     <p className="text-sm text-slate-800 truncate">{b.name}</p>
                   </div>

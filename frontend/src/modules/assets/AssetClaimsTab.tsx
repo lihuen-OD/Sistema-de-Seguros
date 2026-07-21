@@ -43,7 +43,7 @@ export function AssetClaimsTab({ assetId, policies: _policies, claims }: AssetCl
           )}
           <button
             onClick={() => navigate(`/claims/new?assetId=${assetId}`)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
           >
             <Plus size={14} />
             Registrar siniestro
@@ -60,7 +60,7 @@ export function AssetClaimsTab({ assetId, policies: _policies, claims }: AssetCl
           action={
             <button
               onClick={() => navigate(`/claims/new?assetId=${assetId}`)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
             >
               <Plus size={14} />
               Registrar primer siniestro

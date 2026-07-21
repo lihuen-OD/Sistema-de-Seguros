@@ -268,15 +268,15 @@ export default function ClaimNewPage() {
               {/* Activo */}
               <FormField label="Activo asociado">
                 {preselectedAsset ? (
-                  <div className="flex items-center justify-between px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center justify-between px-3 py-2.5 bg-brand-50 border border-brand-200 rounded-lg">
                     <div>
-                      <p className="text-sm font-medium text-blue-800">{preselectedAsset.name}</p>
-                      <p className="text-xs text-blue-600">{preselectedAsset.internalCode} · {preselectedAsset.assetType}</p>
+                      <p className="text-sm font-medium text-brand-800">{preselectedAsset.name}</p>
+                      <p className="text-xs text-brand-600">{preselectedAsset.internalCode} · {preselectedAsset.assetType}</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => { setAssetId(''); setPolicyId(''); setInsuranceCompany('') }}
-                      className="text-xs text-blue-500 hover:text-blue-700 ml-3 flex-shrink-0"
+                      className="text-xs text-brand-500 hover:text-brand-700 ml-3 flex-shrink-0"
                     >
                       Cambiar
                     </button>
@@ -363,19 +363,19 @@ export default function ClaimNewPage() {
                     className={clsx(
                       'flex flex-col items-start gap-2 p-3 rounded-xl border text-left transition-all',
                       isSelected
-                        ? 'bg-blue-50 border-blue-400 ring-1 ring-blue-300 shadow-sm'
+                        ? 'bg-brand-50 border-brand-400 ring-1 ring-brand-300 shadow-sm'
                         : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50',
                     )}
                   >
                     <div className={clsx(
                       'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
-                      isSelected ? 'bg-blue-100' : 'bg-slate-100',
+                      isSelected ? 'bg-brand-100' : 'bg-slate-100',
                     )}>
-                      <Icon size={14} className={isSelected ? 'text-blue-600' : 'text-slate-500'} />
+                      <Icon size={14} className={isSelected ? 'text-brand-600' : 'text-slate-500'} />
                     </div>
                     <span className={clsx(
                       'text-xs font-medium leading-tight',
-                      isSelected ? 'text-blue-700' : 'text-slate-700',
+                      isSelected ? 'text-brand-700' : 'text-slate-700',
                     )}>
                       {label}
                     </span>
@@ -532,12 +532,12 @@ export default function ClaimNewPage() {
                     {(parseFloat(claimedAmount) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
-                <div className="flex items-center justify-between px-4 py-3 bg-blue-50 rounded-xl border border-blue-100">
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-500 uppercase tracking-wider">
+                <div className="flex items-center justify-between px-4 py-3 bg-brand-50 rounded-xl border border-brand-100">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-brand-500 uppercase tracking-wider">
                     <ArrowLeftRight size={11} />
                     Equivalente
                   </span>
-                  <span className="text-sm font-bold text-blue-700 tabular-nums">
+                  <span className="text-sm font-bold text-brand-700 tabular-nums">
                     {altPrefix}{' '}
                     {altAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
@@ -631,9 +631,9 @@ export default function ClaimNewPage() {
           )}
 
           {/* Hint */}
-          <div className="flex items-start gap-3 px-4 py-3.5 bg-blue-50 border border-blue-100 rounded-xl">
-            <ShieldAlert size={14} className="text-blue-500 mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-blue-700 leading-relaxed">
+          <div className="flex items-start gap-3 px-4 py-3.5 bg-brand-50 border border-brand-100 rounded-xl">
+            <ShieldAlert size={14} className="text-brand-500 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-brand-700 leading-relaxed">
               El número de siniestro se genera automáticamente. Podés actualizarlo luego con el número asignado por la aseguradora.
             </p>
           </div>
@@ -644,7 +644,7 @@ export default function ClaimNewPage() {
               type="button"
               onClick={handleSubmit}
               disabled={submitting}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white rounded-lg transition-colors"
             >
               {submitting ? 'Guardando…' : 'Registrar siniestro'}
             </button>

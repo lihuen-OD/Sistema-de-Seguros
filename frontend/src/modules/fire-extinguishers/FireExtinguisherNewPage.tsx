@@ -239,7 +239,7 @@ export default function FireExtinguisherNewPage() {
                     Se calcula como +1 año desde la fecha de carga.{' '}
                     <button
                       type="button"
-                      className="text-blue-500 hover:underline"
+                      className="text-brand-500 hover:underline"
                       onClick={() => setManualExpDate(true)}
                     >
                       Cambiar manualmente
@@ -327,7 +327,7 @@ export default function FireExtinguisherNewPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
           >
             <Flame size={15} />
             Registrar Matafuego

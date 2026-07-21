@@ -116,7 +116,7 @@ export function FileDropzone({
               e.stopPropagation()
               cameraInputRef.current?.click()
             }}
-            className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 flex-shrink-0"
+            className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 flex-shrink-0"
           >
             <Camera size={13} />
             Tomar foto
@@ -130,7 +130,7 @@ export function FileDropzone({
         className={clsx(
           'border-2 border-dashed rounded-lg px-6 py-8 text-center transition-colors cursor-pointer',
           isDragging
-            ? 'border-blue-400 bg-blue-50'
+            ? 'border-brand-400 bg-brand-50'
             : 'border-slate-200 hover:border-slate-300 bg-slate-50',
         )}
         onClick={() => inputRef.current?.click()}
@@ -138,7 +138,7 @@ export function FileDropzone({
         <Upload size={20} className="mx-auto text-slate-400 mb-2" />
         <p className="text-sm text-slate-600">
           Arrastrá archivos o{' '}
-          <span className="text-blue-600 hover:text-blue-700 font-medium">hacé clic para seleccionar</span>
+          <span className="text-brand-600 hover:text-brand-700 font-medium">hacé clic para seleccionar</span>
         </p>
         <p className="text-xs text-slate-400 mt-1">
           Máximo {maxFiles} archivos
@@ -172,14 +172,14 @@ export function FileDropzone({
             )}>
               <div className={clsx(
                 'w-7 h-7 rounded flex items-center justify-center flex-shrink-0',
-                f.done ? 'bg-emerald-50' : f.error ? 'bg-red-50' : f.picked ? 'bg-amber-100' : 'bg-blue-50',
+                f.done ? 'bg-emerald-50' : f.error ? 'bg-red-50' : f.picked ? 'bg-amber-100' : 'bg-brand-50',
               )}>
                 {f.uploading ? (
-                  <Loader2 size={14} className="text-blue-500 animate-spin" />
+                  <Loader2 size={14} className="text-brand-500 animate-spin" />
                 ) : f.done ? (
                   <CheckCircle2 size={14} className="text-emerald-600" />
                 ) : (
-                  <FileText size={14} className={f.error ? 'text-red-500' : f.picked ? 'text-amber-600' : 'text-blue-600'} />
+                  <FileText size={14} className={f.error ? 'text-red-500' : f.picked ? 'text-amber-600' : 'text-brand-600'} />
                 )}
               </div>
               <div className="min-w-0 flex-1">

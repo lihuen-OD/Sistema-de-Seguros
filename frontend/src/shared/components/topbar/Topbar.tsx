@@ -80,7 +80,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar activos, pólizas, documentos…"
-            className="w-full pl-9 pr-4 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+            className="w-full pl-9 pr-4 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all"
           />
         </div>
       </div>
@@ -96,11 +96,6 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         >
           <Settings size={18} />
         </button>
-
-        {/* Avatar */}
-        <div className="ml-1 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors">
-          <span className="text-xs font-semibold text-white">LO</span>
-        </div>
       </div>
     </header>
   )

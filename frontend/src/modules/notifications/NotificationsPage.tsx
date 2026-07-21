@@ -231,7 +231,7 @@ export default function NotificationsPage() {
                 type="checkbox"
                 checked={showReviewed}
                 onChange={(e) => setShowReviewed(e.target.checked)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500/20"
+                className="rounded border-slate-300 text-brand-600 focus:ring-2 focus:ring-brand-500/20"
               />
               Mostrar revisadas
             </label>
@@ -252,7 +252,7 @@ export default function NotificationsPage() {
           rowClassName={(row, idx) =>
             clsx(
               idx % 2 === 1 && 'bg-slate-50/40',
-              'hover:bg-blue-50/50',
+              'hover:bg-brand-50/50',
               row.reviewed && 'opacity-50',
               !row.reviewed && row.severity === 'vencido' && 'border-l-2 border-l-red-400',
               !row.reviewed && row.severity === 'proximo_vencer' && 'border-l-2 border-l-amber-400',

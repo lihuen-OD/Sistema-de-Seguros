@@ -49,8 +49,8 @@ export function InstallmentRow({
 
   if (mode === 'edit') {
     return (
-      <div className={clsx('px-5 py-3 bg-blue-50/60 border-b border-blue-100', indent && 'pl-14')}>
-        <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500 mb-2.5">
+      <div className={clsx('px-5 py-3 bg-brand-50/60 border-b border-brand-100', indent && 'pl-14')}>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-500 mb-2.5">
           Cuota {String(inst.installmentNumber).padStart(2, '0')} — editar
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
@@ -60,7 +60,7 @@ export function InstallmentRow({
               type="date"
               value={editDueDate}
               onChange={(e) => setEditDueDate(e.target.value)}
-              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
           <div>
@@ -75,7 +75,7 @@ export function InstallmentRow({
                 onChange={(e) => setEditAmount(e.target.value)}
                 min="0"
                 step="0.01"
-                className="w-full text-xs pl-8 pr-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-xs pl-8 pr-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
           </div>
@@ -84,7 +84,7 @@ export function InstallmentRow({
             <select
               value={editStatus}
               onChange={(e) => setEditStatus(e.target.value as Installment['paymentStatus'])}
-              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               <option value="PENDING">Pendiente</option>
               <option value="PAID">Pagado</option>
@@ -98,7 +98,7 @@ export function InstallmentRow({
                 type="date"
                 value={editPaidAt}
                 onChange={(e) => setEditPaidAt(e.target.value)}
-                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
           )}
@@ -107,7 +107,7 @@ export function InstallmentRow({
           <button
             type="button"
             onClick={handleConfirm}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg transition-colors"
           >
             <Check size={11} />
             Confirmar
@@ -168,7 +168,7 @@ export function InstallmentRow({
         <button
           type="button"
           onClick={openEdit}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-[11px] font-medium text-blue-600 hover:text-blue-700 px-2 py-0.5 rounded-md hover:bg-blue-50 whitespace-nowrap"
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-[11px] font-medium text-brand-600 hover:text-brand-700 px-2 py-0.5 rounded-md hover:bg-brand-50 whitespace-nowrap"
         >
           {isPaid ? 'Editar' : 'Registrar pago'}
         </button>

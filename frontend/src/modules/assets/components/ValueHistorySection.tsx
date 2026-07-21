@@ -26,7 +26,7 @@ function EntryColumn({
   const colors =
     accent === 'purple'
       ? { header: 'text-purple-700', ring: 'bg-purple-100', icon: 'text-purple-500', value: 'text-purple-700', badge: 'text-purple-600' }
-      : { header: 'text-blue-700', ring: 'bg-blue-100', icon: 'text-blue-500', value: 'text-blue-700', badge: 'text-blue-600' }
+      : { header: 'text-brand-700', ring: 'bg-brand-100', icon: 'text-brand-500', value: 'text-brand-700', badge: 'text-brand-600' }
 
   return (
     <div>
@@ -95,7 +95,7 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 border border-brand-200 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors"
           >
             <Plus size={14} />
             Nueva entrada
@@ -104,8 +104,8 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
       </div>
 
       {adding && (
-        <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50/50 p-4">
-          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-3">Nueva entrada de valuación</p>
+        <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
+          <p className="text-xs font-semibold text-brand-700 uppercase tracking-wide mb-3">Nueva entrada de valuación</p>
           <div className="flex gap-2 mb-3">
             {(['real', 'nuevo'] as const).map((t) => (
               <button
@@ -115,8 +115,8 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
                 className={clsx(
                   'flex-1 py-2 text-xs font-semibold rounded-lg border transition-colors',
                   entry.type === t
-                    ? 'bg-blue-600 border-blue-600 text-white'
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300',
+                    ? 'bg-brand-600 border-brand-600 text-white'
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300',
                 )}
               >
                 {t === 'real' ? 'Valor Patrimonial Real' : 'Valor Patrimonial a Nuevo'}
@@ -130,7 +130,7 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
                 type="date"
                 value={entry.date}
                 onChange={(e) => setEntry((p) => ({ ...p, date: e.target.value }))}
-                className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
             <div>
@@ -144,7 +144,7 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
                   placeholder="Ej: 32000"
                   value={entry.valueUsd}
                   onChange={(e) => setEntry((p) => ({ ...p, valueUsd: e.target.value }))}
-                  className="w-full text-sm rounded-lg border border-slate-200 bg-white pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full text-sm rounded-lg border border-slate-200 bg-white pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
             </div>
@@ -155,7 +155,7 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
                 placeholder="Ej: Revaluación por tasador externo"
                 value={entry.notes}
                 onChange={(e) => setEntry((p) => ({ ...p, notes: e.target.value }))}
-                className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
           </div>
@@ -164,7 +164,7 @@ export function ValueHistorySection({ history, currentValue, onAdd }: ValueHisto
               type="button"
               onClick={handleAdd}
               disabled={!entry.date || !entry.valueUsd}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:pointer-events-none"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:pointer-events-none"
             >
               <Check size={14} />
               Registrar

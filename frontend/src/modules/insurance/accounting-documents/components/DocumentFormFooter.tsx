@@ -25,7 +25,7 @@ export function DocumentFormFooter({ isSubmitting, isSaved, savedDocId, children
         <button
           type="submit"
           disabled={isSubmitting}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <Save size={15} />
           {isSubmitting ? 'Guardando…' : savedDocId ? 'Guardar cambios' : 'Guardar Documento'}

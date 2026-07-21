@@ -71,7 +71,7 @@ function AttachmentRow({ claimId, attachment }: { claimId: string; attachment: C
         <button
           type="button"
           onClick={() => claimsApi.downloadAttachment(claimId, attachment.id, attachment.name)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors flex-shrink-0"
         >
           <Download size={12} />
           Descargar
@@ -115,7 +115,7 @@ function PhotoCard({ attachment }: { attachment: ClaimAttachment }) {
 type EventStyle = { dot: string; icon: string; labelCls: string; label: string }
 
 const EVENT_CONFIG: Record<ClaimEventType, { Icon: React.ElementType } & EventStyle> = {
-  siniestro_creado:      { Icon: PlusCircle,    dot: 'bg-blue-50',    icon: 'text-blue-500',    labelCls: 'text-blue-600',    label: 'Creado' },
+  siniestro_creado:      { Icon: PlusCircle,    dot: 'bg-brand-50',    icon: 'text-brand-500',    labelCls: 'text-brand-600',    label: 'Creado' },
   estado_cambiado:       { Icon: ArrowRight,    dot: 'bg-amber-50',   icon: 'text-amber-500',   labelCls: 'text-amber-600',   label: 'Estado' },
   monto_actualizado:     { Icon: DollarSign,    dot: 'bg-violet-50',  icon: 'text-violet-500',  labelCls: 'text-violet-600',  label: 'Monto' },
   liquidacion_registrada:{ Icon: CheckCircle2,  dot: 'bg-emerald-50', icon: 'text-emerald-500', labelCls: 'text-emerald-600', label: 'Liquidación' },
@@ -415,7 +415,7 @@ export default function ClaimDetailPage() {
                 <select
                   value={effectiveStatus}
                   onChange={(e) => handleStatusChange(e.target.value)}
-                  className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                   autoFocus
                 >
                   {claimStatuses.map((s) => (
@@ -530,8 +530,8 @@ export default function ClaimDetailPage() {
               {/* Activo */}
               <div className="rounded-xl border border-slate-200 p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
-                    <Package size={13} className="text-blue-600" />
+                  <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center">
+                    <Package size={13} className="text-brand-600" />
                   </div>
                   <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Activo</span>
                 </div>
@@ -548,7 +548,7 @@ export default function ClaimDetailPage() {
                     )}
                     <button
                       onClick={() => navigate(`/assets/${asset.id}`)}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
                     >
                       Ver ficha del activo
                       <ArrowUpRight size={12} />
@@ -578,7 +578,7 @@ export default function ClaimDetailPage() {
                     </p>
                     <button
                       onClick={() => navigate(`/insurance/policies/${policy.id}`)}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
                     >
                       Ver póliza
                       <ArrowUpRight size={12} />

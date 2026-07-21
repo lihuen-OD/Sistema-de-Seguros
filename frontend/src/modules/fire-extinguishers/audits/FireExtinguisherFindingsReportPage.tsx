@@ -116,7 +116,7 @@ export default function FireExtinguisherFindingsReportPage() {
             type="button"
             onClick={handleDownload}
             disabled={downloading || selectedCount === 0}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-brand-600 hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
           >
             {downloading ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />}
             {downloading ? 'Generando…' : `Descargar PDF${selectedCount > 0 ? ` (${selectedCount})` : ''}`}
@@ -134,7 +134,7 @@ export default function FireExtinguisherFindingsReportPage() {
             type="month"
             value={period}
             onChange={(e) => e.target.value && setPeriod(e.target.value)}
-            className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 bg-white tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 bg-white tabular-nums focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
           />
           {data && data.establishments.length > 0 && (
             <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
@@ -215,7 +215,7 @@ function EstablishmentBlock({
             type="checkbox"
             checked={allSelected}
             onChange={(e) => onToggleEstablishment(e.target.checked)}
-            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 flex-shrink-0"
+            className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
             title="Incluir todos los sectores de este establecimiento en el PDF"
           />
           <Building2 size={15} className="text-slate-400 flex-shrink-0" />
@@ -250,7 +250,7 @@ function EstablishmentBlock({
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => onToggleSector(key)}
-                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                       title="Incluir este sector en el PDF"
                     />
                     <h3 className="text-sm font-semibold text-slate-700">{sector.locationType}</h3>

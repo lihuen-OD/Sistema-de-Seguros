@@ -477,7 +477,7 @@ export default function FinancialAnalysisPage() {
                   key={c}
                   onClick={() => setCurrency(c)}
                   className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    currency === c ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                    currency === c ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {c}
@@ -497,7 +497,7 @@ export default function FinancialAnalysisPage() {
                   key={btn.value}
                   onClick={() => setGrouping(btn.value)}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                    grouping === btn.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                    grouping === btn.value ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {btn.label}
@@ -517,7 +517,7 @@ export default function FinancialAnalysisPage() {
                   key={btn.value}
                   onClick={() => setColPeriod(btn.value)}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0 ${
-                    colPeriod === btn.value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+                    colPeriod === btn.value ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {btn.label}

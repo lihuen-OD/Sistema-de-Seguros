@@ -55,7 +55,7 @@ export function AuditStep1Selection({ selected, onSelect }: AuditStep1SelectionP
                 className={clsx(
                   'text-left border rounded-lg p-4 transition-all',
                   isActive
-                    ? 'border-blue-400 bg-blue-50/60 ring-2 ring-blue-500/20'
+                    ? 'border-brand-400 bg-brand-50/60 ring-2 ring-brand-500/20'
                     : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50',
                 )}
               >

@@ -103,7 +103,7 @@ export default function ProducerTasksPage() {
             onClick={(e) => { e.stopPropagation(); navigate(`/producers/${v}`) }}
             className="text-left min-w-0 max-w-[160px] block group"
           >
-            <OverflowCell value={producer?.name ?? String(v)} lines={1} className="text-xs text-blue-600 group-hover:underline" />
+            <OverflowCell value={producer?.name ?? String(v)} lines={1} className="text-xs text-brand-600 group-hover:underline" />
           </button>
         )
       },
@@ -117,7 +117,7 @@ export default function ProducerTasksPage() {
         return (
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/insurance/policies/${v}`) }}
-            className="text-xs font-mono text-blue-600 hover:underline"
+            className="text-xs font-mono text-brand-600 hover:underline"
           >
             {policy?.policyNumber ?? String(v)}
           </button>
@@ -178,7 +178,7 @@ export default function ProducerTasksPage() {
         actions={
           <button
             onClick={() => navigate(ROUTES.TASKS_NEW)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Plus size={16} />
             Nueva Tarea
@@ -313,7 +313,7 @@ function TasksTable({
                 onClick={() => onRowClick?.(task)}
                 className={clsx(
                   'border-b border-slate-100 transition-colors',
-                  onRowClick && 'cursor-pointer hover:bg-blue-50/50',
+                  onRowClick && 'cursor-pointer hover:bg-brand-50/50',
                   rowIdx % 2 === 1 && 'bg-slate-50/40',
                   isOverdue && 'border-l-2 border-l-red-400',
                 )}
