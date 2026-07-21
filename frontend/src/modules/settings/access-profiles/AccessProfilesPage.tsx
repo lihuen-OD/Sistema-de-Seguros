@@ -82,8 +82,8 @@ function AccessProfileModal({ profile, onClose, onSave }: AccessProfileModalProp
       >
         <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-slate-100">
           <div className="flex items-start gap-3">
-            <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-              <KeyRound size={15} className="text-blue-600" />
+            <div className="w-8 h-8 bg-brand-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+              <KeyRound size={15} className="text-brand-600" />
             </div>
             <div>
               <h2 className="text-base font-semibold text-slate-800">
@@ -147,7 +147,7 @@ function AccessProfileModal({ profile, onClose, onSave }: AccessProfileModalProp
             <button
               type="submit"
               disabled={submitting}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
             >
               {submitting ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               {isEdit ? 'Guardar Cambios' : 'Crear Perfil'}
@@ -233,7 +233,7 @@ export default function AccessProfilesPage() {
         <div className="flex items-center gap-1">
           <button
             onClick={(e) => { e.stopPropagation(); setModalProfile(row) }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
             title="Editar perfil"
           >
             <Edit2 size={15} />
@@ -261,7 +261,7 @@ export default function AccessProfilesPage() {
         actions={
           <button
             onClick={() => setModalProfile(null)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Plus size={16} />
             Nuevo Perfil

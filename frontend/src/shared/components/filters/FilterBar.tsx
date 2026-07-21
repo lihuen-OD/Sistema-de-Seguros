@@ -30,7 +30,7 @@ export function FilterBar({ filters, className, children }: FilterBarProps) {
           <select
             value={filter.value}
             onChange={(e) => filter.onChange(e.target.value)}
-            className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all min-w-[140px]"
+            className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all min-w-[140px]"
           >
             <option value="">Todos</option>
             {filter.options.map((opt) => (

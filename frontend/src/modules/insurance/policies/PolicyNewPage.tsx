@@ -99,7 +99,7 @@ function CoverageSelector({
     return (
       <div className="rounded-xl border border-slate-200 p-4">
         <p className="text-sm text-slate-400">Sin coberturas configuradas para este tipo.</p>
-        <Link to="/settings/insurance-types" className="text-xs text-blue-600 hover:underline mt-1 block">
+        <Link to="/settings/insurance-types" className="text-xs text-brand-600 hover:underline mt-1 block">
           Configurar tipos de seguro →
         </Link>
       </div>
@@ -128,7 +128,7 @@ function CoverageSelector({
             ? 'Ninguna seleccionada'
             : `${selected.length} de ${coverageItems.length} seleccionada${selected.length !== 1 ? 's' : ''}`}
         </p>
-        <button type="button" onClick={toggleAll} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+        <button type="button" onClick={toggleAll} className="text-xs text-brand-600 hover:text-brand-700 font-medium">
           {allSelected ? 'Deseleccionar todas' : 'Seleccionar todas'}
         </button>
       </div>
@@ -143,14 +143,14 @@ function CoverageSelector({
                 key={coverage.id}
                 className={[
                   'relative flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors select-none',
-                  checked ? 'bg-blue-50' : 'bg-white hover:bg-slate-50',
+                  checked ? 'bg-brand-50' : 'bg-white hover:bg-slate-50',
                   idx % 2 === 0 && idx < coverageItems.length - 1 ? 'sm:border-r border-slate-100' : '',
                   !isLastRow ? 'border-b border-slate-100' : '',
                 ].join(' ')}
               >
                 <div
                   className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                    checked ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
+                    checked ? 'border-brand-600 bg-brand-600' : 'border-slate-300'
                   }`}
                 >
                   {checked && (
@@ -160,7 +160,7 @@ function CoverageSelector({
                   )}
                 </div>
                 <input type="checkbox" checked={checked} onChange={() => toggle(coverage.id)} className="sr-only" />
-                <span className={`text-sm leading-snug ${checked ? 'text-blue-800 font-medium' : 'text-slate-700'}`}>
+                <span className={`text-sm leading-snug ${checked ? 'text-brand-800 font-medium' : 'text-slate-700'}`}>
                   {coverage.name}
                 </span>
               </label>
@@ -381,7 +381,7 @@ export default function PolicyNewPage() {
                   <Link
                     to="/settings/insurance-types"
                     title="Configurar tipos de seguro"
-                    className="flex-shrink-0 p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    className="flex-shrink-0 p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
                   >
                     <Settings size={15} />
                   </Link>
@@ -452,7 +452,7 @@ export default function PolicyNewPage() {
                 onClick={() => setAssociation(opt)}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
                   form.association === opt
-                    ? 'bg-white text-blue-600 shadow-sm'
+                    ? 'bg-white text-brand-600 shadow-sm'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
@@ -574,7 +574,7 @@ export default function PolicyNewPage() {
             <button
               type="button"
               onClick={() => setShowAttachModal(true)}
-              className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+              className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
             >
               <Plus size={12} />
               Adjuntar archivo
@@ -584,7 +584,7 @@ export default function PolicyNewPage() {
           {attachmentDrafts.length === 0 ? (
             <div
               onClick={() => setShowAttachModal(true)}
-              className="border-2 border-dashed border-slate-200 rounded-xl py-6 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50/20 transition-colors"
+              className="border-2 border-dashed border-slate-200 rounded-xl py-6 text-center cursor-pointer hover:border-brand-300 hover:bg-brand-50/20 transition-colors"
             >
               <Paperclip size={18} className="mx-auto text-slate-300 mb-1.5" />
               <p className="text-sm text-slate-500">Adjuntá la póliza, certificados u otros documentos</p>
@@ -643,7 +643,7 @@ export default function PolicyNewPage() {
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
           >
             <Save size={16} />
             {createMutation.isPending ? 'Guardando…' : 'Guardar Póliza'}

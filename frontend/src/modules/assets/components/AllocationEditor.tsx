@@ -44,7 +44,7 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
         <button
           type="button"
           onClick={add}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex-shrink-0 ml-4"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 border border-brand-200 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors flex-shrink-0 ml-4"
         >
           <Plus size={14} />
           Agregar
@@ -55,7 +55,7 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
         <div className="rounded-xl border-2 border-dashed border-slate-200 py-6 text-center">
           <Hash size={20} className="mx-auto text-slate-300 mb-2" />
           <p className="text-sm text-slate-500">Sin asignación contable</p>
-          <button type="button" onClick={add} className="mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+          <button type="button" onClick={add} className="mt-2 text-sm text-brand-600 hover:text-brand-700 font-medium">
             + Agregar imputación
           </button>
         </div>
@@ -69,7 +69,7 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
                   <select
                     value={alloc.companyId}
                     onChange={(e) => update(alloc.id, 'companyId', e.target.value)}
-                    className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
                   >
                     <option value="">Seleccionar…</option>
                     {activeCompanies.map((c) => (
@@ -82,7 +82,7 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
                   <select
                     value={alloc.costCenterId}
                     onChange={(e) => update(alloc.id, 'costCenterId', e.target.value)}
-                    className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
                   >
                     <option value="">Seleccionar…</option>
                     {activeCostCenters.map((cc) => (
@@ -99,7 +99,7 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
                       max={100}
                       value={alloc.percentage || ''}
                       onChange={(e) => update(alloc.id, 'percentage', parseInt(e.target.value) || 0)}
-                      className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 pr-6 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 pr-6 focus:outline-none focus:ring-2 focus:ring-brand-500"
                       placeholder="0"
                     />
                     <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>

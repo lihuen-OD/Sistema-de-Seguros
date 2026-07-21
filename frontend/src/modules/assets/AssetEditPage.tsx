@@ -116,7 +116,7 @@ function MapSection({ mapsUrl, onChange }: { mapsUrl: string; onChange: (v: stri
         value={mapsUrl}
         onChange={(e) => onChange(e.target.value)}
         placeholder="https://www.google.com/maps/@-34.603722,-58.381592,15z"
-        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-400 bg-white"
+        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 placeholder:text-slate-400 bg-white"
       />
       {mapsUrl && !coords && (
         <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
@@ -133,7 +133,7 @@ function MapSection({ mapsUrl, onChange }: { mapsUrl: string; onChange: (v: stri
           />
           <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
             <span className="text-xs text-slate-500 font-mono">{coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</span>
-            <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+            <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 hover:underline flex items-center gap-1">
               <MapPin size={10} /> Ver en Google Maps
             </a>
           </div>
@@ -911,7 +911,7 @@ export default function AssetEditPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="flex items-center gap-2 px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg transition-colors font-medium"
+              className="flex items-center gap-2 px-5 py-2 text-sm bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white rounded-lg transition-colors font-medium"
             >
               <Save size={15} /> {submitting ? 'Guardando…' : 'Guardar cambios'}
             </button>

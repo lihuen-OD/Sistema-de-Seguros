@@ -72,8 +72,8 @@ function CompanyModal({ company, onClose, onSave }: CompanyModalProps) {
       >
         <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-slate-100">
           <div className="flex items-start gap-3">
-            <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-              <Building2 size={15} className="text-blue-600" />
+            <div className="w-8 h-8 bg-brand-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Building2 size={15} className="text-brand-600" />
             </div>
             <div>
               <h2 className="text-base font-semibold text-slate-800">
@@ -136,7 +136,7 @@ function CompanyModal({ company, onClose, onSave }: CompanyModalProps) {
             <button
               type="submit"
               disabled={submitting}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
             >
               {submitting ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               {isEdit ? 'Guardar Cambios' : 'Crear Empresa'}
@@ -193,8 +193,8 @@ export default function CompaniesPage() {
       label: 'Razón Social',
       render: (v, row) => (
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-            <Building2 size={16} className="text-blue-500" />
+          <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+            <Building2 size={16} className="text-brand-500" />
           </div>
           <div>
             <span className="font-medium text-slate-800 text-sm block">{String(v)}</span>
@@ -234,7 +234,7 @@ export default function CompaniesPage() {
       render: (_, row) => (
         <button
           onClick={(e) => { e.stopPropagation(); setModalCompany(row) }}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
           title="Editar empresa"
         >
           <Edit2 size={15} />
@@ -254,7 +254,7 @@ export default function CompaniesPage() {
         actions={
           <button
             onClick={() => setModalCompany(null)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Plus size={16} />
             Nueva Empresa
@@ -320,12 +320,12 @@ export default function CompaniesPage() {
           return (
             <div
               key={company.id}
-              className="bg-white rounded-xl border border-slate-200 p-5 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
+              className="bg-white rounded-xl border border-slate-200 p-5 hover:border-brand-300 hover:shadow-sm transition-all cursor-pointer"
               onClick={() => setModalCompany(company)}
             >
               <div className="flex items-start justify-between gap-3 mb-4">
-                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                  <Building2 size={20} className="text-blue-500" />
+                <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+                  <Building2 size={20} className="text-brand-500" />
                 </div>
                 <StatusPill status={company.status} size="sm" />
               </div>

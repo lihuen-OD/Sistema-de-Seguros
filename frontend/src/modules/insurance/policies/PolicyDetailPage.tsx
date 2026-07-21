@@ -67,7 +67,7 @@ export default function PolicyDetailPage() {
     return (
       <PageContent>
         <div className="flex items-center justify-center py-20">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
         </div>
       </PageContent>
     )
@@ -202,7 +202,7 @@ export default function PolicyDetailPage() {
             </button>
             <button
               onClick={() => navigate(ROUTES.POLICIES_EDIT(policy.id))}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Edit2 size={15} />
               Editar
@@ -242,9 +242,9 @@ export default function PolicyDetailPage() {
                   ).map((cov) => (
                     <span
                       key={cov}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 border border-blue-100 text-blue-700"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-brand-50 border border-brand-100 text-brand-700"
                     >
-                      <Tag size={10} className="text-blue-400" />
+                      <Tag size={10} className="text-brand-400" />
                       {cov}
                     </span>
                   ))}
@@ -282,8 +282,8 @@ export default function PolicyDetailPage() {
                 </p>
                 {linkedAssets.map((asset) => (
                   <div key={asset.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                    <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <ShieldCheck size={16} className="text-blue-600" />
+                    <div className="w-8 h-8 bg-brand-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <ShieldCheck size={16} className="text-brand-600" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-slate-800">{asset.name}</p>
@@ -301,7 +301,7 @@ export default function PolicyDetailPage() {
                     </div>
                     <button
                       onClick={() => navigate(`/assets/${asset.id}`)}
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium flex-shrink-0"
+                      className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium flex-shrink-0"
                     >
                       <Link2 size={12} />
                       Ver
@@ -381,14 +381,14 @@ export default function PolicyDetailPage() {
               className={clsx(
                 'flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
                 activeDocTab === tab.key
-                  ? 'border-blue-600 text-blue-600'
+                  ? 'border-brand-600 text-brand-600'
                   : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300',
               )}
             >
               {tab.label}
               <span className={clsx(
                 'inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold',
-                activeDocTab === tab.key ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500',
+                activeDocTab === tab.key ? 'bg-brand-100 text-brand-600' : 'bg-slate-100 text-slate-500',
               )}>
                 {tab.count}
               </span>
@@ -399,7 +399,7 @@ export default function PolicyDetailPage() {
             <button
               type="button"
               onClick={() => navigate(`/insurance/documents/new?policyId=${id}`)}
-              className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
             >
               <Plus size={13} />
               Nuevo documento
@@ -423,7 +423,7 @@ export default function PolicyDetailPage() {
                 <button
                   type="button"
                   onClick={() => navigate(`/insurance/documents/new?policyId=${id}`)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
                 >
                   <Plus size={14} />
                   Agregar documento
@@ -543,8 +543,8 @@ function FacturaCard({
         className="w-full flex items-center justify-between gap-3 px-5 py-4 hover:bg-slate-50/60 transition-colors text-left"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-            <Receipt size={15} className="text-blue-600" />
+          <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+            <Receipt size={15} className="text-brand-600" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -865,11 +865,11 @@ function InfoRow({
       ) : link ? (
         <button
           onClick={() => nav(link)}
-          className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+          className="text-sm font-medium text-brand-600 hover:text-brand-700 flex items-center gap-1 transition-colors"
         >
-          {Icon && <Icon size={12} className="text-blue-400 flex-shrink-0" />}
+          {Icon && <Icon size={12} className="text-brand-400 flex-shrink-0" />}
           {value}
-          <ArrowUpRight size={11} className="text-blue-400" />
+          <ArrowUpRight size={11} className="text-brand-400" />
         </button>
       ) : (
         <p className="text-sm font-medium text-slate-800 flex items-center gap-1">

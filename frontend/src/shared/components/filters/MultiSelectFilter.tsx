@@ -54,7 +54,7 @@ export function MultiSelectFilter({ label, options, value, onChange, className }
         onClick={() => setOpen((v) => !v)}
         className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
           open || hasSelection
-            ? 'bg-blue-50 border-blue-300 text-blue-700'
+            ? 'bg-brand-50 border-brand-300 text-brand-700'
             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
         }`}
       >
@@ -63,7 +63,7 @@ export function MultiSelectFilter({ label, options, value, onChange, className }
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onChange([]) }}
-            className="ml-0.5 p-0.5 rounded hover:bg-blue-100 transition-colors"
+            className="ml-0.5 p-0.5 rounded hover:bg-brand-100 transition-colors"
             title="Limpiar filtro"
           >
             <X size={11} />
@@ -88,7 +88,7 @@ export function MultiSelectFilter({ label, options, value, onChange, className }
             >
               <span className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                 !hasSelection
-                  ? 'border-blue-600 bg-blue-600'
+                  ? 'border-brand-600 bg-brand-600'
                   : 'border-slate-300 bg-white'
               }`}>
                 {!hasSelection && (
@@ -114,8 +114,8 @@ export function MultiSelectFilter({ label, options, value, onChange, className }
                 >
                   <span className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                     checked
-                      ? 'border-blue-600 bg-blue-600'
-                      : 'border-slate-300 bg-white hover:border-blue-400'
+                      ? 'border-brand-600 bg-brand-600'
+                      : 'border-slate-300 bg-white hover:border-brand-400'
                   }`}>
                     {checked && (
                       <svg width="9" height="7" viewBox="0 0 9 7" fill="none">

@@ -36,10 +36,10 @@ function Field({
 }
 
 const inputCls =
-  'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 placeholder:text-slate-300 transition-colors'
+  'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 placeholder:text-slate-300 transition-colors'
 
 const selectCls =
-  'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors'
+  'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-colors'
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -515,9 +515,9 @@ export default function ClaimEditPage() {
           </SectionCard>
 
           {/* Notice */}
-          <div className="flex items-start gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
-            <AlertTriangle size={15} className="text-blue-500 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-blue-700">
+          <div className="flex items-start gap-3 px-4 py-3 bg-brand-50 border border-brand-200 rounded-xl">
+            <AlertTriangle size={15} className="text-brand-500 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-brand-700">
               Cada cambio significativo genera un evento automático en el historial del siniestro.
             </p>
           </div>
@@ -534,7 +534,7 @@ export default function ClaimEditPage() {
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center gap-2 px-5 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Save size={15} />
               {saving ? 'Guardando…' : 'Guardar cambios'}
@@ -570,7 +570,7 @@ function EditAttachmentRow({
           <button
             type="button"
             onClick={() => claimsApi.downloadAttachment(claimId, attachment.id, attachment.name)}
-            className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
+            className="p-1.5 text-slate-400 hover:text-brand-600 transition-colors"
             title="Descargar"
           >
             <Download size={14} />

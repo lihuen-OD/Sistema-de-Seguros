@@ -26,7 +26,7 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   // Asset
   activo:                  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   inactivo:                { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
-  en_reparacion:           { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+  en_reparacion:           { bg: 'bg-brand-50',    text: 'text-brand-700',    border: 'border-brand-200'   },
   vendido:                 { bg: 'bg-purple-50',  text: 'text-purple-700',  border: 'border-purple-200' },
   dado_de_baja:            { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   // Policy
@@ -45,19 +45,19 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   OVERDUE:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   NOT_APPLICABLE:          { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
   // Document status
-  ISSUED:                  { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+  ISSUED:                  { bg: 'bg-brand-50',    text: 'text-brand-700',    border: 'border-brand-200'   },
   APPLIED:                 { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   CANCELLED:               { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   OBSERVED:                { bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200' },
   // Fire ext
   vencido:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   // Fire ext — auditorías (Fase 4)
-  SUBMITTED:               { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+  SUBMITTED:               { bg: 'bg-brand-50',    text: 'text-brand-700',    border: 'border-brand-200'   },
   APPROVED:                { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   REJECTED:                { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   NEEDS_CORRECTION:        { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
   // Task
-  en_curso:                { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+  en_curso:                { bg: 'bg-brand-50',    text: 'text-brand-700',    border: 'border-brand-200'   },
   finalizada:              { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   // Priority
   baja:                    { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
@@ -65,7 +65,7 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   alta:                    { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   pendiente_documentacion: { bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200' },
   // Claims (Siniestros) — claves en español porque son el propio texto a mostrar
-  'Denunciado':            { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+  'Denunciado':            { bg: 'bg-brand-50',    text: 'text-brand-700',    border: 'border-brand-200'   },
   'En trámite':            { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
   'Liquidado':             { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   'Rechazado':             { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },

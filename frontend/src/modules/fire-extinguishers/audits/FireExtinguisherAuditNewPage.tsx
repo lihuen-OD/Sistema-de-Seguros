@@ -161,7 +161,7 @@ export default function FireExtinguisherAuditNewPage() {
                 className={clsx(
                   'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full whitespace-nowrap transition-all',
                   isActive
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-brand-600 text-white'
                     : isReachable
                       ? 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                       : 'text-slate-300 cursor-not-allowed',
@@ -255,7 +255,7 @@ export default function FireExtinguisherAuditNewPage() {
               type="button"
               onClick={advance}
               disabled={!canAdvance}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+              className="px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors disabled:opacity-50"
             >
               Siguiente
             </button>

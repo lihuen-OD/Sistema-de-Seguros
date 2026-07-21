@@ -16,7 +16,7 @@ function ModuleCard({ icon: Icon, iconColor, iconBg, title, catalogs, to }: Modu
   const navigate = useNavigate()
 
   return (
-    <div className="card p-5 flex flex-col gap-4 hover:border-blue-300 hover:shadow-sm transition-all">
+    <div className="card p-5 flex flex-col gap-4 hover:border-brand-300 hover:shadow-sm transition-all">
       <div className="flex items-start gap-3">
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${iconBg}`}>
           <Icon size={20} className={iconColor} />
@@ -37,7 +37,7 @@ function ModuleCard({ icon: Icon, iconColor, iconBg, title, catalogs, to }: Modu
 
       <button
         onClick={() => navigate(to)}
-        className="mt-auto flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors group"
+        className="mt-auto flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-brand-600 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors group"
       >
         Configurar
         <ArrowRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
@@ -49,8 +49,8 @@ function ModuleCard({ icon: Icon, iconColor, iconBg, title, catalogs, to }: Modu
 const modules: ModuleCardProps[] = [
   {
     icon: Package,
-    iconColor: 'text-blue-600',
-    iconBg: 'bg-blue-50',
+    iconColor: 'text-brand-600',
+    iconBg: 'bg-brand-50',
     title: 'Activos',
     catalogs: [
       'Combustible',

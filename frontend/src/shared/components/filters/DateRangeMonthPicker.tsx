@@ -21,7 +21,7 @@ export function DateRangeMonthPicker({ from, to, onChange, className }: DateRang
 
   const inputCls = clsx(
     'border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 bg-white',
-    'focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500',
+    'focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500',
     'tabular-nums cursor-pointer w-[130px]',
     '[&::-webkit-calendar-picker-indicator]:opacity-50',
     '[&::-webkit-calendar-picker-indicator]:hover:opacity-100',
@@ -62,7 +62,7 @@ export function DateRangeMonthPicker({ from, to, onChange, className }: DateRang
             className={clsx(
               'px-2.5 py-1.5 text-xs font-medium transition-colors border-r border-slate-200 last:border-r-0',
               isPresetActive(p)
-                ? 'bg-blue-600 text-white'
+                ? 'bg-brand-600 text-white'
                 : 'bg-white text-slate-600 hover:bg-slate-50',
             )}
           >

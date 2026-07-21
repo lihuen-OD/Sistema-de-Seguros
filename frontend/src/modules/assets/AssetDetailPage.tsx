@@ -45,7 +45,7 @@ function ValuacionesEntryList({ entries, accent }: { entries: AssetValueEntry[];
         const isLatest = idx === 0
         const colors = accent === 'purple'
           ? { ring: 'bg-purple-100', icon: 'text-purple-500', value: 'text-purple-700', badge: 'text-purple-600' }
-          : { ring: 'bg-blue-100', icon: 'text-blue-500', value: 'text-blue-700', badge: 'text-blue-600' }
+          : { ring: 'bg-brand-100', icon: 'text-brand-500', value: 'text-brand-700', badge: 'text-brand-600' }
         return (
           <div key={entry.id} className={`flex items-center justify-between gap-3 px-3 py-2.5 ${isLatest ? 'bg-slate-50' : 'bg-white'}`}>
             <div className="flex items-center gap-2.5 min-w-0">
@@ -78,7 +78,7 @@ function ValuacionesTab({ history }: { history: AssetValueEntry[] }) {
     <div className="p-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">Valor Patrimonial Real</p>
+          <p className="text-xs font-semibold text-brand-700 uppercase tracking-wide mb-2">Valor Patrimonial Real</p>
           <ValuacionesEntryList entries={realEntries} accent="blue" />
         </div>
         <div>
@@ -352,7 +352,7 @@ export default function AssetDetailPage() {
             </button>
             <button
               onClick={() => navigate(`/assets/${asset.id}/edit`)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
             >
               <Edit2 size={15} />
               Editar
@@ -437,7 +437,7 @@ export default function AssetDetailPage() {
                         onClick={() => setSelectedPhotoIndex(idx)}
                         className={`h-20 rounded-lg overflow-hidden border transition-shadow ${
                           idx === selectedPhotoIndex
-                            ? 'border-blue-600 shadow-md'
+                            ? 'border-brand-600 shadow-md'
                             : 'border-slate-200 hover:border-slate-300'
                         }`}
                       >
@@ -478,8 +478,8 @@ export default function AssetDetailPage() {
                 {asset.silos.map((silo, idx) => (
                   <div key={silo.id} className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50">
                     <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                        <Box size={13} className="text-blue-600" />
+                      <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0">
+                        <Box size={13} className="text-brand-600" />
                       </div>
                       <span className="text-sm font-medium text-slate-700">Silo {idx + 1}</span>
                     </div>
@@ -572,7 +572,7 @@ export default function AssetDetailPage() {
                           {allocCC ? `${allocCC.code} — ${allocCC.name}` : '—'}
                         </p>
                       </div>
-                      <span className="flex-shrink-0 text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full tabular-nums">
+                      <span className="flex-shrink-0 text-sm font-semibold text-brand-700 bg-brand-50 border border-brand-200 px-2.5 py-0.5 rounded-full tabular-nums">
                         {alloc.percentage}%
                       </span>
                     </div>
@@ -609,7 +609,7 @@ export default function AssetDetailPage() {
                 const cfg = ({
                   activo:  { label: 'Alta',  color: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
                   baja:    { label: 'Baja',  color: 'bg-red-500',     text: 'text-red-700',     bg: 'bg-red-50' },
-                  vendido: { label: 'Venta', color: 'bg-blue-500',    text: 'text-blue-700',    bg: 'bg-blue-50' },
+                  vendido: { label: 'Venta', color: 'bg-brand-500',    text: 'text-brand-700',    bg: 'bg-brand-50' },
                 } as Record<string, { label: string; color: string; text: string; bg: string }>)[entry.status]
                   ?? { label: entry.status, color: 'bg-slate-400', text: 'text-slate-600', bg: 'bg-slate-50' }
                 return (
@@ -708,7 +708,7 @@ export default function AssetDetailPage() {
                     href={asset.mapsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
+                    className="inline-flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors"
                   >
                     <ExternalLink size={12} />
                     Ver en Google Maps
@@ -759,7 +759,7 @@ export default function AssetDetailPage() {
                 onClick={() => setActiveTab(tab)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full whitespace-nowrap transition-all ${
                   isActive
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-brand-600 text-white'
                     : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                 }`}
               >
@@ -772,7 +772,7 @@ export default function AssetDetailPage() {
                 {tab}
                 {count > 0 && (
                   <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                    isActive ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600'
+                    isActive ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600'
                   }`}>
                     {count}
                   </span>
@@ -816,7 +816,7 @@ export default function AssetDetailPage() {
                 </button>
                 <button
                   onClick={() => navigate(`/fire-extinguishers/new?assetId=${asset.id}`)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
                 >
                   <Plus size={13} />
                   Nuevo matafuego

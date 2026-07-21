@@ -261,9 +261,9 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
             </div>
           )}
 
-          <div className="mt-4 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
-            <Info size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-blue-800 leading-snug">
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5">
+            <Info size={14} className="text-brand-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-brand-800 leading-snug">
               La distribución por póliza de esta Nota de Crédito se calcula automáticamente, proporcional a la de
               la factura de referencia, en el momento en que se aplique.
             </p>

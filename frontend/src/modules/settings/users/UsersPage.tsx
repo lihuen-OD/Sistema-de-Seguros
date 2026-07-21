@@ -153,7 +153,7 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
           <button
             type="submit"
             disabled={submitting}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
           >
             {submitting ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {isEdit ? 'Guardar Cambios' : 'Crear Usuario'}
@@ -226,7 +226,7 @@ function ResetPasswordModal({ user, onClose, onReset }: ResetPasswordModalProps)
           <button
             type="submit"
             disabled={submitting}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
           >
             {submitting ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
             Resetear
@@ -316,7 +316,7 @@ export default function UsersPage() {
         <div className="flex items-center gap-1">
           <button
             onClick={(e) => { e.stopPropagation(); setModalUser(row) }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
             title="Editar usuario"
             aria-label="Editar usuario"
           >
@@ -345,7 +345,7 @@ export default function UsersPage() {
         actions={
           <button
             onClick={() => setModalUser(null)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Plus size={16} />
             Nuevo Usuario

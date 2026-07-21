@@ -81,7 +81,7 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canA
             type="month"
             value={period}
             onChange={(e) => e.target.value && onPeriodChange(e.target.value)}
-            className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 bg-white tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 bg-white tabular-nums focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
           />
           <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
             {totalAudited} de {data.length} matafuegos auditados en {period}
@@ -168,7 +168,7 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canA
                         </span>
                       )}
                       {isAuditable && (
-                        <span className="flex items-center gap-1 text-xs font-medium text-blue-600">
+                        <span className="flex items-center gap-1 text-xs font-medium text-brand-600">
                           <ClipboardCheck size={13} />
                           Auditar
                         </span>

@@ -93,7 +93,7 @@ export default function FireExtinguishersPage() {
       const isSelected = selectedIds.has(fe.id)
       const { isExp, isSoon } = getExpiryFlags(fe)
       return clsx(
-        isSelected ? 'bg-blue-50/60 hover:bg-blue-50' : idx % 2 === 1 ? 'bg-slate-50/40 hover:bg-slate-50' : 'hover:bg-slate-50/60',
+        isSelected ? 'bg-brand-50/60 hover:bg-brand-50' : idx % 2 === 1 ? 'bg-slate-50/40 hover:bg-slate-50' : 'hover:bg-slate-50/60',
         isExp && !isSelected && 'border-l-2 border-l-red-400',
         isSoon && !isSelected && !isExp && 'border-l-2 border-l-amber-400',
       )
@@ -179,7 +179,7 @@ export default function FireExtinguishersPage() {
             onClick={(e) => { e.stopPropagation(); navigate(`/assets/${asset.id}`) }}
             className="text-left block min-w-0 max-w-[200px] group"
           >
-            <OverflowCell value={asset.name} lines={1} className="text-xs text-blue-600 group-hover:underline" />
+            <OverflowCell value={asset.name} lines={1} className="text-xs text-brand-600 group-hover:underline" />
             <span className="block text-xs text-slate-400 mt-0.5">{locationLabel}</span>
           </button>
         ) : (
@@ -292,7 +292,7 @@ export default function FireExtinguishersPage() {
         <div className="flex items-center gap-1">
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/fire-extinguishers/${row.id}`) }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
             title="Ver detalle"
             aria-label="Ver detalle"
           >
@@ -395,7 +395,7 @@ export default function FireExtinguishersPage() {
         actions={
           <button
             onClick={() => navigate('/fire-extinguishers/new')}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Plus size={16} />
             Nuevo Matafuego
@@ -470,8 +470,8 @@ export default function FireExtinguishersPage() {
         </div>
 
         {selectedCount > 0 && (
-          <div className="px-5 py-2.5 bg-blue-50 border-b border-blue-100 flex flex-wrap items-center gap-3">
-            <span className="text-sm font-medium text-blue-800">
+          <div className="px-5 py-2.5 bg-brand-50 border-b border-brand-100 flex flex-wrap items-center gap-3">
+            <span className="text-sm font-medium text-brand-800">
               {selectedCount} matafuego{selectedCount !== 1 ? 's' : ''} seleccionado{selectedCount !== 1 ? 's' : ''}
             </span>
             <button
@@ -483,7 +483,7 @@ export default function FireExtinguishersPage() {
             </button>
             <button
               onClick={clearSelection}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 rounded-lg transition-colors ml-auto"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100 rounded-lg transition-colors ml-auto"
             >
               <X size={13} />
               Limpiar selección

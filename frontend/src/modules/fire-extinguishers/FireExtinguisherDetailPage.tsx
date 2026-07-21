@@ -39,14 +39,14 @@ import type { FireExtinguisherHistory } from '../../shared/types'
 const EVENT_ICON_CONFIG: Record<string, { bg: string; text: string; Icon: typeof RefreshCw }> = {
   Recarga: { bg: 'bg-emerald-100', text: 'text-emerald-600', Icon: RefreshCw },
   Vencimiento: { bg: 'bg-red-100', text: 'text-red-600', Icon: Flame },
-  Alta: { bg: 'bg-blue-100', text: 'text-blue-600', Icon: Plus },
+  Alta: { bg: 'bg-brand-100', text: 'text-brand-600', Icon: Plus },
   Actualización: { bg: 'bg-amber-100', text: 'text-amber-600', Icon: Pencil },
   Baja: { bg: 'bg-slate-200', text: 'text-slate-600', Icon: Trash2 },
   Auditoría: { bg: 'bg-indigo-100', text: 'text-indigo-600', Icon: ClipboardCheck },
 }
 
 function TimelineItem({ item }: { item: FireExtinguisherHistory }) {
-  const { bg, text, Icon } = EVENT_ICON_CONFIG[item.eventType] ?? { bg: 'bg-blue-100', text: 'text-blue-600', Icon: Clock }
+  const { bg, text, Icon } = EVENT_ICON_CONFIG[item.eventType] ?? { bg: 'bg-brand-100', text: 'text-brand-600', Icon: Clock }
   const hasChanges = item.changes && item.changes.length > 0
 
   return (
@@ -185,7 +185,7 @@ export default function FireExtinguisherDetailPage() {
       {asset ? (
         <button
           onClick={() => navigate(`/assets/${asset.id}`)}
-          className="text-blue-600 hover:underline text-left"
+          className="text-brand-600 hover:underline text-left"
         >
           {asset.name}
           <span className="block text-xs text-slate-400 font-normal">

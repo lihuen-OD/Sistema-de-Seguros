@@ -68,7 +68,7 @@ export default function PolicyFichaPage() {
         <button
           onClick={handleDownload}
           disabled={downloading}
-          className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
+          className="flex items-center gap-2 px-4 py-2 text-sm bg-brand-600 hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
         >
           {downloading ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />}
           {downloading ? 'Generando…' : 'Descargar PDF'}
@@ -105,7 +105,7 @@ export default function PolicyFichaPage() {
           </div>
           <div className="flex-shrink-0 text-right">
             <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Suma asegurada</p>
-            <p className="text-xl font-bold text-blue-700 tabular-nums">
+            <p className="text-xl font-bold text-brand-700 tabular-nums">
               {formatCurrencyFull(policy.insuredAmountUsd, 'USD')}
             </p>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -254,7 +254,7 @@ function FichaRow({ label, value, highlight = false, mono = false }: {
   return (
     <div className="flex items-start justify-between gap-4 min-w-0">
       <span className="text-xs text-slate-500 flex-shrink-0">{label}</span>
-      <span className={`text-sm font-medium text-right min-w-0 break-words ${mono ? 'font-mono' : ''} ${highlight ? 'text-blue-700 font-semibold' : 'text-slate-800'}`}>
+      <span className={`text-sm font-medium text-right min-w-0 break-words ${mono ? 'font-mono' : ''} ${highlight ? 'text-brand-700 font-semibold' : 'text-slate-800'}`}>
         {value}
       </span>
     </div>

@@ -51,10 +51,10 @@ export function DocumentTypePicker({ documentTypes, onSelect }: DocumentTypePick
               key={t.key}
               type="button"
               onClick={() => onSelect(t.key)}
-              className="flex items-start gap-3 text-left p-5 bg-white border border-slate-200 rounded-xl hover:border-blue-300 hover:shadow-md transition-all"
+              className="flex items-start gap-3 text-left p-5 bg-white border border-slate-200 rounded-xl hover:border-brand-300 hover:shadow-md transition-all"
             >
-              <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                <Icon size={18} className="text-blue-600" />
+              <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+                <Icon size={18} className="text-brand-600" />
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-800">{t.label}</p>
