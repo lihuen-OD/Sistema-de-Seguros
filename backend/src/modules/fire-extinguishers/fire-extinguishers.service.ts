@@ -152,17 +152,19 @@ function mapFireExt(fe: Record<string, unknown>) {
     type: fe.type,
     capacity: fe.capacity,
     chargeDate: fe.lastRechargeDate ? toDateStr(fe.lastRechargeDate as Date | string) : null,
-    expirationDate: toDateStr(fe.expirationDate as Date | string),
+    expirationDate: fe.expirationDate ? toDateStr(fe.expirationDate as Date | string) : null,
     associatedAssetId: fe.assetId ?? null,
     associatedLocationType: fe.locationType,
     location: fe.location ?? null,
     establishment: fe.establishment ?? null,
     status: computeFireExtinguisherStatus(
-      fe.expirationDate as Date | string,
+      fe.expirationDate as Date | string | null,
       manufacturingYear,
       fe.hydraulicTestExpirationDate as Date | string | null,
     ),
-    chargeStatus: computeExpirationStatus(fe.expirationDate as Date | string),
+    chargeStatus: fe.expirationDate
+      ? computeExpirationStatus(fe.expirationDate as Date | string)
+      : ('sin_fecha' as const),
     manufacturingLifeStatus: computeManufacturingLifeStatus(manufacturingYear),
     hydraulicTestExpirationDate: fe.hydraulicTestExpirationDate
       ? toDateStr(fe.hydraulicTestExpirationDate as Date | string)
@@ -344,7 +346,7 @@ export const fireExtinguishersService = {
             code: created.code,
             type: created.type,
             capacity: created.capacity,
-            expirationDate: toDateStr(created.expirationDate),
+            expirationDate: created.expirationDate ? toDateStr(created.expirationDate) : null,
             lastRechargeDate: created.lastRechargeDate ? toDateStr(created.lastRechargeDate) : null,
             hydraulicTestExpirationDate: created.hydraulicTestExpirationDate
               ? toDateStr(created.hydraulicTestExpirationDate)
@@ -387,7 +389,7 @@ export const fireExtinguishersService = {
           data: {
             ...(data.type && { type: data.type }),
             ...(data.capacity && { capacity: data.capacity }),
-            ...(data.expirationDate && { expirationDate: data.expirationDate }),
+            ...(data.expirationDate !== undefined && { expirationDate: data.expirationDate }),
             ...(data.chargeDate !== undefined && { lastRechargeDate: data.chargeDate }),
             ...(data.hydraulicTestExpirationDate !== undefined && {
               hydraulicTestExpirationDate: data.hydraulicTestExpirationDate,

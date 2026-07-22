@@ -48,9 +48,9 @@ export default function FireExtinguisherFichaPage() {
   const asset = fe.associatedAssetId ? assets.find(a => a.id === fe.associatedAssetId) : null
   const recharges = history.filter(h => h.eventType === 'recarga').slice(0, 5)
 
-  const daysToExpiry = Math.ceil(
-    (new Date(fe.expirationDate).getTime() - now) / (1000 * 60 * 60 * 24)
-  )
+  const daysToExpiry = fe.expirationDate
+    ? Math.ceil((new Date(fe.expirationDate).getTime() - now) / (1000 * 60 * 60 * 24))
+    : null
 
   async function handleDownload() {
     if (!fichaRef.current) return
@@ -111,11 +111,15 @@ export default function FireExtinguisherFichaPage() {
           </div>
           <div className="flex-shrink-0 text-right">
             <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Vencimiento</p>
-            <p className={`text-xl font-bold tabular-nums ${daysToExpiry < 0 ? 'text-red-600' : daysToExpiry <= 30 ? 'text-amber-600' : 'text-slate-900'}`}>
+            <p className={`text-xl font-bold tabular-nums ${daysToExpiry == null ? 'text-slate-900' : daysToExpiry < 0 ? 'text-red-600' : daysToExpiry <= 30 ? 'text-amber-600' : 'text-slate-900'}`}>
               {formatDate(fe.expirationDate)}
             </p>
-            <p className={`text-xs mt-0.5 ${daysToExpiry < 0 ? 'text-red-500' : daysToExpiry <= 30 ? 'text-amber-500' : 'text-slate-400'}`}>
-              {daysToExpiry < 0 ? `Vencido hace ${Math.abs(daysToExpiry)} días` : `Vence en ${daysToExpiry} días`}
+            <p className={`text-xs mt-0.5 ${daysToExpiry == null ? 'text-slate-400' : daysToExpiry < 0 ? 'text-red-500' : daysToExpiry <= 30 ? 'text-amber-500' : 'text-slate-400'}`}>
+              {daysToExpiry == null
+                ? 'Sin fecha cargada'
+                : daysToExpiry < 0
+                  ? `Vencido hace ${Math.abs(daysToExpiry)} días`
+                  : `Vence en ${daysToExpiry} días`}
             </p>
           </div>
         </div>
@@ -140,7 +144,7 @@ export default function FireExtinguisherFichaPage() {
               <SectionHeading>Fechas</SectionHeading>
               <div className="space-y-2.5">
                 {fe.chargeDate && <FichaRow label="Última recarga" value={formatDate(fe.chargeDate)} />}
-                <FichaRow label="Fecha de vencimiento" value={formatDate(fe.expirationDate)} highlight={daysToExpiry <= 30} />
+                <FichaRow label="Fecha de vencimiento" value={formatDate(fe.expirationDate)} highlight={daysToExpiry != null && daysToExpiry <= 30} />
                 {fe.hydraulicTestExpirationDate && (
                   <FichaRow
                     label="Prueba hidráulica"

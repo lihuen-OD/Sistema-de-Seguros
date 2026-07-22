@@ -11,9 +11,9 @@ const currentYear = new Date().getFullYear()
 const FireExtBaseSchema = z.object({
   type: z.string().min(1, 'El tipo es requerido').max(100),
   capacity: z.string().min(1, 'La capacidad es requerida').max(50),
-  expirationDate: ISODate,
+  expirationDate: ISODate.optional().nullable(),
   chargeDate: ISODate.optional().nullable(),
-  hydraulicTestExpirationDate: ISODate,
+  hydraulicTestExpirationDate: ISODate.optional().nullable(),
   associatedAssetId: z.string().uuid('ID de activo inválido').optional().nullable(),
   associatedLocationType: z.string().min(1, 'El tipo de ubicación es requerido').max(100),
   location: z.string().max(200).optional().nullable(),
@@ -33,7 +33,7 @@ export const CreateFireExtinguisherSchema = FireExtBaseSchema
 export const UpdateFireExtinguisherSchema = FireExtBaseSchema.partial()
 
 export const ListFireExtinguishersQuerySchema = PaginationSchema.extend({
-  status: z.enum(['vigente', 'proximo_vencer', 'vencido']).optional(),
+  status: z.enum(['vigente', 'proximo_vencer', 'vencido', 'sin_fecha']).optional(),
   locationType: z.string().optional(),
   establishment: z.string().optional(),
   assetId: z.string().uuid().optional(),

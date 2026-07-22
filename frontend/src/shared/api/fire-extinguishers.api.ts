@@ -13,7 +13,7 @@ interface BackendHistory {
 }
 interface BackendExtinguisher {
   id: string; code: string | null; type: string; capacity: string
-  chargeDate: string | null; expirationDate: string; associatedAssetId: string | null
+  chargeDate: string | null; expirationDate: string | null; associatedAssetId: string | null
   hydraulicTestExpirationDate: string | null; hydraulicTestStatus?: string | null
   associatedLocationType: string; location: string | null; establishment: string | null
   status: string; chargeStatus: string; manufacturingLifeStatus: string | null
@@ -50,8 +50,8 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
     code: b.code ?? b.id.slice(0, 8).toUpperCase(),
     type: b.type,
     capacity: b.capacity,
-    chargeDate: b.chargeDate ?? '',
-    expirationDate: b.expirationDate,
+    chargeDate: b.chargeDate ?? null,
+    expirationDate: b.expirationDate ?? null,
     hydraulicTestExpirationDate: b.hydraulicTestExpirationDate ?? null,
     associatedAssetId: b.associatedAssetId ?? null,
     associatedLocationType: b.associatedLocationType as AssociatedLocationType,
@@ -72,8 +72,9 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
 }
 
 export interface FireExtinguisherCreateInput {
-  type: string; capacity: string; expirationDate: string; chargeDate?: string
-  hydraulicTestExpirationDate: string
+  type: string; capacity: string
+  expirationDate?: string | null; chargeDate?: string | null
+  hydraulicTestExpirationDate?: string | null
   associatedAssetId?: string; associatedLocationType: string; location?: string
   establishment: string; observations?: string
   brand?: string; cylinderNumber: string; manufacturingYear: number
@@ -173,6 +174,7 @@ export interface FireExtinguisherLocationTypeBucket {
   vigente: number
   proximo_vencer: number
   vencido: number
+  sin_fecha: number
 }
 
 export interface FireExtinguisherStatusBucket {
@@ -181,11 +183,12 @@ export interface FireExtinguisherStatusBucket {
   vigente: number
   proximo_vencer: number
   vencido: number
+  sin_fecha: number
   byLocationType: FireExtinguisherLocationTypeBucket[]
 }
 
 export interface FireExtinguisherDashboardSummary {
-  totals: { total: number; vigente: number; proximo_vencer: number; vencido: number }
+  totals: { total: number; vigente: number; proximo_vencer: number; vencido: number; sin_fecha: number }
   byEstablishment: FireExtinguisherStatusBucket[]
   byType: { type: string; count: number }[]
   audits: {

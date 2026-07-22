@@ -434,7 +434,7 @@ model FireExtinguisher {
   brand             String?
   cylinderNumber    String?
   manufacturingYear Int?
-  expirationDate    DateTime  @db.Date
+  expirationDate    DateTime? @db.Date
   lastRechargeDate  DateTime? @db.Date
   hydraulicTestExpirationDate DateTime? @db.Date
   observations      String?
