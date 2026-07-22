@@ -88,9 +88,6 @@ export default function FireExtinguisherNewPage() {
     const e: FormErrors = {}
     if (!type) e.type = 'Seleccioná un tipo'
     if (!capacity) e.capacity = 'Seleccioná una capacidad'
-    if (!chargeDate) e.chargeDate = 'La fecha de carga es obligatoria'
-    if (!expirationDate) e.expirationDate = 'La fecha de vencimiento es obligatoria'
-    if (!hydraulicTestExpirationDate) e.hydraulicTestExpirationDate = 'La fecha de vencimiento de prueba hidráulica es obligatoria'
     if (!associatedLocationType) e.associatedLocationType = 'Seleccioná un tipo de ubicación'
     if (!cylinderNumber.trim()) e.cylinderNumber = 'El número de cilindro es obligatorio'
     if (!establishment) e.establishment = 'Seleccioná un establecimiento'
@@ -115,9 +112,9 @@ export default function FireExtinguisherNewPage() {
       const input: FireExtinguisherCreateInput = {
         type,
         capacity,
-        chargeDate,
-        expirationDate,
-        hydraulicTestExpirationDate,
+        chargeDate: chargeDate || null,
+        expirationDate: expirationDate || null,
+        hydraulicTestExpirationDate: hydraulicTestExpirationDate || null,
         associatedAssetId: associatedAssetId || undefined,
         associatedLocationType,
         location: location.trim() || undefined,
@@ -212,7 +209,7 @@ export default function FireExtinguisherNewPage() {
 
           <div className="mt-5">
             <FormSection title="Fechas">
-              <FormField label="Fecha de última carga" required error={errors.chargeDate}>
+              <FormField label="Fecha de última carga" error={errors.chargeDate}>
                 <FormInput
                   type="date"
                   value={chargeDate}
@@ -221,7 +218,6 @@ export default function FireExtinguisherNewPage() {
               </FormField>
               <FormField
                 label={`Fecha de vencimiento${!manualExpDate ? ' (auto +1 año)' : ''}`}
-                required
                 error={errors.expirationDate}
               >
                 <FormInput
@@ -247,7 +243,7 @@ export default function FireExtinguisherNewPage() {
                   </p>
                 </div>
               )}
-              <FormField label="Vencimiento de prueba hidráulica" required error={errors.hydraulicTestExpirationDate}>
+              <FormField label="Vencimiento de prueba hidráulica" error={errors.hydraulicTestExpirationDate}>
                 <FormInput
                   type="date"
                   value={hydraulicTestExpirationDate}

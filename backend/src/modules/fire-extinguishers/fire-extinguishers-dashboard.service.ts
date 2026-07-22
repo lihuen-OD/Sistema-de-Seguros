@@ -8,6 +8,7 @@ interface StatusBucket {
   vigente: number
   proximo_vencer: number
   vencido: number
+  sin_fecha: number
 }
 
 interface LocationTypeBucket extends StatusBucket {
@@ -15,7 +16,7 @@ interface LocationTypeBucket extends StatusBucket {
 }
 
 function emptyBucket(): StatusBucket {
-  return { total: 0, vigente: 0, proximo_vencer: 0, vencido: 0 }
+  return { total: 0, vigente: 0, proximo_vencer: 0, vencido: 0, sin_fecha: 0 }
 }
 
 export const fireExtinguishersDashboardService = {
@@ -26,6 +27,7 @@ export const fireExtinguishersDashboardService = {
       totalActive,
       vencidoCount,
       proximoVencerCount,
+      sinFechaCount,
       establishmentRows,
       establishmentCatalog,
       byTypeRaw,
@@ -37,6 +39,7 @@ export const fireExtinguishersDashboardService = {
       prisma.fireExtinguisher.count({ where: { isActive: true } }),
       prisma.fireExtinguisher.count({ where: { isActive: true, ...buildFireExtinguisherStatusFilter('vencido') } }),
       prisma.fireExtinguisher.count({ where: { isActive: true, ...buildFireExtinguisherStatusFilter('proximo_vencer') } }),
+      prisma.fireExtinguisher.count({ where: { isActive: true, ...buildFireExtinguisherStatusFilter('sin_fecha') } }),
       prisma.fireExtinguisher.findMany({
         where: { isActive: true },
         select: {
@@ -68,7 +71,7 @@ export const fireExtinguishersDashboardService = {
       }),
     ])
 
-    const vigenteCount = totalActive - vencidoCount - proximoVencerCount
+    const vigenteCount = totalActive - vencidoCount - proximoVencerCount - sinFechaCount
 
     const establishments = establishmentCatalog.map((c) => c.label)
     const byEstablishmentMap = new Map<string, StatusBucket>(
@@ -111,7 +114,13 @@ export const fireExtinguishersDashboardService = {
     }))
 
     return {
-      totals: { total: totalActive, vigente: vigenteCount, proximo_vencer: proximoVencerCount, vencido: vencidoCount },
+      totals: {
+        total: totalActive,
+        vigente: vigenteCount,
+        proximo_vencer: proximoVencerCount,
+        vencido: vencidoCount,
+        sin_fecha: sinFechaCount,
+      },
       byEstablishment,
       byType,
       audits: {

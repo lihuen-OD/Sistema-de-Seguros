@@ -16,7 +16,7 @@ type StatusType =
   | 'pendiente' | 'parcial' | 'pagado'
   | 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'NOT_APPLICABLE'
   | 'ISSUED' | 'APPLIED' | 'CANCELLED' | 'OBSERVED'
-  | 'vencido'
+  | 'vencido' | 'sin_fecha'
   | 'en_curso' | 'finalizada'
   | 'baja' | 'media' | 'alta'
   | 'sin_factura'
@@ -51,6 +51,7 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   OBSERVED:                { bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200' },
   // Fire ext
   vencido:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
+  sin_fecha:               { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
   // Fire ext — auditorías (Fase 4)
   SUBMITTED:               { bg: 'bg-brand-50',    text: 'text-brand-700',    border: 'border-brand-200'   },
   APPROVED:                { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },

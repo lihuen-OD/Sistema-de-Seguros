@@ -129,7 +129,7 @@ export type TaskStatus = 'pendiente' | 'en_curso' | 'finalizada' | 'vencida'
 
 export type TaskPriority = 'baja' | 'media' | 'alta'
 
-export type FireExtStatus = 'vigente' | 'proximo_vencer' | 'vencido'
+export type FireExtStatus = 'vigente' | 'proximo_vencer' | 'vencido' | 'sin_fecha'
 
 export type ClaimEventType =
   | 'siniestro_creado'
@@ -465,8 +465,8 @@ export interface FireExtinguisher {
   code: string
   type: string
   capacity: string
-  chargeDate: string
-  expirationDate: string
+  chargeDate: string | null
+  expirationDate: string | null
   hydraulicTestExpirationDate: string | null
   associatedAssetId: string | null
   associatedLocationType: AssociatedLocationType

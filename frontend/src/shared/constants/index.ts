@@ -69,6 +69,7 @@ export const FIRE_EXT_STATUS_LABELS: Record<string, string> = {
   vigente: 'Vigente',
   proximo_vencer: 'Próx. a Vencer',
   vencido: 'Vencido',
+  sin_fecha: 'Sin fecha',
 }
 
 // Status de FireExtinguisherAudit — dominio distinto del status de vencimiento

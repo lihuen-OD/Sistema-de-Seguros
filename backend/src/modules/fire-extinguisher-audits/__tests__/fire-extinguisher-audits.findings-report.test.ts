@@ -179,6 +179,25 @@ describe('GET /api/v1/fire-extinguisher-audits/findings-report', () => {
     expect(sector.fields.cleanliness).toEqual({ Impecable: { count: 1, items: [{ id: 'fe-2', code: 'MAT-002' }] } })
   })
 
+  it('buckets extinguishers without expirationDate under the "Sin fecha" tier, not dropped', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1', code: 'MAT-001', expirationDate: FAR_FUTURE }), // vigente
+      fe({ id: 'fe-2', code: 'MAT-002', expirationDate: null }), // sin fecha
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/findings-report')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    const sector = res.body.data.establishments[0].sectors[0]
+    expect(sector.fields.expiration).toEqual({
+      Vigente: { count: 1, items: [{ id: 'fe-1', code: 'MAT-001' }] },
+      'Sin fecha': { count: 1, items: [{ id: 'fe-2', code: 'MAT-002' }] },
+    })
+  })
+
   it('keeps only the most recent non-rejected audit per extinguisher', async () => {
     db.fireExtinguisher.findMany.mockResolvedValue([fe({ id: 'fe-1', code: 'MAT-001' })])
     db.fireExtinguisherAudit.findMany.mockResolvedValue([

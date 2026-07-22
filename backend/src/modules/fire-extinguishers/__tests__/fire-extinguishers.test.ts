@@ -236,14 +236,39 @@ describe('Fire Extinguishers API', () => {
       expect(res.status).toBe(422)
     })
 
-    it('returns 422 when hydraulicTestExpirationDate is missing', async () => {
+    it('returns 201 without hydraulicTestExpirationDate — it is optional', async () => {
       const { hydraulicTestExpirationDate, ...body } = validCreateBody
+      db.fireExtinguisher.create.mockResolvedValue({ ...fakeFireExt, hydraulicTestExpirationDate: null })
+
       const res = await request(app)
         .post('/api/v1/fire-extinguishers')
         .set('Authorization', `Bearer ${adminToken()}`)
         .send(body)
 
-      expect(res.status).toBe(422)
+      expect(res.status).toBe(201)
+      expect(res.body.data.hydraulicTestExpirationDate).toBeNull()
+    })
+
+    it('returns 201 without any of the three dates and reports status sin_fecha', async () => {
+      const { expirationDate, hydraulicTestExpirationDate, ...body } = validCreateBody
+      db.fireExtinguisher.create.mockResolvedValue({
+        ...fakeFireExt,
+        expirationDate: null,
+        lastRechargeDate: null,
+        hydraulicTestExpirationDate: null,
+      })
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguishers')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(body)
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.expirationDate).toBeNull()
+      expect(res.body.data.chargeDate).toBeNull()
+      expect(res.body.data.hydraulicTestExpirationDate).toBeNull()
+      expect(res.body.data.status).toBe('sin_fecha')
+      expect(res.body.data.chargeStatus).toBe('sin_fecha')
     })
 
     it('returns 422 when manufacturingYear is missing', async () => {
@@ -381,6 +406,22 @@ describe('Fire Extinguishers API', () => {
 
       expect(res.status).toBe(200)
       expect(db.fireExtinguisherHistory.create).not.toHaveBeenCalled()
+    })
+
+    it('clears an existing expirationDate when null is sent explicitly', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue(fakeFireExt)
+      db.fireExtinguisher.update.mockResolvedValue({ ...fakeFireExt, expirationDate: null })
+
+      const res = await request(app)
+        .put(`/api/v1/fire-extinguishers/${FE_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ expirationDate: null })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.expirationDate).toBeNull()
+      expect(res.body.data.status).toBe('sin_fecha')
+      const updateArgs = db.fireExtinguisher.update.mock.calls[0][0]
+      expect(updateArgs.data.expirationDate).toBeNull()
     })
 
     it('returns 404 when the fire extinguisher does not exist', async () => {

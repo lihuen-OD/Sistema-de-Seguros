@@ -47,6 +47,7 @@ export default function FireExtinguisherDashboardPage() {
     { name: 'Vigentes', value: data.totals.vigente, color: '#10b981' },
     { name: 'Próx. a Vencer', value: data.totals.proximo_vencer, color: '#f59e0b' },
     { name: 'Vencidos', value: data.totals.vencido, color: '#ef4444' },
+    { name: 'Sin fecha', value: data.totals.sin_fecha, color: '#94a3b8' },
   ]
 
   const byTypeData = data.byType.map((t) => ({ name: t.type, value: t.count }))

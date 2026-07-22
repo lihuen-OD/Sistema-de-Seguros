@@ -171,14 +171,17 @@ export default function FireExtinguisherDetailPage() {
     )
   }
 
-  const days = daysUntil(fe.expirationDate)
-  const isExpired = days < 0
-  const isSoon = !isExpired && days <= 30
+  const days = fe.expirationDate ? daysUntil(fe.expirationDate) : null
+  const isExpired = days != null && days < 0
+  const isSoon = days != null && !isExpired && days <= 30
 
-  const daysLabel = isExpired ? `−${Math.abs(days)}d` : `${days}d`
-  const daysDescription = isExpired
-    ? `Venció el ${formatDate(fe.expirationDate)}`
-    : `Vence el ${formatDate(fe.expirationDate)}`
+  const daysLabel = days == null ? 'Sin fecha' : isExpired ? `−${Math.abs(days)}d` : `${days}d`
+  const daysDescription =
+    days == null
+      ? 'Falta cargar la fecha de vencimiento'
+      : isExpired
+        ? `Venció el ${formatDate(fe.expirationDate)}`
+        : `Vence el ${formatDate(fe.expirationDate)}`
 
   const assetField = (
     <dd className="text-sm">
@@ -252,6 +255,18 @@ export default function FireExtinguisherDetailPage() {
         </div>
       )}
 
+      {/* Info banner when there's no expirationDate yet — registered on purpose without it, siempre visible */}
+      {!fe.expirationDate && (
+        <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600">
+          <Calendar size={16} className="mt-0.5 flex-shrink-0" />
+          <span>
+            Este matafuego no tiene fecha de vencimiento cargada — no se incluye en el
+            control de vencimientos ni en las alertas hasta que se complete. Completala
+            desde &quot;Editar&quot;.
+          </span>
+        </div>
+      )}
+
       {/* Alert banner for manufacturing life (independent of charge status), siempre visible */}
       {fe.manufacturingLifeStatus && fe.manufacturingLifeStatus !== 'vigente' && (
         <div
@@ -308,7 +323,7 @@ export default function FireExtinguisherDetailPage() {
                 value={daysLabel}
                 description={daysDescription}
                 icon={Calendar}
-                variant={isExpired ? 'danger' : isSoon ? 'warning' : 'success'}
+                variant={isExpired ? 'danger' : isSoon ? 'warning' : days == null ? 'default' : 'success'}
               />
               <KpiCard
                 label="Estado"
@@ -320,7 +335,15 @@ export default function FireExtinguisherDetailPage() {
                 // la fecha de carga. Si no, esta tarjeta podía decir "Próx. a
                 // Vencer" en verde cuando lo que vencía pronto era la prueba
                 // hidráulica, no la carga.
-                variant={fe.status === 'vencido' ? 'danger' : fe.status === 'proximo_vencer' ? 'warning' : 'success'}
+                variant={
+                  fe.status === 'vencido'
+                    ? 'danger'
+                    : fe.status === 'proximo_vencer'
+                      ? 'warning'
+                      : fe.status === 'sin_fecha'
+                        ? 'default'
+                        : 'success'
+                }
               />
               {asset ? (
                 <KpiCard
@@ -464,9 +487,23 @@ export default function FireExtinguisherDetailPage() {
               <KpiCard
                 label="Estado de Carga"
                 value={FIRE_EXT_STATUS_LABELS[fe.chargeStatus] ?? fe.chargeStatus}
-                description={fe.chargeDate ? `Recargado el ${formatDate(fe.chargeDate)} · vence ${formatDate(fe.expirationDate)}` : `Vence ${formatDate(fe.expirationDate)}`}
+                description={
+                  !fe.expirationDate
+                    ? 'Sin fecha de vencimiento cargada'
+                    : fe.chargeDate
+                      ? `Recargado el ${formatDate(fe.chargeDate)} · vence ${formatDate(fe.expirationDate)}`
+                      : `Vence ${formatDate(fe.expirationDate)}`
+                }
                 icon={RefreshCw}
-                variant={fe.chargeStatus === 'vencido' ? 'danger' : fe.chargeStatus === 'proximo_vencer' ? 'warning' : 'success'}
+                variant={
+                  fe.chargeStatus === 'vencido'
+                    ? 'danger'
+                    : fe.chargeStatus === 'proximo_vencer'
+                      ? 'warning'
+                      : fe.chargeStatus === 'sin_fecha'
+                        ? 'default'
+                        : 'success'
+                }
               />
               <KpiCard
                 label="Estado por Vida Útil"

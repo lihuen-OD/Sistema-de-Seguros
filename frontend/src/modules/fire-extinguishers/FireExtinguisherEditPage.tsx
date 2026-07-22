@@ -81,7 +81,7 @@ export default function FireExtinguisherEditPage() {
       setType(original.type)
       setCapacity(original.capacity)
       setChargeDate(original.chargeDate ?? '')
-      setExpirationDate(original.expirationDate)
+      setExpirationDate(original.expirationDate ?? '')
       setHydraulicTestExpirationDate(original.hydraulicTestExpirationDate ?? '')
       setAssociatedAssetId(original.associatedAssetId ?? '')
       setAssociatedLocationType(original.associatedLocationType as string)
@@ -136,9 +136,6 @@ export default function FireExtinguisherEditPage() {
     const e: FormErrors = {}
     if (!type) e.type = 'Seleccioná un tipo'
     if (!capacity) e.capacity = 'Seleccioná una capacidad'
-    if (!chargeDate) e.chargeDate = 'La fecha de carga es obligatoria'
-    if (!expirationDate) e.expirationDate = 'La fecha de vencimiento es obligatoria'
-    if (!hydraulicTestExpirationDate) e.hydraulicTestExpirationDate = 'La fecha de vencimiento de prueba hidráulica es obligatoria'
     if (!associatedLocationType) e.associatedLocationType = 'Seleccioná un tipo de ubicación'
     if (!cylinderNumber.trim()) e.cylinderNumber = 'El número de cilindro es obligatorio'
     if (!establishment) e.establishment = 'Seleccioná un establecimiento'
@@ -163,9 +160,9 @@ export default function FireExtinguisherEditPage() {
       const input: FireExtinguisherCreateInput = {
         type,
         capacity,
-        chargeDate,
-        expirationDate,
-        hydraulicTestExpirationDate,
+        chargeDate: chargeDate || null,
+        expirationDate: expirationDate || null,
+        hydraulicTestExpirationDate: hydraulicTestExpirationDate || null,
         associatedAssetId: associatedAssetId || undefined,
         associatedLocationType,
         location: location.trim() || undefined,
@@ -278,14 +275,14 @@ export default function FireExtinguisherEditPage() {
 
           <div className="mt-5">
             <FormSection title="Fechas">
-              <FormField label="Fecha de última carga" required error={errors.chargeDate}>
+              <FormField label="Fecha de última carga" error={errors.chargeDate}>
                 <FormInput
                   type="date"
                   value={chargeDate}
                   onChange={(e) => setChargeDate(e.target.value)}
                 />
               </FormField>
-              <FormField label="Fecha de vencimiento" required error={errors.expirationDate}>
+              <FormField label="Fecha de vencimiento" error={errors.expirationDate}>
                 <FormInput
                   type="date"
                   value={expirationDate}
@@ -295,7 +292,7 @@ export default function FireExtinguisherEditPage() {
                   }}
                 />
               </FormField>
-              <FormField label="Vencimiento de prueba hidráulica" required error={errors.hydraulicTestExpirationDate}>
+              <FormField label="Vencimiento de prueba hidráulica" error={errors.hydraulicTestExpirationDate}>
                 <FormInput
                   type="date"
                   value={hydraulicTestExpirationDate}

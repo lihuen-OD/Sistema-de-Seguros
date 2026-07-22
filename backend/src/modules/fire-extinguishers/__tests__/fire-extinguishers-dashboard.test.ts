@@ -47,13 +47,29 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
       .mockResolvedValueOnce(10) // total activo
       .mockResolvedValueOnce(2) // vencido
       .mockResolvedValueOnce(3) // proximo_vencer
+      .mockResolvedValueOnce(0) // sin_fecha
 
     const res = await request(app)
       .get('/api/v1/fire-extinguishers/dashboard/summary')
       .set('Authorization', `Bearer ${adminToken()}`)
 
     expect(res.status).toBe(200)
-    expect(res.body.data.totals).toEqual({ total: 10, vigente: 5, proximo_vencer: 3, vencido: 2 })
+    expect(res.body.data.totals).toEqual({ total: 10, vigente: 5, proximo_vencer: 3, vencido: 2, sin_fecha: 0 })
+  })
+
+  it('excludes sin_fecha units from vigente instead of double-counting them by subtraction', async () => {
+    db.fireExtinguisher.count
+      .mockResolvedValueOnce(10) // total activo
+      .mockResolvedValueOnce(2) // vencido
+      .mockResolvedValueOnce(3) // proximo_vencer
+      .mockResolvedValueOnce(4) // sin_fecha
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguishers/dashboard/summary')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.totals).toEqual({ total: 10, vigente: 1, proximo_vencer: 3, vencido: 2, sin_fecha: 4 })
   })
 
   it('always returns every establishment from the catalog, zero-filled when empty', async () => {
@@ -79,6 +95,21 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     expect(laSucho.byLocationType).toEqual([])
   })
 
+  it('buckets fire extinguishers with no expirationDate under sin_fecha, not vigente', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      { establishment: 'PLANTA', locationType: 'Edificio', expirationDate: null, manufacturingYear: null },
+      { establishment: 'PLANTA', locationType: 'Edificio', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024 }, // vigente
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguishers/dashboard/summary')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    const planta = res.body.data.byEstablishment.find((b: any) => b.establishment === 'PLANTA')
+    expect(planta).toMatchObject({ total: 2, vigente: 1, vencido: 0, proximo_vencer: 0, sin_fecha: 1 })
+  })
+
   it('breaks each establishment down by locationType ("asignación física")', async () => {
     db.fireExtinguisher.findMany.mockResolvedValue([
       { establishment: 'LA SUCHO', locationType: 'Maternidad', expirationDate: new Date('2020-01-01'), manufacturingYear: 2000 }, // vencido
@@ -95,12 +126,12 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     const byEstablishment = res.body.data.byEstablishment
     const laSucho = byEstablishment.find((b: any) => b.establishment === 'LA SUCHO')
     expect(laSucho.byLocationType).toEqual([
-      { locationType: 'Maternidad', total: 2, vigente: 1, proximo_vencer: 0, vencido: 1 },
-      { locationType: 'Engorde', total: 1, vigente: 1, proximo_vencer: 0, vencido: 0 },
+      { locationType: 'Maternidad', total: 2, vigente: 1, proximo_vencer: 0, vencido: 1, sin_fecha: 0 },
+      { locationType: 'Engorde', total: 1, vigente: 1, proximo_vencer: 0, vencido: 0, sin_fecha: 0 },
     ])
     const planta = byEstablishment.find((b: any) => b.establishment === 'PLANTA')
     expect(planta.byLocationType).toEqual([
-      { locationType: 'Vehículo', total: 1, vigente: 1, proximo_vencer: 0, vencido: 0 },
+      { locationType: 'Vehículo', total: 1, vigente: 1, proximo_vencer: 0, vencido: 0, sin_fecha: 0 },
     ])
   })
 
