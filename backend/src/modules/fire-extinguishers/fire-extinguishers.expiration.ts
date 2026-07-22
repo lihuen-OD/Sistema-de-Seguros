@@ -1,10 +1,11 @@
 import { computeExpirationStatus, todayDate, dateOffset, type ExpirationStatus } from '../../shared/utils/dates'
 
-export type FireExtStatus = ExpirationStatus
+export type FireExtStatus = ExpirationStatus | 'sin_fecha'
 
 export const MANUFACTURING_LIFESPAN_YEARS = 20
 
 const STATUS_RANK: Record<FireExtStatus, number> = {
+  sin_fecha: -1,
   vigente: 0,
   proximo_vencer: 1,
   vencido: 2,
@@ -58,19 +59,25 @@ export function manufacturingExpirationYear(manufacturingYear?: number | null): 
  * status de la prueba hidráulica del cilindro. Única fuente de verdad —
  * reemplaza los cálculos duplicados que existían en
  * fire-extinguishers.service.ts, dashboard.service.ts y notifications.service.ts.
+ *
+ * Si no hay `expirationDate` cargada, el matafuego queda en `sin_fecha` sin
+ * mezclar con vida útil / prueba hidráulica: no hay estado compuesto posible
+ * sin el vencimiento de carga, y así queda 100% afuera del circuito
+ * vigente/próximo/vencido hasta que se complete la fecha.
  */
 export function computeFireExtinguisherStatus(
-  expirationDate: Date | string,
+  expirationDate: Date | string | null,
   manufacturingYear?: number | null,
   hydraulicTestExpirationDate?: Date | string | null,
   daysWarning = 30,
 ): FireExtStatus {
+  if (!expirationDate) return 'sin_fecha'
   const chargeStatus = computeExpirationStatus(expirationDate, daysWarning)
   const lifeStatus = computeManufacturingLifeStatus(manufacturingYear, null, daysWarning)
   const hydraulicStatus = hydraulicTestExpirationDate
     ? computeExpirationStatus(hydraulicTestExpirationDate, daysWarning)
     : null
-  let status = chargeStatus
+  let status: FireExtStatus = chargeStatus
   if (lifeStatus) status = worseStatus(status, lifeStatus)
   if (hydraulicStatus) status = worseStatus(status, hydraulicStatus)
   return status
@@ -89,8 +96,12 @@ export function buildFireExtinguisherStatusFilter(
   const currentYear = new Date().getUTCFullYear()
   const lifeLimitYear = currentYear - MANUFACTURING_LIFESPAN_YEARS // manufacturingYear cuyo 20º aniversario es este año
 
+  if (status === 'sin_fecha') {
+    return { expirationDate: null }
+  }
   if (status === 'vencido') {
     return {
+      expirationDate: { not: null },
       OR: [
         { expirationDate: { lt: today } },
         { manufacturingYear: { lt: lifeLimitYear } },
@@ -100,6 +111,7 @@ export function buildFireExtinguisherStatusFilter(
   }
   if (status === 'proximo_vencer') {
     return {
+      expirationDate: { not: null },
       AND: [
         { NOT: { expirationDate: { lt: today } } },
         { NOT: { manufacturingYear: { lt: lifeLimitYear } } },
@@ -116,6 +128,7 @@ export function buildFireExtinguisherStatusFilter(
   }
   if (status === 'vigente') {
     return {
+      expirationDate: { not: null },
       AND: [
         { expirationDate: { gt: inNDays } },
         { OR: [{ manufacturingYear: null }, { manufacturingYear: { gt: lifeLimitYear } }] },
@@ -137,6 +150,7 @@ export function buildFireExtinguisherAtRiskFilter(daysWarning = 30): Record<stri
   const lifeLimitYear = currentYear - MANUFACTURING_LIFESPAN_YEARS
 
   return {
+    expirationDate: { not: null },
     OR: [
       { expirationDate: { lte: inNDays } },
       { manufacturingYear: { lte: lifeLimitYear } },

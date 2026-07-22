@@ -39,9 +39,12 @@ const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label
 // entre las que sí tienen fecha (carga y prueba hidráulica; la vida útil
 // por fabricación es solo un año, sin fecha exacta que mostrar acá).
 function getExpiryFlags(fe: FireExtinguisher) {
-  const chargeDays = daysUntil(fe.expirationDate)
+  const chargeDays = fe.expirationDate ? daysUntil(fe.expirationDate) : null
   const hydraulicDays = fe.hydraulicTestExpirationDate ? daysUntil(fe.hydraulicTestExpirationDate) : null
-  const days = hydraulicDays != null ? Math.min(chargeDays, hydraulicDays) : chargeDays
+  const days =
+    chargeDays != null && hydraulicDays != null
+      ? Math.min(chargeDays, hydraulicDays)
+      : chargeDays ?? hydraulicDays
   const isExp = fe.status === 'vencido'
   const isSoon = fe.status === 'proximo_vencer'
   return { days, isExp, isSoon }
@@ -254,6 +257,7 @@ export default function FireExtinguishersPage() {
       hideable: true,
       render: (_, row) => {
         const { days, isExp, isSoon } = getExpiryFlags(row)
+        if (days == null) return <span className="text-slate-400">—</span>
         return (
           <span
             className={clsx(

@@ -40,7 +40,7 @@ export const SECONDARY_FIELDS: FindingsFieldDef[] = [
   {
     key: 'expiration',
     label: 'Vencimiento de carga',
-    tierOrder: ['Vigente', 'Próximo a vencer', 'Vencido'],
+    tierOrder: ['Vigente', 'Próximo a vencer', 'Vencido', 'Sin fecha'],
     goodTier: 'Vigente',
   },
 ]

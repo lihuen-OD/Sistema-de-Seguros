@@ -55,6 +55,7 @@ const EXPIRATION_TIERS: Record<string, string> = {
   vigente: 'Vigente',
   proximo_vencer: 'Próximo a vencer',
   vencido: 'Vencido',
+  sin_fecha: 'Sin fecha',
 }
 
 // Se usa solo como fuente del tipo union de abajo (typeof ...[number]) — el

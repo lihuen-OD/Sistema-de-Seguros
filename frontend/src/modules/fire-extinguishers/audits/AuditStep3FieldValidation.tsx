@@ -14,7 +14,7 @@ export interface FieldValidationConfigItem {
 
 export const FIELD_VALIDATION_CONFIG: FieldValidationConfigItem[] = [
   { key: 'cylinderNumber', label: 'Número de cilindro', inputType: 'text', getCurrentValue: (fe) => fe.cylinderNumber ?? '' },
-  { key: 'expirationDate', label: 'Fecha de vencimiento', inputType: 'date', getCurrentValue: (fe) => fe.expirationDate },
+  { key: 'expirationDate', label: 'Fecha de vencimiento', inputType: 'date', getCurrentValue: (fe) => fe.expirationDate ?? '' },
   { key: 'capacity', label: 'Capacidad', inputType: 'select', getCurrentValue: (fe) => fe.capacity },
   { key: 'type', label: 'Tipo de agente extintor', inputType: 'select', getCurrentValue: (fe) => fe.type },
   { key: 'brand', label: 'Marca', inputType: 'text', getCurrentValue: (fe) => fe.brand ?? '' },

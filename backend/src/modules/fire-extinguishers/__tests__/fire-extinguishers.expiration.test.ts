@@ -102,6 +102,13 @@ describe('computeFireExtinguisherStatus', () => {
     const status = computeFireExtinguisherStatus(isoDateOffset(365), currentYear, isoDateOffset(365))
     expect(status).toBe('vigente')
   })
+
+  it('returns sin_fecha when expirationDate is null, regardless of the other fields', () => {
+    expect(computeFireExtinguisherStatus(null, null, null)).toBe('sin_fecha')
+    expect(computeFireExtinguisherStatus(null, currentYear - MANUFACTURING_LIFESPAN_YEARS - 1, isoDateOffset(-1))).toBe(
+      'sin_fecha',
+    )
+  })
 })
 
 // ── buildFireExtinguisherStatusFilter ──────────────────────────────────────────
@@ -126,12 +133,25 @@ describe('buildFireExtinguisherStatusFilter', () => {
     expect(buildFireExtinguisherStatusFilter('unknown')).toEqual({})
   })
 
-  // Invariante: los 3 filtros deben ser mutuamente excluyentes y exhaustivos
+  it('returns a plain expirationDate: null filter for sin_fecha', () => {
+    expect(buildFireExtinguisherStatusFilter('sin_fecha')).toEqual({ expirationDate: null })
+  })
+
+  it('excludes null expirationDate from vencido/proximo_vencer/vigente', () => {
+    const vencido = buildFireExtinguisherStatusFilter('vencido') as { expirationDate: unknown }
+    const proximo = buildFireExtinguisherStatusFilter('proximo_vencer') as { expirationDate: unknown }
+    const vigente = buildFireExtinguisherStatusFilter('vigente') as { expirationDate: unknown }
+    expect(vencido.expirationDate).toEqual({ not: null })
+    expect(proximo.expirationDate).toEqual({ not: null })
+    expect(vigente.expirationDate).toEqual({ not: null })
+  })
+
+  // Invariante: los 4 filtros deben ser mutuamente excluyentes y exhaustivos
   // sobre cualquier combinación de expirationDate/manufacturingYear/
   // hydraulicTestExpirationDate (incluidos los null, el caso de los
-  // registros legacy).
+  // registros legacy y de los matafuegos cargados sin fecha).
   describe('mutual exclusivity across fixtures', () => {
-    type Fixture = { expirationDate: string; manufacturingYear: number | null; hydraulicTestExpirationDate: string | null }
+    type Fixture = { expirationDate: string | null; manufacturingYear: number | null; hydraulicTestExpirationDate: string | null }
 
     const fixtures: Fixture[] = [
       { expirationDate: isoDateOffset(-10), manufacturingYear: null, hydraulicTestExpirationDate: null },
@@ -144,9 +164,14 @@ describe('buildFireExtinguisherStatusFilter', () => {
       { expirationDate: isoDateOffset(60), manufacturingYear: null, hydraulicTestExpirationDate: isoDateOffset(-10) },
       { expirationDate: isoDateOffset(60), manufacturingYear: null, hydraulicTestExpirationDate: isoDateOffset(10) },
       { expirationDate: isoDateOffset(60), manufacturingYear: null, hydraulicTestExpirationDate: isoDateOffset(60) },
+      { expirationDate: null, manufacturingYear: null, hydraulicTestExpirationDate: null },
+      { expirationDate: null, manufacturingYear: currentYear - MANUFACTURING_LIFESPAN_YEARS - 1, hydraulicTestExpirationDate: isoDateOffset(-1) },
     ]
 
     function matchesFilter(fixture: Fixture, status: string): boolean {
+      if (fixture.expirationDate == null) return status === 'sin_fecha'
+      if (status === 'sin_fecha') return false
+
       const today = new Date()
       today.setUTCHours(0, 0, 0, 0)
       const in30Days = new Date()
@@ -172,9 +197,11 @@ describe('buildFireExtinguisherStatusFilter', () => {
       return false
     }
 
-    it('each fixture matches exactly one of vencido/proximo_vencer/vigente', () => {
+    const ALL_STATUSES = ['vencido', 'proximo_vencer', 'vigente', 'sin_fecha']
+
+    it('each fixture matches exactly one of vencido/proximo_vencer/vigente/sin_fecha', () => {
       for (const fixture of fixtures) {
-        const matches = ['vencido', 'proximo_vencer', 'vigente'].filter((s) => matchesFilter(fixture, s))
+        const matches = ALL_STATUSES.filter((s) => matchesFilter(fixture, s))
         expect(matches).toHaveLength(1)
       }
     })
@@ -186,7 +213,7 @@ describe('buildFireExtinguisherStatusFilter', () => {
           fixture.manufacturingYear,
           fixture.hydraulicTestExpirationDate,
         )
-        const filterMatch = ['vencido', 'proximo_vencer', 'vigente'].find((s) => matchesFilter(fixture, s))
+        const filterMatch = ALL_STATUSES.find((s) => matchesFilter(fixture, s))
         expect(computed).toBe(filterMatch)
       }
     })
@@ -199,5 +226,10 @@ describe('buildFireExtinguisherAtRiskFilter', () => {
   it('returns an OR filter combining charge, manufacturing year and hydraulic test thresholds', () => {
     const filter = buildFireExtinguisherAtRiskFilter(30) as { OR: unknown[] }
     expect(filter.OR).toHaveLength(3)
+  })
+
+  it('excludes fire extinguishers without expirationDate — they never generate alerts', () => {
+    const filter = buildFireExtinguisherAtRiskFilter(30) as { expirationDate: unknown }
+    expect(filter.expirationDate).toEqual({ not: null })
   })
 })

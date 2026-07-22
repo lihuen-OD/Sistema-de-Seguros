@@ -21,6 +21,7 @@ export const dashboardService = {
       extTotal,
       extVencido,
       extProximo,
+      extSinFecha,
       claimTotal,
       claimOpen,
       overdueTasks,
@@ -53,6 +54,9 @@ export const dashboardService = {
       }),
       prisma.fireExtinguisher.count({
         where: { isActive: true, ...buildFireExtinguisherStatusFilter('proximo_vencer') },
+      }),
+      prisma.fireExtinguisher.count({
+        where: { isActive: true, ...buildFireExtinguisherStatusFilter('sin_fecha') },
       }),
       prisma.claim.count({ where: { isActive: true } }),
       prisma.claim.count({
@@ -90,9 +94,10 @@ export const dashboardService = {
       },
       extinguishers: {
         total: extTotal,
-        vigente: extTotal - extVencido - extProximo,
+        vigente: extTotal - extVencido - extProximo - extSinFecha,
         proximo_vencer: extProximo,
         vencido: extVencido,
+        sin_fecha: extSinFecha,
       },
       claims: {
         total: claimTotal,
@@ -179,8 +184,18 @@ export const dashboardService = {
     const yearStart = new Date(`${y}-01-01T00:00:00.000Z`)
     const yearEnd = new Date(`${y}-12-31T00:00:00.000Z`)
 
-    const [installments, premiumByCompanyRaw, allCompanyNames, extTotal, extVencido, extProximo, policiesVigente, policiesProxima, policiesVencida] =
-      await Promise.all([
+    const [
+      installments,
+      premiumByCompanyRaw,
+      allCompanyNames,
+      extTotal,
+      extVencido,
+      extProximo,
+      extSinFecha,
+      policiesVigente,
+      policiesProxima,
+      policiesVencida,
+    ] = await Promise.all([
         prisma.documentInstallment.findMany({
           where: { dueDate: { gte: yearStart, lte: yearEnd } },
           select: { dueDate: true, amount: true },
@@ -197,6 +212,9 @@ export const dashboardService = {
         }),
         prisma.fireExtinguisher.count({
           where: { isActive: true, ...buildFireExtinguisherStatusFilter('proximo_vencer') },
+        }),
+        prisma.fireExtinguisher.count({
+          where: { isActive: true, ...buildFireExtinguisherStatusFilter('sin_fecha') },
         }),
         prisma.policy.count({ where: { isActive: true, endDate: { gt: in30Days } } }),
         prisma.policy.count({ where: { isActive: true, endDate: { gte: today, lte: in30Days } } }),
@@ -230,9 +248,10 @@ export const dashboardService = {
         vencida: policiesVencida,
       },
       extinguisherStatusDistribution: {
-        vigente: extTotal - extVencido - extProximo,
+        vigente: extTotal - extVencido - extProximo - extSinFecha,
         proximo_vencer: extProximo,
         vencido: extVencido,
+        sin_fecha: extSinFecha,
       },
     }
   },
