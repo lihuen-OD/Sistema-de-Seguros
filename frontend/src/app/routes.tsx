@@ -38,6 +38,7 @@ export const ROUTES = {
   FIRE_EXTINGUISHERS_AUDIT_NEW: '/fire-extinguishers/audits/new',
   FIRE_EXTINGUISHERS_AUDIT_FINDINGS_REPORT: '/fire-extinguishers/audits/findings-report',
   FIRE_EXTINGUISHERS_AUDIT_DETAIL: (id: string) => `/fire-extinguishers/audits/${id}`,
+  FIRE_EXTINGUISHERS_AUDIT_EDIT: (id: string) => `/fire-extinguishers/audits/${id}/edit`,
 
   TASKS_DETAIL: (id: string) => `/tasks/${id}`,
 

@@ -27,14 +27,18 @@ import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { Tabs, type TabItem } from '../../shared/components/tabs/Tabs'
+import { DataTable } from '../../shared/components/data-table/DataTable'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { ROUTES } from '../../app/routes'
 import { fireExtinguishersApi, fireExtinguisherKeys, fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
+import { fireExtinguisherAuditQueries } from '../../shared/api/fire-extinguisher-audits.api'
+import type { FireExtinguisherAuditListItem } from '../../shared/api/fire-extinguisher-audits.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
-import type { FireExtinguisherHistory } from '../../shared/types'
+import type { FireExtinguisherHistory, TableColumn } from '../../shared/types'
+import { useCurrentUser } from '../../app/auth/AuthContext'
 
 const EVENT_ICON_CONFIG: Record<string, { bg: string; text: string; Icon: typeof RefreshCw }> = {
   Recarga: { bg: 'bg-emerald-100', text: 'text-emerald-600', Icon: RefreshCw },
@@ -117,7 +121,59 @@ const DETAIL_TABS: TabItem[] = [
   { id: 'tecnico', label: 'Datos técnicos', icon: Flame },
   { id: 'ubicacion', label: 'Ubicación', icon: MapPin },
   { id: 'historial', label: 'Historial', icon: History },
+  { id: 'auditorias', label: 'Auditorías', icon: ClipboardCheck },
   { id: 'vencimientos', label: 'Vencimientos', icon: AlertTriangle },
+]
+
+// Pendientes primero, igual criterio que en FireExtinguisherAuditsQueuePage.
+const AUDIT_STATUS_SORT_ORDER: Record<string, number> = {
+  SUBMITTED: 0,
+  NEEDS_CORRECTION: 1,
+  APPROVED: 2,
+  REJECTED: 3,
+}
+
+const AUDIT_COLUMNS: TableColumn<FireExtinguisherAuditListItem>[] = [
+  {
+    key: 'auditPeriod',
+    label: 'Período',
+    sortable: true,
+    render: (v) => <span className="text-sm text-slate-600">{v as string}</span>,
+  },
+  {
+    key: 'auditedBy',
+    label: 'Auditado por',
+    sortable: true,
+    render: (v) => <span className="text-sm text-slate-600">{v as string}</span>,
+  },
+  {
+    key: 'auditDate',
+    label: 'Fecha',
+    sortable: true,
+    render: (v) => <span className="text-sm text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
+  },
+  {
+    key: 'proposedChangesCount',
+    label: 'Cambios propuestos',
+    sortable: true,
+    render: (v) => {
+      const count = v as number
+      return count > 0 ? (
+        <span className="inline-block text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+          {count}
+        </span>
+      ) : (
+        <span className="text-xs text-slate-400">—</span>
+      )
+    },
+  },
+  {
+    key: 'status',
+    label: 'Estado',
+    sortable: true,
+    sortValue: (row) => AUDIT_STATUS_SORT_ORDER[row.status] ?? 99,
+    render: (v) => <StatusPill status={v as string} size="sm" />,
+  },
 ]
 
 export default function FireExtinguisherDetailPage() {
@@ -128,9 +184,22 @@ export default function FireExtinguisherDetailPage() {
   const [showRechargeModal, setShowRechargeModal] = useState(false)
   const [activeTab, setActiveTab] = useState('resumen')
 
+  const { user } = useCurrentUser()
+  // Mismos módulos que habilitan la pestaña/página de Auditorías de
+  // Matafuegos — sin ninguno de los dos, ni siquiera se intenta el fetch.
+  const canViewAudits =
+    user?.role === 'ADMIN' ||
+    (user?.modules.includes('fire_extinguisher_audits') ?? false) ||
+    (user?.modules.includes('fire_extinguisher_audit_coverage') ?? false)
+
   const { data: fe, isLoading } = useQuery(fireExtinguisherQueries.detail(id!))
 
   const { data: history = [] } = useQuery(fireExtinguisherQueries.history(id!))
+
+  const { data: audits = [], isLoading: auditsLoading } = useQuery({
+    ...fireExtinguisherAuditQueries.list({ fireExtinguisherId: id! }),
+    enabled: canViewAudits && !!id,
+  })
 
   const { data: asset } = useQuery(assetQueries.detail(fe?.associatedAssetId ?? ''))
 
@@ -313,7 +382,15 @@ export default function FireExtinguisherDetailPage() {
       )}
 
       <SectionCard noPadding className="mb-5">
-        <Tabs tabs={DETAIL_TABS.map((t) => (t.id === 'historial' ? { ...t, count: history.length } : t))} activeTab={activeTab} onChange={setActiveTab} />
+        <Tabs
+          tabs={DETAIL_TABS.filter((t) => t.id !== 'auditorias' || canViewAudits).map((t) => {
+            if (t.id === 'historial') return { ...t, count: history.length }
+            if (t.id === 'auditorias') return { ...t, count: audits.length }
+            return t
+          })}
+          activeTab={activeTab}
+          onChange={setActiveTab}
+        />
 
         {activeTab === 'resumen' && (
           <div className="p-5">
@@ -478,6 +555,30 @@ export default function FireExtinguisherDetailPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'auditorias' && (
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-slate-400">
+                {audits.length} auditoría{audits.length !== 1 ? 's' : ''} registrada{audits.length !== 1 ? 's' : ''}
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                <ClipboardCheck size={13} />
+                Auditorías mensuales de este matafuego
+              </span>
+            </div>
+            <DataTable
+              columns={AUDIT_COLUMNS}
+              data={audits}
+              rowKey="id"
+              loading={auditsLoading}
+              onRowClick={(row) => navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(row.id))}
+              emptyTitle="Sin auditorías"
+              emptyDescription="Todavía no se registraron auditorías para este matafuego."
+              minWidth={640}
+            />
           </div>
         )}
 

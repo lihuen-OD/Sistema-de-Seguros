@@ -30,6 +30,17 @@ const PAYMENT_STATUS_OPTIONS = Object.entries(PAYMENT_STATUS_LABELS).map(([value
   label,
 }))
 
+// Orden por severidad al ordenar la columna "Estado Pago" — alfabético
+// dejaría "NOT_APPLICABLE" antes que "PENDING", que no refleja el ciclo de
+// vida real del pago. Mismo orden que PAYMENT_STATUS_LABELS.
+const PAYMENT_STATUS_SORT_ORDER: Record<string, number> = {
+  PENDING: 0,
+  PARTIALLY_PAID: 1,
+  PAID: 2,
+  OVERDUE: 3,
+  NOT_APPLICABLE: 4,
+}
+
 export default function DocumentsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -82,6 +93,7 @@ export default function DocumentsPage() {
       key: 'documentNumber',
       label: 'N° Documento',
       defaultVisible: true,
+      sortable: true,
       className: 'font-mono text-xs text-slate-600 min-w-[160px]',
     },
     {
@@ -89,6 +101,8 @@ export default function DocumentsPage() {
       key: 'documentType',
       label: 'Tipo',
       defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => documentTypeLabels[row.documentType] ?? row.documentType,
       render: (v) => <span className="text-slate-700 font-medium text-xs">{documentTypeLabels[v as string] ?? String(v)}</span>,
     },
     {
@@ -96,6 +110,7 @@ export default function DocumentsPage() {
       key: 'issueDate',
       label: 'Fecha Emisión',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500">{formatDate(v as string)}</span>,
     },
     {
@@ -103,6 +118,7 @@ export default function DocumentsPage() {
       key: 'currency',
       label: 'Moneda',
       defaultVisible: true,
+      sortable: true,
       render: (v) => (
         <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
           {String(v)}
@@ -115,6 +131,7 @@ export default function DocumentsPage() {
       key: 'netAmount',
       label: 'Neto',
       defaultVisible: true,
+      sortable: true,
       exportValue: (row) => String(row.netAmount),
       render: (v, row) => (
         <span className="tabular-nums text-xs text-slate-600">
@@ -129,6 +146,7 @@ export default function DocumentsPage() {
       key: 'vatAmount',
       label: 'IVA',
       defaultVisible: true,
+      sortable: true,
       exportValue: (row) => String(row.vatAmount),
       render: (v, row) => (
         <span className="tabular-nums text-xs text-slate-600">
@@ -143,6 +161,7 @@ export default function DocumentsPage() {
       key: 'totalAmount',
       label: 'Total',
       defaultVisible: true,
+      sortable: true,
       exportValue: (row) => String(row.totalAmount),
       render: (v, row) => (
         <span className="tabular-nums text-sm font-semibold text-slate-800">
@@ -157,6 +176,8 @@ export default function DocumentsPage() {
       key: 'paymentStatus',
       label: 'Estado Pago',
       defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => PAYMENT_STATUS_SORT_ORDER[row.paymentStatus] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
@@ -165,6 +186,7 @@ export default function DocumentsPage() {
       key: 'otherTaxesAmount',
       label: 'Otros impuestos',
       defaultVisible: false,
+      sortable: true,
       exportValue: (row) => String(row.otherTaxesAmount),
       render: (v, row) =>
         (v as number) > 0
@@ -178,6 +200,7 @@ export default function DocumentsPage() {
       key: 'insuranceCompany',
       label: 'Aseguradora',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="text-sm text-slate-700">{(v as string) || '—'}</span>,
     },
     {
@@ -185,6 +208,7 @@ export default function DocumentsPage() {
       key: 'paymentMethod',
       label: 'Método de pago',
       defaultVisible: false,
+      sortable: true,
       render: (v) =>
         v
           ? <span className="text-xs text-slate-600">{String(v).replace(/_/g, ' ')}</span>
@@ -195,6 +219,7 @@ export default function DocumentsPage() {
       key: 'exchangeRate',
       label: 'Tipo de cambio',
       defaultVisible: false,
+      sortable: true,
       exportValue: (row) => String(row.exchangeRate),
       render: (v) =>
         (v as number) > 1
@@ -208,6 +233,7 @@ export default function DocumentsPage() {
       key: 'attachmentsCount',
       label: 'Adjuntos',
       defaultVisible: false,
+      sortable: true,
       exportValue: (row) => String(row.attachmentsCount ?? 0),
       render: (v) => {
         const n = v as number | undefined
@@ -223,6 +249,7 @@ export default function DocumentsPage() {
       key: 'createdAt',
       label: 'Fecha de alta',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
     // ── Acciones ────────────────────────────────────────────────────────────────

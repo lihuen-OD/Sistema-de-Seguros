@@ -9,6 +9,7 @@ import type { PolicyAttachment } from '../../../shared/types'
 import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
 import { formatDate } from '../../../shared/utils/format'
 import { getExpirationStatus } from '../../../shared/utils/expiration'
+import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -113,6 +114,7 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
     if (!selectedFile) e.file = 'Seleccioná un archivo.'
     if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 

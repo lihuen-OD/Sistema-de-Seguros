@@ -136,10 +136,15 @@ export const fireExtinguishersApi = {
 // ── Query options — categoría B (listado/detalle/historial), categoría D (dashboard) ──
 
 export const fireExtinguisherQueries = {
-  list: (filters?: { assetId?: string }) =>
+  // `isActive: true` por defecto — "Eliminar" es en realidad un soft-delete
+  // (isActive: false) y el backend no lo excluye solo, así que sin este
+  // filtro un matafuego "eliminado" seguía apareciendo en el listado, el
+  // dashboard y la pestaña de matafuegos del activo, como si el borrado no
+  // hubiera hecho nada.
+  list: (filters?: { assetId?: string; isActive?: boolean }) =>
     queryOptions({
       queryKey: fireExtinguisherKeys.list(filters),
-      queryFn: () => fireExtinguishersApi.findAll(filters),
+      queryFn: () => fireExtinguishersApi.findAll({ isActive: true, ...filters }),
       staleTime: 60 * 1000,
     }),
   detail: (id: string) =>
@@ -187,6 +192,27 @@ export interface FireExtinguisherStatusBucket {
   byLocationType: FireExtinguisherLocationTypeBucket[]
 }
 
+export interface VehicleMachineryFireExtinguisherRef {
+  id: string
+  code: string
+  status: string
+}
+
+export interface VehicleMachineryCoverageItem {
+  id: string
+  code: string
+  name: string
+  assetType: string
+  fireExtinguishers: VehicleMachineryFireExtinguisherRef[]
+}
+
+export interface VehicleMachineryCoverageGroup {
+  total: number
+  conMatafuego: number
+  sinMatafuego: number
+  items: VehicleMachineryCoverageItem[]
+}
+
 export interface FireExtinguisherDashboardSummary {
   totals: { total: number; vigente: number; proximo_vencer: number; vencido: number; sin_fecha: number }
   byEstablishment: FireExtinguisherStatusBucket[]
@@ -207,4 +233,8 @@ export interface FireExtinguisherDashboardSummary {
     auditedBy: string
     createdAt: string
   }[]
+  vehicleMachineryCoverage: {
+    vehiculos: VehicleMachineryCoverageGroup
+    maquinaria: VehicleMachineryCoverageGroup
+  }
 }

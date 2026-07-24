@@ -15,6 +15,7 @@ import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNu
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { policyQueries } from '../../../../shared/api/policies.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
+import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import type { AccountingDocument } from '../../../../shared/types'
 
 interface DocumentoFacturaFormProps {
@@ -171,6 +172,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     if (!form.otherTaxesAmount || isNaN(parseFloat(form.otherTaxesAmount))) next.otherTaxesAmount = 'Requerido'
     if (policyRows.length === 0 || policyRows.every((r) => !r.policyId)) next.policies = 'Asociá al menos una póliza'
     setErrors(next)
+    notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 

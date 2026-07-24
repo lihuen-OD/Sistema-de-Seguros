@@ -23,6 +23,7 @@ import { producerQueries } from '../../../shared/api/producers.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
+import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import type { Policy } from '../../../shared/types'
 import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
 
@@ -308,6 +309,7 @@ export default function PolicyEditPage() {
       next.beneficiaryDescription = 'Describí a quién corresponde este seguro'
     }
     setErrors(next)
+    notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 

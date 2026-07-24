@@ -19,6 +19,9 @@ jest.mock('../../../config/database', () => ({
     catalogItem: {
       findMany: jest.fn(),
     },
+    asset: {
+      findMany: jest.fn(),
+    },
   },
 }))
 
@@ -40,6 +43,7 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     db.fireExtinguisherAudit.findMany.mockResolvedValue([])
     db.fireExtinguisherAudit.count.mockResolvedValue(0)
     db.catalogItem.findMany.mockResolvedValue(ESTABLISHMENT_CATALOG)
+    db.asset.findMany.mockResolvedValue([])
   })
 
   it('computes totals, deriving vigente by subtraction', async () => {
@@ -233,6 +237,46 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
         auditedBy: 'auditor@losodwyer.com',
         createdAt: BASE_DATE.toISOString(),
       },
+    ])
+  })
+
+  it('classifies vehicle/machinery assets (including legacy-cased types) and counts con/sin matafuego', async () => {
+    db.asset.findMany.mockResolvedValue([
+      // Vehículo canónico, con matafuego vigente.
+      {
+        id: 'a1', code: 'VEH-001', name: 'Toyota Hilux', assetType: 'Vehículo',
+        fireExtinguishers: [{ id: 'fe1', code: 'MAT-VEH001-A', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024, hydraulicTestExpirationDate: null }],
+      },
+      // Vehículo legacy (minúscula, sin acento), sin matafuego.
+      { id: 'a2', code: 'VEH-002', name: 'Camión Scania', assetType: 'vehiculo', fireExtinguishers: [] },
+      // Maquinaria agrícola legacy con guion bajo, sin matafuego.
+      { id: 'a3', code: 'MAQ-001', name: 'Sembradora', assetType: 'maquinaria_agricola', fireExtinguishers: [] },
+      // Tractor (parte del grupo "Maquinaria agrícola"), con matafuego.
+      {
+        id: 'a4', code: 'MAQ-002', name: 'Tractor John Deere', assetType: 'Tractor',
+        fireExtinguishers: [{ id: 'fe2', code: 'MAT-MAQ002-A', expirationDate: new Date('2020-01-01'), manufacturingYear: 2000, hydraulicTestExpirationDate: null }],
+      },
+      // Tipo no relacionado — no debe contarse en ningún grupo.
+      { id: 'a5', code: 'INM-001', name: 'Galpón Central', assetType: 'Edificio', fireExtinguishers: [] },
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguishers/dashboard/summary')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    const coverage = res.body.data.vehicleMachineryCoverage
+
+    expect(coverage.vehiculos).toMatchObject({ total: 2, conMatafuego: 1, sinMatafuego: 1 })
+    expect(coverage.vehiculos.items.map((i: any) => i.code)).toEqual(['VEH-002', 'VEH-001']) // sin matafuego primero
+    expect(coverage.vehiculos.items.find((i: any) => i.code === 'VEH-001').fireExtinguishers).toEqual([
+      { id: 'fe1', code: 'MAT-VEH001-A', status: 'vigente' },
+    ])
+
+    expect(coverage.maquinaria).toMatchObject({ total: 2, conMatafuego: 1, sinMatafuego: 1 })
+    expect(coverage.maquinaria.items.map((i: any) => i.code)).toEqual(['MAQ-001', 'MAQ-002']) // sin matafuego primero
+    expect(coverage.maquinaria.items.find((i: any) => i.code === 'MAQ-002').fireExtinguishers).toEqual([
+      { id: 'fe2', code: 'MAT-MAQ002-A', status: 'vencido' },
     ])
   })
 

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { Flame, ShieldCheck, ShieldOff, AlertTriangle, ClipboardCheck, ClipboardList, FileDown, Loader2 } from 'lucide-react'
+import { Flame, ShieldCheck, ShieldOff, AlertTriangle, CalendarOff, ClipboardCheck, ClipboardList, FileDown, Loader2, Car, Cog } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -16,6 +16,7 @@ import { buildFireExtinguisherDashboardPdf } from '../../shared/utils/buildFireE
 import { fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
 import { ROUTES } from '../../app/routes'
 import { EstablishmentZoneCard } from './EstablishmentZoneCard'
+import { VehicleMachineryCoverageBlock } from './VehicleMachineryCoverageBlock'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
 
@@ -70,11 +71,12 @@ export default function FireExtinguisherDashboardPage() {
         }
       />
 
-      <MetricGrid cols={4} className="mb-5">
+      <MetricGrid cols={5} className="mb-5">
         <KpiCard label="Total" value={data.totals.total} description="Matafuegos activos" icon={Flame} variant="default" />
         <KpiCard label="Vigentes" value={data.totals.vigente} description="Con carga al día" icon={ShieldCheck} variant="success" />
         <KpiCard label="Próximos a Vencer" value={data.totals.proximo_vencer} description="Vencen en 30 días o menos" icon={AlertTriangle} variant="warning" />
         <KpiCard label="Vencidos" value={data.totals.vencido} description="Requieren recarga inmediata" icon={ShieldOff} variant={data.totals.vencido > 0 ? 'danger' : 'default'} />
+        <KpiCard label="Sin Fecha" value={data.totals.sin_fecha} description="Sin vencimiento cargado" icon={CalendarOff} variant={data.totals.sin_fecha > 0 ? 'warning' : 'default'} />
       </MetricGrid>
 
       <MetricGrid cols={3} className="mb-5">
@@ -157,6 +159,58 @@ export default function FireExtinguisherDashboardPage() {
           {data.byEstablishment.map((zone) => (
             <EstablishmentZoneCard key={zone.establishment} zone={zone} />
           ))}
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Cobertura en Vehículos y Maquinaria"
+        subtitle="Qué activos tienen matafuego asignado y cuáles no"
+        className="mb-5"
+      >
+        <MetricGrid cols={4} className="mb-5">
+          <KpiCard
+            label="Vehículos con matafuego"
+            value={data.vehicleMachineryCoverage.vehiculos.conMatafuego}
+            description={`de ${data.vehicleMachineryCoverage.vehiculos.total} vehículos`}
+            icon={Car}
+            variant="success"
+          />
+          <KpiCard
+            label="Vehículos sin matafuego"
+            value={data.vehicleMachineryCoverage.vehiculos.sinMatafuego}
+            description="Requieren asignación"
+            icon={ShieldOff}
+            variant={data.vehicleMachineryCoverage.vehiculos.sinMatafuego > 0 ? 'danger' : 'default'}
+          />
+          <KpiCard
+            label="Maquinaria con matafuego"
+            value={data.vehicleMachineryCoverage.maquinaria.conMatafuego}
+            description={`de ${data.vehicleMachineryCoverage.maquinaria.total} unidades`}
+            icon={Cog}
+            variant="success"
+          />
+          <KpiCard
+            label="Maquinaria sin matafuego"
+            value={data.vehicleMachineryCoverage.maquinaria.sinMatafuego}
+            description="Requieren asignación"
+            icon={ShieldOff}
+            variant={data.vehicleMachineryCoverage.maquinaria.sinMatafuego > 0 ? 'danger' : 'default'}
+          />
+        </MetricGrid>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <VehicleMachineryCoverageBlock
+            title="Vehículos"
+            icon={Car}
+            group={data.vehicleMachineryCoverage.vehiculos}
+            onSelectAsset={(assetId) => navigate(ROUTES.ASSETS_DETAIL(assetId))}
+          />
+          <VehicleMachineryCoverageBlock
+            title="Maquinaria"
+            icon={Cog}
+            group={data.vehicleMachineryCoverage.maquinaria}
+            onSelectAsset={(assetId) => navigate(ROUTES.ASSETS_DETAIL(assetId))}
+          />
         </div>
       </SectionCard>
 

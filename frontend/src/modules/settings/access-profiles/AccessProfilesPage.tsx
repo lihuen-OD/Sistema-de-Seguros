@@ -14,6 +14,7 @@ import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { CheckboxGroup } from '../../../shared/components/forms/CheckboxGroup'
 import { FormField, FormInput, FormSelect } from '../../../shared/components/forms/FormSection'
+import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import {
   accessProfilesApi,
   accessProfileQueries,
@@ -54,6 +55,7 @@ function AccessProfileModal({ profile, onClose, onSave }: AccessProfileModalProp
     const e: { name?: string } = {}
     if (!name.trim()) e.name = 'El nombre es obligatorio'
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 
@@ -207,11 +209,13 @@ export default function AccessProfilesPage() {
     {
       key: 'name',
       label: 'Perfil',
+      sortable: true,
       render: (v) => <span className="font-medium text-slate-800 text-sm">{String(v)}</span>,
     },
     {
       key: 'modules',
       label: 'Módulos',
+      sortable: true,
       render: (v) => {
         const mods = v as ModuleKey[]
         return (
@@ -224,6 +228,7 @@ export default function AccessProfilesPage() {
     {
       key: 'isActive',
       label: 'Estado',
+      sortable: true,
       render: (v) => <StatusPill status={v ? 'activo' : 'inactivo'} size="sm" />,
     },
     {

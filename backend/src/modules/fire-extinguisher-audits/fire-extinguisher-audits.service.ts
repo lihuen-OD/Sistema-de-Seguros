@@ -8,6 +8,7 @@ import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/
 import { computeFireExtinguisherStatus } from '../fire-extinguishers/fire-extinguishers.expiration'
 import type {
   CreateFireExtinguisherAuditDTO,
+  UpdateFireExtinguisherAuditDTO,
   AddFireExtinguisherAuditAttachmentDTO,
   ReviewFireExtinguisherAuditDTO,
   ListFireExtinguisherAuditsQueryDTO,
@@ -321,6 +322,77 @@ export const fireExtinguisherAuditsService = {
     return mapAudit(audit as unknown as Record<string, unknown>)
   },
 
+  // Edita una auditoría propia mientras está SUBMITTED — mismo cálculo de
+  // cambios propuestos que create(), pero reemplazando los proposedChanges
+  // existentes en vez de crear una auditoría nueva. Seguro porque, mientras
+  // status === 'SUBMITTED', ningún proposedChange fue decidido todavía (recién
+  // se deciden en review(), que es lo único que saca a la auditoría de
+  // SUBMITTED) — no hay decisiones previas que este reemplazo pueda pisar.
+  async update(id: string, data: UpdateFireExtinguisherAuditDTO) {
+    const audit = await prisma.fireExtinguisherAudit.findUnique({ where: { id } })
+    if (!audit) throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
+    if (audit.status !== 'SUBMITTED') {
+      throw new AppError(409, 'Solo se puede editar una auditoría pendiente de revisión', 'AUDIT_NOT_EDITABLE')
+    }
+
+    const fe = await prisma.fireExtinguisher.findUnique({ where: { id: audit.fireExtinguisherId } })
+    if (!fe) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
+
+    type ChangeRow = { fireExtinguisherId: string; fieldName: string; currentValue: string; proposedValue: string; reason: string | null }
+    const changes: ChangeRow[] = []
+
+    for (const review of data.masterDataReview) {
+      if (review.action === 'MODIFICAR') {
+        changes.push({
+          fireExtinguisherId: fe.id,
+          fieldName: review.field,
+          currentValue: normalizeMasterValue(review.field, (fe as unknown as Record<string, unknown>)[review.field]),
+          proposedValue: review.newValue,
+          reason: review.reason ?? null,
+        })
+      }
+    }
+
+    const locationChangeRequested = data.locationReview.action === 'MODIFICAR'
+    if (data.locationReview.action === 'MODIFICAR') {
+      changes.push({
+        fireExtinguisherId: fe.id,
+        fieldName: 'location',
+        currentValue: fe.location ?? '',
+        proposedValue: data.locationReview.proposedLocation,
+        reason: data.locationReview.reason ?? null,
+      })
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.fireExtinguisherAuditProposedChange.deleteMany({ where: { auditId: id } })
+
+      await tx.fireExtinguisherAudit.update({
+        where: { id },
+        data: {
+          locationConfirmed: data.locationReview.action === 'OK',
+          locationChangeRequested,
+          proposedLocation: data.locationReview.action === 'MODIFICAR' ? data.locationReview.proposedLocation : null,
+          locationChangeReason: data.locationReview.action === 'MODIFICAR' ? data.locationReview.reason ?? null : null,
+          cleanliness: data.checklist.cleanliness,
+          chargeFillStatus: data.checklist.chargeFillStatus,
+          beaconPlateCondition: data.checklist.beaconPlateCondition,
+          sealStatus: data.checklist.sealStatus,
+          ringStatus: data.checklist.ringStatus,
+          hoseNozzleCondition: data.checklist.hoseNozzleCondition,
+          chargeExpirationDateObserved: data.checklist.chargeExpirationDateObserved,
+          comments: data.checklist.comments ?? null,
+        },
+      })
+
+      if (changes.length > 0) {
+        await Promise.all(changes.map((c) => tx.fireExtinguisherAuditProposedChange.create({ data: { ...c, auditId: id } })))
+      }
+    })
+
+    return this.findById(id)
+  },
+
   async findById(id: string) {
     const audit = await prisma.fireExtinguisherAudit.findUnique({
       where: { id },
@@ -406,6 +478,7 @@ export const fireExtinguisherAuditsService = {
 
     const where: Prisma.FireExtinguisherAuditWhereInput = {}
     if (query.status && query.status.length > 0) where.status = { in: query.status }
+    if (query.fireExtinguisherId) where.fireExtinguisherId = query.fireExtinguisherId
 
     const [rows, total] = await Promise.all([
       prisma.fireExtinguisherAudit.findMany({
@@ -459,15 +532,15 @@ export const fireExtinguisherAuditsService = {
       }),
       prisma.fireExtinguisherAudit.findMany({
         where: { auditPeriod: period, status: { not: 'REJECTED' } },
-        select: { fireExtinguisherId: true, status: true, auditDate: true },
+        select: { id: true, fireExtinguisherId: true, status: true, auditDate: true },
         orderBy: { auditDate: 'desc' },
       }),
     ])
 
-    const latestAuditByExtinguisher = new Map<string, { status: string; auditDate: Date }>()
+    const latestAuditByExtinguisher = new Map<string, { id: string; status: string; auditDate: Date }>()
     for (const a of audits) {
       if (!latestAuditByExtinguisher.has(a.fireExtinguisherId)) {
-        latestAuditByExtinguisher.set(a.fireExtinguisherId, { status: a.status, auditDate: a.auditDate })
+        latestAuditByExtinguisher.set(a.fireExtinguisherId, { id: a.id, status: a.status, auditDate: a.auditDate })
       }
     }
 
@@ -482,6 +555,7 @@ export const fireExtinguisherAuditsService = {
         associatedLocationType: fe.locationType,
         location: fe.location ?? null,
         audited: audit !== undefined,
+        auditId: audit?.id ?? null,
         auditStatus: audit?.status ?? null,
         auditDate: audit ? toDateStr(audit.auditDate) : null,
       }
@@ -596,7 +670,12 @@ export const fireExtinguisherAuditsService = {
     return { period, establishments }
   },
 
-  async review(id: string, data: ReviewFireExtinguisherAuditDTO, reviewedBy: string) {
+  // `reviewerIsAdmin` exceptúa la restricción de autorevisión — un ADMIN
+  // suele ser quien audita (desde Cobertura) Y revisa/aprueba en esta misma
+  // cuenta, a diferencia de un auditor común (solo tiene el módulo de
+  // cobertura, nunca llega a esta pantalla). Un usuario no-ADMIN con permiso
+  // de revisión sigue sin poder autoaprobarse.
+  async review(id: string, data: ReviewFireExtinguisherAuditDTO, reviewedBy: string, reviewerIsAdmin = false) {
     const audit = await prisma.fireExtinguisherAudit.findUnique({
       where: { id },
       include: { proposedChanges: true },
@@ -605,7 +684,7 @@ export const fireExtinguisherAuditsService = {
     if (audit.status !== 'SUBMITTED') {
       throw new AppError(409, 'Esta auditoría ya fue revisada', 'ALREADY_REVIEWED')
     }
-    if (audit.auditedBy === reviewedBy) {
+    if (audit.auditedBy === reviewedBy && !reviewerIsAdmin) {
       throw new AppError(
         403,
         'No podés revisar/aprobar una auditoría que vos mismo auditaste',
@@ -697,5 +776,39 @@ export const fireExtinguisherAuditsService = {
 
     // Lectura final fuera de la transacción, mismo criterio que create().
     return this.findById(id)
+  },
+
+  // Aprueba varias auditorías SUBMITTED de una sola vez, aceptando también
+  // todos sus cambios propuestos PENDING (ver BulkApproveFireExtinguisherAuditsSchema).
+  // Reusa review() para no duplicar la lógica de aplicar cambios al maestro
+  // y el historial — cada auditoría se procesa de forma independiente: si
+  // una falla (ya revisada, self-review, etc.) no aborta el resto del lote.
+  async bulkApprove(ids: string[], reviewedBy: string, reviewerIsAdmin = false, reviewNotes?: string | null) {
+    const audits = await prisma.fireExtinguisherAudit.findMany({
+      where: { id: { in: ids } },
+      include: { proposedChanges: true, extinguisher: { select: { code: true } } },
+    })
+    const auditById = new Map(audits.map((a) => [a.id, a]))
+
+    const approved: string[] = []
+    const failed: { id: string; code: string | null; message: string }[] = []
+
+    for (const id of ids) {
+      const audit = auditById.get(id)
+      if (!audit) {
+        failed.push({ id, code: null, message: 'Auditoría no encontrada' })
+        continue
+      }
+      try {
+        const pending = audit.proposedChanges.filter((pc) => pc.status === 'PENDING')
+        const decisions = pending.map((pc) => ({ proposedChangeId: pc.id, decision: 'APPROVED' as const }))
+        await this.review(id, { decisions, auditDecision: 'APPROVED', reviewNotes: reviewNotes ?? undefined }, reviewedBy, reviewerIsAdmin)
+        approved.push(id)
+      } catch (err) {
+        failed.push({ id, code: audit.extinguisher.code, message: err instanceof AppError ? err.message : 'Error al aprobar' })
+      }
+    }
+
+    return { approved, failed }
   },
 }

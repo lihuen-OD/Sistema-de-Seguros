@@ -6,6 +6,7 @@ import {
 import type { AssetAttachment } from '../../types'
 import { formatDate } from '../../utils/format'
 import { getExpirationStatus } from '../../utils/expiration'
+import { notifyValidationErrors } from '../../utils/formValidation'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -118,6 +119,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
     if (!name.trim()) e.name = 'Ingresá un nombre para el documento.'
     if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 

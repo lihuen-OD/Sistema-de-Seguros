@@ -42,6 +42,12 @@ export const catalogQueries = {
       queryFn: () => catalogsApi.findByCategory(category),
       staleTime: 30 * 60 * 1000,
       gcTime: 24 * 60 * 60 * 1000,
+      // Se puede estar editando este catálogo en otra pestaña (ej. Config.
+      // Módulos) mientras esta queda abierta con un formulario a medio
+      // completar — 'always' fuerza el refetch al volver a esta pestaña sin
+      // importar el staleTime, para que el desplegable muestre lo nuevo sin
+      // perder los datos ya cargados en el resto del formulario.
+      refetchOnWindowFocus: 'always',
     }),
   allByCategory: (category: string) =>
     queryOptions({
@@ -49,5 +55,6 @@ export const catalogQueries = {
       queryFn: () => catalogsApi.findAllByCategory(category),
       staleTime: 30 * 60 * 1000,
       gcTime: 24 * 60 * 60 * 1000,
+      refetchOnWindowFocus: 'always',
     }),
 }

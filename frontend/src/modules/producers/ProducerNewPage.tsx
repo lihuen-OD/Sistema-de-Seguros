@@ -12,6 +12,7 @@ import {
   FormSelect,
 } from '../../shared/components/forms/FormSection'
 import { producersApi } from '../../shared/api/producers.api'
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { ROUTES } from '../../app/routes'
 
 interface FormErrors {
@@ -39,6 +40,7 @@ export default function ProducerNewPage() {
       e.email = 'El email no tiene un formato válido'
     }
     setErrors(e)
+    notifyValidationErrors(e as Record<string, string | undefined>)
     return Object.keys(e).length === 0
   }
 

@@ -64,6 +64,11 @@ export const AddAttachmentSchema = z.object({
   expirationDate: ISODate.optional().nullable(),
 })
 
+export const UpdateAttachmentSchema = z.object({
+  description: z.string().max(500).nullable().optional(),
+  expirationDate: ISODate.nullable().optional(),
+})
+
 export const ListAssetsQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
   search: z.string().optional(),
   assetType: z.string().optional(),
@@ -74,4 +79,5 @@ export type UpdateAssetDTO = z.infer<typeof UpdateAssetSchema>
 export type ReplaceAllocationsDTO = z.infer<typeof ReplaceAllocationsSchema>
 export type AddValueHistoryDTO = z.infer<typeof AddValueHistorySchema>
 export type AddAttachmentDTO = z.infer<typeof AddAttachmentSchema>
+export type UpdateAttachmentDTO = z.infer<typeof UpdateAttachmentSchema>
 export type ListAssetsQueryDTO = z.infer<typeof ListAssetsQuerySchema>

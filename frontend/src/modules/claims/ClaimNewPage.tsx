@@ -24,6 +24,7 @@ import { claimsApi, claimKeys } from '../../shared/api/claims.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
 import type { ClaimOwnershipType } from '../../shared/types'
 
@@ -49,6 +50,7 @@ const CLAIM_LABEL_ICON_MAP: Record<string, LucideIcon> = {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FormErrors {
+  [key: string]: string | undefined
   claimType?: string
   occurrenceDate?: string
   reportDate?: string
@@ -170,6 +172,7 @@ export default function ClaimNewPage() {
     if (currency === 'USD' && (!exchangeRate || parseFloat(exchangeRate) <= 0))
       e.exchangeRate = 'Ingresá el tipo de cambio.'
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 

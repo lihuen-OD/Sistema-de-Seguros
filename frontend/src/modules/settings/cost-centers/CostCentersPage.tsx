@@ -19,6 +19,7 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
+import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { costCentersApi, costCenterQueries, costCenterKeys, type CostCenterInput } from '../../../shared/api/cost-centers.api'
 import type { CostCenter, TableColumn } from '../../../shared/types'
@@ -45,6 +46,7 @@ function CostCenterModal({ costCenter, onClose, onSave }: CostCenterModalProps) 
     const e: { name?: string } = {}
     if (!name.trim()) e.name = 'El nombre es obligatorio'
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 
@@ -205,16 +207,19 @@ export default function CostCentersPage() {
     {
       key: 'code',
       label: 'Código',
+      sortable: true,
       className: 'font-mono text-xs text-slate-600 min-w-[120px]',
     },
     {
       key: 'name',
       label: 'Centro de Costo',
+      sortable: true,
       render: (v) => <span className="font-medium text-slate-800 text-sm">{String(v)}</span>,
     },
     {
       key: 'description',
       label: 'Descripción',
+      sortable: true,
       render: (v) => (
         <div className="max-w-[260px]">
           <OverflowCell value={String(v) || null} lines={1} className="text-xs text-slate-500" />
@@ -224,6 +229,8 @@ export default function CostCentersPage() {
     {
       key: 'id',
       label: 'Activos',
+      sortable: true,
+      sortValue: (row) => allAssets.filter((a) => a.costCenterId === row.id && a.status === 'activo').length,
       render: (v) => {
         const count = allAssets.filter((a) => a.costCenterId === v && a.status === 'activo').length
         return <span className="text-xs text-slate-500">{count} activo{count !== 1 ? 's' : ''}</span>
@@ -232,6 +239,7 @@ export default function CostCentersPage() {
     {
       key: 'status',
       label: 'Estado',
+      sortable: true,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     {

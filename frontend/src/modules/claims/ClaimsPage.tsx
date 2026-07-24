@@ -29,6 +29,14 @@ import type { Claim, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.keys(CLAIM_STATUS_STYLES).map((s) => ({ value: s, label: s }))
 
+// Orden por severidad al ordenar la columna "Estado" — alfabético pondría
+// "Cerrado" antes que "Denunciado", mezclando el fin del ciclo de vida con su
+// inicio. Mismo orden que ya define CLAIM_STATUS_STYLES (denuncia → gestión →
+// resolución).
+const CLAIM_STATUS_SORT_ORDER: Record<string, number> = Object.fromEntries(
+  Object.keys(CLAIM_STATUS_STYLES).map((key, idx) => [key, idx]),
+)
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ClaimsPage() {
@@ -99,6 +107,7 @@ export default function ClaimsPage() {
       key: 'claimNumber',
       label: 'N° Siniestro',
       defaultVisible: true,
+      sortable: true,
       className: 'font-mono text-xs text-slate-600 min-w-[140px]',
     },
     {
@@ -106,6 +115,7 @@ export default function ClaimsPage() {
       key: 'claimType',
       label: 'Tipo',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <span className="text-sm text-slate-800 font-medium">{String(v)}</span>,
     },
     {
@@ -113,6 +123,11 @@ export default function ClaimsPage() {
       key: 'assetId',
       label: 'Activo',
       defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => {
+        const a = row.assetId ? assetById.get(row.assetId) : null
+        return a ? a.name : null
+      },
       exportValue: (row) => {
         const a = row.assetId ? assetById.get(row.assetId) : null
         return a ? `${a.name} (${a.internalCode})` : ''
@@ -127,7 +142,7 @@ export default function ClaimsPage() {
             className="text-left block min-w-0 max-w-[200px] group"
           >
             <OverflowCell value={asset.name} lines={1} className="text-xs text-brand-600 group-hover:underline" />
-            <span className="block text-slate-400 font-mono text-[10px] mt-0.5">{asset.internalCode}</span>
+            <OverflowCell value={asset.internalCode} lines={1} className="text-slate-400 font-mono text-[10px] mt-0.5" />
           </button>
         )
       },
@@ -137,6 +152,11 @@ export default function ClaimsPage() {
       key: 'policyId',
       label: 'Póliza',
       defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => {
+        const p = row.policyId ? policyById.get(row.policyId) : null
+        return p?.policyNumber ?? null
+      },
       exportValue: (row) => {
         const p = row.policyId ? policyById.get(row.policyId) : null
         return p?.policyNumber ?? ''
@@ -154,6 +174,7 @@ export default function ClaimsPage() {
       key: 'occurrenceDate',
       label: 'Fecha hecho',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
     {
@@ -161,6 +182,7 @@ export default function ClaimsPage() {
       key: 'insuranceCompany',
       label: 'Aseguradora',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-600">{String(v)}</span>,
     },
     {
@@ -168,6 +190,7 @@ export default function ClaimsPage() {
       key: 'claimedAmountArs',
       label: 'Reclamado',
       defaultVisible: true,
+      sortable: true,
       headerClassName: 'text-right',
       className: 'text-right',
       exportValue: (row) => String(row.claimedAmountArs),
@@ -182,6 +205,7 @@ export default function ClaimsPage() {
       key: 'settledAmountArs',
       label: 'Liquidado',
       defaultVisible: true,
+      sortable: true,
       headerClassName: 'text-right',
       className: 'text-right',
       exportValue: (row) => row.settledAmountArs != null ? String(row.settledAmountArs) : '',
@@ -199,6 +223,8 @@ export default function ClaimsPage() {
       key: 'status',
       label: 'Estado',
       defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => CLAIM_STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v) => (
         <StatusPill status={String(v)} icon={CLAIM_STATUS_ICONS[String(v)] ?? CLAIM_STATUS_DEFAULT_ICON} size="sm" />
       ),
@@ -209,6 +235,7 @@ export default function ClaimsPage() {
       key: 'reportDate',
       label: 'Fecha denuncia',
       defaultVisible: false,
+      sortable: true,
       render: (v) =>
         v
           ? <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>
@@ -219,6 +246,7 @@ export default function ClaimsPage() {
       key: 'realAmountArs',
       label: 'Monto real ARS',
       defaultVisible: false,
+      sortable: true,
       headerClassName: 'text-right',
       className: 'text-right',
       exportValue: (row) => row.realAmountArs != null ? String(row.realAmountArs) : '',
@@ -232,6 +260,7 @@ export default function ClaimsPage() {
       key: 'deductibleArs',
       label: 'Franquicia ARS',
       defaultVisible: false,
+      sortable: true,
       headerClassName: 'text-right',
       className: 'text-right',
       exportValue: (row) => row.deductibleArs != null ? String(row.deductibleArs) : '',
@@ -245,6 +274,7 @@ export default function ClaimsPage() {
       key: 'currency',
       label: 'Moneda',
       defaultVisible: false,
+      sortable: true,
       render: (v) =>
         v
           ? <span className="text-xs font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">{String(v)}</span>
@@ -255,6 +285,7 @@ export default function ClaimsPage() {
       key: 'description',
       label: 'Descripción',
       defaultVisible: false,
+      sortable: true,
       render: (v) => (
         <div className="max-w-[200px]">
           <OverflowCell value={(v as string) || null} lines={1} className="text-xs text-slate-500" />
@@ -266,6 +297,7 @@ export default function ClaimsPage() {
       key: 'observations',
       label: 'Observaciones',
       defaultVisible: false,
+      sortable: true,
       render: (v) => (
         <div className="max-w-[200px]">
           <OverflowCell value={(v as string) || null} lines={1} className="text-xs text-slate-500" />
@@ -277,6 +309,7 @@ export default function ClaimsPage() {
       key: 'createdAt',
       label: 'Fecha de alta',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
     // ── Acciones ────────────────────────────────────────────────────────────────

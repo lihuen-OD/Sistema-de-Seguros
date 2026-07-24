@@ -22,7 +22,7 @@ import { companyQueries } from '../../shared/api/companies.api'
 import { costCenterQueries } from '../../shared/api/cost-centers.api'
 import { claimQueries } from '../../shared/api/claims.api'
 import { documentQueries } from '../../shared/api/documents.api'
-import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../shared/constants'
+import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS, POLICY_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '../../shared/constants'
 import type { Policy, FireExtinguisher, TableColumn, AssetValueEntry, AccountingDocument } from '../../shared/types'
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
@@ -30,6 +30,17 @@ import { AssociateFireExtinguisherModal } from './AssociateFireExtinguisherModal
 
 const TABS = ['Pólizas', 'Doc. Contables', 'Matafuegos', 'Siniestros', 'Valuaciones', 'Adjuntos'] as const
 type Tab = (typeof TABS)[number]
+
+// Orden por severidad al ordenar la columna "Estado" de cada sub-tabla —
+// alfabético mezclaría estados vigentes con vencidos sin ningún criterio útil.
+// Mismo orden que ya definen los labels canónicos de cada dominio.
+const POLICY_STATUS_SORT_ORDER: Record<string, number> = Object.fromEntries(
+  Object.keys(POLICY_STATUS_LABELS).map((key, idx) => [key, idx]),
+)
+const FE_STATUS_SORT_ORDER: Record<string, number> = { vigente: 0, proximo_vencer: 1, vencido: 2, sin_fecha: 3 }
+const PAYMENT_STATUS_SORT_ORDER: Record<string, number> = Object.fromEntries(
+  Object.keys(PAYMENT_STATUS_LABELS).map((key, idx) => [key, idx]),
+)
 
 function ValuacionesEntryList({ entries, accent }: { entries: AssetValueEntry[]; accent: 'blue' | 'purple' }) {
   if (entries.length === 0) {
@@ -291,38 +302,56 @@ export default function AssetDetailPage() {
   const hasArsCoverage = totalInsuredArs > 0
   const mixedCurrencies = hasUsdCoverage && hasArsCoverage
   const diffBase = displayNuevo ?? displayReal
-  const diffUsd = hasUsdCoverage ? diffBase - totalInsuredUsd : null
+  const diffUsd = hasUsdCoverage && diffBase != null ? diffBase - totalInsuredUsd : null
 
   // ── Table columns ─────────────────────────────────────────────────────────────
 
   const policyColumns: TableColumn<Policy>[] = [
-    { key: 'policyNumber', label: 'N° Póliza', className: 'font-mono text-slate-600 text-xs' },
-    { key: 'insuranceCompany', label: 'Aseguradora' },
-    { key: 'insuranceType', label: 'Tipo' },
-    { key: 'coverageType', label: 'Cobertura', render: (v) => <span className="text-xs text-slate-500">{String(v)}</span> },
-    { key: 'startDate', label: 'Inicio', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
-    { key: 'endDate', label: 'Vence', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
-    { key: 'insuredAmountArs', label: 'Suma Aseg.', render: (v) => <span className="font-semibold">{formatCurrencyCompact(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
-    { key: 'status', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },
+    { key: 'policyNumber', label: 'N° Póliza', className: 'font-mono text-slate-600 text-xs', sortable: true },
+    { key: 'insuranceCompany', label: 'Aseguradora', sortable: true },
+    { key: 'insuranceType', label: 'Tipo', sortable: true },
+    { key: 'coverageType', label: 'Cobertura', sortable: true, render: (v) => <span className="text-xs text-slate-500">{String(v)}</span> },
+    { key: 'startDate', label: 'Inicio', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
+    { key: 'endDate', label: 'Vence', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
+    { key: 'insuredAmountArs', label: 'Suma Aseg.', sortable: true, render: (v) => <span className="font-semibold">{formatCurrencyCompact(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
+    {
+      key: 'status',
+      label: 'Estado',
+      sortable: true,
+      sortValue: (row) => POLICY_STATUS_SORT_ORDER[row.status] ?? 99,
+      render: (v) => <StatusPill status={v as string} size="sm" />,
+    },
   ]
 
 
   const feColumns: TableColumn<FireExtinguisher>[] = [
-    { key: 'code', label: 'Código', className: 'font-mono text-xs text-slate-600' },
-    { key: 'type', label: 'Tipo' },
-    { key: 'capacity', label: 'Cap.' },
-    { key: 'chargeDate', label: 'Carga', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
-    { key: 'expirationDate', label: 'Vencimiento', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
-    { key: 'status', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },
+    { key: 'code', label: 'Código', className: 'font-mono text-xs text-slate-600', sortable: true },
+    { key: 'type', label: 'Tipo', sortable: true },
+    { key: 'capacity', label: 'Cap.', sortable: true },
+    { key: 'chargeDate', label: 'Carga', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
+    { key: 'expirationDate', label: 'Vencimiento', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
+    {
+      key: 'status',
+      label: 'Estado',
+      sortable: true,
+      sortValue: (row) => FE_STATUS_SORT_ORDER[row.status] ?? 99,
+      render: (v) => <StatusPill status={v as string} size="sm" />,
+    },
   ]
 
   const docColumns: TableColumn<AccountingDocument>[] = [
-    { key: 'documentNumber', label: 'N° Documento', className: 'font-mono text-xs text-slate-600' },
-    { key: 'documentType', label: 'Tipo', render: (v) => <span className="text-xs">{DOCUMENT_TYPE_LABELS[v as string] ?? String(v)}</span> },
-    { key: 'issueDate', label: 'Fecha', render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
-    { key: 'insuranceCompany', label: 'Aseguradora', render: (v) => <span className="text-sm">{(v as string) || '—'}</span> },
-    { key: 'totalAmount', label: 'Total', render: (v) => <span className="font-semibold tabular-nums">{formatCurrencyCompact(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
-    { key: 'paymentStatus', label: 'Estado', render: (v) => <StatusPill status={v as string} size="sm" /> },
+    { key: 'documentNumber', label: 'N° Documento', className: 'font-mono text-xs text-slate-600', sortable: true },
+    { key: 'documentType', label: 'Tipo', sortable: true, render: (v) => <span className="text-xs">{DOCUMENT_TYPE_LABELS[v as string] ?? String(v)}</span> },
+    { key: 'issueDate', label: 'Fecha', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
+    { key: 'insuranceCompany', label: 'Aseguradora', sortable: true, render: (v) => <span className="text-sm">{(v as string) || '—'}</span> },
+    { key: 'totalAmount', label: 'Total', sortable: true, render: (v) => <span className="font-semibold tabular-nums">{formatCurrencyCompact(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
+    {
+      key: 'paymentStatus',
+      label: 'Estado',
+      sortable: true,
+      sortValue: (row) => PAYMENT_STATUS_SORT_ORDER[row.paymentStatus] ?? 99,
+      render: (v) => <StatusPill status={v as string} size="sm" />,
+    },
   ]
 
   const assetSubtitle = [
@@ -378,7 +407,9 @@ export default function AssetDetailPage() {
           </div>
           <div className="flex-1 min-w-0 px-5 py-4">
             <p className="text-xs text-slate-500 mb-1">Valor Patrimonial Real</p>
-            <p className="text-sm font-semibold text-slate-800 tabular-nums">{formatCurrencyFull(asset.patrimonialValueUsd, 'USD')}</p>
+            <p className="text-sm font-semibold text-slate-800 tabular-nums">
+              {asset.patrimonialValueUsd != null ? formatCurrencyFull(asset.patrimonialValueUsd, 'USD') : <span className="text-slate-400 font-normal">Sin valuar</span>}
+            </p>
           </div>
           {asset.patrimonialValueNew != null && (
             <div className="flex-1 min-w-0 px-5 py-4">
@@ -458,6 +489,7 @@ export default function AssetDetailPage() {
                 {asset.year > 0 && <InfoRow label="Año" value={String(asset.year)} />}
                 {asset.serialNumber && <InfoRow label="N° de Serie" value={asset.serialNumber} mono />}
                 {asset.chassisNumber && <InfoRow label="N° de Chasis" value={asset.chassisNumber} mono />}
+                {asset.plate && <InfoRow label="Patente" value={asset.plate} mono />}
                 {asset.engineNumber && <InfoRow label="N° de Motor" value={asset.engineNumber} mono />}
                 {asset.fixedAsset && <InfoRow label="Bien de Uso" value={`${asset.fixedAsset.code} — ${asset.fixedAsset.name}`} mono />}
                 <InfoRow label="Fecha Valuación" value={formatDate(asset.valuationDate)} />
@@ -636,8 +668,8 @@ export default function AssetDetailPage() {
         <div className="space-y-4">
           <KpiCard
             label="Valor Patrimonial Real"
-            value={formatCurrencyFull(displayReal, 'USD')}
-            description={`Al ${formatDate(displayRealDate)}`}
+            value={displayReal != null ? formatCurrencyFull(displayReal, 'USD') : 'Sin valuar'}
+            description={displayReal != null ? `Al ${formatDate(displayRealDate)}` : 'Todavía no se cargó un valor'}
             variant="info"
           />
           {displayNuevo != null && (

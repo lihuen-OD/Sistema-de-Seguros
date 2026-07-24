@@ -22,11 +22,7 @@ import {
 import { assetQueries } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
-
-function todayISO(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-}
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 
 function addOneYear(dateStr: string): string {
   if (!dateStr) return ''
@@ -46,6 +42,7 @@ interface FormErrors {
   manufacturingYear?: string
   establishment?: string
   hydraulicTestExpirationDate?: string
+  [key: string]: string | undefined
 }
 
 export default function FireExtinguisherNewPage() {
@@ -63,8 +60,8 @@ export default function FireExtinguisherNewPage() {
 
   const [type, setType] = useState('')
   const [capacity, setCapacity] = useState('')
-  const [chargeDate, setChargeDate] = useState(todayISO())
-  const [expirationDate, setExpirationDate] = useState(addOneYear(todayISO()))
+  const [chargeDate, setChargeDate] = useState('')
+  const [expirationDate, setExpirationDate] = useState('')
   const [hydraulicTestExpirationDate, setHydraulicTestExpirationDate] = useState('')
   const [manualExpDate, setManualExpDate] = useState(false)
   const [associatedAssetId, setAssociatedAssetId] = useState(searchParams.get('assetId') ?? '')
@@ -100,6 +97,7 @@ export default function FireExtinguisherNewPage() {
       }
     }
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 

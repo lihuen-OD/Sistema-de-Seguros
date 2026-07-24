@@ -240,8 +240,9 @@ export interface Asset {
   serialNumber: string
   chassisNumber?: string
   engineNumber?: string
+  plate?: string
   status: AssetStatus
-  patrimonialValueUsd: number
+  patrimonialValueUsd: number | null
   patrimonialValueNew: number | null
   valuationDate: string
   /** Historial de valuaciones USD con fecha */
@@ -605,6 +606,7 @@ export interface TableColumn<T> {
   label: string
   render?: (value: unknown, row: T) => React.ReactNode
   exportValue?: (row: T) => string  // plain string for CSV export; fallback: String(row[key])
+  sortValue?: (row: T) => string | number | null | undefined  // valor real para ordenar; fallback: row[key]
   className?: string
   headerClassName?: string
   sortable?: boolean

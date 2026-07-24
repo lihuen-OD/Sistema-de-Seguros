@@ -16,6 +16,7 @@ import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ASSET_STATUS_LABELS, PROVINCES } from '../../shared/constants'
 import { LABEL_TO_CATEGORY } from '../../shared/constants/asset-categories'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { BienDeUsoField } from './components/BienDeUsoField'
 import { AllocationEditor } from './components/AllocationEditor'
 import { SilosSection } from './components/SilosSection'
@@ -230,7 +231,7 @@ export default function AssetEditPage() {
       area: asset.area ?? '',
       observations: asset.observations,
     })
-    setPatrimonialValueUsd(asset.patrimonialValueUsd > 0 ? String(asset.patrimonialValueUsd) : '')
+    setPatrimonialValueUsd(asset.patrimonialValueUsd != null ? String(asset.patrimonialValueUsd) : '')
     setPatrimonialValueNew(asset.patrimonialValueNew != null ? String(asset.patrimonialValueNew) : '')
     setValuationDate(asset.valuationDate ?? '')
     setDischargeDate(asset.dischargeDate ?? '')
@@ -302,10 +303,23 @@ export default function AssetEditPage() {
   function validate(): boolean {
     const e: FormErrors = {}
     if (!form.name.trim()) e.name = 'El nombre del activo es obligatorio.'
-    if (!patrimonialValueUsd || parseFloat(patrimonialValueUsd) < 0)
-      e.patrimonialValueUsd = 'Ingresá un valor patrimonial válido.'
+    if (patrimonialValueUsd && parseFloat(patrimonialValueUsd) < 0)
+      e.patrimonialValueUsd = 'El valor patrimonial no puede ser negativo.'
     setErrors(e)
-    return Object.keys(e).length === 0
+    notifyValidationErrors(e)
+
+    // El backend exige lo mismo (al menos una imputación completa que sume
+    // 100%) — se valida acá también para no depender de un viaje al
+    // servidor solo para descubrir que faltó elegir empresa/centro de costo.
+    const completeAllocations = allocations.filter((a) => a.companyId && a.costCenterId)
+    const allocationsTotal = completeAllocations.reduce((sum, a) => sum + (Number(a.percentage) || 0), 0)
+    if (completeAllocations.length === 0) {
+      toast.error('Asigná al menos una empresa y centro de costo en Imputación Contable.')
+    } else if (allocationsTotal !== 100) {
+      toast.error('Los porcentajes de Imputación Contable deben sumar 100%.')
+    }
+
+    return Object.keys(e).length === 0 && completeAllocations.length > 0 && allocationsTotal === 100
   }
 
   function addSilo() {
@@ -318,6 +332,14 @@ export default function AssetEditPage() {
 
   function addBuilding() {
     setBuildings((prev) => [...prev, { id: `building-${Date.now()}`, name: '', surfaceM2: '', purpose: '', constructionType: '', constructionYear: '' }])
+  }
+  function duplicateBuilding(bid: string) {
+    setBuildings((prev) => {
+      const idx = prev.findIndex((b) => b.id === bid)
+      if (idx === -1) return prev
+      const copy = { ...prev[idx], id: `building-${Date.now()}` }
+      return [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)]
+    })
   }
   function removeBuilding(bid: string) { setBuildings((prev) => prev.filter((b) => b.id !== bid)) }
   function updateBuilding(bid: string, field: keyof Omit<EstBuilding, 'id'>, value: string) {
@@ -345,6 +367,7 @@ export default function AssetEditPage() {
     }
     if (isAgroMachine) {
       return {
+        ...(opt(form.plate) && { plate: form.plate.trim() }),
         ...(opt(form.engineNumber) && { engineNumber: form.engineNumber.trim() }),
         ...(num(form.powerHp) !== undefined && { powerHp: num(form.powerHp) }),
         ...(num(form.cutWidth) !== undefined && { cutWidth: num(form.cutWidth) }),
@@ -354,6 +377,7 @@ export default function AssetEditPage() {
     }
     if (isImplemento) {
       return {
+        ...(opt(form.plate) && { plate: form.plate.trim() }),
         ...(opt(form.implementType) && { implementType: form.implementType }),
         ...(num(form.workWidth) !== undefined && { workWidth: num(form.workWidth) }),
       }
@@ -611,6 +635,9 @@ export default function AssetEditPage() {
                 <FormField label="N° de Serie">
                   <FormInput placeholder="Ej: RW8320P024316" value={form.serialNumber} onChange={set('serialNumber')} />
                 </FormField>
+                <FormField label="Patente">
+                  <FormInput placeholder="Ej: AB 123 CD" value={form.plate} onChange={set('plate')} />
+                </FormField>
                 <FormField label="N° de Motor">
                   <FormInput placeholder="Ej: CD6090-123456" value={form.engineNumber} onChange={set('engineNumber')} />
                 </FormField>
@@ -660,6 +687,9 @@ export default function AssetEditPage() {
                 </FormField>
                 <FormField label="Ancho de trabajo (m)">
                   <FormInput type="number" min={0} step="0.1" placeholder="Ej: 9.5" value={form.workWidth} onChange={set('workWidth')} />
+                </FormField>
+                <FormField label="Patente">
+                  <FormInput placeholder="Ej: AB 123 CD" value={form.plate} onChange={set('plate')} />
                 </FormField>
               </FormSection>
             </SectionCard>
@@ -792,7 +822,7 @@ export default function AssetEditPage() {
           >
             <div className="space-y-5">
               <FormSection title="">
-                <FormField label="Valor Patrimonial Real (USD)" required error={errors.patrimonialValueUsd as string | undefined}>
+                <FormField label="Valor Patrimonial Real (USD)" error={errors.patrimonialValueUsd as string | undefined}>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
                     <FormInput
@@ -802,6 +832,7 @@ export default function AssetEditPage() {
                       onChange={(e) => { setPatrimonialValueUsd(e.target.value); setErrors((p) => ({ ...p, patrimonialValueUsd: undefined })) }}
                     />
                   </div>
+                  <p className="text-xs text-slate-400 mt-1">Dejalo en blanco si todavía no conocés el valor real.</p>
                 </FormField>
                 <FormField label="Valor Patrimonial a Nuevo (USD)">
                   <div className="relative">
@@ -869,7 +900,7 @@ export default function AssetEditPage() {
                 )}
                 {isEstablecimiento && (
                   <div className="border-t border-slate-100 pt-5">
-                    <EstBuildingsSection buildings={buildings} onAdd={addBuilding} onRemove={removeBuilding} onChange={updateBuilding} buildingPurposes={buildingPurposes} />
+                    <EstBuildingsSection buildings={buildings} onAdd={addBuilding} onDuplicate={duplicateBuilding} onRemove={removeBuilding} onChange={updateBuilding} buildingPurposes={buildingPurposes} />
                   </div>
                 )}
               </div>

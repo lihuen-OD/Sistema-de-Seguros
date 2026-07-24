@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
-import { CalendarDays, Building2, Flame, ClipboardCheck } from 'lucide-react'
+import { CalendarDays, Building2, Flame, ClipboardCheck, Pencil } from 'lucide-react'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { formatDate } from '../../../shared/utils/format'
@@ -69,6 +69,10 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canA
     navigate(`${ROUTES.FIRE_EXTINGUISHERS_AUDIT_NEW}?extinguisherId=${extinguisherId}`)
   }
 
+  function goToEditAudit(auditId: string) {
+    navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_EDIT(auditId))
+  }
+
   return (
     <div className="space-y-4">
       <SectionCard noPadding>
@@ -126,20 +130,28 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canA
                 // una auditoría SUBMITTED/APPROVED ya bloquea una nueva en el
                 // mismo período (ver índice único parcial del backend).
                 const isAuditable = canAudit && (!item.audited || item.auditStatus === 'NEEDS_CORRECTION')
+                // Pendiente de revisión — se puede corregir sin tener que
+                // rechazarla primero (ver fire-extinguisher-audits.service.ts's update()).
+                const isEditable = canAudit && item.audited && item.auditStatus === 'SUBMITTED' && !!item.auditId
+                const onItemClick = isAuditable
+                  ? () => goToAudit(item.id)
+                  : isEditable
+                    ? () => goToEditAudit(item.auditId!)
+                    : undefined
                 return (
                   <div
                     key={item.id}
-                    role={isAuditable ? 'button' : undefined}
-                    tabIndex={isAuditable ? 0 : undefined}
-                    onClick={isAuditable ? () => goToAudit(item.id) : undefined}
+                    role={onItemClick ? 'button' : undefined}
+                    tabIndex={onItemClick ? 0 : undefined}
+                    onClick={onItemClick}
                     onKeyDown={
-                      isAuditable
-                        ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToAudit(item.id) } }
+                      onItemClick
+                        ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onItemClick() } }
                         : undefined
                     }
                     className={clsx(
                       'flex items-center justify-between gap-3 px-5 py-2.5',
-                      isAuditable && 'cursor-pointer hover:bg-slate-50 transition-colors',
+                      onItemClick && 'cursor-pointer hover:bg-slate-50 transition-colors',
                     )}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -171,6 +183,12 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canA
                         <span className="flex items-center gap-1 text-xs font-medium text-brand-600">
                           <ClipboardCheck size={13} />
                           Auditar
+                        </span>
+                      )}
+                      {isEditable && (
+                        <span className="flex items-center gap-1 text-xs font-medium text-brand-600">
+                          <Pencil size={13} />
+                          Editar
                         </span>
                       )}
                     </div>

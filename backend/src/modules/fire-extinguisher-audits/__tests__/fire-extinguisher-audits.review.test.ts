@@ -310,9 +310,26 @@ describe('Fire Extinguisher Audits — Review API', () => {
       expect(res.status).toBe(200)
     })
 
-    it('returns 403 SELF_REVIEW_FORBIDDEN when the reviewer is the same person who audited it', async () => {
-      // adminToken() resuelve a mockDbUser() por default, cuyo email es
-      // 'test@losodwyer.com' — coincide a propósito con auditedBy acá.
+    it('returns 403 SELF_REVIEW_FORBIDDEN when a non-ADMIN reviewer is the same person who audited it', async () => {
+      // mockDbUser() siempre resuelve a email 'test@losodwyer.com' — coincide
+      // a propósito con auditedBy acá.
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguisher_audits'] }))
+      db.fireExtinguisherAudit.findUnique.mockResolvedValue(
+        makeAuditRow({ auditedBy: 'test@losodwyer.com', proposedChanges: [] }),
+      )
+
+      const res = await request(app)
+        .post(`/api/v1/fire-extinguisher-audits/${AUDIT_ID}/review`)
+        .set('Authorization', `Bearer ${userToken()}`)
+        .send({ decisions: [], auditDecision: 'APPROVED' })
+
+      expect(res.status).toBe(403)
+      expect(res.body.error.code).toBe('SELF_REVIEW_FORBIDDEN')
+    })
+
+    it('allows an ADMIN to review/approve an audit they themselves audited', async () => {
+      // Un ADMIN suele auditar (desde Cobertura) y revisar en la misma
+      // cuenta — a diferencia de un reviewer no-ADMIN, no queda bloqueado.
       db.fireExtinguisherAudit.findUnique.mockResolvedValue(
         makeAuditRow({ auditedBy: 'test@losodwyer.com', proposedChanges: [] }),
       )
@@ -322,8 +339,7 @@ describe('Fire Extinguisher Audits — Review API', () => {
         .set('Authorization', `Bearer ${adminToken()}`)
         .send({ decisions: [], auditDecision: 'APPROVED' })
 
-      expect(res.status).toBe(403)
-      expect(res.body.error.code).toBe('SELF_REVIEW_FORBIDDEN')
+      expect(res.status).toBe(200)
     })
 
     it('returns 422 DECISIONS_MISMATCH when a pending change is missing from decisions', async () => {
@@ -531,6 +547,95 @@ describe('Fire Extinguisher Audits — Review API', () => {
         })
 
       expect(res.status).toBe(201)
+    })
+  })
+
+  // ── POST /bulk-approve ──────────────────────────────────────────────────────
+
+  describe('POST /api/v1/fire-extinguisher-audits/bulk-approve', () => {
+    const AUDIT_A = '70000000-0000-0000-0000-00000000000a'
+    const AUDIT_B = '70000000-0000-0000-0000-00000000000b'
+    const AUDIT_C = '70000000-0000-0000-0000-00000000000c'
+    const FE_B = '60000000-0000-0000-0000-00000000000b'
+    const PC_B = '80000000-0000-0000-0000-00000000000b'
+
+    const rowA = makeAuditRow({ id: AUDIT_A, extinguisher: { code: 'MAT-A' } })
+    const rowB = makeAuditRow({
+      id: AUDIT_B,
+      fireExtinguisherId: FE_B,
+      proposedChanges: [{ id: PC_B, auditId: AUDIT_B, fireExtinguisherId: FE_B, fieldName: 'capacity', currentValue: '10 kg', proposedValue: '6 kg', reason: null, status: 'PENDING' }],
+      extinguisher: { code: 'MAT-B' },
+    })
+    const rowC = makeAuditRow({ id: AUDIT_C, status: 'APPROVED', extinguisher: { code: 'MAT-C' } })
+
+    beforeEach(() => {
+      db.fireExtinguisherAudit.findMany.mockResolvedValue([rowA, rowB, rowC])
+      db.fireExtinguisherAudit.findUnique.mockImplementation(({ where: { id } }: { where: { id: string } }) => {
+        if (id === AUDIT_A) return Promise.resolve(rowA)
+        if (id === AUDIT_B) return Promise.resolve(rowB)
+        if (id === AUDIT_C) return Promise.resolve(rowC)
+        return Promise.resolve(null)
+      })
+    })
+
+    it('approves each SUBMITTED audit independently, auto-approving its pending proposed changes, and reports the ones that fail', async () => {
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits/bulk-approve')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ ids: [AUDIT_A, AUDIT_B, AUDIT_C] })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.approved.sort()).toEqual([AUDIT_A, AUDIT_B].sort())
+      expect(res.body.data.failed).toEqual([{ id: AUDIT_C, code: 'MAT-C', message: 'Esta auditoría ya fue revisada' }])
+
+      // El cambio propuesto de AUDIT_B se aplicó al maestro sin pedir decisions explícitas.
+      expect(db.fireExtinguisher.update).toHaveBeenCalledWith({
+        where: { id: FE_B },
+        data: expect.objectContaining({ capacity: '6 kg' }),
+      })
+    })
+
+    it('returns 403 for a USER without the fire_extinguisher_audits module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguisher_audit_coverage'] }))
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits/bulk-approve')
+        .set('Authorization', `Bearer ${userToken()}`)
+        .send({ ids: [AUDIT_A] })
+
+      expect(res.status).toBe(403)
+    })
+
+    it('returns 422 when ids is empty', async () => {
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits/bulk-approve')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ ids: [] })
+
+      expect(res.status).toBe(422)
+    })
+
+    it('lets an ADMIN bulk-approve an audit they themselves audited, but blocks a non-ADMIN reviewer on the same case', async () => {
+      const selfAuditedRow = makeAuditRow({ id: AUDIT_A, auditedBy: 'test@losodwyer.com', extinguisher: { code: 'MAT-A' } })
+      db.fireExtinguisherAudit.findMany.mockResolvedValue([selfAuditedRow])
+      db.fireExtinguisherAudit.findUnique.mockResolvedValue(selfAuditedRow)
+
+      const adminRes = await request(app)
+        .post('/api/v1/fire-extinguisher-audits/bulk-approve')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ ids: [AUDIT_A] })
+
+      expect(adminRes.status).toBe(200)
+      expect(adminRes.body.data.approved).toEqual([AUDIT_A])
+
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguisher_audits'] }))
+      const userRes = await request(app)
+        .post('/api/v1/fire-extinguisher-audits/bulk-approve')
+        .set('Authorization', `Bearer ${userToken()}`)
+        .send({ ids: [AUDIT_A] })
+
+      expect(userRes.status).toBe(200) // el endpoint en sí no falla — la falla queda dentro de `failed`
+      expect(userRes.body.data.failed).toEqual([{ id: AUDIT_A, code: 'MAT-A', message: 'No podés revisar/aprobar una auditoría que vos mismo auditaste' }])
     })
   })
 })

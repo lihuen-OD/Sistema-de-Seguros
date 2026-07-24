@@ -236,8 +236,11 @@ export default function DocumentDetailPage() {
 
   const allocationColumns: TableColumn<DocumentPolicyAllocation>[] = [
     {
+      id: 'policyNumber',
       key: 'policyId',
       label: 'N° Póliza',
+      sortable: true,
+      sortValue: (row) => allPolicies.find((p) => p.id === row.policyId)?.policyNumber,
       render: (v) => {
         const policy = allPolicies.find((p) => p.id === (v as string))
         return (
@@ -248,8 +251,11 @@ export default function DocumentDetailPage() {
       },
     },
     {
+      id: 'insuranceCompany',
       key: 'policyId',
       label: 'Aseguradora',
+      sortable: true,
+      sortValue: (row) => allPolicies.find((p) => p.id === row.policyId)?.insuranceCompany,
       render: (v) => {
         const policy = allPolicies.find((p) => p.id === (v as string))
         return <span className="text-xs text-slate-600">{policy?.insuranceCompany ?? '—'}</span>
@@ -258,6 +264,7 @@ export default function DocumentDetailPage() {
     {
       key: 'allocatedAmount',
       label: 'Importe Asignado',
+      sortable: true,
       render: (v) => (
         <span className={`tabular-nums font-semibold text-sm ${(v as number) < 0 ? 'text-red-600' : 'text-slate-800'}`}>
           {formatCurrencyFull(v as number, doc.currency)}
@@ -269,6 +276,7 @@ export default function DocumentDetailPage() {
     {
       key: 'allocationPercentage',
       label: 'Participación',
+      sortable: true,
       render: (v) => (
         <div className="flex items-center gap-2 justify-end">
           <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">

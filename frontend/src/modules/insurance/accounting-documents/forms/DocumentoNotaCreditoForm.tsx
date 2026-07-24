@@ -14,6 +14,7 @@ import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
+import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import type { AccountingDocument } from '../../../../shared/types'
 
 interface DocumentoNotaCreditoFormProps {
@@ -108,6 +109,7 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
     if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0) next.exchangeRate = 'Requerido'
     if (!form.netAmount || isNaN(parseFloat(form.netAmount)) || parsedNet <= 0) next.netAmount = 'Requerido'
     setErrors(next)
+    notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 

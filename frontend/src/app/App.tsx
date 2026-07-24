@@ -164,6 +164,7 @@ export default function App() {
           <Route path="/fire-extinguishers/audits" element={<FireExtinguisherAuditsQueuePage />} />
           <Route path="/fire-extinguishers/audits/new" element={<FireExtinguisherAuditNewPage />} />
           <Route path="/fire-extinguishers/audits/findings-report" element={<FireExtinguisherFindingsReportPage />} />
+          <Route path="/fire-extinguishers/audits/:id/edit" element={<FireExtinguisherAuditNewPage />} />
           <Route path="/fire-extinguishers/audits/:id" element={<FireExtinguisherAuditDetailPage />} />
           <Route path="/fire-extinguishers/:id" element={<FireExtinguisherDetailPage />} />
           <Route path="/fire-extinguishers/:id/edit" element={<FireExtinguisherEditPage />} />

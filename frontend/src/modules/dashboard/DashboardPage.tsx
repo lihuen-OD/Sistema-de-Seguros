@@ -121,7 +121,7 @@ export default function DashboardPage() {
 
   // ── KPI calculations ─────────────────────────────────────────────
   const activeAssets = filteredAssets.filter((a) => a.status === 'activo')
-  const totalPatrimonialUsd = activeAssets.reduce((s, a) => s + a.patrimonialValueUsd, 0)
+  const totalPatrimonialUsd = activeAssets.reduce((s, a) => s + (a.patrimonialValueUsd ?? 0), 0)
 
   const vigentePolicies = filteredPolicies.filter((p) => p.status === 'vigente')
   const expiredPolicies = filteredPolicies.filter((p) => p.status === 'vencida')
@@ -265,7 +265,7 @@ export default function DashboardPage() {
       <MetricGrid cols={4} className="mb-5">
         <KpiCard
           label="Valor Patrimonial"
-          value={`US$ ${(totalPatrimonialUsd / 1_000_000).toFixed(1).replace('.', ',')}M`}
+          value={formatCurrencyCompact(totalPatrimonialUsd, 'USD')}
           description={`${activeAssets.length} activos activos`}
           icon={Package}
           variant="info"

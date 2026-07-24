@@ -10,6 +10,7 @@ import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
 import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { ROUTES } from '../../app/routes'
 import type { ClaimAttachment, ClaimOwnershipType } from '../../shared/types'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
@@ -162,6 +163,7 @@ export default function ClaimEditPage() {
       e.exchangeRate = 'Ingresá el tipo de cambio'
     }
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 

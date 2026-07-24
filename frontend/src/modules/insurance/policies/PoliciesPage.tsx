@@ -36,6 +36,17 @@ const STATUS_OPTIONS = Object.entries(POLICY_STATUS_LABELS).map(([value, label])
   label,
 }))
 
+// Orden por severidad al ordenar la columna "Estado" — alfabético dejaría
+// "sin_factura" antes que "vigente", que no refleja el ciclo de vida real
+// de la póliza. Mismo orden que POLICY_STATUS_LABELS.
+const POLICY_STATUS_SORT_ORDER: Record<string, number> = {
+  vigente: 0,
+  proximo_vencer: 1,
+  vencida: 2,
+  pendiente_documentacion: 3,
+  sin_factura: 4,
+}
+
 export default function PoliciesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -117,6 +128,7 @@ export default function PoliciesPage() {
       key: 'policyNumber',
       label: 'N° Póliza',
       defaultVisible: true,
+      sortable: true,
       className: 'font-mono text-slate-600 text-xs',
     },
     {
@@ -124,6 +136,7 @@ export default function PoliciesPage() {
       key: 'insuranceCompany',
       label: 'Aseguradora',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <span className="font-medium text-slate-800">{String(v)}</span>,
     },
     {
@@ -131,6 +144,8 @@ export default function PoliciesPage() {
       key: 'producerId',
       label: 'Productor',
       defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => allProducers.find((p) => p.id === row.producerId)?.name,
       exportValue: (row) => allProducers.find((p) => p.id === row.producerId)?.name ?? '',
       render: (v) => {
         const producer = allProducers.find((p) => p.id === v)
@@ -146,6 +161,7 @@ export default function PoliciesPage() {
       key: 'insuranceType',
       label: 'Tipo',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <span className="text-slate-600">{String(v)}</span>,
     },
     {
@@ -153,6 +169,11 @@ export default function PoliciesPage() {
       key: 'coverageType',
       label: 'Cobertura',
       defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => {
+        const names = row.coverageNames?.length ? row.coverageNames : (row.coverageType ? [row.coverageType] : [])
+        return names.join(', ')
+      },
       exportValue: (row) => {
         const names = row.coverageNames?.length ? row.coverageNames : (row.coverageType ? [row.coverageType] : [])
         return names.join(', ')
@@ -172,6 +193,7 @@ export default function PoliciesPage() {
       key: 'startDate',
       label: 'Inicio',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500">{formatDate(v as string)}</span>,
     },
     {
@@ -179,6 +201,7 @@ export default function PoliciesPage() {
       key: 'endDate',
       label: 'Vencimiento',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500">{formatDate(v as string)}</span>,
     },
     {
@@ -186,6 +209,7 @@ export default function PoliciesPage() {
       key: 'insuredAmountArs',
       label: 'Suma aseg. ARS',
       defaultVisible: true,
+      sortable: true,
       exportValue: (row) => String(row.insuredAmountArs),
       render: (v) => (
         <span className="font-semibold text-slate-800 tabular-nums">
@@ -200,6 +224,8 @@ export default function PoliciesPage() {
       key: 'status',
       label: 'Estado',
       defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => POLICY_STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
@@ -208,6 +234,8 @@ export default function PoliciesPage() {
       key: 'assetIds',
       label: 'Activo asociado',
       defaultVisible: false,
+      sortable: true,
+      sortValue: (row) => row.assetIds?.[0] ? assetNameById.get(row.assetIds[0]) : undefined,
       exportValue: (row) => row.assetIds?.[0] ? (assetNameById.get(row.assetIds[0]) ?? '') : '',
       render: (_v, row) => {
         const name = row.assetIds?.[0] ? assetNameById.get(row.assetIds[0]) : null
@@ -221,6 +249,7 @@ export default function PoliciesPage() {
       key: 'insuredAmountUsd',
       label: 'Suma aseg. USD',
       defaultVisible: false,
+      sortable: true,
       exportValue: (row) => String(row.insuredAmountUsd),
       render: (v) => (
         <span className="tabular-nums text-slate-700">
@@ -235,6 +264,7 @@ export default function PoliciesPage() {
       key: 'currency',
       label: 'Moneda',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="text-xs font-mono text-slate-600">{String(v ?? '—')}</span>,
     },
     {
@@ -242,6 +272,7 @@ export default function PoliciesPage() {
       key: 'exchangeRate',
       label: 'Tipo de cambio',
       defaultVisible: false,
+      sortable: true,
       exportValue: (row) => String(row.exchangeRate),
       render: (v) => (
         <span className="tabular-nums text-slate-600 text-sm">
@@ -256,6 +287,8 @@ export default function PoliciesPage() {
       key: 'companyId',
       label: 'Empresa',
       defaultVisible: false,
+      sortable: true,
+      sortValue: (row) => row.companyId ? companyNameById.get(row.companyId) : undefined,
       exportValue: (row) => row.companyId ? (companyNameById.get(row.companyId) ?? '') : '',
       render: (v) => {
         const name = v ? companyNameById.get(v as string) : null
@@ -267,6 +300,8 @@ export default function PoliciesPage() {
       key: 'costCenterId',
       label: 'Centro de costo',
       defaultVisible: false,
+      sortable: true,
+      sortValue: (row) => row.costCenterId ? costCenterById.get(row.costCenterId) : undefined,
       exportValue: (row) => row.costCenterId ? (costCenterById.get(row.costCenterId) ?? '') : '',
       render: (v) => {
         const label = v ? costCenterById.get(v as string) : null
@@ -280,6 +315,7 @@ export default function PoliciesPage() {
       key: 'beneficiaryDescription',
       label: 'Beneficiario',
       defaultVisible: false,
+      sortable: true,
       render: (v) => (
         <div className="max-w-[200px]">
           <OverflowCell value={(v as string) || null} lines={1} className="text-xs text-slate-500" />
@@ -291,6 +327,7 @@ export default function PoliciesPage() {
       key: 'description',
       label: 'Descripción',
       defaultVisible: false,
+      sortable: true,
       render: (v) => (
         <div className="max-w-[200px]">
           <OverflowCell value={(v as string) || null} lines={1} className="text-xs text-slate-500" />
@@ -302,6 +339,7 @@ export default function PoliciesPage() {
       key: 'attachmentsCount',
       label: 'Adjuntos',
       defaultVisible: false,
+      sortable: true,
       exportValue: (row) => String(row.attachmentsCount ?? 0),
       render: (v) => {
         const n = v as number | undefined
@@ -317,6 +355,7 @@ export default function PoliciesPage() {
       key: 'createdAt',
       label: 'Fecha de alta',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500">{formatDate(v as string)}</span>,
     },
     // ── Acciones ────────────────────────────────────────────────────────────────

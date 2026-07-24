@@ -60,8 +60,9 @@ function mapAsset(b: BackendAsset): Asset {
     serialNumber: b.serialNumber ?? '',
     chassisNumber: (meta.chassisNumber as string) ?? '',
     engineNumber: (meta.engineNumber as string) || undefined,
+    plate: (meta.plate as string) || undefined,
     status: (b.status ?? (b.isActive ? 'activo' : 'baja')) as AssetStatus,
-    patrimonialValueUsd: b.currentValue ?? b.purchaseValue ?? 0,
+    patrimonialValueUsd: b.currentValue ?? b.purchaseValue ?? null,
     patrimonialValueNew: b.patrimonialValueNew ?? null,
     valuationDate: b.purchaseDate ? b.purchaseDate.slice(0, 10) : '',
     observations: b.description ?? '',
@@ -115,6 +116,11 @@ export interface AddAttachmentInput {
   file: File
   description?: string
   expirationDate?: string
+}
+
+export interface UpdateAttachmentInput {
+  description?: string | null
+  expirationDate?: string | null
 }
 
 export interface AssetCreateInput {
@@ -182,6 +188,14 @@ export const assetsApi = {
       `/assets/${assetId}/attachments`,
       form,
       { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    return mapAttachment(res.data.data)
+  },
+
+  async updateAttachment(assetId: string, attachmentId: string, input: UpdateAttachmentInput): Promise<AssetAttachment> {
+    const res = await apiClient.put<{ data: BackendAttachment }>(
+      `/assets/${assetId}/attachments/${attachmentId}`,
+      input,
     )
     return mapAttachment(res.data.data)
   },

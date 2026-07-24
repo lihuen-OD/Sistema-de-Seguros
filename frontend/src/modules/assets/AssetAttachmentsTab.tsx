@@ -3,12 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, FileText, FileSpreadsheet, Image as ImageIcon, File as FileIcon,
   X, AlertTriangle, CheckCircle2, Clock, Upload, Calendar, Paperclip, Download,
-  Loader2,
+  Loader2, Pencil,
 } from 'lucide-react'
 import type { AssetAttachment } from '../../shared/types'
 import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
 import { formatDate } from '../../shared/utils/format'
 import { getExpirationStatus } from '../../shared/utils/expiration'
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -123,6 +124,7 @@ function AddAttachmentModal({ assetId, onClose, onSuccess }: AddModalProps) {
     }
     if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 
@@ -295,6 +297,164 @@ function AddAttachmentModal({ assetId, onClose, onSuccess }: AddModalProps) {
   )
 }
 
+// ── Edit Attachment Modal ──────────────────────────────────────────────────────
+
+interface EditModalProps {
+  assetId: string
+  attachment: AssetAttachment
+  onClose: () => void
+  onSuccess: () => void
+}
+
+function EditAttachmentModal({ assetId, attachment, onClose, onSuccess }: EditModalProps) {
+  const [description, setDescription] = useState(attachment.description ?? '')
+  const [hasExpiration, setHasExpiration] = useState(!!attachment.expirationDate)
+  const [expirationDate, setExpirationDate] = useState(attachment.expirationDate ?? '')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  const validate = (): boolean => {
+    const e: Record<string, string> = {}
+    if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
+    setErrors(e)
+    notifyValidationErrors(e)
+    return Object.keys(e).length === 0
+  }
+
+  const handleSubmit = async () => {
+    if (!validate()) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await assetsApi.updateAttachment(assetId, attachment.id, {
+        description: description.trim() || null,
+        expirationDate: hasExpiration ? expirationDate : null,
+      })
+      onSuccess()
+      onClose()
+    } catch {
+      setSaveError('No se pudo guardar los cambios. Intentá de nuevo.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+              <Pencil size={16} className="text-brand-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Editar adjunto</h3>
+              <p className="text-xs text-slate-500">Actualizá la descripción o el vencimiento</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto">
+
+          <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <FileTypeIcon fileType={attachment.fileType} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-slate-800 truncate">{attachment.name}</p>
+              <p className="text-xs text-slate-500">{attachment.fileSize}</p>
+            </div>
+          </div>
+
+          {/* Descripción */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Descripción <span className="text-slate-400 font-normal">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ej: Habilitación municipal vigente"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 placeholder:text-slate-400 bg-white"
+            />
+          </div>
+
+          {/* Vencimiento */}
+          <div className="rounded-xl border border-slate-200 overflow-hidden">
+            <div className="flex items-start gap-3 p-4 bg-slate-50/50">
+              <Checkbox
+                checked={hasExpiration}
+                onToggle={() => {
+                  const next = !hasExpiration
+                  setHasExpiration(next)
+                  if (!next) setExpirationDate('')
+                }}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-800">Este documento tiene fecha de vencimiento</p>
+                <p className="text-xs text-slate-500 mt-0.5">Registrá cuándo vence para hacer seguimiento</p>
+              </div>
+            </div>
+
+            {hasExpiration && (
+              <div className="px-4 pb-4 bg-slate-50/50">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  <Calendar size={11} className="inline mr-1 align-[-1px]" />
+                  Fecha de vencimiento <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={expirationDate}
+                  onChange={(e) => setExpirationDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 bg-white"
+                />
+                {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-100 bg-slate-50/50">
+          {saveError && (
+            <div className="flex items-center gap-2 px-6 pt-3 text-xs text-red-600">
+              <AlertTriangle size={13} />
+              {saveError}
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2.5 px-6 py-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-brand-600 hover:bg-brand-700 disabled:bg-brand-400 text-white rounded-lg transition-colors"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Pencil size={14} />}
+              {saving ? 'Guardando...' : 'Guardar cambios'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 interface AssetAttachmentsTabProps {
@@ -313,6 +473,7 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
   const attachments = allAttachments.filter((a) => a.fileType !== 'image')
 
   const [showModal, setShowModal] = useState(false)
+  const [editingAttachment, setEditingAttachment] = useState<AssetAttachment | null>(null)
 
   const deleteMutation = useMutation({
     mutationFn: (attachmentId: string) => assetsApi.deleteAttachment(assetId, attachmentId),
@@ -385,10 +546,12 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
                     <div className="flex items-center gap-2.5">
                       <FileTypeIcon fileType={att.fileType} />
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate max-w-[220px]">{att.name}</p>
+                        <p className="text-sm font-medium text-slate-800 truncate max-w-[220px]">
+                          {att.description || att.name}
+                        </p>
                         <p className="text-xs text-slate-400 truncate max-w-[220px]">
                           {att.description
-                            ? <>{att.description} <span className="text-slate-300">· {att.fileSize}</span></>
+                            ? <>{att.name} <span className="text-slate-300">· {att.fileSize}</span></>
                             : att.fileSize
                           }
                         </p>
@@ -410,6 +573,13 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
                   {/* Acciones */}
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                      <button
+                        title="Editar"
+                        onClick={() => setEditingAttachment(att)}
+                        className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                      >
+                        <Pencil size={14} />
+                      </button>
                       <button
                         title="Descargar"
                         onClick={() => assetsApi.downloadAttachment(assetId, att.id, att.name)}
@@ -438,6 +608,14 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
         <AddAttachmentModal
           assetId={assetId}
           onClose={() => setShowModal(false)}
+          onSuccess={handleSuccess}
+        />
+      )}
+      {editingAttachment && (
+        <EditAttachmentModal
+          assetId={assetId}
+          attachment={editingAttachment}
+          onClose={() => setEditingAttachment(null)}
           onSuccess={handleSuccess}
         />
       )}

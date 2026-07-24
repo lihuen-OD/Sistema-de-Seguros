@@ -85,5 +85,8 @@ export const insuranceTypeQueries = {
       queryFn: () => insuranceTypesApi.findAll(),
       staleTime: 30 * 60 * 1000,
       gcTime: 24 * 60 * 60 * 1000,
+      // Puede editarse en otra pestaña (ej. Configuración → Tipos de Seguro)
+      // mientras un formulario queda abierto con datos a medio cargar acá.
+      refetchOnWindowFocus: 'always',
     }),
 }

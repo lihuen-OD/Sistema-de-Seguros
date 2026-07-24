@@ -30,6 +30,13 @@ import { InstallmentRow } from '../../../shared/components/installments/Installm
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
 import type { AccountingDocument, Installment, InstallmentUpdate, ProducerTask, TableColumn } from '../../../shared/types'
 
+// Orden por severidad/ciclo de vida al ordenar las columnas "Prioridad" y
+// "Estado" de la tabla de tareas — alfabético dejaría, por ejemplo, "alta"
+// antes que "baja", que no refleja ninguna escala real. Mismo orden que
+// TASK_PRIORITY_LABELS / TASK_STATUS_LABELS.
+const TASK_PRIORITY_SORT_ORDER: Record<string, number> = { baja: 0, media: 1, alta: 2 }
+const TASK_STATUS_SORT_ORDER: Record<string, number> = { pendiente: 0, en_curso: 1, finalizada: 2, vencida: 3 }
+
 export default function PolicyDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -158,6 +165,7 @@ export default function PolicyDetailPage() {
     {
       key: 'title',
       label: 'Tarea',
+      sortable: true,
       render: (_, row) => (
         <div>
           <p className="font-medium text-slate-800 text-sm">{row.title}</p>
@@ -168,16 +176,21 @@ export default function PolicyDetailPage() {
     {
       key: 'dueDate',
       label: 'Vencimiento',
+      sortable: true,
       render: (v) => <span className="text-xs">{formatDate(v as string)}</span>,
     },
     {
       key: 'priority',
       label: 'Prioridad',
+      sortable: true,
+      sortValue: (row) => TASK_PRIORITY_SORT_ORDER[row.priority] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     {
       key: 'status',
       label: 'Estado',
+      sortable: true,
+      sortValue: (row) => TASK_STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
   ]

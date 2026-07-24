@@ -11,6 +11,7 @@ import type {
   ReplaceAllocationsDTO,
   AddValueHistoryDTO,
   AddAttachmentDTO,
+  UpdateAttachmentDTO,
   ListAssetsQueryDTO,
 } from './assets.schemas'
 
@@ -396,6 +397,22 @@ export const assetsService = {
       if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
       throw err
     }
+  },
+
+  async updateAttachment(assetId: string, attachmentId: string, data: UpdateAttachmentDTO) {
+    const attachment = await prisma.assetAttachment.findFirst({
+      where: { id: attachmentId, assetId },
+    })
+    if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+
+    const updated = await prisma.assetAttachment.update({
+      where: { id: attachmentId },
+      data: {
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.expirationDate !== undefined && { expirationDate: data.expirationDate }),
+      },
+    })
+    return mapAttachment(updated)
   },
 
   async deleteAttachment(assetId: string, attachmentId: string) {

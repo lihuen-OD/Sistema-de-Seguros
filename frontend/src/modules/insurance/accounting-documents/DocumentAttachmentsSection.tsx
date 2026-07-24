@@ -7,6 +7,7 @@ import {
 import type { AccountingDocumentAttachment } from '../../../shared/types'
 import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
 import { formatDate } from '../../../shared/utils/format'
+import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ function AddDocumentAttachmentModal({ documentId, onClose, onSuccess }: AddModal
     const e: Record<string, string> = {}
     if (!selectedFile) e.file = 'Seleccioná un archivo.'
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 

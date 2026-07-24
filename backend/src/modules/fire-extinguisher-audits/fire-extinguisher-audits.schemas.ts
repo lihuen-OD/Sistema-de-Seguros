@@ -17,6 +17,15 @@ const ISODate = z
 
 const ISODateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido. Usar YYYY-MM-DD')
 
+// No todos los matafuegos tienen una fecha de vencimiento de carga conocida al
+// momento de auditar — a diferencia del resto del checklist, este campo puede
+// quedar sin cargar. Acepta string vacío (lo que manda el frontend cuando el
+// input date queda en blanco) además de undefined/null.
+const OptionalISODate = z
+  .union([ISODate, z.literal(''), z.null()])
+  .optional()
+  .transform((v) => (v === '' || v == null ? null : v))
+
 // ── Paso 2 — Validación de ubicación ───────────────────────────────────────────
 
 const LocationReviewSchema = z.discriminatedUnion('action', [
@@ -69,7 +78,7 @@ const ChecklistSchema = z.object({
   sealStatus: z.enum(FIRE_EXT_AUDIT_HAS_STATUS),
   ringStatus: z.enum(FIRE_EXT_AUDIT_HAS_STATUS),
   hoseNozzleCondition: z.enum(FIRE_EXT_AUDIT_HOSE_NOZZLE_CONDITION),
-  chargeExpirationDateObserved: ISODate,
+  chargeExpirationDateObserved: OptionalISODate,
   comments: z.string().max(1000).optional().nullable(),
 })
 
@@ -84,6 +93,15 @@ export const CreateFireExtinguisherAuditSchema = z.object({
 
 export const AddFireExtinguisherAuditAttachmentSchema = z.object({
   description: z.string().max(500).optional(),
+})
+
+// ── Edición de auditoría pendiente de revisión ──────────────────────────────────
+// Mismo cuerpo que el alta, sin fireExtinguisherId — el service solo permite
+// editar mientras status === 'SUBMITTED' y el matafuego auditado no cambia.
+export const UpdateFireExtinguisherAuditSchema = z.object({
+  locationReview: LocationReviewSchema,
+  masterDataReview: MasterDataReviewSchema,
+  checklist: ChecklistSchema,
 })
 
 // ── Revisión/aprobación (Fase 4) ────────────────────────────────────────────────
@@ -105,6 +123,17 @@ export const ReviewFireExtinguisherAuditSchema = z.object({
   reviewNotes: z.string().max(1000).optional().nullable(),
 })
 
+// Aprobación en bloque — a diferencia de review(), no recibe decisions por
+// cambio propuesto: aprueba automáticamente todos los cambios propuestos
+// PENDING de cada auditoría seleccionada (confía en lo que cargó el
+// auditor). Pensada para el caso común de muchas auditorías sin nada que
+// objetar; una auditoría puntual que requiera decidir cambio por cambio
+// sigue yendo por review().
+export const BulkApproveFireExtinguisherAuditsSchema = z.object({
+  ids: z.array(z.string().uuid('ID de auditoría inválido')).min(1, 'Se requiere al menos una auditoría').max(100),
+  reviewNotes: z.string().max(1000).optional().nullable(),
+})
+
 // Acepta ?status=SUBMITTED (string) o ?status=SUBMITTED&status=NEEDS_CORRECTION
 // (array, comportamiento nativo de Express/qs con params repetidos) y lo
 // normaliza siempre a un array (o undefined si no vino).
@@ -113,6 +142,8 @@ export const ListFireExtinguisherAuditsQuerySchema = PaginationSchema.extend({
     .union([z.enum(FIRE_EXT_AUDIT_STATUSES), z.array(z.enum(FIRE_EXT_AUDIT_STATUSES))])
     .optional()
     .transform((v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v])),
+  // Historial de auditorías de un matafuego puntual (ficha de detalle).
+  fireExtinguisherId: z.string().uuid('ID de matafuego inválido').optional(),
 })
 
 // ── Cobertura por establecimiento ───────────────────────────────────────────────
@@ -125,7 +156,9 @@ export type LocationReviewDTO = z.infer<typeof LocationReviewSchema>
 export type MasterFieldReviewDTO = z.infer<typeof MasterFieldReviewSchema>
 export type ChecklistDTO = z.infer<typeof ChecklistSchema>
 export type CreateFireExtinguisherAuditDTO = z.infer<typeof CreateFireExtinguisherAuditSchema>
+export type UpdateFireExtinguisherAuditDTO = z.infer<typeof UpdateFireExtinguisherAuditSchema>
 export type AddFireExtinguisherAuditAttachmentDTO = z.infer<typeof AddFireExtinguisherAuditAttachmentSchema>
 export type ReviewFireExtinguisherAuditDTO = z.infer<typeof ReviewFireExtinguisherAuditSchema>
+export type BulkApproveFireExtinguisherAuditsDTO = z.infer<typeof BulkApproveFireExtinguisherAuditsSchema>
 export type ListFireExtinguisherAuditsQueryDTO = z.infer<typeof ListFireExtinguisherAuditsQuerySchema>
 export type CoverageQueryDTO = z.infer<typeof CoverageQuerySchema>

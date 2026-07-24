@@ -26,6 +26,7 @@ import { producerQueries } from '../../../shared/api/producers.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
+import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import type { PolicyAttachment } from '../../../shared/types'
 
 type AssociationType = 'activo' | 'sin_activo'
@@ -267,6 +268,7 @@ export default function PolicyNewPage() {
       next.beneficiaryDescription = 'Describí a quién corresponde este seguro'
     }
     setErrors(next)
+    notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 

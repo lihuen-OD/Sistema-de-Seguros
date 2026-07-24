@@ -20,6 +20,32 @@ import { TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { Policy, ProducerTask, TableColumn } from '../../shared/types'
 
+// Orden por severidad al ordenar la columna "Estado" de pólizas — alfabético
+// dejaría "proximo_vencer" antes que "pendiente_documentacion" antes que
+// "vencida", que no refleja la urgencia real (mismo criterio que
+// STATUS_SORT_ORDER en FireExtinguishersPage).
+const POLICY_STATUS_SORT_ORDER: Record<string, number> = {
+  vigente: 0,
+  proximo_vencer: 1,
+  vencida: 2,
+  pendiente_documentacion: 3,
+  sin_factura: 4,
+}
+
+// Orden por severidad al ordenar la columna "Estado" de tareas — pendiente/en
+// curso van antes que vencida (más urgente), y finalizada al final porque ya
+// no requiere atención.
+const TASK_STATUS_SORT_ORDER: Record<string, number> = {
+  pendiente: 0,
+  en_curso: 1,
+  vencida: 2,
+  finalizada: 3,
+}
+
+// Orden por prioridad — alfabético dejaría "alta" antes que "baja", que es
+// exactamente al revés de lo que espera cualquiera que ordene por prioridad.
+const TASK_PRIORITY_SORT_ORDER: Record<string, number> = { baja: 0, media: 1, alta: 2 }
+
 export default function ProducerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -60,20 +86,24 @@ export default function ProducerDetailPage() {
       key: 'policyNumber',
       label: 'N° Póliza',
       className: 'font-mono text-slate-600 text-xs',
+      sortable: true,
     },
     {
       key: 'insuranceType',
       label: 'Tipo',
+      sortable: true,
       render: (v) => <span className="text-slate-700">{String(v)}</span>,
     },
     {
       key: 'insuranceCompany',
       label: 'Aseguradora',
+      sortable: true,
       render: (v) => <span className="text-slate-600 text-xs">{String(v)}</span>,
     },
     {
       key: 'insuredAmountArs',
       label: 'Suma Aseg.',
+      sortable: true,
       render: (v) => (
         <span className="font-semibold tabular-nums">
           {formatCurrencyCompact(v as number, 'ARS')}
@@ -85,6 +115,7 @@ export default function ProducerDetailPage() {
     {
       key: 'endDate',
       label: 'Vence',
+      sortable: true,
       render: (v) => {
         const days = daysUntil(v as string)
         return (
@@ -97,6 +128,8 @@ export default function ProducerDetailPage() {
     {
       key: 'status',
       label: 'Estado',
+      sortable: true,
+      sortValue: (row) => POLICY_STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     {
@@ -119,6 +152,7 @@ export default function ProducerDetailPage() {
     {
       key: 'title',
       label: 'Título',
+      sortable: true,
       render: (v) => (
         <div className="min-w-0 max-w-[200px]">
           <OverflowCell value={String(v)} lines={1} className="font-medium text-slate-800 text-sm" />
@@ -128,6 +162,7 @@ export default function ProducerDetailPage() {
     {
       key: 'description',
       label: 'Descripción',
+      sortable: true,
       render: (v) => (
         <div className="min-w-0 max-w-[280px]">
           <OverflowCell value={String(v)} lines={2} className="text-xs text-slate-500" />
@@ -137,6 +172,7 @@ export default function ProducerDetailPage() {
     {
       key: 'dueDate',
       label: 'Vencimiento',
+      sortable: true,
       render: (v) => {
         const days = daysUntil(v as string)
         return (
@@ -149,16 +185,21 @@ export default function ProducerDetailPage() {
     {
       key: 'priority',
       label: 'Prioridad',
+      sortable: true,
+      sortValue: (row) => TASK_PRIORITY_SORT_ORDER[row.priority] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     {
       key: 'status',
       label: 'Estado',
+      sortable: true,
+      sortValue: (row) => TASK_STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     {
       key: 'assignedTo',
       label: 'Asignado a',
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500">{v ? String(v) : '—'}</span>,
     },
     {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import clsx from 'clsx'
@@ -7,8 +7,12 @@ import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { fireExtinguisherKeys, fireExtinguisherQueries } from '../../../shared/api/fire-extinguishers.api'
-import { fireExtinguisherAuditsApi } from '../../../shared/api/fire-extinguisher-audits.api'
-import type { AuditChecklistInput } from '../../../shared/api/fire-extinguisher-audits.api'
+import {
+  fireExtinguisherAuditsApi,
+  fireExtinguisherAuditKeys,
+  fireExtinguisherAuditQueries,
+} from '../../../shared/api/fire-extinguisher-audits.api'
+import type { AuditChecklistInput, FireExtinguisherAuditAttachment } from '../../../shared/api/fire-extinguisher-audits.api'
 import type { FireExtinguisher } from '../../../shared/types'
 import { ROUTES } from '../../../app/routes'
 import { AuditStep1Selection } from './AuditStep1Selection'
@@ -35,8 +39,14 @@ export default function FireExtinguisherAuditNewPage() {
   const [searchParams] = useSearchParams()
   const preselectedId = searchParams.get('extinguisherId')
 
-  const [step, setStep] = useState<WizardStep>(preselectedId ? 2 : 1)
-  const [maxStepReached, setMaxStepReached] = useState<WizardStep>(preselectedId ? 2 : 1)
+  // Ruta /audits/:id/edit — corrige una auditoría propia SUBMITTED en vez de
+  // crear una nueva (ver fire-extinguisher-audits.service.ts's update()).
+  const { id: editId } = useParams<{ id?: string }>()
+  const isEditing = Boolean(editId)
+
+  const [step, setStep] = useState<WizardStep>(preselectedId || isEditing ? 2 : 1)
+  const [maxStepReached, setMaxStepReached] = useState<WizardStep>(preselectedId || isEditing ? 2 : 1)
+  const [seeded, setSeeded] = useState(false)
 
   const [selectedExtinguisher, setSelectedExtinguisher] = useState<FireExtinguisher | null>(null)
 
@@ -47,6 +57,9 @@ export default function FireExtinguisherAuditNewPage() {
   useEffect(() => {
     if (preselectedExtinguisher) setSelectedExtinguisher(preselectedExtinguisher)
   }, [preselectedExtinguisher])
+
+  const { data: editingAudit } = useQuery(fireExtinguisherAuditQueries.detail(editId ?? ''))
+  const { data: editingExtinguisher } = useQuery(fireExtinguisherQueries.detail(editingAudit?.fireExtinguisherId ?? ''))
 
   const [locationConfirmed, setLocationConfirmed] = useState<boolean | null>(null)
   const [proposedLocation, setProposedLocation] = useState('')
@@ -59,9 +72,55 @@ export default function FireExtinguisherAuditNewPage() {
   const [checklist, setChecklist] = useState<Record<string, string>>({})
   const [checklistComments, setChecklistComments] = useState('')
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
+  const [existingPhotos, setExistingPhotos] = useState<FireExtinguisherAuditAttachment[]>([])
 
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // Precarga el wizard con los datos de la auditoría SUBMITTED a editar — una
+  // sola vez, cuando ambos fetches (auditoría + matafuego) ya resolvieron.
+  useEffect(() => {
+    if (!isEditing || seeded || !editingAudit || !editingExtinguisher) return
+
+    if (editingAudit.status !== 'SUBMITTED') {
+      toast.error('Esta auditoría ya no se puede editar porque ya fue revisada')
+      navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(editingAudit.id), { replace: true })
+      return
+    }
+
+    setSelectedExtinguisher(editingExtinguisher)
+    setLocationConfirmed(!editingAudit.locationChangeRequested)
+    setProposedLocation(editingAudit.proposedLocation ?? '')
+    setLocationReason(editingAudit.locationChangeReason ?? '')
+    setFieldValidations(
+      Object.fromEntries(
+        FIELD_VALIDATION_CONFIG.map((f) => {
+          const change = editingAudit.proposedChanges.find((pc) => pc.fieldName === f.key)
+          return [
+            f.key,
+            change
+              ? { modified: true, newValue: change.proposedValue, reason: change.reason ?? '' }
+              : emptyFieldValidationState(),
+          ]
+        }),
+      ),
+    )
+    setChecklist({
+      cleanliness: editingAudit.checklist.cleanliness,
+      chargeFillStatus: editingAudit.checklist.chargeFillStatus,
+      beaconPlateCondition: editingAudit.checklist.beaconPlateCondition,
+      sealStatus: editingAudit.checklist.sealStatus,
+      ringStatus: editingAudit.checklist.ringStatus,
+      hoseNozzleCondition: editingAudit.checklist.hoseNozzleCondition,
+      chargeExpirationDateObserved: editingAudit.checklist.chargeExpirationDateObserved ?? '',
+    })
+    setChecklistComments(editingAudit.checklist.comments ?? '')
+    setExistingPhotos(editingAudit.attachments.filter((a) => a.fileType === 'image'))
+    setStep(2)
+    // Ya completó el wizard una vez — puede saltar libremente entre pasos.
+    setMaxStepReached(5)
+    setSeeded(true)
+  }, [isEditing, seeded, editingAudit, editingExtinguisher, navigate])
 
   // Valor "vigente" de vencimiento tras el Paso 3: el corregido si se marcó
   // Modificar, si no el del maestro — para no pedir de nuevo en el checklist
@@ -72,7 +131,10 @@ export default function FireExtinguisherAuditNewPage() {
       ? expirationValidation.newValue
       : selectedExtinguisher?.expirationDate ?? ''
 
+  // Al editar, el matafuego ya quedó fijado en la auditoría original — el
+  // Paso 1 (selección) queda bloqueado para no permitir cambiarlo por error.
   function goToStep(next: WizardStep) {
+    if (isEditing && next === 1) return
     if (next <= maxStepReached) setStep(next)
   }
 
@@ -86,7 +148,19 @@ export default function FireExtinguisherAuditNewPage() {
   }
 
   function back() {
-    setStep((prev) => (Math.max(prev - 1, 1) as WizardStep))
+    const floor = isEditing ? 2 : 1
+    setStep((prev) => (Math.max(prev - 1, floor) as WizardStep))
+  }
+
+  async function handleRemoveExistingPhoto(attachmentId: string) {
+    if (!editId) return
+    try {
+      await fireExtinguisherAuditsApi.deleteAttachment(editId, attachmentId)
+      setExistingPhotos((prev) => prev.filter((p) => p.id !== attachmentId))
+      toast.success('Foto eliminada')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al eliminar la foto')
+    }
   }
 
   const canAdvance =
@@ -118,40 +192,66 @@ export default function FireExtinguisherAuditNewPage() {
             }
           : { action: 'OK' as const }
 
-      const created = await fireExtinguisherAuditsApi.create({
-        fireExtinguisherId: selectedExtinguisher.id,
-        locationReview,
-        masterDataReview,
-        checklist: { ...checklist, comments: checklistComments.trim() || undefined } as AuditChecklistInput,
-      })
+      const checklistPayload = {
+        ...checklist,
+        chargeExpirationDateObserved: checklist.chargeExpirationDateObserved || undefined,
+        comments: checklistComments.trim() || undefined,
+      } as AuditChecklistInput
 
-      await Promise.all(pendingPhotos.map((file) => fireExtinguisherAuditsApi.addAttachment(created.id, file)))
+      const auditId = isEditing
+        ? (
+            await fireExtinguisherAuditsApi.update(editId!, { locationReview, masterDataReview, checklist: checklistPayload })
+          ).id
+        : (
+            await fireExtinguisherAuditsApi.create({
+              fireExtinguisherId: selectedExtinguisher.id,
+              locationReview,
+              masterDataReview,
+              checklist: checklistPayload,
+            })
+          ).id
+
+      await Promise.all(pendingPhotos.map((file) => fireExtinguisherAuditsApi.addAttachment(auditId, file)))
 
       queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.detail(selectedExtinguisher.id) })
       queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.history(selectedExtinguisher.id) })
-      toast.success('Auditoría registrada correctamente')
-      navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(created.id))
+      queryClient.invalidateQueries({ queryKey: fireExtinguisherAuditKeys.all })
+      if (isEditing) queryClient.invalidateQueries({ queryKey: fireExtinguisherAuditKeys.detail(auditId) })
+      toast.success(isEditing ? 'Auditoría actualizada correctamente' : 'Auditoría registrada correctamente')
+      navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(auditId))
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Error al registrar la auditoría')
       setSubmitting(false)
     }
   }
 
+  if (isEditing && !seeded) {
+    return (
+      <PageContent>
+        <p className="text-sm text-slate-400 py-10 text-center">Cargando auditoría…</p>
+      </PageContent>
+    )
+  }
+
   return (
     <PageContent>
       <PageHeader
-        title="Auditoría mensual"
-        subtitle="Registrar la inspección física de un matafuego"
+        title={isEditing ? 'Editar auditoría' : 'Auditoría mensual'}
+        subtitle={
+          isEditing
+            ? 'Corregir una auditoría pendiente de revisión'
+            : 'Registrar la inspección física de un matafuego'
+        }
         category="Matafuegos"
-        backTo={ROUTES.FIRE_EXTINGUISHERS}
-        backLabel="Volver a Matafuegos"
+        backTo={isEditing ? ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(editId!) : ROUTES.FIRE_EXTINGUISHERS}
+        backLabel={isEditing ? 'Volver a la auditoría' : 'Volver a Matafuegos'}
       />
 
       <SectionCard noPadding>
         <div className="flex items-center gap-1 px-5 py-3 border-b border-slate-100 overflow-x-auto scrollbar-hide">
           {STEPS.map((s) => {
             const isActive = step === s.id
-            const isReachable = s.id <= maxStepReached
+            const isReachable = s.id <= maxStepReached && !(isEditing && s.id === 1)
             return (
               <button
                 key={s.id}
@@ -223,6 +323,8 @@ export default function FireExtinguisherAuditNewPage() {
               pendingPhotos={pendingPhotos}
               onChangePhotos={setPendingPhotos}
               masterExpirationDate={effectiveExpirationDate}
+              existingPhotos={isEditing ? existingPhotos.map((p) => ({ id: p.id, url: p.fileUrl ?? '', name: p.name })) : undefined}
+              onRemoveExistingPhoto={isEditing ? handleRemoveExistingPhoto : undefined}
             />
           )}
 
@@ -234,23 +336,28 @@ export default function FireExtinguisherAuditNewPage() {
               fieldValidations={fieldValidations}
               checklist={checklist}
               comments={checklistComments}
-              photoCount={pendingPhotos.length}
+              photoCount={pendingPhotos.length + existingPhotos.length}
               submitting={submitting}
               submitError={submitError}
               onSubmit={handleSubmit}
+              submitLabel={isEditing ? 'Guardar cambios' : 'Enviar auditoría'}
             />
           )}
         </div>
 
         {step > 1 && step < 5 && (
           <div className="flex items-center justify-between px-5 py-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={back}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
-            >
-              Atrás
-            </button>
+            {step > (isEditing ? 2 : 1) ? (
+              <button
+                type="button"
+                onClick={back}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
+              >
+                Atrás
+              </button>
+            ) : (
+              <span />
+            )}
             <button
               type="button"
               onClick={advance}

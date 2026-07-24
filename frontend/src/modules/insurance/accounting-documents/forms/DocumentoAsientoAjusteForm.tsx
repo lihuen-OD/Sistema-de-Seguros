@@ -13,6 +13,7 @@ import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
+import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import type { AccountingDocument, AdjustmentSign, DocumentType } from '../../../../shared/types'
 
 const ADJUSTABLE_TYPES: DocumentType[] = ['INVOICE', 'DEBIT_NOTE', 'CREDIT_NOTE', 'REBILLING']
@@ -80,6 +81,7 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
     if (!form.amount || isNaN(parseFloat(form.amount)) || parseFloat(form.amount) <= 0) next.amount = 'Requerido'
     if (!form.description.trim()) next.description = 'Requerido'
     setErrors(next)
+    notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 

@@ -191,6 +191,7 @@ export default function CompaniesPage() {
     {
       key: 'name',
       label: 'Razón Social',
+      sortable: true,
       render: (v, row) => (
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
@@ -206,6 +207,8 @@ export default function CompaniesPage() {
     {
       key: 'id',
       label: 'Activos',
+      sortable: true,
+      sortValue: (row) => allAssets.filter((a) => a.companyId === row.id && a.status === 'activo').length,
       render: (v) => {
         const ccCount = allAssets.filter((a) => a.companyId === v && a.status === 'activo').length
         return (
@@ -219,6 +222,7 @@ export default function CompaniesPage() {
     {
       key: 'createdAt',
       label: 'Alta',
+      sortable: true,
       render: (v) => (
         <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>
       ),
@@ -226,6 +230,7 @@ export default function CompaniesPage() {
     {
       key: 'status',
       label: 'Estado',
+      sortable: true,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     {

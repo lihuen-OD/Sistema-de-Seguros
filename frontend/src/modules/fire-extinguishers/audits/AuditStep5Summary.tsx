@@ -15,6 +15,7 @@ interface AuditStep5SummaryProps {
   submitting: boolean
   submitError: string | null
   onSubmit: () => void
+  submitLabel?: string
 }
 
 export function AuditStep5Summary({
@@ -28,6 +29,7 @@ export function AuditStep5Summary({
   submitting,
   submitError,
   onSubmit,
+  submitLabel = 'Enviar auditoría',
 }: AuditStep5SummaryProps) {
   const proposedChanges = [
     ...(locationConfirmed === false
@@ -93,7 +95,7 @@ export function AuditStep5Summary({
           className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
         >
           {submitting && <Loader2 size={15} className="animate-spin" />}
-          Enviar auditoría
+          {submitLabel}
         </button>
       </div>
     </div>
