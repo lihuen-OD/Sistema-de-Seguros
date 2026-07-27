@@ -120,17 +120,22 @@ export default function DashboardPage() {
   )
 
   // ── KPI calculations ─────────────────────────────────────────────
+  // Cada total se suma por columna ya cerrada (Ars/Usd), nunca mezclando
+  // registros en distinta moneda dentro del mismo número (ver computeDualAmounts).
   const activeAssets = filteredAssets.filter((a) => a.status === 'activo')
-  const totalPatrimonialUsd = activeAssets.reduce((s, a) => s + (a.patrimonialValueUsd ?? 0), 0)
+  const totalPatrimonialUsd = activeAssets.reduce((s, a) => s + (a.currentValueUsd ?? a.patrimonialValueUsd ?? 0), 0)
+  const totalPatrimonialArs = activeAssets.reduce((s, a) => s + (a.currentValueArs ?? 0), 0)
 
   const vigentePolicies = filteredPolicies.filter((p) => p.status === 'vigente')
   const expiredPolicies = filteredPolicies.filter((p) => p.status === 'vencida')
   const expiringSoon = filteredPolicies.filter((p) => p.status === 'proximo_vencer')
   const totalInsuredArs = vigentePolicies.reduce((s, p) => s + p.insuredAmountArs, 0)
+  const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + p.insuredAmountUsd, 0)
 
   // Documents — global (no company filter in current model)
   const pendingDocs = allDocuments.filter((d) => d.paymentStatus !== 'PAID')
-  const pendingTotal = pendingDocs.reduce((s, d) => s + d.totalAmount, 0)
+  const pendingTotalArs = pendingDocs.reduce((s, d) => s + (d.totalAmountArs ?? 0), 0)
+  const pendingTotalUsd = pendingDocs.reduce((s, d) => s + (d.totalAmountUsd ?? 0), 0)
 
   const expiredFe = filteredFireExtinguishers.filter((f) => f.status === 'vencido')
   const expiringFe = filteredFireExtinguishers.filter((f) => f.status === 'proximo_vencer')
@@ -151,8 +156,12 @@ export default function DashboardPage() {
     () => allInstallments.filter((i) => i.paymentStatus !== 'PAID'),
     [allInstallments],
   )
-  const pendingInstallmentsTotal = useMemo(
-    () => pendingInstallments.reduce((s, i) => s + i.amount, 0),
+  const pendingInstallmentsTotalArs = useMemo(
+    () => pendingInstallments.reduce((s, i) => s + (i.amountArs ?? 0), 0),
+    [pendingInstallments],
+  )
+  const pendingInstallmentsTotalUsd = useMemo(
+    () => pendingInstallments.reduce((s, i) => s + (i.amountUsd ?? 0), 0),
     [pendingInstallments],
   )
 
@@ -266,7 +275,7 @@ export default function DashboardPage() {
         <KpiCard
           label="Valor Patrimonial"
           value={formatCurrencyCompact(totalPatrimonialUsd, 'USD')}
-          description={`${activeAssets.length} activos activos`}
+          description={`${formatCurrencyCompact(totalPatrimonialArs, 'ARS')} · ${activeAssets.length} activos activos`}
           icon={Package}
           variant="info"
           onClick={() => navigate('/assets')}
@@ -274,7 +283,7 @@ export default function DashboardPage() {
         <KpiCard
           label="Suma Asegurada"
           value={formatCurrencyCompact(totalInsuredArs, 'ARS')}
-          description={`${vigentePolicies.length} pólizas vigentes`}
+          description={`${formatCurrencyCompact(totalInsuredUsd, 'USD')} · ${vigentePolicies.length} pólizas vigentes`}
           icon={ShieldCheck}
           variant="success"
           onClick={() => navigate('/insurance/policies')}
@@ -289,8 +298,8 @@ export default function DashboardPage() {
         />
         <KpiCard
           label="Facturas Pendientes"
-          value={formatCurrencyCompact(pendingTotal, 'ARS')}
-          description={`${pendingDocs.length} documentos`}
+          value={formatCurrencyCompact(pendingTotalArs, 'ARS')}
+          description={`${formatCurrencyCompact(pendingTotalUsd, 'USD')} · ${pendingDocs.length} documentos`}
           icon={FileText}
           variant={pendingDocs.length > 0 ? 'warning' : 'default'}
           onClick={() => navigate('/insurance/documents')}
@@ -301,8 +310,8 @@ export default function DashboardPage() {
       <MetricGrid cols={4} className="mb-6">
         <KpiCard
           label="Cuotas Pendientes"
-          value={formatCurrencyCompact(pendingInstallmentsTotal, 'ARS')}
-          description={`${pendingInstallments.length} cuotas`}
+          value={formatCurrencyCompact(pendingInstallmentsTotalArs, 'ARS')}
+          description={`${formatCurrencyCompact(pendingInstallmentsTotalUsd, 'USD')} · ${pendingInstallments.length} cuotas`}
           icon={Clock}
           variant={pendingInstallments.length > 10 ? 'warning' : 'default'}
           onClick={() => navigate('/insurance/financial-analysis')}
@@ -338,7 +347,7 @@ export default function DashboardPage() {
         {/* Monthly cost */}
         <ChartCard
           title="Evolución de Costos"
-          subtitle="Facturación mensual ARS"
+          subtitle="Facturación mensual — ARS y USD"
           className="lg:col-span-2"
           height={260}
         >
@@ -353,10 +362,15 @@ export default function DashboardPage() {
                 tickFormatter={(v) => `${(v / 1_000_000).toFixed(1)}M`}
               />
               <Tooltip
-                formatter={(v: number) => [`AR$ ${(v / 1_000_000).toFixed(2).replace('.', ',')}M`, 'Costo']}
+                formatter={(v: number, name: string) => [
+                  `${name === 'costoUsd' ? 'US$' : 'AR$'} ${(v / 1_000_000).toFixed(2).replace('.', ',')}M`,
+                  name === 'costoUsd' ? 'Costo USD' : 'Costo ARS',
+                ]}
                 contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}
               />
-              <Bar dataKey="costo" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+              <Bar dataKey="costoArs" name="ARS" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="costoUsd" name="USD" fill="#10b981" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -519,7 +533,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-semibold text-slate-800">
-                        {formatCurrencyCompact(inst.amount, 'ARS')}
+                        {formatCurrencyCompact(inst.amount, inst.currency)}
                       </p>
                       <p className={`text-xs font-medium ${days <= 7 ? 'text-red-600' : 'text-amber-600'}`}>
                         {formatDate(inst.dueDate)}

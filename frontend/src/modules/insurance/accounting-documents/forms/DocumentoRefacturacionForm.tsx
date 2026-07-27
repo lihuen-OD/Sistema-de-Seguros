@@ -15,7 +15,8 @@ import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNu
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
-import type { AccountingDocument } from '../../../../shared/types'
+import { CURRENCY_OPTIONS } from '../../../../shared/constants'
+import type { AccountingDocument, Currency } from '../../../../shared/types'
 
 interface DocumentoRefacturacionFormProps {
   initialDoc?: AccountingDocument
@@ -26,7 +27,7 @@ interface FormState {
   documentNumber: string
   issueDate: string
   linkedDocumentId: string
-  currency: string
+  currency: Currency | ''
   exchangeRate: string
   paymentMethod: string
   netAmount: string
@@ -65,7 +66,6 @@ export default function DocumentoRefacturacionForm({ initialDoc }: DocumentoRefa
   const { data: allDocuments = [] } = useQuery(documentQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: paymentMethods = [] } = useQuery(catalogQueries.byCategory('document_payment_method'))
-  const { data: currencies = [] } = useQuery(catalogQueries.byCategory('document_currency'))
 
   const { data: existingInstallments = [], isSuccess: installmentsLoaded } = useQuery({
     ...documentQueries.installments(initialDoc?.id ?? ''),
@@ -241,7 +241,7 @@ export default function DocumentoRefacturacionForm({ initialDoc }: DocumentoRefa
             <FormField label="Moneda" required error={errors.currency}>
               <FormSelect value={form.currency} onChange={set('currency')} required>
                 <option value="">Seleccionar moneda…</option>
-                {currencies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
+                {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </FormSelect>
             </FormField>
             <FormField label="Tipo de Cambio" required error={errors.exchangeRate}>

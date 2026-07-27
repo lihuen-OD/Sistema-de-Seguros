@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Info } from 'lucide-react'
+import { Info, ArrowLeftRight } from 'lucide-react'
 import { PageContent } from '../../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../../shared/components/cards/SectionCard'
@@ -15,7 +15,8 @@ import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNu
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
-import type { AccountingDocument } from '../../../../shared/types'
+import { CURRENCY_OPTIONS } from '../../../../shared/constants'
+import type { AccountingDocument, Currency } from '../../../../shared/types'
 
 interface DocumentoNotaCreditoFormProps {
   initialDoc?: AccountingDocument
@@ -26,7 +27,7 @@ interface FormState {
   documentNumber: string
   issueDate: string
   linkedDocumentId: string
-  currency: string
+  currency: Currency | ''
   exchangeRate: string
   netAmount: string
   vatAmount: string
@@ -59,7 +60,6 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
 
   const { data: allDocuments = [] } = useQuery(documentQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
-  const { data: currencies = [] } = useQuery(catalogQueries.byCategory('document_currency'))
 
   // Facturas candidatas: mismo tipo, no anuladas, misma compañía. Se resuelve
   // el saldo de cada una para excluir las que ya no tienen saldo disponible.
@@ -87,6 +87,9 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
   const computedTotal = parsedNet + parsedVat + parsedOther
   const tc = parseFloat(form.exchangeRate) || 0
   const mainPrefix = form.currency === 'USD' ? 'US$' : 'AR$'
+  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
+  const equivalentAmount =
+    form.currency === 'ARS' && tc > 0 ? computedTotal / tc : form.currency === 'USD' && tc > 0 ? computedTotal * tc : 0
 
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
@@ -237,7 +240,7 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
             <FormField label="Moneda" required error={errors.currency}>
               <FormSelect value={form.currency} onChange={set('currency')} required>
                 <option value="">Seleccionar moneda…</option>
-                {currencies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
+                {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </FormSelect>
             </FormField>
             <FormField label="Tipo de Cambio" required error={errors.exchangeRate}>
@@ -255,11 +258,23 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
           </FormSection>
 
           {computedTotal > 0 && (
-            <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</span>
-              <span className="text-base font-bold text-slate-800 tabular-nums">
-                {mainPrefix} {computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+            <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</span>
+                <span className="text-base font-bold text-slate-800 tabular-nums">
+                  {mainPrefix} {computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              {tc > 0 && (
+                <div className="flex items-center justify-between px-4 py-3 bg-brand-50 rounded-xl border border-brand-100">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-brand-500 uppercase tracking-wider">
+                    <ArrowLeftRight size={12} /> Equivalente
+                  </span>
+                  <span className="text-base font-bold text-brand-700 tabular-nums">
+                    {equivalentPrefix} {equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 

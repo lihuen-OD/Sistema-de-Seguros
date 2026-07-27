@@ -289,9 +289,13 @@ export default function AssetDetailPage() {
 
   const latestReal = asset.valueHistory?.find((e) => e.type === 'real')
   const latestNuevo = asset.valueHistory?.find((e) => e.type === 'nuevo')
-  const displayReal = latestReal?.valueUsd ?? asset.patrimonialValueUsd
+  // Cierre en ambas monedas (ver computeDualAmounts) — con fallback a los
+  // campos únicos pre-existentes para activos guardados antes de esta feature.
+  const displayRealUsd = latestReal?.valueUsd ?? asset.currentValueUsd ?? asset.patrimonialValueUsd
+  const displayRealArs = latestReal?.valueArs ?? asset.currentValueArs ?? null
   const displayRealDate = latestReal?.date ?? asset.valuationDate
-  const displayNuevo = latestNuevo?.valueUsd ?? asset.patrimonialValueNew
+  const displayNuevoUsd = latestNuevo?.valueUsd ?? asset.patrimonialValueNewUsd ?? asset.patrimonialValueNew
+  const displayNuevoArs = latestNuevo?.valueArs ?? asset.patrimonialValueNewArs ?? null
   const displayNuevoDate = latestNuevo?.date ?? asset.valuationDate
 
   const vigentePolicies = policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer')
@@ -301,7 +305,7 @@ export default function AssetDetailPage() {
   const hasUsdCoverage = totalInsuredUsd > 0
   const hasArsCoverage = totalInsuredArs > 0
   const mixedCurrencies = hasUsdCoverage && hasArsCoverage
-  const diffBase = displayNuevo ?? displayReal
+  const diffBase = displayNuevoUsd ?? displayRealUsd
   const diffUsd = hasUsdCoverage && diffBase != null ? diffBase - totalInsuredUsd : null
 
   // ── Table columns ─────────────────────────────────────────────────────────────
@@ -685,15 +689,25 @@ export default function AssetDetailPage() {
         <div className="space-y-4">
           <KpiCard
             label="Valor Patrimonial Real"
-            value={displayReal != null ? formatCurrencyFull(displayReal, 'USD') : 'Sin valuar'}
-            description={displayReal != null ? `Al ${formatDate(displayRealDate)}` : 'Todavía no se cargó un valor'}
+            value={displayRealUsd != null ? formatCurrencyCompact(displayRealUsd, 'USD') : 'Sin valuar'}
+            description={
+              displayRealUsd == null
+                ? 'Todavía no se cargó un valor'
+                : displayRealArs != null
+                  ? `${formatCurrencyFull(displayRealArs, 'ARS')} · Al ${formatDate(displayRealDate)}`
+                  : `Al ${formatDate(displayRealDate)}`
+            }
             variant="info"
           />
-          {displayNuevo != null && (
+          {displayNuevoUsd != null && (
             <KpiCard
               label="Valor Patrimonial a Nuevo"
-              value={formatCurrencyFull(displayNuevo, 'USD')}
-              description={`Al ${formatDate(displayNuevoDate)}`}
+              value={formatCurrencyCompact(displayNuevoUsd, 'USD')}
+              description={
+                displayNuevoArs != null
+                  ? `${formatCurrencyFull(displayNuevoArs, 'ARS')} · Al ${formatDate(displayNuevoDate)}`
+                  : `Al ${formatDate(displayNuevoDate)}`
+              }
               variant="default"
             />
           )}

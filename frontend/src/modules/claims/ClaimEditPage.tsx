@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -12,7 +12,8 @@ import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { ROUTES } from '../../app/routes'
-import type { ClaimAttachment, ClaimOwnershipType } from '../../shared/types'
+import { CURRENCY_OPTIONS } from '../../shared/constants'
+import type { ClaimAttachment, ClaimOwnershipType, Currency } from '../../shared/types'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
 import { ClaimExpensesCard } from './ClaimExpensesCard'
 
@@ -54,7 +55,6 @@ export default function ClaimEditPage() {
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: claimStatuses = [] } = useQuery(catalogQueries.byCategory('claim_status'))
   const { data: claimTypes = [] } = useQuery(catalogQueries.byCategory('claim_type'))
-  const { data: currencies = [] } = useQuery(catalogQueries.byCategory('document_currency'))
   const { data: attachments = [] } = useQuery(claimQueries.attachments(id!))
 
   const docs = attachments.filter((a) => a.fileType !== 'image')
@@ -80,7 +80,7 @@ export default function ClaimEditPage() {
   const [reportDate, setReportDate] = useState('')
   const [insuranceCompany, setInsuranceCompany] = useState('')
   const [description, setDescription] = useState('')
-  const [currency, setCurrency] = useState('ARS')
+  const [currency, setCurrency] = useState<Currency>('ARS')
   const [exchangeRate, setExchangeRate] = useState('')
   const [claimedAmount, setClaimedAmount] = useState('')
   const [realAmount, setRealAmount] = useState('')
@@ -143,6 +143,31 @@ export default function ClaimEditPage() {
         />
       </PageContent>
     )
+  }
+
+  // El backend cierra ambas monedas (ARS/USD) a partir del monto crudo +
+  // currency + exchangeRate — acá solo se decide el prefijo para los labels,
+  // sin convertir nada del lado del cliente (mismo patrón que ClaimNewPage).
+  const mainPrefix = currency === 'USD' ? 'US$' : 'AR$'
+
+  // Vista previa del equivalente en la otra moneda, para que el usuario vea
+  // ambos valores mientras edita (el backend es quien cierra y persiste los
+  // dos montos al guardar — ver computeDualAmounts).
+  const equivalentPrefix = currency === 'USD' ? 'AR$' : 'US$'
+  function computeEquivalent(rawAmount: string): string {
+    const amount = parseFloat(rawAmount)
+    const rate = parseFloat(exchangeRate)
+    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
+    return currency === 'USD' ? (amount * rate).toFixed(2) : (amount / rate).toFixed(2)
+  }
+  const equivalentClaimed = useMemo(() => computeEquivalent(claimedAmount), [claimedAmount, exchangeRate, currency])
+  const equivalentReal = useMemo(() => computeEquivalent(realAmount), [realAmount, exchangeRate, currency])
+  const equivalentSettled = useMemo(() => computeEquivalent(settledAmount), [settledAmount, exchangeRate, currency])
+  const equivalentDeductible = useMemo(() => computeEquivalent(deductible), [deductible, exchangeRate, currency])
+  function formatEquivalent(value: string): string {
+    return value
+      ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : ''
   }
 
   // ── Validation ──────────────────────────────────────────────────────────────
@@ -318,42 +343,36 @@ export default function ClaimEditPage() {
               <Field label="Moneda">
                 <select
                   value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
+                  onChange={(e) => setCurrency(e.target.value as Currency)}
                   className={selectCls}
                 >
-                  {currencies.length > 0
-                    ? currencies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)
-                    : <>
-                        <option value="ARS">ARS</option>
-                        <option value="USD">USD</option>
-                      </>
-                  }
+                  {CURRENCY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </Field>
 
-              {currency === 'USD' && (
-                <Field label="Tipo de cambio (AR$/USD)" required>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={exchangeRate}
-                    onChange={(e) => setExchangeRate(e.target.value)}
-                    placeholder="Ej: 1250.00"
-                    className={inputCls}
-                  />
-                  {errors.exchangeRate && (
-                    <p className="mt-1 text-xs text-red-500">{errors.exchangeRate}</p>
-                  )}
-                </Field>
-              )}
+              <Field label="Tipo de cambio (AR$/USD)" required={currency === 'USD'}>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={exchangeRate}
+                  onChange={(e) => setExchangeRate(e.target.value)}
+                  placeholder="Ej: 1250.00"
+                  className={inputCls}
+                />
+                {errors.exchangeRate && (
+                  <p className="mt-1 text-xs text-red-500">{errors.exchangeRate}</p>
+                )}
+              </Field>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Monto reclamado (ARS)" required>
+              <Field label={`Monto reclamado (${mainPrefix})`} required>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">
-                    AR$
+                    {mainPrefix}
                   </span>
                   <input
                     type="number"
@@ -370,10 +389,14 @@ export default function ClaimEditPage() {
                 )}
               </Field>
 
-              <Field label="Valor real del daño (ARS)">
+              <Field label={`Monto reclamado (${equivalentPrefix})`}>
+                <input value={formatEquivalent(equivalentClaimed)} readOnly disabled placeholder="Se calcula automáticamente" className={`${inputCls} bg-slate-50 text-slate-500`} />
+              </Field>
+
+              <Field label={`Valor real del daño (${mainPrefix})`}>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">
-                    AR$
+                    {mainPrefix}
                   </span>
                   <input
                     type="number"
@@ -390,10 +413,14 @@ export default function ClaimEditPage() {
                 </p>
               </Field>
 
-              <Field label="Monto liquidado (ARS)">
+              <Field label={`Valor real del daño (${equivalentPrefix})`}>
+                <input value={formatEquivalent(equivalentReal)} readOnly disabled placeholder="Se calcula automáticamente" className={`${inputCls} bg-slate-50 text-slate-500`} />
+              </Field>
+
+              <Field label={`Monto liquidado (${mainPrefix})`}>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">
-                    AR$
+                    {mainPrefix}
                   </span>
                   <input
                     type="number"
@@ -410,10 +437,14 @@ export default function ClaimEditPage() {
                 </p>
               </Field>
 
-              <Field label="Franquicia (ARS)">
+              <Field label={`Monto liquidado (${equivalentPrefix})`}>
+                <input value={formatEquivalent(equivalentSettled)} readOnly disabled placeholder="Se calcula automáticamente" className={`${inputCls} bg-slate-50 text-slate-500`} />
+              </Field>
+
+              <Field label={`Franquicia (${mainPrefix})`}>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">
-                    AR$
+                    {mainPrefix}
                   </span>
                   <input
                     type="number"
@@ -428,6 +459,10 @@ export default function ClaimEditPage() {
                 <p className="mt-1 text-[11px] text-slate-400">
                   Deducible a cargo del asegurado
                 </p>
+              </Field>
+
+              <Field label={`Franquicia (${equivalentPrefix})`}>
+                <input value={formatEquivalent(equivalentDeductible)} readOnly disabled placeholder="Se calcula automáticamente" className={`${inputCls} bg-slate-50 text-slate-500`} />
               </Field>
             </div>
           </SectionCard>

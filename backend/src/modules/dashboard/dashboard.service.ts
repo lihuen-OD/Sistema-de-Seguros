@@ -28,23 +28,29 @@ export const dashboardService = {
       companiesActive,
     ] = await Promise.all([
       prisma.asset.count({ where: { isActive: true } }),
-      prisma.asset.aggregate({ _sum: { currentValue: true }, where: { isActive: true } }),
+      prisma.asset.aggregate({
+        _sum: { currentValueArs: true, currentValueUsd: true },
+        where: { isActive: true },
+      }),
       prisma.policy.count({ where: { isActive: true, ...buildPolicyStatusFilter('vigente') } }),
       prisma.policy.count({
         where: { isActive: true, ...buildPolicyStatusFilter('proxima_a_vencer') },
       }),
       prisma.policy.count({ where: { isActive: true, ...buildPolicyStatusFilter('vencida') } }),
       prisma.policy.aggregate({
-        _sum: { premium: true },
+        _sum: { premiumArs: true, premiumUsd: true },
         where: { isActive: true, endDate: { gte: today } },
       }),
+      // totalAmountArs/Usd ya son el cierre de (netAmount+vatAmount+otherTaxesAmount) en
+      // ambas monedas (ver computeDualAmounts) — no hace falta sumar los 3 componentes
+      // por separado como antes.
       prisma.accountingDocument.aggregate({
-        _sum: { netAmount: true, vatAmount: true, otherTaxesAmount: true },
+        _sum: { totalAmountArs: true, totalAmountUsd: true },
         _count: { id: true },
         where: { paymentStatus: { not: 'PAID' } },
       }),
       prisma.documentInstallment.aggregate({
-        _sum: { amount: true },
+        _sum: { amountArs: true, amountUsd: true },
         _count: { id: true },
         where: { paymentStatus: { not: 'PAID' } },
       }),
@@ -68,29 +74,27 @@ export const dashboardService = {
       prisma.company.count({ where: { isActive: true } }),
     ])
 
-    const pendingDocAmount =
-      (docPendingRaw._sum.netAmount ?? 0) +
-      (docPendingRaw._sum.vatAmount ?? 0) +
-      (docPendingRaw._sum.otherTaxesAmount ?? 0)
-    const pendingInstallmentsAmount = installmentPendingRaw._sum.amount ?? 0
-
     return {
       assets: {
         total: totalAssets,
-        currentValue: assetValueAgg._sum.currentValue ?? 0,
+        currentValueArs: assetValueAgg._sum.currentValueArs ?? 0,
+        currentValueUsd: assetValueAgg._sum.currentValueUsd ?? 0,
       },
       policies: {
         total: policiesVigente + policiesProxima + policiesVencida,
         vigente: policiesVigente,
         proxima_a_vencer: policiesProxima,
         vencida: policiesVencida,
-        premiumVigente: premiumAgg._sum.premium ?? 0,
+        premiumVigenteArs: premiumAgg._sum.premiumArs ?? 0,
+        premiumVigenteUsd: premiumAgg._sum.premiumUsd ?? 0,
       },
       documents: {
         pendingCount: docPendingRaw._count.id,
-        pendingAmount: pendingDocAmount,
+        pendingAmountArs: docPendingRaw._sum.totalAmountArs ?? 0,
+        pendingAmountUsd: docPendingRaw._sum.totalAmountUsd ?? 0,
         pendingInstallmentsCount: installmentPendingRaw._count.id,
-        pendingInstallmentsAmount,
+        pendingInstallmentsAmountArs: installmentPendingRaw._sum.amountArs ?? 0,
+        pendingInstallmentsAmountUsd: installmentPendingRaw._sum.amountUsd ?? 0,
       },
       extinguishers: {
         total: extTotal,
@@ -198,11 +202,11 @@ export const dashboardService = {
     ] = await Promise.all([
         prisma.documentInstallment.findMany({
           where: { dueDate: { gte: yearStart, lte: yearEnd } },
-          select: { dueDate: true, amount: true },
+          select: { dueDate: true, amountArs: true, amountUsd: true },
         }),
         prisma.policy.groupBy({
           by: ['companyId'],
-          _sum: { premium: true },
+          _sum: { premiumArs: true, premiumUsd: true },
           where: { isActive: true },
         }),
         prisma.company.findMany({ select: { id: true, name: true } }),
@@ -221,22 +225,36 @@ export const dashboardService = {
         prisma.policy.count({ where: { isActive: true, ...buildPolicyStatusFilter('vencida') } }),
       ])
 
-    // Monthly cost evolution (12 months of the requested year)
-    const monthlyMap = new Map<string, number>()
+    // Monthly cost evolution (12 months of the requested year) — series separadas
+    // por moneda, nunca mezcladas (ver amountArs/amountUsd, cerrados al crear/pagar
+    // cada cuota).
+    const monthlyMapArs = new Map<string, number>()
+    const monthlyMapUsd = new Map<string, number>()
     for (const inst of installments) {
       const month = toDateStr(inst.dueDate).substring(0, 7)
-      monthlyMap.set(month, (monthlyMap.get(month) ?? 0) + inst.amount)
+      monthlyMapArs.set(month, (monthlyMapArs.get(month) ?? 0) + (inst.amountArs ?? 0))
+      monthlyMapUsd.set(month, (monthlyMapUsd.get(month) ?? 0) + (inst.amountUsd ?? 0))
     }
     const costEvolution = Array.from({ length: 12 }, (_, i) => {
       const month = `${y}-${String(i + 1).padStart(2, '0')}`
-      return { month, amount: monthlyMap.get(month) ?? 0 }
+      return {
+        month,
+        amountArs: monthlyMapArs.get(month) ?? 0,
+        amountUsd: monthlyMapUsd.get(month) ?? 0,
+      }
     })
 
-    // Top 5 companies by total premium (via SQL groupBy — no in-memory aggregation)
+    // Top 5 companies por prima total (via SQL groupBy — sin agregación en memoria).
+    // Se ordena por el total en ARS (siempre poblado, es el denominador común entre
+    // pólizas en distintas monedas) pero se muestran ambos montos por empresa.
     const companyNameMap = new Map(allCompanyNames.map((c) => [c.id, c.name]))
     const premiumByCompany = premiumByCompanyRaw
-      .map((row) => ({ name: companyNameMap.get(row.companyId) ?? row.companyId, total: row._sum.premium ?? 0 }))
-      .sort((a, b) => b.total - a.total)
+      .map((row) => ({
+        name: companyNameMap.get(row.companyId) ?? row.companyId,
+        totalArs: row._sum.premiumArs ?? 0,
+        totalUsd: row._sum.premiumUsd ?? 0,
+      }))
+      .sort((a, b) => b.totalArs - a.totalArs)
       .slice(0, 5)
 
     return {

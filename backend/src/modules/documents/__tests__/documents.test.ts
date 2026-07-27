@@ -765,7 +765,7 @@ describe('Documents API', () => {
       const res = await request(app)
         .put(`/api/v1/documents/${DOC_ID}/installments/${INST_ID}`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ paymentStatus: 'PAID' })
+        .send({ paymentStatus: 'PAID', exchangeRate: 1200 })
 
       expect(res.status).toBe(200)
       const updateCall = db.accountingDocument.update.mock.calls[0][0]
@@ -784,11 +784,42 @@ describe('Documents API', () => {
       const res = await request(app)
         .put(`/api/v1/documents/${DOC_ID}/installments/${INST_ID}`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ paymentStatus: 'PAID' })
+        .send({ paymentStatus: 'PAID', exchangeRate: 1200 })
 
       expect(res.status).toBe(200)
       const updateCall = db.accountingDocument.update.mock.calls[0][0]
       expect(updateCall.data.paymentStatus).toBe('PARTIALLY_PAID')
+    })
+
+    it('rejects marking an installment as PAID without exchangeRate', async () => {
+      db.documentInstallment.findFirst.mockResolvedValue(fakeInstallment)
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}/installments/${INST_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ paymentStatus: 'PAID' })
+
+      expect(res.status).toBe(400)
+      expect(db.documentInstallment.update).not.toHaveBeenCalled()
+    })
+
+    it('computes amountArs/amountUsd from the provided exchangeRate when marking as PAID', async () => {
+      db.documentInstallment.findFirst.mockResolvedValue(fakeInstallment)
+      db.documentInstallment.update.mockResolvedValue({ ...fakeInstallment, paymentStatus: 'PAID' })
+      db.documentInstallment.findMany.mockResolvedValue([{ paymentStatus: 'PAID' }])
+      db.accountingDocument.update.mockResolvedValue({ ...fakeDocument, paymentStatus: 'PAID' })
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}/installments/${INST_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ paymentStatus: 'PAID', exchangeRate: 1200 })
+
+      expect(res.status).toBe(200)
+      const installmentUpdateCall = db.documentInstallment.update.mock.calls[0][0]
+      // fakeInstallment.currency === 'ARS' → amountArs = amount, amountUsd = amount / exchangeRate
+      expect(installmentUpdateCall.data.amountArs).toBe(420)
+      expect(installmentUpdateCall.data.amountUsd).toBeCloseTo(420 / 1200, 5)
+      expect(installmentUpdateCall.data.exchangeRate).toBeUndefined()
     })
 
     it('recalculates document status to "PENDING" when no installments are paid', async () => {

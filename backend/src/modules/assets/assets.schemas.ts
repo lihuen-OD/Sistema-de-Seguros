@@ -31,6 +31,8 @@ export const CreateAssetSchema = z.object({
   purchaseValue: z.number().positive().optional(),
   currentValue: z.number().nonnegative().optional(),
   patrimonialValueNew: z.number().nonnegative().optional(),
+  currency: z.enum(['ARS', 'USD']).default('USD'),
+  exchangeRate: z.number().positive().default(1),
   location: z.string().max(300).optional(),
   mapsUrl: z.string().max(2000).optional(),
   productiveUnit: z.string().max(150).optional(),

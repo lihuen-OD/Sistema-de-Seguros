@@ -124,6 +124,8 @@ export default function DocumentDetailPage() {
           dueDate: i.dueDate,
           amount: i.amount,
           currency: i.currency as Installment['currency'],
+          amountArs: i.amountArs,
+          amountUsd: i.amountUsd,
           paymentStatus: i.paymentStatus as Installment['paymentStatus'],
           paidAt: i.paidAt,
         })),

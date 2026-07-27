@@ -33,14 +33,9 @@ const CATALOG_USAGE_CHECKS: Record<string, (label: string) => Promise<number>> =
     return documents + claims + thirdPartyClaims
   },
 
-  document_currency: async (label) => {
-    const [documents, policies, claims] = await Promise.all([
-      prisma.accountingDocument.count({ where: { currency: label } }),
-      prisma.policy.count({ where: { currency: label } }),
-      prisma.claim.count({ where: { currency: label } }),
-    ])
-    return documents + policies + claims
-  },
+  // document_currency se retiró de este mapa a propósito: la moneda dejó de
+  // ser un catálogo editable (ver frontend CURRENCY_OPTIONS) — ya no hay UI
+  // que cree/edite/borre items de esa categoría.
 }
 
 async function assertNotInUse(id: string): Promise<void> {

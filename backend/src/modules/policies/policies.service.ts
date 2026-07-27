@@ -2,6 +2,7 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { computePolicyStatus, buildPolicyStatusFilter, toDateStr } from '../../shared/utils/dates'
+import { computeDualAmounts } from '../../shared/utils/currency'
 import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import { assetsService } from '../assets/assets.service'
@@ -147,8 +148,14 @@ export const policiesService = {
       }
     }
 
+    const { amountArs, amountUsd } = computeDualAmounts(
+      data.premium,
+      data.currency as 'ARS' | 'USD',
+      data.exchangeRate,
+    )
+
     const policy = await prisma.policy.create({
-      data,
+      data: { ...data, premiumArs: amountArs, premiumUsd: amountUsd },
       include: POLICY_DETAIL_INCLUDE,
     })
 
@@ -160,7 +167,17 @@ export const policiesService = {
   },
 
   async update(id: string, data: UpdatePolicyDTO) {
-    const policy = await prisma.policy.findUnique({ where: { id }, select: { id: true, insuranceTypeId: true, companyId: true } })
+    const policy = await prisma.policy.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        insuranceTypeId: true,
+        companyId: true,
+        premium: true,
+        currency: true,
+        exchangeRate: true,
+      },
+    })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
 
     // Re-validar referencias que cambian — en paralelo
@@ -180,9 +197,17 @@ export const policiesService = {
     if (!companyCheck) throw new AppError(400, 'Empresa no encontrada o inactiva', 'INVALID_REFERENCE')
     if (!producerCheck) throw new AppError(400, 'Productor no encontrado o inactivo', 'INVALID_REFERENCE')
 
+    // Recalcular el cierre en ambas monedas siempre que se actualiza — un
+    // update parcial puede tocar solo una de las tres variables (premium,
+    // currency, exchangeRate) y las otras dos deben tomarse de lo ya guardado.
+    const effectivePremium = data.premium ?? policy.premium
+    const effectiveCurrency = (data.currency ?? policy.currency) as 'ARS' | 'USD'
+    const effectiveExchangeRate = data.exchangeRate ?? policy.exchangeRate
+    const { amountArs, amountUsd } = computeDualAmounts(effectivePremium, effectiveCurrency, effectiveExchangeRate)
+
     const updated = await prisma.policy.update({
       where: { id },
-      data,
+      data: { ...data, premiumArs: amountArs, premiumUsd: amountUsd },
       include: POLICY_DETAIL_INCLUDE,
     })
 

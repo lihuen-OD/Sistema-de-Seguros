@@ -5,6 +5,7 @@ import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/
 import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
 import { toDateStr } from '../../shared/utils/dates'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
+import { computeDualAmounts } from '../../shared/utils/currency'
 import type {
   CreateAssetDTO,
   UpdateAssetDTO,
@@ -141,6 +142,17 @@ export const assetsService = {
     const code = `ACT-${String(Number(seqResult[0].nextval)).padStart(5, '0')}`
     const fixedAssetCode = await resolveFixedAssetCode(assetData.fixedAssetId)
 
+    // Cierre en ambas monedas de currentValue/patrimonialValueNew al momento
+    // de guardar (ver shared/utils/currency.ts#computeDualAmounts) — mismo
+    // criterio que Policy.premiumArs/Usd. Se reutiliza el mismo resultado
+    // tanto en Asset como en su AssetValueHistory correspondiente.
+    const currentDual = assetData.currentValue != null
+      ? computeDualAmounts(assetData.currentValue, assetData.currency as 'ARS' | 'USD', assetData.exchangeRate)
+      : null
+    const newDual = assetData.patrimonialValueNew != null
+      ? computeDualAmounts(assetData.patrimonialValueNew, assetData.currency as 'ARS' | 'USD', assetData.exchangeRate)
+      : null
+
     const created = await prisma.$transaction(async (tx) => {
       const asset = await tx.asset.create({
         data: {
@@ -148,6 +160,8 @@ export const assetsService = {
           code,
           fixedAssetCode,
           metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
+          ...(currentDual && { currentValueArs: currentDual.amountArs, currentValueUsd: currentDual.amountUsd }),
+          ...(newDual && { patrimonialValueNewArs: newDual.amountArs, patrimonialValueNewUsd: newDual.amountUsd }),
         },
       })
 
@@ -165,6 +179,8 @@ export const assetsService = {
           data: {
             assetId: asset.id,
             value: assetData.currentValue,
+            valueArs: currentDual?.amountArs,
+            valueUsd: currentDual?.amountUsd,
             date: assetData.purchaseDate ?? new Date(),
             type: 'real',
             note: 'Valor inicial al alta del activo',
@@ -176,6 +192,8 @@ export const assetsService = {
           data: {
             assetId: asset.id,
             value: assetData.patrimonialValueNew,
+            valueArs: newDual?.amountArs,
+            valueUsd: newDual?.amountUsd,
             date: assetData.purchaseDate ?? new Date(),
             type: 'nuevo',
             note: 'Valor a nuevo inicial al alta del activo',
@@ -211,11 +229,27 @@ export const assetsService = {
 
     const current = await prisma.asset.findUnique({
       where: { id },
-      select: { id: true, status: true },
+      select: { id: true, status: true, currency: true, exchangeRate: true },
     })
     if (!current) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
 
     const fixedAssetCode = await resolveFixedAssetCode(assetData.fixedAssetId)
+
+    // Actualización parcial: solo se recalcula el cierre en ambas monedas
+    // cuando el valor viene en este payload, usando la moneda/TC efectivos
+    // (los nuevos si vienen, si no los ya guardados en el activo).
+    const effectiveCurrency = (assetData.currency ?? current.currency) as 'ARS' | 'USD'
+    const effectiveExchangeRate = assetData.exchangeRate ?? current.exchangeRate
+    const currentDual = assetData.currentValue != null
+      ? computeDualAmounts(assetData.currentValue, effectiveCurrency, effectiveExchangeRate)
+      : null
+    const newDual = assetData.patrimonialValueNew != null
+      ? computeDualAmounts(assetData.patrimonialValueNew, effectiveCurrency, effectiveExchangeRate)
+      : null
+    const dualData = {
+      ...(currentDual && { currentValueArs: currentDual.amountArs, currentValueUsd: currentDual.amountUsd }),
+      ...(newDual && { patrimonialValueNewArs: newDual.amountArs, patrimonialValueNewUsd: newDual.amountUsd }),
+    }
 
     if (assetData.status && assetData.status !== current.status) {
       const statusDate = assetData.status === 'baja' ? assetData.dischargeDate
@@ -229,6 +263,7 @@ export const assetsService = {
             ...assetData,
             ...(fixedAssetCode !== undefined && { fixedAssetCode }),
             metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
+            ...dualData,
           },
           select: { id: true },
         }),
@@ -251,6 +286,7 @@ export const assetsService = {
           ...assetData,
           ...(fixedAssetCode !== undefined && { fixedAssetCode }),
           metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
+          ...dualData,
         },
         select: { id: true },
       }).catch(handleUpdateNotFound)

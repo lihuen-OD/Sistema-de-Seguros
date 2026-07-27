@@ -103,3 +103,11 @@ export const PROVINCES = [
 ]
 
 export const EXPIRING_SOON_DAYS = 30
+
+// Única fuente de las dos monedas soportadas por el sistema — reemplaza el
+// catálogo editable `document_currency` que permitía cargar cualquier texto
+// libre (ej. el typo "ARG"). Usado en Documentos, Siniestros, Pólizas y Activos.
+export const CURRENCY_OPTIONS: { value: 'ARS' | 'USD'; label: string }[] = [
+  { value: 'ARS', label: 'Pesos (ARS)' },
+  { value: 'USD', label: 'Dólares (USD)' },
+]

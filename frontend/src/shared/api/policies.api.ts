@@ -17,7 +17,9 @@ interface BackendPolicy {
   costCenterId: string | null; producerId: string | null
   insuredName: string; assetIds: string[]; beneficiaryDescription: string | null
   startDate: string; endDate: string
-  premium: number; currency: string; exchangeRate: number; description: string | null; coverageIds: string[]
+  premium: number; currency: string; exchangeRate: number
+  premiumArs: number | null; premiumUsd: number | null
+  description: string | null; coverageIds: string[]
   isActive: boolean; status: string; createdAt: string; updatedAt: string
   insuranceType?: BackendInsuranceType
   company?: BackendCompany
@@ -96,8 +98,8 @@ function mapPolicy(b: BackendPolicy): Policy {
     costCenterId: b.costCenterId ?? null,
     currency: (b.currency === 'USD' ? 'USD' : 'ARS') as 'ARS' | 'USD',
     exchangeRate: b.exchangeRate ?? 1,
-    insuredAmountArs: b.currency === 'USD' ? 0 : b.premium,
-    insuredAmountUsd: b.currency === 'USD' ? b.premium : (b.exchangeRate ?? 1) > 1 ? b.premium / b.exchangeRate : 0,
+    insuredAmountArs: b.premiumArs ?? 0,
+    insuredAmountUsd: b.premiumUsd ?? 0,
     description: b.description ?? '',
     status: mapStatus(b.status),
     attachmentsCount: b._count?.attachments ?? 0,

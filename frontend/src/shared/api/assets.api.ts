@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { triggerBlobDownload } from '../utils/downloadFile'
-import type { Asset, AssetAttachment, AssetStatus, AssetStatusHistory, Building } from '../types'
+import type { Asset, AssetAttachment, AssetStatus, AssetStatusHistory, Building, Currency } from '../types'
 
 interface BackendCompany { id: string; name: string; cuit: string }
 interface BackendCostCenter { id: string; name: string; code: string | null }
@@ -12,7 +12,9 @@ interface BackendAllocation {
   percentage: number
 }
 interface BackendValueHistory {
-  id: string; assetId: string; date: string; value: number; type: string; note: string | null
+  id: string; assetId: string; date: string; value: number
+  valueArs: number | null
+  type: string; note: string | null
 }
 interface BackendFixedAssetRef { id: string; code: string; name: string }
 interface BackendAsset {
@@ -23,6 +25,9 @@ interface BackendAsset {
   purchaseDate: string | null; dischargeDate: string | null; saleDate: string | null
   purchaseValue: number | null
   currentValue: number | null; patrimonialValueNew: number | null
+  currency: string; exchangeRate: number
+  currentValueArs: number | null; currentValueUsd: number | null
+  patrimonialValueNewArs: number | null; patrimonialValueNewUsd: number | null
   location: string | null; mapsUrl: string | null
   productiveUnit: string | null; area: string | null
   description: string | null; metadata: Record<string, unknown> | null
@@ -65,6 +70,12 @@ function mapAsset(b: BackendAsset): Asset {
     patrimonialValueUsd: b.currentValue ?? b.purchaseValue ?? null,
     patrimonialValueNew: b.patrimonialValueNew ?? null,
     valuationDate: b.purchaseDate ? b.purchaseDate.slice(0, 10) : '',
+    currency: b.currency as Currency,
+    exchangeRate: b.exchangeRate,
+    currentValueArs: b.currentValueArs,
+    currentValueUsd: b.currentValueUsd,
+    patrimonialValueNewArs: b.patrimonialValueNewArs,
+    patrimonialValueNewUsd: b.patrimonialValueNewUsd,
     observations: b.description ?? '',
     mapsUrl: b.mapsUrl ?? '',
     coordinates: parseCoordinatesFromMapsUrl(b.mapsUrl),
@@ -81,7 +92,7 @@ function mapAsset(b: BackendAsset): Asset {
     area: b.area ?? '',
     photos: [],
     valueHistory: b.valueHistory
-      ? b.valueHistory.map((v) => ({ id: v.id, date: v.date.slice(0, 10), valueUsd: v.value, type: (v.type ?? 'real') as 'real' | 'nuevo', notes: v.note ?? undefined }))
+      ? b.valueHistory.map((v) => ({ id: v.id, date: v.date.slice(0, 10), valueUsd: v.value, valueArs: v.valueArs ?? null, type: (v.type ?? 'real') as 'real' | 'nuevo', notes: v.note ?? undefined }))
       : undefined,
     silos: (() => {
       const metaSilos = meta.silos as Array<{ capacityTons: number; content: string }> | undefined
@@ -138,6 +149,8 @@ export interface AssetCreateInput {
   reactivationDate?: string | null
   currentValue?: number
   patrimonialValueNew?: number
+  currency?: Currency
+  exchangeRate?: number
   mapsUrl?: string
   productiveUnit?: string
   area?: string

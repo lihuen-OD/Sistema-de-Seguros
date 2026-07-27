@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  ShieldAlert, TriangleAlert, ArrowLeftRight,
+  ShieldAlert, TriangleAlert,
   Car, Lock, Package, Flame, CloudRain, Wheat, Waves, Wrench,
   Zap, Settings, Scale, Heart, Activity, HelpCircle,
   CheckCircle2, type LucideIcon,
@@ -24,9 +24,11 @@ import { claimsApi, claimKeys } from '../../shared/api/claims.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
+import { exchangeRateQueries } from '../../shared/api/exchange-rate.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
-import type { ClaimOwnershipType } from '../../shared/types'
+import { CURRENCY_OPTIONS } from '../../shared/constants'
+import type { ClaimOwnershipType, Currency } from '../../shared/types'
 
 // ─── Claim type icon map (label → icon) ───────────────────────────────────────
 
@@ -79,7 +81,7 @@ export default function ClaimNewPage() {
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: claimTypes = [] } = useQuery(catalogQueries.byCategory('claim_type'))
   const { data: claimStatuses = [] } = useQuery(catalogQueries.byCategory('claim_status'))
-  const { data: currencies = [] } = useQuery(catalogQueries.byCategory('document_currency'))
+  const { data: currentExchangeRate } = useQuery(exchangeRateQueries.current())
 
   const preselectedAsset = preselectedAssetId
     ? (allAssets.find((a) => a.id === preselectedAssetId) ?? null)
@@ -103,8 +105,9 @@ export default function ClaimNewPage() {
   const [insuranceCompany, setInsuranceCompany] = useState('')
 
   // Amounts + currency
-  const [currency, setCurrency] = useState('ARS')
+  const [currency, setCurrency] = useState<Currency>('ARS')
   const [exchangeRate, setExchangeRate] = useState('')
+  const [exchangeRatePrefilled, setExchangeRatePrefilled] = useState(false)
   const [claimedAmount, setClaimedAmount] = useState('')
   const [realAmount, setRealAmount] = useState('')
   const [settledAmount, setSettledAmount] = useState('')
@@ -113,6 +116,16 @@ export default function ClaimNewPage() {
   const [observations, setObservations] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
+
+  // Prefill de conveniencia con el tipo de cambio global vigente — el usuario
+  // puede editarlo libremente después. Solo corre una vez y solo si el campo
+  // sigue vacío (mismo patrón que Pólizas).
+  useEffect(() => {
+    if (currentExchangeRate?.rate && !exchangeRatePrefilled && !exchangeRate) {
+      setExchangeRate(String(currentExchangeRate.rate))
+      setExchangeRatePrefilled(true)
+    }
+  }, [currentExchangeRate, exchangeRatePrefilled, exchangeRate])
 
   // Archivos seleccionados en el form — se suben después de crear el siniestro
   const [pendingDocs, setPendingDocs] = useState<File[]>([])
@@ -123,23 +136,30 @@ export default function ClaimNewPage() {
   const availablePolicies = assetId ? allPolicies.filter((p) => p.assetIds?.includes(assetId)) : allPolicies
   const selectedPolicy = policyId ? availablePolicies.find((p) => p.id === policyId) ?? null : null
 
-  const tc = parseFloat(exchangeRate) || 0
-  const toArs = (val: string) => {
-    const n = parseFloat(val) || 0
-    return currency === 'USD' && tc > 0 ? n * tc : n
-  }
-
-  const claimedAmountArs = toArs(claimedAmount)
-  const equivalentClaimedAmount =
-    currency === 'ARS' && tc > 0
-      ? claimedAmountArs / tc
-      : currency === 'USD' && tc > 0
-        ? claimedAmountArs / tc
-        : 0
-
+  // El backend cierra ambas monedas (ARS/USD) a partir del monto crudo +
+  // currency + exchangeRate — acá solo se decide el prefijo de moneda para
+  // mostrar en los labels, sin convertir nada del lado del cliente.
   const mainPrefix = currency === 'USD' ? 'US$' : 'AR$'
-  const altPrefix = currency === 'USD' ? 'AR$' : 'US$'
-  const altAmount = currency === 'USD' ? claimedAmountArs : equivalentClaimedAmount
+
+  // Vista previa del equivalente en la otra moneda, para que el usuario vea
+  // ambos valores mientras completa el formulario (el backend es quien cierra
+  // y persiste los dos montos al guardar — ver computeDualAmounts).
+  const equivalentPrefix = currency === 'USD' ? 'AR$' : 'US$'
+  function computeEquivalent(rawAmount: string): string {
+    const amount = parseFloat(rawAmount)
+    const rate = parseFloat(exchangeRate)
+    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
+    return currency === 'USD' ? (amount * rate).toFixed(2) : (amount / rate).toFixed(2)
+  }
+  const equivalentClaimed = useMemo(() => computeEquivalent(claimedAmount), [claimedAmount, exchangeRate, currency])
+  const equivalentReal = useMemo(() => computeEquivalent(realAmount), [realAmount, exchangeRate, currency])
+  const equivalentSettled = useMemo(() => computeEquivalent(settledAmount), [settledAmount, exchangeRate, currency])
+  const equivalentDeductible = useMemo(() => computeEquivalent(deductible), [deductible, exchangeRate, currency])
+  function formatEquivalent(value: string): string {
+    return value
+      ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : ''
+  }
 
   const handleAssetChange = (id: string) => {
     setAssetId(id)
@@ -198,10 +218,12 @@ export default function ClaimNewPage() {
         currency,
         assetId: assetId || undefined,
         policyId: policyId || undefined,
-        claimedAmountArs: toArs(claimedAmount),
-        realAmountArs: realAmount ? toArs(realAmount) : undefined,
-        settledAmountArs: settledAmount ? toArs(settledAmount) : undefined,
-        deductibleArs: deductible ? toArs(deductible) : undefined,
+        // Monto crudo tal cual lo tipeó el usuario, en la moneda seleccionada —
+        // el backend calcula el par ARS/USD a partir de currency + exchangeRate.
+        claimedAmountArs: parseFloat(claimedAmount) || 0,
+        realAmountArs: realAmount ? parseFloat(realAmount) : undefined,
+        settledAmountArs: settledAmount ? parseFloat(settledAmount) : undefined,
+        deductibleArs: deductible ? parseFloat(deductible) : undefined,
         observations: observations.trim() || undefined,
         exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
       })
@@ -452,14 +474,10 @@ export default function ClaimNewPage() {
           <SectionCard title="Importes" subtitle="Moneda, tipo de cambio y montos del siniestro">
             <FormSection title="">
               <FormField label="Moneda">
-                <FormSelect value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                  {currencies.length > 0
-                    ? currencies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)
-                    : <>
-                        <option value="ARS">ARS</option>
-                        <option value="USD">USD</option>
-                      </>
-                  }
+                <FormSelect value={currency} onChange={(e) => setCurrency(e.target.value as Currency)}>
+                  {CURRENCY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </FormSelect>
               </FormField>
 
@@ -488,6 +506,9 @@ export default function ClaimNewPage() {
                   onChange={(e) => { setClaimedAmount(e.target.value); setErrors((p) => ({ ...p, claimedAmount: undefined })) }}
                 />
               </FormField>
+              <FormField label={`Monto reclamado (${equivalentPrefix})`}>
+                <FormInput value={formatEquivalent(equivalentClaimed)} readOnly disabled placeholder="Se calcula automáticamente" />
+              </FormField>
 
               <FormField label={`Valor real del siniestro (${mainPrefix})`}>
                 <FormInput
@@ -499,6 +520,9 @@ export default function ClaimNewPage() {
                   onChange={(e) => setRealAmount(e.target.value)}
                 />
                 <p className="text-xs text-slate-400 mt-0.5">El daño real puede superar el límite cubierto</p>
+              </FormField>
+              <FormField label={`Valor real del siniestro (${equivalentPrefix})`}>
+                <FormInput value={formatEquivalent(equivalentReal)} readOnly disabled placeholder="Se calcula automáticamente" />
               </FormField>
 
               <FormField label={`Monto liquidado (${mainPrefix})`}>
@@ -512,6 +536,9 @@ export default function ClaimNewPage() {
                 />
                 <p className="text-xs text-slate-400 mt-0.5">Completar cuando la aseguradora apruebe</p>
               </FormField>
+              <FormField label={`Monto liquidado (${equivalentPrefix})`}>
+                <FormInput value={formatEquivalent(equivalentSettled)} readOnly disabled placeholder="Se calcula automáticamente" />
+              </FormField>
 
               <FormField label={`Franquicia (${mainPrefix})`}>
                 <FormInput
@@ -523,30 +550,10 @@ export default function ClaimNewPage() {
                   onChange={(e) => setDeductible(e.target.value)}
                 />
               </FormField>
+              <FormField label={`Franquicia (${equivalentPrefix})`}>
+                <FormInput value={formatEquivalent(equivalentDeductible)} readOnly disabled placeholder="Se calcula automáticamente" />
+              </FormField>
             </FormSection>
-
-            {/* Equivalente */}
-            {claimedAmountArs > 0 && tc > 0 && (
-              <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Reclamado</span>
-                  <span className="text-sm font-bold text-slate-800 tabular-nums">
-                    {mainPrefix}{' '}
-                    {(parseFloat(claimedAmount) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between px-4 py-3 bg-brand-50 rounded-xl border border-brand-100">
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-brand-500 uppercase tracking-wider">
-                    <ArrowLeftRight size={11} />
-                    Equivalente
-                  </span>
-                  <span className="text-sm font-bold text-brand-700 tabular-nums">
-                    {altPrefix}{' '}
-                    {altAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-            )}
           </SectionCard>
 
           {/* Sección 6: Documentación */}
@@ -603,12 +610,6 @@ export default function ClaimNewPage() {
                 <SummaryRow
                   label={`Valor real (${mainPrefix})`}
                   value={`${mainPrefix} ${(parseFloat(realAmount) || 0).toLocaleString('es-AR')}`}
-                />
-              )}
-              {claimedAmountArs > 0 && tc > 0 && (
-                <SummaryRow
-                  label={`Equiv. ${altPrefix}`}
-                  value={`${altPrefix} ${altAmount.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
                 />
               )}
             </div>

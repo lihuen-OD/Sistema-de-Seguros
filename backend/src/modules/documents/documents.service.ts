@@ -18,6 +18,7 @@ import {
   type DocumentTypeDef,
 } from './document-types'
 import { computeTotalAmount } from './document-amounts'
+import { computeDualAmounts } from '../../shared/utils/currency'
 import { documentsBalanceService } from './documents-balance.service'
 import { emailService } from '../email/email.service'
 import { resolveEmailAttachments } from '../email/email-attachments'
@@ -66,7 +67,8 @@ const DOCUMENT_FINANCIAL_INCLUDE = {
   installments: {
     select: {
       id: true, accountingDocumentId: true, installmentNumber: true,
-      dueDate: true, amount: true, currency: true, paymentStatus: true, paymentDate: true,
+      dueDate: true, amount: true, currency: true, amountArs: true, amountUsd: true,
+      paymentStatus: true, paymentDate: true,
     },
     orderBy: { installmentNumber: 'asc' as const },
   },
@@ -227,6 +229,15 @@ export const documentsService = {
     // arrancan ya APPLIED/CANCELLED o con un relationType inconsistente.
     // Create + audit log en una sola transacción: si el audit log fallara,
     // no debe quedar un documento creado sin su rastro de auditoría.
+    // Cierre en ambas monedas al momento de guardar (ver computeDualAmounts) —
+    // única fuente de verdad para Dashboard y Análisis Financiero/Económico,
+    // que suman por columna (Ars/Usd) en vez de reconvertir al mostrar.
+    const { amountArs: totalAmountArs, amountUsd: totalAmountUsd } = computeDualAmounts(
+      computeTotalAmount(docData),
+      docData.currency as 'ARS' | 'USD',
+      docData.exchangeRate,
+    )
+
     let doc
     try {
       doc = await prisma.$transaction(async (tx) => {
@@ -236,6 +247,8 @@ export const documentsService = {
             documentStatus: 'ISSUED',
             relationType: typeDef.relationType ?? null,
             paymentStatus: typeDef.hasPaymentStatus ? 'PENDING' : 'NOT_APPLICABLE',
+            totalAmountArs,
+            totalAmountUsd,
             ...(installments.length > 0 && typeDef.hasInstallments && {
               installments: {
                 create: installments.map((inst) => ({
@@ -243,6 +256,7 @@ export const documentsService = {
                   dueDate: inst.dueDate,
                   amount: inst.amount,
                   currency: docData.currency,
+                  ...computeDualAmounts(inst.amount, docData.currency as 'ARS' | 'USD', docData.exchangeRate),
                 })),
               },
             }),
@@ -327,6 +341,8 @@ export const documentsService = {
     const effectiveVatAmount = docData.vatAmount !== undefined ? docData.vatAmount : existing.vatAmount
     const effectiveOtherTaxesAmount =
       docData.otherTaxesAmount !== undefined ? docData.otherTaxesAmount : existing.otherTaxesAmount
+    const effectiveCurrency = docData.currency ?? existing.currency
+    const effectiveExchangeRate = docData.exchangeRate ?? existing.exchangeRate
 
     await this.validateTypeConstraints(
       typeDef,
@@ -351,6 +367,16 @@ export const documentsService = {
       throw new AppError(400, 'Estado de documento inválido para este tipo', 'BAD_REQUEST')
     }
 
+    const { amountArs: effectiveTotalAmountArs, amountUsd: effectiveTotalAmountUsd } = computeDualAmounts(
+      computeTotalAmount({
+        netAmount: effectiveNetAmount,
+        vatAmount: effectiveVatAmount,
+        otherTaxesAmount: effectiveOtherTaxesAmount,
+      }),
+      effectiveCurrency as 'ARS' | 'USD',
+      effectiveExchangeRate,
+    )
+
     const updated = await prisma.$transaction(async (tx) => {
       const doc = await tx.accountingDocument.update({
         where: { id },
@@ -358,6 +384,8 @@ export const documentsService = {
           ...docData,
           relationType: typeDef.relationType ?? null,
           ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
+          totalAmountArs: effectiveTotalAmountArs,
+          totalAmountUsd: effectiveTotalAmountUsd,
         },
         include: DOCUMENT_DETAIL_INCLUDE,
       })
@@ -698,6 +726,7 @@ export const documentsService = {
                 dueDate: inst.dueDate,
                 amount: inst.amount,
                 currency: doc.currency,
+                ...computeDualAmounts(inst.amount, doc.currency as 'ARS' | 'USD', doc.exchangeRate),
               })),
             }),
           ]
@@ -721,10 +750,27 @@ export const documentsService = {
     })
     if (!installment) throw new AppError(404, 'Cuota no encontrada', 'NOT_FOUND')
 
+    // exchangeRate es un input efímero (tipo de cambio del día de pago): no
+    // existe como columna en DocumentInstallment (a diferencia del documento
+    // padre, la cuota no tiene su propio exchangeRate persistido), solo se
+    // usa acá para derivar amountArs/amountUsd. Se destructura antes de armar
+    // el `data` de Prisma para no pasarlo — Prisma tira error ante una
+    // columna desconocida.
+    const { exchangeRate, ...installmentData } = data
+
+    if (data.paymentStatus === 'PAID' && exchangeRate === undefined) {
+      throw new AppError(400, 'Se requiere el tipo de cambio para marcar la cuota como pagada', 'BAD_REQUEST')
+    }
+
+    const dualAmounts =
+      data.paymentStatus === 'PAID'
+        ? computeDualAmounts(installment.amount, installment.currency as 'ARS' | 'USD', exchangeRate!)
+        : {}
+
     const updated = await prisma.$transaction(async (tx) => {
       const inst = await tx.documentInstallment.update({
         where: { id: installmentId },
-        data,
+        data: { ...installmentData, ...dualAmounts },
       })
 
       await this.recalculateDocumentStatus(documentId, tx)
@@ -939,6 +985,7 @@ export const documentsService = {
         id: true,
         documentNumber: true,
         currency: true,
+        exchangeRate: true,
         documentType: true,
         documentStatus: true,
         linkedDocumentId: true,

@@ -1,9 +1,9 @@
 export function formatCurrencyCompact(value: number, currency: string = 'ARS'): string {
-  if (currency === 'ARS') {
-    return `AR$ ${value.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-  }
-
-  const prefix = 'US$'
+  // Mismo formato compacto (K/M/B) para ambas monedas — antes ARS mostraba el
+  // número completo sin abreviar, lo que desbordaba KPIs y ejes de gráficos
+  // con montos grandes (ver docs/PROJECT_CONTEXT.md: "AR$ 266,5M" es el
+  // formato esperado, igual que "US$ 23,0M").
+  const prefix = currency === 'ARS' ? 'AR$' : 'US$'
   const abs = Math.abs(value)
   const sign = value < 0 ? '-' : ''
 

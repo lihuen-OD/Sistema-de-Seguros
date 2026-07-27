@@ -18,7 +18,7 @@ const PolicyBaseSchema = z.object({
   startDate: ISODate,
   endDate: ISODate,
   premium: z.number().min(0).default(0),
-  currency: z.string().min(1).max(10).default('ARS'),
+  currency: z.enum(['ARS', 'USD']).default('ARS'),
   exchangeRate: z.number().min(0).default(1),
   description: z.string().max(1000).optional(),
   coverageIds: z.array(z.string()).default([]),

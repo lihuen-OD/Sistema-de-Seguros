@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -16,11 +16,12 @@ import { assetsApi, assetKeys } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import type { CatalogItem } from '../../shared/api/catalogs.api'
 import {
-  PROVINCES,
+  PROVINCES, CURRENCY_OPTIONS,
 } from '../../shared/constants'
 import {
   CATEGORY_LABEL,
 } from '../../shared/constants/asset-categories'
+import { exchangeRateQueries } from '../../shared/api/exchange-rate.api'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { CategoryPicker } from './components/CategoryPicker'
@@ -51,6 +52,8 @@ type FormState = {
   name: string
   status: string
   patrimonialValueUsd: string
+  currency: string
+  exchangeRate: string
   valuationDate: string
   brand: string
   model: string
@@ -87,7 +90,9 @@ type FormState = {
 }
 
 const EMPTY: FormState = {
-  bienDeUsoId: '', name: '', status: 'activo', patrimonialValueUsd: '', valuationDate: '',
+  bienDeUsoId: '', name: '', status: 'activo', patrimonialValueUsd: '',
+  currency: 'USD', exchangeRate: '1',
+  valuationDate: '',
   brand: '', model: '', year: '', serialNumber: '', chassisNumber: '',
   plate: '', engineNumber: '', color: '', fuelType: '',
   powerHp: '', cutWidth: '', tankCapacity: '', workWidth: '', implementType: '',
@@ -181,6 +186,41 @@ export default function AssetNewPage() {
   const [silos, setSilos] = useState<Silo[]>([])
   const [attachments, setAttachments] = useState<AssetAttachment[]>([])
 
+  // Prefill del tipo de cambio actual (global) — solo mientras el usuario no
+  // lo haya tocado a mano, y solo en Alta (en Edición no se pisa un TC
+  // histórico ya guardado).
+  const [exchangeRateTouched, setExchangeRateTouched] = useState(false)
+  const { data: currentExchangeRate } = useQuery(exchangeRateQueries.current())
+  useEffect(() => {
+    if (!exchangeRateTouched && currentExchangeRate?.rate) {
+      setForm((prev) => ({ ...prev, exchangeRate: String(currentExchangeRate.rate) }))
+    }
+  }, [currentExchangeRate, exchangeRateTouched])
+
+  // Vista previa del equivalente en la otra moneda — el backend es quien
+  // cierra y persiste ambos montos al guardar (ver computeDualAmounts).
+  const equivalentCurrencyLabel = form.currency === 'ARS' ? 'USD' : 'ARS'
+  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
+  function computeEquivalent(rawAmount: string): string {
+    const amount = parseFloat(rawAmount)
+    const rate = parseFloat(form.exchangeRate)
+    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
+    return form.currency === 'ARS' ? (amount / rate).toFixed(2) : (amount * rate).toFixed(2)
+  }
+  const equivalentReal = useMemo(
+    () => computeEquivalent(form.patrimonialValueUsd),
+    [form.patrimonialValueUsd, form.exchangeRate, form.currency],
+  )
+  const equivalentNew = useMemo(
+    () => computeEquivalent(form.patrimonialValueNew),
+    [form.patrimonialValueNew, form.exchangeRate, form.currency],
+  )
+  function formatEquivalent(value: string): string {
+    return value
+      ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : ''
+  }
+
   const { data: fuelTypes = [] } = useQuery(catalogQueries.byCategory('asset_fuel_type'))
   const { data: buildingPurposes = [] } = useQuery(catalogQueries.byCategory('asset_building_purpose'))
   const { data: infrastructureTypes = [] } = useQuery(catalogQueries.byCategory('asset_infrastructure_type'))
@@ -204,6 +244,8 @@ export default function AssetNewPage() {
       e.patrimonialValueUsd = 'El valor patrimonial no puede ser negativo.'
     if (form.patrimonialValueUsd && !form.valuationDate)
       e.valuationDate = 'Indicá la fecha de valuación.'
+    if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0)
+      e.exchangeRate = 'El tipo de cambio debe ser mayor a 0.'
     setErrors(e)
     notifyValidationErrors(e)
 
@@ -353,6 +395,8 @@ export default function AssetNewPage() {
         purchaseDate: form.valuationDate || undefined,
         currentValue: form.patrimonialValueUsd ? parseFloat(form.patrimonialValueUsd) : undefined,
         patrimonialValueNew: form.patrimonialValueNew ? parseFloat(form.patrimonialValueNew) : undefined,
+        currency: form.currency as 'ARS' | 'USD',
+        exchangeRate: form.exchangeRate ? parseFloat(form.exchangeRate) : undefined,
         mapsUrl: form.mapsUrl.trim() || undefined,
         productiveUnit: form.productiveUnit || undefined,
         area: form.area || undefined,
@@ -474,18 +518,46 @@ export default function AssetNewPage() {
                     <FormInput placeholder="Ej: RW8320P024316" value={form.serialNumber} onChange={set('serialNumber')} />
                   </FormField>
                 )}
-                <FormField label="Valor Patrimonial Real (USD)" error={errors.patrimonialValueUsd}>
+                <FormField label="Moneda de Valuación" required>
+                  <FormSelect value={form.currency} onChange={set('currency')}>
+                    {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </FormSelect>
+                </FormField>
+                <FormField label="Tipo de Cambio" required error={errors.exchangeRate}>
+                  <FormInput
+                    type="number" min={0.01} step="0.01" placeholder="Ej: 1150"
+                    value={form.exchangeRate}
+                    onChange={(e) => { set('exchangeRate')(e); setExchangeRateTouched(true) }}
+                  />
+                </FormField>
+                <FormField label={`Valor Patrimonial Real (${form.currency})`} error={errors.patrimonialValueUsd}>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
                     <FormInput type="number" placeholder="0.00" min={0} step="0.01" className="pl-7" value={form.patrimonialValueUsd} onChange={set('patrimonialValueUsd')} />
                   </div>
                   <p className="text-xs text-slate-400 mt-1">Dejalo en blanco si todavía no conocés el valor real.</p>
                 </FormField>
-                <FormField label="Valor Patrimonial a Nuevo (USD)">
+                <FormField label={`Valor Patrimonial Real (${equivalentCurrencyLabel})`}>
+                  <FormInput
+                    value={formatEquivalent(equivalentReal)}
+                    readOnly
+                    disabled
+                    placeholder="Se calcula automáticamente"
+                  />
+                </FormField>
+                <FormField label={`Valor Patrimonial a Nuevo (${form.currency})`}>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
                     <FormInput type="number" placeholder="0.00" min={0} step="0.01" className="pl-7" value={form.patrimonialValueNew} onChange={set('patrimonialValueNew')} />
                   </div>
+                </FormField>
+                <FormField label={`Valor Patrimonial a Nuevo (${equivalentCurrencyLabel})`}>
+                  <FormInput
+                    value={formatEquivalent(equivalentNew)}
+                    readOnly
+                    disabled
+                    placeholder="Se calcula automáticamente"
+                  />
                 </FormField>
                 <FormField label="Fecha de Valuación" required={!!form.patrimonialValueUsd} error={errors.valuationDate}>
                   <FormInput type="date" value={form.valuationDate} onChange={set('valuationDate')} />

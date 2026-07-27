@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { triggerBlobDownload } from '../utils/downloadFile'
-import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment, ClaimExpense } from '../types'
+import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment, ClaimExpense, Currency } from '../types'
 
 interface BackendClaimEvent {
   id: string; claimId: string; type: string; date: string; description: string
@@ -24,8 +24,10 @@ interface BackendClaim {
   thirdPartyInsuranceCompany: string | null
   thirdPartyContact: string | null
   thirdPartyInsurerContact: string | null
-  status: string; claimedAmountArs: number
-  realAmountArs: number | null; settledAmountArs: number | null; deductibleArs: number | null
+  status: string; claimedAmountArs: number; claimedAmountUsd?: number | null
+  realAmountArs: number | null; realAmountUsd?: number | null
+  settledAmountArs: number | null; settledAmountUsd?: number | null
+  deductibleArs: number | null; deductibleUsd?: number | null
   currency: string; exchangeRate: number; observations: string | null
   events?: BackendClaimEvent[]; createdAt: string; updatedAt: string
 }
@@ -60,9 +62,13 @@ function mapClaim(b: BackendClaim): Claim {
     thirdPartyInsurerContact: b.thirdPartyInsurerContact ?? undefined,
     status: b.status,
     claimedAmountArs: b.claimedAmountArs,
+    claimedAmountUsd: b.claimedAmountUsd ?? null,
     realAmountArs: b.realAmountArs ?? null,
+    realAmountUsd: b.realAmountUsd ?? null,
     settledAmountArs: b.settledAmountArs ?? null,
+    settledAmountUsd: b.settledAmountUsd ?? null,
     deductibleArs: b.deductibleArs ?? null,
+    deductibleUsd: b.deductibleUsd ?? null,
     currency: b.currency as Claim['currency'],
     exchangeRate: b.exchangeRate,
     observations: b.observations ?? null,
@@ -84,7 +90,7 @@ function mapExpense(e: BackendClaimExpense): ClaimExpense {
 export interface ClaimCreateInput {
   claimNumber: string; claimType: string; occurrenceDate: string; reportDate: string
   description: string; assetId?: string; policyId?: string; insuranceCompany?: string
-  status?: string; claimedAmountArs?: number; currency?: string
+  status?: string; claimedAmountArs?: number; currency?: Currency
   realAmountArs?: number; settledAmountArs?: number; deductibleArs?: number
   observations?: string; exchangeRate?: number
   ownershipType?: 'propio' | 'terceros'

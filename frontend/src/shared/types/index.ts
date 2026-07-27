@@ -205,6 +205,7 @@ export interface AssetValueEntry {
   id: string
   date: string
   valueUsd: number
+  valueArs?: number | null
   type: 'real' | 'nuevo'
   notes?: string
 }
@@ -244,6 +245,14 @@ export interface Asset {
   patrimonialValueUsd: number | null
   patrimonialValueNew: number | null
   valuationDate: string
+  /** Moneda en la que se cargaron los valores de valuación y su tipo de cambio */
+  currency?: Currency
+  exchangeRate?: number
+  /** Cierre de patrimonialValueUsd/patrimonialValueNew en ambas monedas (ver computeDualAmounts) */
+  currentValueArs?: number | null
+  currentValueUsd?: number | null
+  patrimonialValueNewArs?: number | null
+  patrimonialValueNewUsd?: number | null
   /** Historial de valuaciones USD con fecha */
   valueHistory?: AssetValueEntry[]
   observations: string
@@ -344,12 +353,15 @@ export interface AccountingDocument {
   documentStatus: DocumentStatus
   documentNumber: string
   issueDate: string
-  currency: string
+  currency: Currency
   exchangeRate: number
   netAmount: number
   vatAmount: number
   otherTaxesAmount: number
   totalAmount: number
+  /** Cierre de totalAmount en ambas monedas al momento de guardar (ver computeDualAmounts) */
+  totalAmountArs: number | null
+  totalAmountUsd: number | null
   paymentStatus: PaymentStatus
   insuranceCompany?: string
   paymentMethod?: string
@@ -429,11 +441,17 @@ export interface Installment {
   dueDate: string
   amount: number
   currency: Currency
+  /** Cierre de `amount` en ambas monedas (ver computeDualAmounts) */
+  amountArs: number | null
+  amountUsd: number | null
   paymentStatus: PaymentStatus
   paidAt: string | null
 }
 
-export type InstallmentUpdate = Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate'>>
+export type InstallmentUpdate = Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate'>> & {
+  /** Tipo de cambio del día de pago — requerido cuando paymentStatus pasa a 'PAID' */
+  exchangeRate?: number
+}
 
 export interface Producer {
   id: string
@@ -527,9 +545,13 @@ export interface Claim {
   thirdPartyInsurerContact?: string | null
   status: string
   claimedAmountArs: number
+  claimedAmountUsd?: number | null
   realAmountArs?: number | null
+  realAmountUsd?: number | null
   settledAmountArs: number | null
+  settledAmountUsd?: number | null
   deductibleArs: number | null
+  deductibleUsd?: number | null
   currency?: Currency
   exchangeRate?: number
   observations: string | null

@@ -106,6 +106,15 @@ model Asset {
   purchaseValue          Float?
   currentValue           Float?
   patrimonialValueNew    Float?
+  // Moneda en la que se cargan currentValue/patrimonialValueNew y su cierre en
+  // ambas monedas — default USD porque los activos casi siempre se valúan en
+  // dólares. exchangeRate es el tipo de cambio usado al cerrar este activo.
+  currency                String  @default("USD")
+  exchangeRate            Float   @default(1)
+  currentValueArs         Float?
+  currentValueUsd         Float?
+  patrimonialValueNewArs  Float?
+  patrimonialValueNewUsd  Float?
   location       String?
   mapsUrl        String?
   productiveUnit String?
@@ -166,6 +175,10 @@ model AssetValueHistory {
   id      String   @id @default(uuid())
   assetId String
   value   Float
+  // Cierre en ambas monedas de `value` al momento de este registro histórico
+  // (mismo criterio que Asset.currentValueArs/Usd).
+  valueArs Float?
+  valueUsd Float?
   date    DateTime @db.Date
   type    String   @default("real")
   note    String?
@@ -256,6 +269,11 @@ model Policy {
   premium                Float
   currency               String   @default("ARS")
   exchangeRate           Float    @default(1)
+  // Cierre de `premium` en ambas monedas al momento de guardar (ver
+  // shared/utils/currency.ts#computeDualAmounts) — usado por Dashboard y
+  // Análisis Financiero/Económico para no mezclar ARS y USD.
+  premiumArs             Float?
+  premiumUsd             Float?
   description            String?
   coverageIds            String[]
   isActive               Boolean  @default(true)
@@ -318,6 +336,10 @@ model AccountingDocument {
   otherTaxesAmount Float    @default(0)
   currency         String   @default("ARS")
   exchangeRate     Float    @default(1)
+  // Cierre de (netAmount+vatAmount+otherTaxesAmount) en ambas monedas al
+  // momento de guardar (ver shared/utils/currency.ts#computeDualAmounts).
+  totalAmountArs   Float?
+  totalAmountUsd   Float?
   description      String?
   paymentStatus    String   @default("PENDING")
   insuranceCompany String?
@@ -380,6 +402,11 @@ model DocumentInstallment {
   dueDate              DateTime @db.Date
   amount               Float
   currency             String   @default("ARS")
+  // Cierre de `amount` en ambas monedas — se calcula al crear la cuota con el
+  // tipo de cambio del documento padre, y se recalcula con un tipo de cambio
+  // propio (pedido al usuario) al momento de marcarla como pagada.
+  amountArs             Float?
+  amountUsd             Float?
   paymentStatus        String   @default("PENDING")
   paymentDate          DateTime? @db.Date
   paymentMethod        String?
@@ -599,10 +626,17 @@ model Claim {
   thirdPartyContact          String?
   thirdPartyInsurerContact   String?
   status                     String   @default("denunciado")
+  // El sufijo "Ars" es histórico — a partir de esta feature ambos campos
+  // (Ars/Usd) siempre se calculan server-side con computeDualAmounts, sin
+  // importar en qué moneda se haya cargado el monto original.
   claimedAmountArs           Float    @default(0)
+  claimedAmountUsd           Float?
   realAmountArs              Float?
+  realAmountUsd              Float?
   settledAmountArs           Float?
+  settledAmountUsd           Float?
   deductibleArs              Float?
+  deductibleUsd              Float?
   currency                   String   @default("ARS")
   exchangeRate               Float    @default(1)
   observations               String?
@@ -693,6 +727,23 @@ model CatalogItem {
   @@unique([category, label])
   @@index([category])
   @@map("catalog_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tipo de Cambio Global
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Log append-only: "actual" = la fila más reciente por createdAt. Sin FK a
+// User (mismo criterio que UserAuditLog/DocumentAuditLog) para que el
+// historial sobreviva aunque se borre el usuario que lo actualizó.
+model ExchangeRateLog {
+  id        String   @id @default(uuid())
+  rate      Float // 1 USD = `rate` ARS
+  updatedBy String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("exchange_rate_log")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
