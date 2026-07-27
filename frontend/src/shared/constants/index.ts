@@ -55,8 +55,7 @@ export const POLICY_STATUS_LABELS: Record<string, string> = {
   vigente: 'Vigente',
   proximo_vencer: 'Próx. a Vencer',
   vencida: 'Vencida',
-  pendiente_documentacion: 'Pend. Documentación',
-  sin_factura: 'Sin Factura',
+  de_baja: 'De Baja',
 }
 
 export const ASSET_STATUS_LABELS: Record<string, string> = {

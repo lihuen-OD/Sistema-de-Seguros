@@ -138,9 +138,16 @@ export interface FireExtinguisherCoverageItem {
 
 // ── Informe de auditoría por establecimiento/sector ─────────────────────────────
 
+export interface FireExtinguisherFindingItem {
+  id: string
+  code: string | null
+  cylinderNumber: string | null
+  location: string | null
+}
+
 export interface FireExtinguisherFindingBucket {
   count: number
-  items: { id: string; code: string }[]
+  items: FireExtinguisherFindingItem[]
 }
 
 export type FireExtinguisherFindingsField =

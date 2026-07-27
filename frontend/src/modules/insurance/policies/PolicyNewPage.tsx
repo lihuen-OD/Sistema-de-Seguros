@@ -314,7 +314,7 @@ export default function PolicyNewPage() {
       for (const att of pending) {
         await policiesApi.addAttachment(newPolicy.id, att.pendingFile!, {
           description: att.description || undefined,
-          expirationDate: att.expirationDate ?? undefined,
+          isCirculationCard: att.isCirculationCard,
         })
       }
 
@@ -590,7 +590,7 @@ export default function PolicyNewPage() {
             >
               <Paperclip size={18} className="mx-auto text-slate-300 mb-1.5" />
               <p className="text-sm text-slate-500">Adjuntá la póliza, certificados u otros documentos</p>
-              <p className="text-xs text-slate-400 mt-0.5">PDF, Excel o imágenes — con fecha de vencimiento opcional</p>
+              <p className="text-xs text-slate-400 mt-0.5">PDF, Excel o imágenes — vencen junto con la póliza</p>
             </div>
           ) : (
             <ul className="space-y-2">
@@ -598,14 +598,21 @@ export default function PolicyNewPage() {
                 <li key={idx} className="flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-xl group">
                   <FileTypeIcon fileType={att.fileType} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-800 truncate">{att.name}</p>
+                    <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5">
+                      {att.name}
+                      {att.isCirculationCard && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-brand-50 text-brand-700 border border-brand-200 flex-shrink-0">
+                          Tarjeta de circulación
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-slate-400">
                       {att.description ? <>{att.description} · {att.fileSize}</> : att.fileSize}
                     </p>
                   </div>
-                  {att.expirationDate && (
+                  {form.endDate && (
                     <div className="flex-shrink-0">
-                      <ExpirationCell date={att.expirationDate} />
+                      <ExpirationCell date={form.endDate} />
                     </div>
                   )}
                   <button
@@ -623,13 +630,14 @@ export default function PolicyNewPage() {
           {showAttachModal && (
             <AddAttachmentModal
               onClose={() => setShowAttachModal(false)}
+              isPolicyAttachment
               onAdd={(partial) => {
                 setAttachmentDrafts((prev) => [...prev, {
                   name: partial.name,
                   description: partial.description,
                   fileType: partial.fileType,
                   fileSize: partial.fileSize,
-                  expirationDate: partial.expirationDate,
+                  isCirculationCard: partial.isCirculationCard ?? false,
                   uploadedAt: partial.uploadedAt,
                   uploadedBy: partial.uploadedBy,
                   pendingFile: partial.pendingFile,

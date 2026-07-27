@@ -1,5 +1,5 @@
 import { prisma } from '../../config/database'
-import { toDateStr, dateOffset, todayDate } from '../../shared/utils/dates'
+import { toDateStr, dateOffset, todayDate, buildPolicyStatusFilter } from '../../shared/utils/dates'
 import { buildFireExtinguisherStatusFilter } from '../fire-extinguishers/fire-extinguishers.expiration'
 
 export const dashboardService = {
@@ -29,11 +29,11 @@ export const dashboardService = {
     ] = await Promise.all([
       prisma.asset.count({ where: { isActive: true } }),
       prisma.asset.aggregate({ _sum: { currentValue: true }, where: { isActive: true } }),
-      prisma.policy.count({ where: { isActive: true, endDate: { gt: in30Days } } }),
+      prisma.policy.count({ where: { isActive: true, ...buildPolicyStatusFilter('vigente') } }),
       prisma.policy.count({
-        where: { isActive: true, endDate: { gte: today, lte: in30Days } },
+        where: { isActive: true, ...buildPolicyStatusFilter('proxima_a_vencer') },
       }),
-      prisma.policy.count({ where: { isActive: true, endDate: { lt: today } } }),
+      prisma.policy.count({ where: { isActive: true, ...buildPolicyStatusFilter('vencida') } }),
       prisma.policy.aggregate({
         _sum: { premium: true },
         where: { isActive: true, endDate: { gte: today } },
@@ -216,9 +216,9 @@ export const dashboardService = {
         prisma.fireExtinguisher.count({
           where: { isActive: true, ...buildFireExtinguisherStatusFilter('sin_fecha') },
         }),
-        prisma.policy.count({ where: { isActive: true, endDate: { gt: in30Days } } }),
-        prisma.policy.count({ where: { isActive: true, endDate: { gte: today, lte: in30Days } } }),
-        prisma.policy.count({ where: { isActive: true, endDate: { lt: today } } }),
+        prisma.policy.count({ where: { isActive: true, ...buildPolicyStatusFilter('vigente') } }),
+        prisma.policy.count({ where: { isActive: true, ...buildPolicyStatusFilter('proxima_a_vencer') } }),
+        prisma.policy.count({ where: { isActive: true, ...buildPolicyStatusFilter('vencida') } }),
       ])
 
     // Monthly cost evolution (12 months of the requested year)

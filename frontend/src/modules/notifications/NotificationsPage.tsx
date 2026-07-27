@@ -24,7 +24,6 @@ const CATEGORY_LABELS: Record<NotificationCategory, string> = {
   installment_overdue: 'Cuota vencida',
   installment_near: 'Cuota próxima',
   asset_attachment: 'Adjunto de Activo',
-  policy_attachment: 'Adjunto de Póliza',
 }
 
 const CATEGORY_ICONS: Record<NotificationCategory, React.ElementType> = {
@@ -33,7 +32,6 @@ const CATEGORY_ICONS: Record<NotificationCategory, React.ElementType> = {
   installment_overdue: CreditCard,
   installment_near: CreditCard,
   asset_attachment: Paperclip,
-  policy_attachment: Paperclip,
 }
 
 // Orden por severidad al ordenar la columna "Estado" — alfabético dejaría

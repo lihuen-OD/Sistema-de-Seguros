@@ -87,6 +87,26 @@ describe('GET /api/v1/fire-extinguisher-audits/findings-report', () => {
     })
   })
 
+  it('includes cylinderNumber and location on each affected item, for display without the internal code', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1', code: 'MAT-001', cylinderNumber: 'CIL-777', location: 'Pasillo 3' }),
+    ])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([
+      auditRow({ fireExtinguisherId: 'fe-1', cleanliness: 'MUY_SUCIO' }),
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/findings-report')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    const [engorde] = res.body.data.establishments[0].sectors
+    expect(engorde.fields.cleanliness['Muy sucio'].items).toEqual([
+      { id: 'fe-1', code: 'MAT-001', cylinderNumber: 'CIL-777', location: 'Pasillo 3' },
+    ])
+  })
+
   it('collapses beaconPlateCondition ROTA_LEVE and ROTA_REQUIERE_CAMBIO into a single "Rota" tier (secundario)', async () => {
     db.fireExtinguisher.findMany.mockResolvedValue([
       fe({ id: 'fe-1', code: 'MAT-001' }),

@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import {
   Plus, FileText, FileSpreadsheet, Image as ImageIcon, File as FileIcon,
-  X, AlertTriangle, CheckCircle2, Clock, Upload, Calendar, Paperclip, Download,
+  X, AlertTriangle, CheckCircle2, Clock, Upload, Calendar, Paperclip, Download, IdCard,
 } from 'lucide-react'
 import type { AssetAttachment } from '../../types'
 import { formatDate } from '../../utils/format'
@@ -63,7 +63,14 @@ export function ExpirationCell({ date }: { date: string | null }) {
 
 interface AddModalProps {
   onClose: () => void
-  onAdd: (attachment: Omit<AssetAttachment, 'assetId'>) => void
+  onAdd: (attachment: Omit<AssetAttachment, 'assetId'> & { isCirculationCard?: boolean }) => void
+  /**
+   * Documentación de pólizas en vez de adjuntos de activos: muestra el
+   * checkbox de tarjeta de circulación y oculta el vencimiento manual — los
+   * documentos de una póliza vencen siempre junto con ella, no tienen fecha
+   * propia (a diferencia de los adjuntos de activos, que sí la necesitan).
+   */
+  isPolicyAttachment?: boolean
 }
 
 function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
@@ -86,7 +93,7 @@ function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: () => voi
   )
 }
 
-export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
+export function AddAttachmentModal({ onClose, onAdd, isPolicyAttachment }: AddModalProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -94,6 +101,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
   const [description, setDescription] = useState('')
   const [hasExpiration, setHasExpiration] = useState(false)
   const [expirationDate, setExpirationDate] = useState('')
+  const [isCirculationCard, setIsCirculationCard] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const applyFile = (file: File) => {
@@ -117,7 +125,7 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
     const e: Record<string, string> = {}
     if (!selectedFile) e.file = 'Seleccioná un archivo.'
     if (!name.trim()) e.name = 'Ingresá un nombre para el documento.'
-    if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
+    if (!isPolicyAttachment && hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
     setErrors(e)
     notifyValidationErrors(e)
     return Object.keys(e).length === 0
@@ -132,7 +140,8 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
       description: description.trim(),
       fileType: detectFileType(selectedFile.name),
       fileSize: formatFileSize(selectedFile.size),
-      expirationDate: hasExpiration ? expirationDate : null,
+      expirationDate: !isPolicyAttachment && hasExpiration ? expirationDate : null,
+      isCirculationCard: isPolicyAttachment ? isCirculationCard : undefined,
       uploadedAt: new Date().toISOString().split('T')[0],
       uploadedBy: 'Usuario actual',
       pendingFile: selectedFile,
@@ -231,44 +240,65 @@ export function AddAttachmentModal({ onClose, onAdd }: AddModalProps) {
             />
           </div>
 
-          {/* Vencimiento + Notificación — bloque unificado */}
-          <div className="rounded-xl border border-slate-200 overflow-hidden">
+          {/* Vencimiento + Notificación — bloque unificado. Oculto para
+              documentación de pólizas: esos documentos vencen siempre junto
+              con la póliza, no tienen fecha propia (ver isPolicyAttachment). */}
+          {!isPolicyAttachment && (
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
 
-            {/* Fila vencimiento */}
-            <div className="flex items-start gap-3 p-4 bg-slate-50/50">
-              <Checkbox
-                checked={hasExpiration}
-                onToggle={() => {
-                  const next = !hasExpiration
-                  setHasExpiration(next)
-                  if (!next) setExpirationDate('')
-                }}
-              />
-              <div>
-                <p className="text-sm font-medium text-slate-800">Este documento tiene fecha de vencimiento</p>
-                <p className="text-xs text-slate-500 mt-0.5">Registrá cuándo vence para hacer seguimiento</p>
+              {/* Fila vencimiento */}
+              <div className="flex items-start gap-3 p-4 bg-slate-50/50">
+                <Checkbox
+                  checked={hasExpiration}
+                  onToggle={() => {
+                    const next = !hasExpiration
+                    setHasExpiration(next)
+                    if (!next) setExpirationDate('')
+                  }}
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Este documento tiene fecha de vencimiento</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Registrá cuándo vence para hacer seguimiento</p>
+                </div>
+              </div>
+
+              {hasExpiration && (
+                <div className="px-4 pb-4 bg-slate-50/50">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    <Calendar size={11} className="inline mr-1 align-[-1px]" />
+                    Fecha de vencimiento <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={expirationDate}
+                    onChange={(e) => setExpirationDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 bg-white"
+                  />
+                  {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
+                  <p className="text-xs text-slate-400 mt-2">
+                    Va a aparecer en el centro de Notificaciones cuando esté por vencer.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isPolicyAttachment && (
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <div className="flex items-start gap-3 p-4 bg-slate-50/50">
+                <Checkbox checked={isCirculationCard} onToggle={() => setIsCirculationCard((v) => !v)} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                    <IdCard size={14} className="text-slate-400" />
+                    Es la tarjeta de circulación del vehículo
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Va a aparecer como acceso directo en la ficha del activo, junto al estado de la póliza
+                  </p>
+                </div>
               </div>
             </div>
-
-            {hasExpiration && (
-              <div className="px-4 pb-4 bg-slate-50/50">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  <Calendar size={11} className="inline mr-1 align-[-1px]" />
-                  Fecha de vencimiento <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={expirationDate}
-                  onChange={(e) => setExpirationDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 bg-white"
-                />
-                {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
-                <p className="text-xs text-slate-400 mt-2">
-                  Va a aparecer en el centro de Notificaciones cuando esté por vencer.
-                </p>
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Footer */}

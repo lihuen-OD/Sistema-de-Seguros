@@ -73,12 +73,19 @@ const FINDINGS_REPORT_FIELDS = [
   'expiration',
 ] as const
 
-interface FindingBucket {
-  count: number
-  items: { id: string; code: string }[]
+interface FindingItem {
+  id: string
+  code: string | null
+  cylinderNumber: string | null
+  location: string | null
 }
 
-function addToBucket(breakdown: Record<string, FindingBucket>, tier: string, item: { id: string; code: string }) {
+interface FindingBucket {
+  count: number
+  items: FindingItem[]
+}
+
+function addToBucket(breakdown: Record<string, FindingBucket>, tier: string, item: FindingItem) {
   if (!breakdown[tier]) breakdown[tier] = { count: 0, items: [] }
   breakdown[tier].count += 1
   breakdown[tier].items.push(item)
@@ -576,6 +583,8 @@ export const fireExtinguisherAuditsService = {
         select: {
           id: true,
           code: true,
+          cylinderNumber: true,
+          location: true,
           establishment: true,
           locationType: true,
           expirationDate: true,
@@ -627,7 +636,7 @@ export const fireExtinguisherAuditsService = {
       }
       const sectorAcc = estAcc.sectors.get(fe.locationType)!
       sectorAcc.total += 1
-      const item = { id: fe.id, code: fe.code }
+      const item = { id: fe.id, code: fe.code, cylinderNumber: fe.cylinderNumber, location: fe.location }
 
       // Vencimiento — siempre, tenga o no auditoría este período.
       const expirationStatus = computeFireExtinguisherStatus(

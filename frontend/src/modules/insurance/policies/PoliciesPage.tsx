@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2, X } from 'lucide-react'
+import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2, Archive, X } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -37,14 +37,13 @@ const STATUS_OPTIONS = Object.entries(POLICY_STATUS_LABELS).map(([value, label])
 }))
 
 // Orden por severidad al ordenar la columna "Estado" — alfabético dejaría
-// "sin_factura" antes que "vigente", que no refleja el ciclo de vida real
-// de la póliza. Mismo orden que POLICY_STATUS_LABELS.
+// "de_baja" antes que "vigente", que no refleja el ciclo de vida real de la
+// póliza. Mismo orden que POLICY_STATUS_LABELS.
 const POLICY_STATUS_SORT_ORDER: Record<string, number> = {
   vigente: 0,
   proximo_vencer: 1,
   vencida: 2,
-  pendiente_documentacion: 3,
-  sin_factura: 4,
+  de_baja: 3,
 }
 
 export default function PoliciesPage() {
@@ -56,6 +55,7 @@ export default function PoliciesPage() {
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deBajaId, setDeBajaId] = useState<string | null>(null)
 
   const { data: allPolicies = [], isLoading, isError } = useQuery(policyQueries.list())
   const { data: allProducers = [] } = useQuery(producerQueries.list())
@@ -67,6 +67,12 @@ export default function PoliciesPage() {
     await policiesApi.softDelete(id)
     queryClient.invalidateQueries({ queryKey: policyKeys.all })
     setDeleteId(null)
+  }
+
+  async function handleDeBaja(id: string) {
+    await policiesApi.markAsDeBaja(id)
+    queryClient.invalidateQueries({ queryKey: policyKeys.all })
+    setDeBajaId(null)
   }
 
   const assetNameById = useMemo(() => {
@@ -374,6 +380,16 @@ export default function PoliciesPage() {
           >
             <Eye size={15} />
           </button>
+          {row.status === 'vencida' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setDeBajaId(row.id) }}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              title="Dar de baja"
+              aria-label="Dar de baja"
+            >
+              <Archive size={15} />
+            </button>
+          )}
           <button
             onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
@@ -384,7 +400,7 @@ export default function PoliciesPage() {
           </button>
         </div>
       ),
-      className: 'w-20',
+      className: 'w-28',
     },
   ], [allProducers, assetNameById, companyNameById, costCenterById, navigate])
 
@@ -488,6 +504,14 @@ export default function PoliciesPage() {
         confirmLabel="Eliminar"
         onConfirm={() => deleteId && handleDelete(deleteId)}
         onCancel={() => setDeleteId(null)}
+      />
+      <ConfirmDialog
+        open={deBajaId !== null}
+        title="Dar de baja la póliza"
+        description={`¿Dar de baja la póliza "${allPolicies.find((p) => p.id === deBajaId)?.policyNumber ?? ''}"? Pasará a estado "De Baja" de forma permanente.`}
+        confirmLabel="Dar de baja"
+        onConfirm={() => deBajaId && handleDeBaja(deBajaId)}
+        onCancel={() => setDeBajaId(null)}
       />
     </PageContent>
   )

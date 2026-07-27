@@ -80,3 +80,17 @@ export function isExpiringSoon(dateStr: string, days = 30): boolean {
   const d = daysUntil(dateStr)
   return d >= 0 && d <= days
 }
+
+/**
+ * Identificador principal a mostrar de un matafuego: cilindro + detalle de
+ * ubicación (lo que sirve para encontrarlo en el campo), con el código
+ * autogenerado (MAT-XXX-A) solo como último recurso si no hay cargado
+ * ninguno de los dos.
+ */
+export function fireExtinguisherLabel(
+  cylinderNumber: string | null | undefined,
+  location: string | null | undefined,
+  code: string | null | undefined,
+): string {
+  return [cylinderNumber, location].filter(Boolean).join(' · ') || code || '—'
+}

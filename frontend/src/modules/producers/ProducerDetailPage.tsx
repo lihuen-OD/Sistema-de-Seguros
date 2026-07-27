@@ -21,15 +21,13 @@ import { ROUTES } from '../../app/routes'
 import type { Policy, ProducerTask, TableColumn } from '../../shared/types'
 
 // Orden por severidad al ordenar la columna "Estado" de pólizas — alfabético
-// dejaría "proximo_vencer" antes que "pendiente_documentacion" antes que
-// "vencida", que no refleja la urgencia real (mismo criterio que
-// STATUS_SORT_ORDER en FireExtinguishersPage).
+// dejaría "de_baja" antes que "vencida", que no refleja la urgencia real
+// (mismo criterio que STATUS_SORT_ORDER en FireExtinguishersPage).
 const POLICY_STATUS_SORT_ORDER: Record<string, number> = {
   vigente: 0,
   proximo_vencer: 1,
   vencida: 2,
-  pendiente_documentacion: 3,
-  sin_factura: 4,
+  de_baja: 3,
 }
 
 // Orden por severidad al ordenar la columna "Estado" de tareas — pendiente/en

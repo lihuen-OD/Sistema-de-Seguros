@@ -34,7 +34,7 @@ export const UpdatePolicySchema = PolicyBaseSchema.partial().omit({ policyNumber
 
 export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
   search: z.string().optional(),
-  status: z.enum(['vigente', 'proxima_a_vencer', 'vencida']).optional(),
+  status: z.enum(['vigente', 'proxima_a_vencer', 'vencida', 'de_baja']).optional(),
   insuranceTypeId: z.string().uuid().optional(),
   companyId: z.string().uuid().optional(),
   producerId: z.string().uuid().optional(),
@@ -43,7 +43,10 @@ export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema
 
 export const AddPolicyAttachmentSchema = z.object({
   description: z.string().max(500).optional(),
-  expirationDate: ISODate.optional().nullable(),
+  // Llega por multipart/form-data — el frontend solo manda el campo cuando
+  // está tildado ('true'), nunca 'false' explícito (mismo criterio que el
+  // resto de los campos opcionales de este schema).
+  isCirculationCard: z.literal('true').optional().transform((v) => v === 'true'),
 })
 
 export type CreatePolicyDTO = z.infer<typeof CreatePolicySchema>

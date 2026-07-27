@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FileDown, Edit2, ShieldCheck, Flame, Paperclip,
   MapPin, Building2, Download, ShieldAlert, TrendingUp,
-  Calendar, ExternalLink, Box, FileText, Plus, Link2,
+  Calendar, ExternalLink, Box, FileText, Plus, Link2, IdCard,
 } from 'lucide-react'
 import { AssetPhotoGallery } from '../../shared/components/photos/AssetPhotoGallery'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -319,7 +319,24 @@ export default function AssetDetailPage() {
       label: 'Estado',
       sortable: true,
       sortValue: (row) => POLICY_STATUS_SORT_ORDER[row.status] ?? 99,
-      render: (v) => <StatusPill status={v as string} size="sm" />,
+      render: (v, row) => (
+        <div className="flex items-center gap-2">
+          <StatusPill status={v as string} size="sm" />
+          {row.circulationCardAttachment?.fileUrl && (
+            <a
+              href={row.circulationCardAttachment.fileUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="Ver tarjeta de circulación"
+              className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline whitespace-nowrap"
+            >
+              <IdCard size={12} />
+              Documento
+            </a>
+          )}
+        </div>
+      ),
     },
   ]
 

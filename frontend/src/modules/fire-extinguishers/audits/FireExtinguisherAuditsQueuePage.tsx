@@ -16,7 +16,7 @@ import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRan
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { Tabs, type TabItem } from '../../../shared/components/tabs/Tabs'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
-import { formatDate } from '../../../shared/utils/format'
+import { formatDate, fireExtinguisherLabel } from '../../../shared/utils/format'
 import { useCurrentUser } from '../../../app/auth/AuthContext'
 import {
   fireExtinguisherAuditsApi,
@@ -176,16 +176,22 @@ export default function FireExtinguisherAuditsQueuePage() {
       key: 'extinguisher',
       label: 'Matafuego',
       sortable: true,
-      sortValue: (row) => row.extinguisher?.code ?? null,
-      render: (_, row) => (
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-800">
-            {row.extinguisher?.code ?? '—'}
-            {row.extinguisher?.cylinderNumber ? ` · ${row.extinguisher.cylinderNumber}` : ''}
-          </p>
-          <p className="text-xs text-slate-500">{row.extinguisher?.type ?? '—'}</p>
-        </div>
-      ),
+      sortValue: (row) => (row.extinguisher ? fireExtinguisherLabel(row.extinguisher.cylinderNumber, row.extinguisher.location, row.extinguisher.code) : null),
+      render: (_, row) => {
+        if (!row.extinguisher) return <span className="text-slate-400">—</span>
+        // El código autogenerado (MAT-XXX-A) es un ID interno — el cilindro y
+        // el detalle de ubicación identifican al matafuego para quien
+        // audita. Queda como referencia chica solo si no es ya el título.
+        const primaryLabel = fireExtinguisherLabel(row.extinguisher.cylinderNumber, row.extinguisher.location, row.extinguisher.code)
+        const showCodeLine = primaryLabel !== row.extinguisher.code
+        return (
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-800">{primaryLabel}</p>
+            <p className="text-xs text-slate-500">{row.extinguisher.type}</p>
+            {showCodeLine && <p className="text-xs text-slate-400 font-mono">{row.extinguisher.code}</p>}
+          </div>
+        )
+      },
     },
     {
       key: 'establishment',

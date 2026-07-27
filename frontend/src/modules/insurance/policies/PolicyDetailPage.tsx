@@ -4,7 +4,7 @@ import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Building2, User, Tag, Calendar, Hash, Link2,
-  Receipt, TrendingUp, TrendingDown, CheckCircle2, Plus, ChevronDown, ChevronUp, ArrowUpRight, FileEdit,
+  Receipt, TrendingUp, TrendingDown, CheckCircle2, Plus, ChevronDown, ChevronUp, ArrowUpRight, FileEdit, Archive,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -13,13 +13,14 @@ import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
+import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import {
   formatCurrencyFull,
   formatCurrencyCompact,
   formatDate,
   daysUntil,
 } from '../../../shared/utils/format'
-import { policyQueries } from '../../../shared/api/policies.api'
+import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
 import { producerQueries } from '../../../shared/api/producers.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
@@ -69,6 +70,15 @@ export default function PolicyDetailPage() {
   const [localInstallments, setLocalInstallments] = useState<Map<string, Installment[]>>(
     () => new Map(),
   )
+
+  const [showDeBajaConfirm, setShowDeBajaConfirm] = useState(false)
+
+  const handleDeBaja = async () => {
+    await policiesApi.markAsDeBaja(id!)
+    queryClient.invalidateQueries({ queryKey: policyKeys.detail(id!) })
+    queryClient.invalidateQueries({ queryKey: policyKeys.all })
+    setShowDeBajaConfirm(false)
+  }
 
   if (loadingPolicy) {
     return (
@@ -206,6 +216,15 @@ export default function PolicyDetailPage() {
         badge={<StatusPill status={policy.status} />}
         actions={
           <div className="flex items-center gap-2">
+            {policy.status === 'vencida' && (
+              <button
+                onClick={() => setShowDeBajaConfirm(true)}
+                className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+              >
+                <Archive size={15} />
+                Dar de baja
+              </button>
+            )}
             <button
               onClick={() => navigate(`/insurance/policies/${policy.id}/ficha`)}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
@@ -222,6 +241,15 @@ export default function PolicyDetailPage() {
             </button>
           </div>
         }
+      />
+
+      <ConfirmDialog
+        open={showDeBajaConfirm}
+        title="Dar de baja la póliza"
+        description={`¿Dar de baja la póliza "${policy.policyNumber}"? Pasará a estado "De Baja" de forma permanente.`}
+        confirmLabel="Dar de baja"
+        onConfirm={handleDeBaja}
+        onCancel={() => setShowDeBajaConfirm(false)}
       />
 
       {/* Main 2-column layout */}
@@ -511,7 +539,7 @@ export default function PolicyDetailPage() {
         {/* Adjuntos tab */}
         {activeDocTab === 'adjuntos' && (
           <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-            <PolicyAttachmentsSection policyId={policy.id} />
+            <PolicyAttachmentsSection policyId={policy.id} policyEndDate={policy.endDate} />
           </div>
         )}
       </div>

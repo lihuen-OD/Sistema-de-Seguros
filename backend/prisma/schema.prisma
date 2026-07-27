@@ -259,6 +259,11 @@ model Policy {
   description            String?
   coverageIds            String[]
   isActive               Boolean  @default(true)
+  // Solo el admin la setea (acción manual "Dar de baja") — nunca se calcula
+  // automáticamente a partir de las fechas, a diferencia de vigente/próxima
+  // a vencer/vencida (ver computePolicyStatus). Independiente de `isActive`,
+  // que sigue usándose para el soft-delete de pólizas cargadas por error.
+  deactivatedAt          DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -289,13 +294,12 @@ model PolicyAttachment {
   fileSize            String
   fileUrl             String
   cloudinaryPublicId  String?
-  expirationDate      DateTime? @db.Date
+  isCirculationCard   Boolean   @default(false)
   uploadedAt          DateTime  @default(now())
   uploadedBy          String
   policy              Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
 
   @@index([policyId])
-  @@index([expirationDate])
   @@map("policy_attachments")
 }
 

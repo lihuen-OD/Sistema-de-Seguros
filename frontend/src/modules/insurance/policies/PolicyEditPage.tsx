@@ -589,7 +589,7 @@ export default function PolicyEditPage() {
           subtitle="Adjuntá la póliza, certificados y documentación adicional"
           noPadding
         >
-          <PolicyAttachmentsSection policyId={policy.id} />
+          <PolicyAttachmentsSection policyId={policy.id} policyEndDate={policy.endDate} />
         </SectionCard>
 
         {/* Footer */}

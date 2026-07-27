@@ -63,8 +63,7 @@ export type PolicyStatus =
   | 'vigente'
   | 'proximo_vencer'
   | 'vencida'
-  | 'pendiente_documentacion'
-  | 'sin_factura'
+  | 'de_baja'
 
 export type DocumentType =
   | 'INVOICE'
@@ -295,7 +294,7 @@ export interface PolicyAttachment {
   fileType: 'pdf' | 'image' | 'excel' | 'other'
   fileSize: string
   fileUrl?: string
-  expirationDate: string | null
+  isCirculationCard: boolean
   uploadedAt: string
   uploadedBy: string
 }
@@ -334,6 +333,7 @@ export interface Policy {
   description: string
   status: PolicyStatus
   attachmentsCount?: number
+  circulationCardAttachment?: { id: string; fileUrl?: string; name: string } | null
   createdAt: string
   updatedAt: string
 }
