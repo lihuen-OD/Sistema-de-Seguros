@@ -17,9 +17,16 @@ import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import {
   formatCurrencyFull,
   formatCurrencyCompact,
+  formatPercent,
   formatDate,
   daysUntil,
 } from '../../../shared/utils/format'
+import {
+  getDirectionSign,
+  computePolicyInvoicedTotal,
+  computePsaPercentage,
+  type TypeDirectionMap,
+} from '../../../shared/utils/policyInvoicedTotal'
 import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
 import { producerQueries } from '../../../shared/api/producers.api'
 import { companyQueries } from '../../../shared/api/companies.api'
@@ -52,6 +59,31 @@ export default function PolicyDetailPage() {
   const { data: costCenters = [] } = useQuery(costCenterQueries.list())
 
   const { data: allDocuments = [] } = useQuery(documentQueries.list())
+
+  // Trae allocations (con allocationPercentage por póliza) embebidas — a
+  // diferencia de documentQueries.list(), que solo trae policyIds sin monto.
+  // Se usa exclusivamente para prorratear "Total facturado"/P/SA.
+  const { data: financialDocs = [] } = useQuery(documentQueries.financial())
+
+  const { data: documentTypesData } = useQuery(documentQueries.types())
+  // Mapa por key para saber, de un NC/ND/Ajuste/Refacturación vinculado,
+  // en qué dirección afecta el total de la factura (affectsLinkedDirection)
+  // — mismo criterio que documents-balance.service.ts en el backend, para
+  // no duplicar una lógica de signo distinta (y potencialmente incorrecta)
+  // en el frontend.
+  const typeDefsByKey = useMemo(
+    () => Object.fromEntries((documentTypesData?.types ?? []).map((t) => [t.key, t])),
+    [documentTypesData],
+  )
+
+  // Total facturado (neto ajustado) de esta póliza — mismo helper que usa la
+  // columna "P/SA" en el detalle del Activo, para que los dos números
+  // siempre coincidan. Debe declararse acá (con el resto de los hooks),
+  // antes de los early-return de loading/not-found más abajo.
+  const invoicedTotal = useMemo(
+    () => computePolicyInvoicedTotal(id ?? '', financialDocs, typeDefsByKey),
+    [id, financialDocs, typeDefsByKey],
+  )
 
   const { data: policyTasks = [] } = useQuery(policyQueries.tasks(id!))
 
@@ -108,6 +140,10 @@ export default function PolicyDetailPage() {
 
   const documents = allDocuments.filter((d) => d.policyIds.includes(id!))
 
+  // % contra la Suma Asegurada (P/SA) — invoicedTotal ya se calculó más
+  // arriba, junto con el resto de los hooks.
+  const psaPercentage = computePsaPercentage(policy, invoicedTotal)
+
   // Build server installments map from useQueries results
   const serverInstallments = new Map<string, Installment[]>()
   policyDocIds.forEach((docId, idx) => {
@@ -159,13 +195,17 @@ export default function PolicyDetailPage() {
     }
   }
 
-  // Facturas, modificaciones financieras (NC/ND/Refacturación, se muestran
-  // anidadas bajo la factura que afectan) y Endosos (se asocian a la póliza
-  // directamente, sin importe/cuotas — se muestran en su propio bloque, no
-  // mezclados con las modificaciones financieras).
+  // Facturas, modificaciones financieras (NC/ND/Ajuste/Refacturación, se
+  // muestran anidadas bajo la factura que afectan) y Endosos (se asocian a
+  // la póliza directamente, sin importe/cuotas — se muestran en su propio
+  // bloque, no mezclados con las modificaciones financieras).
   const facturas = documents.filter((d) => d.documentType === 'INVOICE')
   const docModifications = documents.filter(
-    (d) => d.documentType === 'CREDIT_NOTE' || d.documentType === 'DEBIT_NOTE' || d.documentType === 'REBILLING',
+    (d) =>
+      d.documentType === 'CREDIT_NOTE' ||
+      d.documentType === 'DEBIT_NOTE' ||
+      d.documentType === 'ADJUSTMENT_ENTRY' ||
+      d.documentType === 'REBILLING',
   )
   const endorsements = documents.filter((d) => d.documentType === 'ENDORSEMENT')
 
@@ -403,6 +443,17 @@ export default function PolicyDetailPage() {
                 value={String(tasks.filter((t) => t.status === 'pendiente' || t.status === 'en_curso').length)}
                 color={tasks.some((t) => t.status === 'vencida') ? 'text-red-600' : 'text-slate-800'}
               />
+              <SummaryRow
+                label="Total facturado"
+                value={formatCurrencyCompact(
+                  policy.currency === 'USD' ? invoicedTotal.totalUsd : invoicedTotal.totalArs,
+                  policy.currency,
+                )}
+              />
+              <SummaryRow
+                label="P/SA"
+                value={psaPercentage != null ? formatPercent(psaPercentage) : '—'}
+              />
             </div>
           </SectionCard>
         </div>
@@ -487,6 +538,7 @@ export default function PolicyDetailPage() {
                       installments={installments}
                       linkedMods={linked}
                       modInstallments={modInst}
+                      typeDefsByKey={typeDefsByKey}
                       onInstallmentUpdate={handleInstallmentUpdate}
                     />
                   )
@@ -557,12 +609,14 @@ function FacturaCard({
   installments,
   linkedMods,
   modInstallments,
+  typeDefsByKey,
   onInstallmentUpdate,
 }: {
   factura: AccountingDocument
   installments: Installment[]
   linkedMods: AccountingDocument[]
   modInstallments: Map<string, Installment[]>
+  typeDefsByKey: TypeDirectionMap
   onInstallmentUpdate: (docId: string, instId: string, updates: InstallmentUpdate) => void
 }) {
   const [expanded, setExpanded] = useState(true)
@@ -580,7 +634,19 @@ function FacturaCard({
     return factura.currency === 'ARS' ? (inst.amountArs ?? inst.amount) : (inst.amountUsd ?? inst.amount)
   }
 
-  const modSum = linkedMods.reduce((sum, m) => sum + pickDocAmount(m), 0)
+  // Solo los vinculados ya APLICADOS afectan de verdad el total de la
+  // factura (mismo criterio que documents-balance.service.ts en el backend)
+  // — uno ISSUED todavía no tuvo efecto, uno CANCELLED lo tuvo y se
+  // revirtió. Antes se sumaban todos por igual, sin mirar el signo ni el
+  // estado, lo que hacía que una Nota de Crédito (que debería restar)
+  // terminara subiendo el "Neto ajustado", y que una NC anulada siguiera
+  // contando como si estuviera vigente.
+  const appliedMods = linkedMods.filter((m) => m.documentStatus === 'APPLIED')
+  function signedModAmount(m: AccountingDocument): number {
+    return Math.abs(pickDocAmount(m)) * getDirectionSign(m, typeDefsByKey)
+  }
+
+  const modSum = appliedMods.reduce((sum, m) => sum + signedModAmount(m), 0)
   const netTotal = factura.totalAmount + modSum
   const paidCount = installments.filter((i) => i.paymentStatus === 'PAID').length
   const pendingCount = installments.length - paidCount
@@ -621,7 +687,7 @@ function FacturaCard({
           </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
-          {linkedMods.length > 0 && (
+          {appliedMods.length > 0 && (
             <div className="text-right hidden sm:block">
               <p className="text-[10px] text-slate-400 uppercase tracking-wider leading-tight">
                 Neto ajustado
@@ -638,7 +704,7 @@ function FacturaCard({
             </p>
             <p className={clsx(
               'text-sm font-semibold tabular-nums',
-              linkedMods.length > 0 ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-800',
+              appliedMods.length > 0 ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-800',
             )}>
               {currency}{' '}
               {factura.totalAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -678,22 +744,29 @@ function FacturaCard({
           </div>
 
           {linkedMods.map((mod) => {
-            const isNC = mod.documentType === 'CREDIT_NOTE'
+            // signo -1 resta (NC, o Ajuste negativo), +1 suma (ND, o Ajuste
+            // positivo), 0 sin efecto numérico (Refacturación) — se muestra
+            // neutro, ni + ni −.
+            const sign = getDirectionSign(mod, typeDefsByKey)
+            const isCredit = sign < 0
+            const isNeutral = sign === 0
             const mInst = modInstallments.get(mod.id) ?? []
             const modCurrency = mod.currency === 'USD' ? 'US$' : 'AR$'
             return (
               <div key={mod.id} className="border-t border-slate-200">
                 <div className={clsx(
                   'flex items-center gap-3 px-5 py-3',
-                  isNC ? 'bg-red-50/50' : 'bg-emerald-50/40',
+                  isNeutral ? 'bg-slate-50/60' : isCredit ? 'bg-red-50/50' : 'bg-emerald-50/40',
                 )}>
                   <div className={clsx(
                     'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
-                    isNC ? 'bg-red-100' : 'bg-emerald-100',
+                    isNeutral ? 'bg-slate-100' : isCredit ? 'bg-red-100' : 'bg-emerald-100',
                   )}>
-                    {isNC
-                      ? <TrendingDown size={13} className="text-red-500" />
-                      : <TrendingUp size={13} className="text-emerald-600" />
+                    {isNeutral
+                      ? <FileEdit size={13} className="text-slate-400" />
+                      : isCredit
+                        ? <TrendingDown size={13} className="text-red-500" />
+                        : <TrendingUp size={13} className="text-emerald-600" />
                     }
                   </div>
                   <div className="flex-1 min-w-0">
@@ -701,7 +774,7 @@ function FacturaCard({
                       <p className="text-xs font-bold text-slate-700 font-mono">{mod.documentNumber}</p>
                       <span className={clsx(
                         'text-[10px] px-1.5 py-0.5 rounded font-semibold',
-                        isNC ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700',
+                        isNeutral ? 'bg-slate-100 text-slate-500' : isCredit ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700',
                       )}>
                         {DOCUMENT_TYPE_LABELS[mod.documentType] ?? mod.documentType}
                       </span>
@@ -717,12 +790,16 @@ function FacturaCard({
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <p className={clsx(
                       'text-sm font-bold tabular-nums',
-                      isNC ? 'text-red-600' : 'text-emerald-700',
+                      isNeutral ? 'text-slate-500' : isCredit ? 'text-red-600' : 'text-emerald-700',
                     )}>
-                      {isNC ? '−' : '+'}{modCurrency}{' '}
+                      {isNeutral ? '' : isCredit ? '−' : '+'}{modCurrency}{' '}
                       {Math.abs(mod.totalAmount).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
-                    <StatusPill status={mod.paymentStatus} size="sm" />
+                    {/* documentStatus (Emitida/Aplicada/Cancelada), no paymentStatus —
+                        un NC/ND siempre tiene paymentStatus "No aplica", así que mostrar
+                        eso acá nunca le decía al usuario si el documento realmente ya
+                        había afectado la factura o no. */}
+                    <StatusPill status={mod.documentStatus} size="sm" />
                   </div>
                 </div>
                 {mInst.length > 0 && (
@@ -760,8 +837,8 @@ function FacturaCard({
                   <span className="text-xs font-semibold text-emerald-600">Todo pagado</span>
                 </div>
               )}
-              {/* Neto ajustado (solo si hay modificaciones) */}
-              {linkedMods.length > 0 && (
+              {/* Neto ajustado (solo si hay modificaciones ya aplicadas) */}
+              {appliedMods.length > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-slate-500">Neto ajustado</span>
                   <span className="text-sm font-bold text-slate-900 tabular-nums">

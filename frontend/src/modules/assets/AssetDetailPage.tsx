@@ -14,7 +14,8 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
-import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
+import { formatCurrencyFull, formatCurrencyCompact, formatPercent, formatDate } from '../../shared/utils/format'
+import { computePolicyInvoicedTotal, computePsaPercentage } from '../../shared/utils/policyInvoicedTotal'
 import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
@@ -149,6 +150,22 @@ export default function AssetDetailPage() {
     ...documentQueries.list(),
     enabled: !!asset,
   })
+
+  // Trae allocations (con allocationPercentage por póliza) embebidas — a
+  // diferencia de documentQueries.list(), que solo trae policyIds sin monto.
+  // Se usa exclusivamente para prorratear la columna "P/SA".
+  const { data: financialDocs = [] } = useQuery({
+    ...documentQueries.financial(),
+    enabled: !!asset,
+  })
+
+  const { data: documentTypesData } = useQuery(documentQueries.types())
+  // Mismo mapa que PolicyDetailPage.tsx — necesario para calcular el % P/SA
+  // de cada póliza con computePolicyInvoicedTotal/computePsaPercentage.
+  const typeDefsByKey = useMemo(
+    () => Object.fromEntries((documentTypesData?.types ?? []).map((t) => [t.key, t])),
+    [documentTypesData],
+  )
 
   const { data: statusHistory = [] } = useQuery(assetQueries.statusHistory(id!))
 
@@ -318,6 +335,24 @@ export default function AssetDetailPage() {
     { key: 'startDate', label: 'Inicio', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
     { key: 'endDate', label: 'Vence', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
     { key: 'insuredAmountArs', label: 'Suma Aseg.', sortable: true, render: (v) => <span className="font-semibold">{formatCurrencyCompact(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
+    {
+      // Total facturado (neto ajustado) de la póliza sobre su Suma Asegurada
+      // — mismo cálculo que el panel "Resumen" de PolicyDetailPage.tsx, para
+      // que los dos números siempre coincidan. Clave sintética: no es un
+      // campo propio de Policy, se calcula al vuelo por fila.
+      key: 'psaPercentage',
+      label: 'P/SA',
+      sortable: true,
+      headerClassName: 'text-right',
+      className: 'text-right',
+      sortValue: (row) => computePsaPercentage(row, computePolicyInvoicedTotal(row.id, financialDocs, typeDefsByKey)),
+      render: (_, row) => {
+        const pct = computePsaPercentage(row, computePolicyInvoicedTotal(row.id, financialDocs, typeDefsByKey))
+        return pct != null
+          ? <span className="font-semibold">{formatPercent(pct)}</span>
+          : <span className="text-slate-300">—</span>
+      },
+    },
     {
       key: 'status',
       label: 'Estado',
