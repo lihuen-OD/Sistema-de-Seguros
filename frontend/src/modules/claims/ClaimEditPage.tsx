@@ -115,6 +115,33 @@ export default function ClaimEditPage() {
     setObservations(original.observations ?? '')
   }, [original])
 
+  // El backend cierra ambas monedas (ARS/USD) a partir del monto crudo +
+  // currency + exchangeRate — acá solo se decide el prefijo para los labels,
+  // sin convertir nada del lado del cliente (mismo patrón que ClaimNewPage).
+  const mainPrefix = currency === 'USD' ? 'US$' : 'AR$'
+
+  // Vista previa del equivalente en la otra moneda, para que el usuario vea
+  // ambos valores mientras edita (el backend es quien cierra y persiste los
+  // dos montos al guardar — ver computeDualAmounts). Estos hooks tienen que
+  // ir ANTES de los early return de abajo (isLoading / isError) — un hook
+  // nunca puede quedar después de un return condicional.
+  const equivalentPrefix = currency === 'USD' ? 'AR$' : 'US$'
+  function computeEquivalent(rawAmount: string): string {
+    const amount = parseFloat(rawAmount)
+    const rate = parseFloat(exchangeRate)
+    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
+    return currency === 'USD' ? (amount * rate).toFixed(2) : (amount / rate).toFixed(2)
+  }
+  const equivalentClaimed = useMemo(() => computeEquivalent(claimedAmount), [claimedAmount, exchangeRate, currency])
+  const equivalentReal = useMemo(() => computeEquivalent(realAmount), [realAmount, exchangeRate, currency])
+  const equivalentSettled = useMemo(() => computeEquivalent(settledAmount), [settledAmount, exchangeRate, currency])
+  const equivalentDeductible = useMemo(() => computeEquivalent(deductible), [deductible, exchangeRate, currency])
+  function formatEquivalent(value: string): string {
+    return value
+      ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : ''
+  }
+
   if (isLoading) {
     return (
       <PageContent>
@@ -143,31 +170,6 @@ export default function ClaimEditPage() {
         />
       </PageContent>
     )
-  }
-
-  // El backend cierra ambas monedas (ARS/USD) a partir del monto crudo +
-  // currency + exchangeRate — acá solo se decide el prefijo para los labels,
-  // sin convertir nada del lado del cliente (mismo patrón que ClaimNewPage).
-  const mainPrefix = currency === 'USD' ? 'US$' : 'AR$'
-
-  // Vista previa del equivalente en la otra moneda, para que el usuario vea
-  // ambos valores mientras edita (el backend es quien cierra y persiste los
-  // dos montos al guardar — ver computeDualAmounts).
-  const equivalentPrefix = currency === 'USD' ? 'AR$' : 'US$'
-  function computeEquivalent(rawAmount: string): string {
-    const amount = parseFloat(rawAmount)
-    const rate = parseFloat(exchangeRate)
-    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
-    return currency === 'USD' ? (amount * rate).toFixed(2) : (amount / rate).toFixed(2)
-  }
-  const equivalentClaimed = useMemo(() => computeEquivalent(claimedAmount), [claimedAmount, exchangeRate, currency])
-  const equivalentReal = useMemo(() => computeEquivalent(realAmount), [realAmount, exchangeRate, currency])
-  const equivalentSettled = useMemo(() => computeEquivalent(settledAmount), [settledAmount, exchangeRate, currency])
-  const equivalentDeductible = useMemo(() => computeEquivalent(deductible), [deductible, exchangeRate, currency])
-  function formatEquivalent(value: string): string {
-    return value
-      ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      : ''
   }
 
   // ── Validation ──────────────────────────────────────────────────────────────
