@@ -61,10 +61,56 @@ export default function DocumentsPage() {
 
   const DOCUMENT_TYPE_OPTIONS = documentTypes.map((t) => ({ value: t.key, label: t.label }))
 
-  const totals = useMemo(() => ({
-    pending: allDocuments.filter((d) => d.paymentStatus === 'PENDING').reduce((s, d) => s + d.totalAmount, 0),
-    paid: allDocuments.filter((d) => d.paymentStatus === 'PAID').reduce((s, d) => s + d.totalAmount, 0),
-  }), [allDocuments])
+  // Cuotas de todos los documentos listados — necesarias para que "Total
+  // Pendiente"/"Total Pagado" reflejen la porción real de cada documento con
+  // pago parcial (antes solo miraba el estado del documento completo, así que
+  // un documento "Pago Parcial" no aportaba nada a ninguno de los dos totales).
+  const documentIds = useMemo(() => allDocuments.map((d) => d.id), [allDocuments])
+  const { data: allInstallments = [] } = useQuery({
+    queryKey: [...documentKeys.all, 'installments-bulk', documentIds],
+    queryFn: () => documentsApi.findInstallmentsBulk(documentIds),
+    enabled: documentIds.length > 0,
+  })
+
+  const totals = useMemo(() => {
+    let pendingArs = 0, pendingUsd = 0, paidArs = 0, paidUsd = 0
+    const installmentsByDoc = new Map<string, typeof allInstallments>()
+    allInstallments.forEach((inst) => {
+      const list = installmentsByDoc.get(inst.accountingDocumentId) ?? []
+      list.push(inst)
+      installmentsByDoc.set(inst.accountingDocumentId, list)
+    })
+
+    allDocuments.forEach((doc) => {
+      const docInstallments = installmentsByDoc.get(doc.id)
+      if (docInstallments && docInstallments.length > 0) {
+        // Cuota por cuota — así un documento "Pago Parcial" solo aporta al
+        // total pendiente lo que realmente falta pagar, y al pagado lo que ya
+        // se pagó (nunca el total completo del documento en uno solo).
+        docInstallments.forEach((inst) => {
+          if (inst.paymentStatus === 'PAID') {
+            paidArs += inst.amountArs ?? 0
+            paidUsd += inst.amountUsd ?? 0
+          } else {
+            pendingArs += inst.amountArs ?? 0
+            pendingUsd += inst.amountUsd ?? 0
+          }
+        })
+      } else {
+        // Documentos sin cuotas propias (ej. Endoso) — se usa el estado de
+        // pago del documento completo. NOT_APPLICABLE no cuenta en ninguno.
+        if (doc.paymentStatus === 'PAID') {
+          paidArs += doc.totalAmountArs ?? 0
+          paidUsd += doc.totalAmountUsd ?? 0
+        } else if (doc.paymentStatus !== 'NOT_APPLICABLE') {
+          pendingArs += doc.totalAmountArs ?? 0
+          pendingUsd += doc.totalAmountUsd ?? 0
+        }
+      }
+    })
+
+    return { pendingArs, pendingUsd, paidArs, paidUsd }
+  }, [allDocuments, allInstallments])
 
   const partialCount = allDocuments.filter((d) => d.paymentStatus === 'PARTIALLY_PAID').length
 
@@ -329,8 +375,8 @@ export default function DocumentsPage() {
 
       <MetricGrid cols={4} className="mb-6">
         <KpiCard label="Total Documentos" value={allDocuments.length} description="Todos los tipos de documentos" icon={FileText} variant="default" />
-        <KpiCard label="Total Pendiente" value={formatCurrencyCompact(totals.pending, 'ARS')} description={`AR$ ${totals.pending.toLocaleString('es-AR', { minimumFractionDigits: 0 })}`} icon={Clock} variant="warning" />
-        <KpiCard label="Total Pagado" value={formatCurrencyCompact(totals.paid, 'ARS')} description={`AR$ ${totals.paid.toLocaleString('es-AR', { minimumFractionDigits: 0 })}`} icon={CheckCircle2} variant="success" />
+        <KpiCard label="Total Pendiente" value={formatCurrencyCompact(totals.pendingArs, 'ARS')} description={formatCurrencyCompact(totals.pendingUsd, 'USD')} icon={Clock} variant="warning" />
+        <KpiCard label="Total Pagado" value={formatCurrencyCompact(totals.paidArs, 'ARS')} description={formatCurrencyCompact(totals.paidUsd, 'USD')} icon={CheckCircle2} variant="success" />
         <KpiCard label="Pago Parcial" value={partialCount} description="Documentos con pago parcial" icon={AlertCircle} variant="warning" />
       </MetricGrid>
 

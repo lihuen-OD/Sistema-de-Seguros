@@ -356,6 +356,7 @@ export const documentsService = {
         netAmount: effectiveNetAmount,
         vatAmount: effectiveVatAmount,
         otherTaxesAmount: effectiveOtherTaxesAmount,
+        currency: effectiveCurrency,
       },
       id,
     )
@@ -1015,6 +1016,7 @@ export const documentsService = {
       netAmount?: number
       vatAmount?: number
       otherTaxesAmount?: number
+      currency?: string
     },
     selfId?: string,
   ) {
@@ -1033,6 +1035,18 @@ export const documentsService = {
       const linked = await this.assertDocumentExists(input.linkedDocumentId)
       if (linked.documentStatus === 'CANCELLED') {
         throw new AppError(400, 'El documento vinculado está anulado', 'BAD_REQUEST')
+      }
+      // La moneda de un NC/ND/Refacturación/Ajuste siempre tiene que coincidir
+      // con la del documento que ajusta — de lo contrario el saldo y los
+      // totales combinados no tienen sentido (se estaría restando un monto en
+      // una moneda de un total en otra). El frontend ya lo bloquea, pero el
+      // backend es quien lo tiene que garantizar.
+      if (input.currency && input.currency !== linked.currency) {
+        throw new AppError(
+          400,
+          'La moneda debe coincidir con la del documento vinculado',
+          'BAD_REQUEST',
+        )
       }
       if (typeDef.linkedDocumentType && linked.documentType !== typeDef.linkedDocumentType) {
         const expectedLabel = DOCUMENT_TYPES[typeDef.linkedDocumentType]?.label ?? typeDef.linkedDocumentType

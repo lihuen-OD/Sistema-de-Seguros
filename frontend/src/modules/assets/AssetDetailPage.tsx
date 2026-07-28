@@ -365,7 +365,7 @@ export default function AssetDetailPage() {
     { key: 'documentType', label: 'Tipo', sortable: true, render: (v) => <span className="text-xs">{DOCUMENT_TYPE_LABELS[v as string] ?? String(v)}</span> },
     { key: 'issueDate', label: 'Fecha', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
     { key: 'insuranceCompany', label: 'Aseguradora', sortable: true, render: (v) => <span className="text-sm">{(v as string) || '—'}</span> },
-    { key: 'totalAmount', label: 'Total', sortable: true, render: (v) => <span className="font-semibold tabular-nums">{formatCurrencyCompact(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
+    { key: 'totalAmount', label: 'Total', sortable: true, render: (v, row) => <span className="font-semibold tabular-nums">{formatCurrencyCompact(v as number, row.currency)}</span>, headerClassName: 'text-right', className: 'text-right' },
     {
       key: 'paymentStatus',
       label: 'Estado',

@@ -398,6 +398,7 @@ export interface RelatedDocSummary {
   documentType: DocumentType
   documentStatus: DocumentStatus
   totalAmount: number
+  currency: Currency
   adjustmentSign: AdjustmentSign | null
   // true cuando este es el documento al que el documento consultado fue
   // aplicado (su propio linkedDocumentId), no uno de los que lo afectan a él.

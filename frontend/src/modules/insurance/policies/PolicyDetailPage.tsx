@@ -567,16 +567,31 @@ function FacturaCard({
 }) {
   const [expanded, setExpanded] = useState(true)
   const currency = factura.currency === 'USD' ? 'US$' : 'AR$'
-  const modSum = linkedMods.reduce((sum, m) => sum + m.totalAmount, 0)
+
+  // Un NC/ND/Refacturación vinculado podría, en teoría, haberse cargado en
+  // otra moneda que la factura — cada documento y cuota ya tiene su propio
+  // cierre en ambas monedas, así que para sumarlos junto al total de la
+  // factura se toma de cada uno la columna que coincide con la moneda de la
+  // factura, nunca el monto crudo (que podría estar en la otra moneda).
+  function pickDocAmount(doc: AccountingDocument): number {
+    return factura.currency === 'ARS' ? (doc.totalAmountArs ?? doc.totalAmount) : (doc.totalAmountUsd ?? doc.totalAmount)
+  }
+  function pickInstAmount(inst: Installment): number {
+    return factura.currency === 'ARS' ? (inst.amountArs ?? inst.amount) : (inst.amountUsd ?? inst.amount)
+  }
+
+  const modSum = linkedMods.reduce((sum, m) => sum + pickDocAmount(m), 0)
   const netTotal = factura.totalAmount + modSum
   const paidCount = installments.filter((i) => i.paymentStatus === 'PAID').length
   const pendingCount = installments.length - paidCount
   const today = new Date().toISOString().slice(0, 10)
 
-  const allInstallments = [...installments, ...Array.from(modInstallments.values()).flat()]
-  const saldo = allInstallments
-    .filter((i) => i.paymentStatus !== 'PAID')
-    .reduce((sum, i) => sum + Math.abs(i.amount), 0)
+  const saldo =
+    installments.filter((i) => i.paymentStatus !== 'PAID').reduce((sum, i) => sum + Math.abs(i.amount), 0) +
+    Array.from(modInstallments.values())
+      .flat()
+      .filter((i) => i.paymentStatus !== 'PAID')
+      .reduce((sum, i) => sum + Math.abs(pickInstAmount(i)), 0)
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
@@ -665,6 +680,7 @@ function FacturaCard({
           {linkedMods.map((mod) => {
             const isNC = mod.documentType === 'CREDIT_NOTE'
             const mInst = modInstallments.get(mod.id) ?? []
+            const modCurrency = mod.currency === 'USD' ? 'US$' : 'AR$'
             return (
               <div key={mod.id} className="border-t border-slate-200">
                 <div className={clsx(
@@ -703,7 +719,7 @@ function FacturaCard({
                       'text-sm font-bold tabular-nums',
                       isNC ? 'text-red-600' : 'text-emerald-700',
                     )}>
-                      {isNC ? '−' : '+'}{currency}{' '}
+                      {isNC ? '−' : '+'}{modCurrency}{' '}
                       {Math.abs(mod.totalAmount).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <StatusPill status={mod.paymentStatus} size="sm" />
@@ -715,7 +731,7 @@ function FacturaCard({
                       <InstallmentRow
                         key={inst.id}
                         inst={inst}
-                        currency={currency}
+                        currency={modCurrency}
                         today={today}
                         indent
                         onUpdate={(updates) => onInstallmentUpdate(mod.id, inst.id, updates)}

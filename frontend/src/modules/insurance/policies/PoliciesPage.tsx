@@ -123,9 +123,20 @@ export default function PoliciesPage() {
     proximo_vencer: allPolicies.filter((p) => p.status === 'proximo_vencer').length,
   }), [allPolicies])
 
-  const totalInsuredArs = useMemo(
-    () => allPolicies.filter((p) => p.status === 'vigente').reduce((s, p) => s + p.insuredAmountArs, 0),
+  // "Próxima a vencer" sigue teniendo cobertura activa — si se cuenta solo
+  // 'vigente' se subestima la suma asegurada real (mismo criterio ya usado en
+  // AssetDetailPage.tsx para "seguro vigente").
+  const activeInsuredPolicies = useMemo(
+    () => allPolicies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer'),
     [allPolicies],
+  )
+  const totalInsuredArs = useMemo(
+    () => activeInsuredPolicies.reduce((s, p) => s + p.insuredAmountArs, 0),
+    [activeInsuredPolicies],
+  )
+  const totalInsuredUsd = useMemo(
+    () => activeInsuredPolicies.reduce((s, p) => s + p.insuredAmountUsd, 0),
+    [activeInsuredPolicies],
   )
 
   const ALL_COLUMNS: TableColumn<Policy>[] = useMemo(() => [
@@ -428,7 +439,7 @@ export default function PoliciesPage() {
         <KpiCard label="Vigentes" value={counts.vigente} description="Pólizas con cobertura activa" icon={ShieldCheck} variant="success" />
         <KpiCard label="Vencidas" value={counts.vencida} description="Requieren renovación" icon={ShieldOff} variant="danger" />
         <KpiCard label="Próximas a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
-        <KpiCard label="Suma Asegurada" value={formatCurrencyCompact(totalInsuredArs, 'ARS')} description="Pólizas vigentes — ARS" icon={DollarSign} variant="info" />
+        <KpiCard label="Suma Asegurada" value={formatCurrencyCompact(totalInsuredArs, 'ARS')} description={`${formatCurrencyCompact(totalInsuredUsd, 'USD')} · vigentes y próx. a vencer`} icon={DollarSign} variant="info" />
       </MetricGrid>
 
       <SectionCard noPadding>

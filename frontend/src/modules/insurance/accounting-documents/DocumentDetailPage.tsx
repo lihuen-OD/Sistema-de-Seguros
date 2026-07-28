@@ -614,7 +614,7 @@ export default function DocumentDetailPage() {
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="text-xs font-semibold text-slate-700 tabular-nums">
-                        {formatCurrencyCompact(Math.abs(r.totalAmount), doc.currency)}
+                        {formatCurrencyCompact(Math.abs(r.totalAmount), r.currency)}
                       </span>
                       <StatusPill status={r.documentStatus} size="sm" />
                     </div>

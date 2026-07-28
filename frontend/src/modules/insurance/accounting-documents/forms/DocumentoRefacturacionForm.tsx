@@ -224,7 +224,13 @@ export default function DocumentoRefacturacionForm({ initialDoc }: DocumentoRefa
               <DocumentRelationSelector
                 documents={linkableInvoices}
                 value={form.linkedDocumentId}
-                onChange={(id) => { setForm((p) => ({ ...p, linkedDocumentId: id })); markUnsaved() }}
+                onChange={(id) => {
+                  // La moneda de la refacturación siempre tiene que coincidir
+                  // con la de la factura original que reemplaza.
+                  const linked = allDocuments.find((d) => d.id === id)
+                  setForm((p) => ({ ...p, linkedDocumentId: id, currency: linked?.currency ?? p.currency }))
+                  markUnsaved()
+                }}
                 required
                 emptyMessage="No hay facturas disponibles para refacturar."
               />
@@ -239,10 +245,13 @@ export default function DocumentoRefacturacionForm({ initialDoc }: DocumentoRefa
         <SectionCard title="Importes y Pago" subtitle="Moneda, tipo de cambio y forma de pago">
           <FormSection title="">
             <FormField label="Moneda" required error={errors.currency}>
-              <FormSelect value={form.currency} onChange={set('currency')} required>
+              <FormSelect value={form.currency} onChange={set('currency')} required disabled={!!form.linkedDocumentId}>
                 <option value="">Seleccionar moneda…</option>
                 {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </FormSelect>
+              {form.linkedDocumentId && (
+                <p className="text-xs text-slate-400 mt-1">Se toma automáticamente de la factura original.</p>
+              )}
             </FormField>
             <FormField label="Tipo de Cambio" required error={errors.exchangeRate}>
               <FormInput type="number" placeholder="Ej: 1150" value={form.exchangeRate} onChange={set('exchangeRate')} min="0.01" step="0.01" required />
