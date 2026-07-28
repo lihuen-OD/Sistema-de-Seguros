@@ -108,6 +108,9 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
     if (!form.documentNumber.trim()) next.documentNumber = 'Requerido'
     if (!form.issueDate) next.issueDate = 'Requerido'
     if (!form.linkedDocumentId) next.linkedDocumentId = 'La factura asociada es requerida'
+    else if (!linkedInvoice?.paymentMethod) {
+      next.linkedDocumentId = 'La factura asociada no tiene forma de pago'
+    }
     if (!form.currency) next.currency = 'Requerido'
     if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0) next.exchangeRate = 'Requerido'
     if (!form.netAmount || isNaN(parseFloat(form.netAmount)) || parsedNet <= 0) next.netAmount = 'Requerido'
@@ -236,6 +239,20 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
                 }
               />
             </FormField>
+
+            {form.linkedDocumentId && (
+              <FormField label="Forma de Pago">
+                <FormInput
+                  value={linkedInvoice?.paymentMethod ?? 'Sin especificar'}
+                  readOnly
+                  disabled
+                  className="bg-slate-50 text-slate-500 cursor-not-allowed"
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Se hereda de la factura asociada.
+                </p>
+              </FormField>
+            )}
 
             <FormField label="Motivo / Descripción" fullWidth>
               <FormTextarea rows={2} value={form.description} onChange={set('description')} placeholder="Ej: corrección de prima, error de facturación…" />

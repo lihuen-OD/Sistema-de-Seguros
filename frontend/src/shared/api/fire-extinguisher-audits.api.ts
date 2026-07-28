@@ -138,19 +138,9 @@ export interface FireExtinguisherCoverageItem {
 
 // ── Informe de auditoría por establecimiento/sector ─────────────────────────────
 
-export interface FireExtinguisherFindingItem {
-  id: string
-  code: string | null
-  cylinderNumber: string | null
-  location: string | null
-}
+// ── Dashboard de nivel % (auditoría mensual) ────────────────────────────────────
 
-export interface FireExtinguisherFindingBucket {
-  count: number
-  items: FireExtinguisherFindingItem[]
-}
-
-export type FireExtinguisherFindingsField =
+export type AuditControlPointKey =
   | 'cleanliness'
   | 'chargeFillStatus'
   | 'beaconPlateCondition'
@@ -159,23 +149,33 @@ export type FireExtinguisherFindingsField =
   | 'hoseNozzleCondition'
   | 'expiration'
 
-export interface FireExtinguisherFindingsSector {
+export interface AuditControlPointLevel {
+  key: AuditControlPointKey
+  label: string
+  level: number | null
+  levelLabel: string | null
+}
+
+export interface AuditDashboardSector {
+  establishment: string
   locationType: string
   total: number
   audited: number
-  fields: Record<FireExtinguisherFindingsField, Record<string, FireExtinguisherFindingBucket>>
+  level: number | null
+  levelLabel: string | null
+  controlPoints: AuditControlPointLevel[]
 }
 
-export interface FireExtinguisherFindingsEstablishment {
-  establishment: string
-  total: number
-  audited: number
-  sectors: FireExtinguisherFindingsSector[]
-}
-
-export interface FireExtinguisherFindingsReport {
+export interface AuditDashboard {
   period: string
-  establishments: FireExtinguisherFindingsEstablishment[]
+  establishment: string | null
+  establishments: string[] | null
+  totalRegistered: number
+  totalAudited: number
+  overallLevel: number | null
+  overallLevelLabel: string | null
+  controlPoints: AuditControlPointLevel[]
+  sectors: AuditDashboardSector[]
 }
 
 export interface FireExtinguisherAuditListFilters {
@@ -247,11 +247,10 @@ export const fireExtinguisherAuditsApi = {
     return res.data.data
   },
 
-  async getFindingsReport(period: string): Promise<FireExtinguisherFindingsReport> {
-    const res = await apiClient.get<{ data: FireExtinguisherFindingsReport }>(
-      '/fire-extinguisher-audits/findings-report',
-      { params: { period } },
-    )
+  async getAuditDashboard(period: string, establishment?: string): Promise<AuditDashboard> {
+    const res = await apiClient.get<{ data: AuditDashboard }>('/fire-extinguisher-audits/audit-dashboard', {
+      params: { period, establishment },
+    })
     return res.data.data
   },
 }
@@ -279,10 +278,10 @@ export const fireExtinguisherAuditQueries = {
       queryFn: () => fireExtinguisherAuditsApi.getCoverage(period),
       staleTime: 60 * 1000,
     }),
-  findingsReport: (period: string) =>
+  auditDashboard: (period: string, establishment?: string) =>
     queryOptions({
-      queryKey: [...fireExtinguisherAuditKeys.all, 'findings-report', period] as const,
-      queryFn: () => fireExtinguisherAuditsApi.getFindingsReport(period),
+      queryKey: [...fireExtinguisherAuditKeys.all, 'audit-dashboard', period, establishment ?? null] as const,
+      queryFn: () => fireExtinguisherAuditsApi.getAuditDashboard(period, establishment),
       staleTime: 60 * 1000,
     }),
 }

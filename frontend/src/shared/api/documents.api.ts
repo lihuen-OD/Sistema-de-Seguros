@@ -182,6 +182,7 @@ export const documentsApi = {
         amountUsd: i.amountUsd,
         paymentStatus: i.paymentStatus as Installment['paymentStatus'],
         paidAt: i.paidAt,
+        paymentMethod: i.paymentMethod,
       })),
       allocations: b.allocations.map((a) => ({
         id: a.id,
@@ -285,13 +286,14 @@ export const documentsApi = {
   async updateInstallment(
     documentId: string,
     installmentId: string,
-    updates: { amount?: number; paymentStatus?: string; paidAt?: string | null; dueDate?: string; exchangeRate?: number },
+    updates: { amount?: number; paymentStatus?: string; paidAt?: string | null; dueDate?: string; paymentMethod?: string | null; exchangeRate?: number },
   ): Promise<void> {
     const body: Record<string, unknown> = {}
     if (updates.amount !== undefined) body.amount = updates.amount
     if (updates.paymentStatus !== undefined) body.paymentStatus = updates.paymentStatus
     if (updates.dueDate !== undefined) body.dueDate = updates.dueDate
     if ('paidAt' in updates) body.paymentDate = updates.paidAt
+    if ('paymentMethod' in updates) body.paymentMethod = updates.paymentMethod
     if (updates.exchangeRate !== undefined) body.exchangeRate = updates.exchangeRate
     await apiClient.put(`/documents/${documentId}/installments/${installmentId}`, body)
   },

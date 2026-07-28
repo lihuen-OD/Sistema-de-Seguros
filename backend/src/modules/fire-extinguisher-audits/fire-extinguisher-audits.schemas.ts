@@ -152,6 +152,13 @@ export const CoverageQuerySchema = z.object({
   period: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM'),
 })
 
+// ── Dashboard de nivel % (auditoría mensual) ────────────────────────────────────
+
+export const AuditDashboardQuerySchema = z.object({
+  period: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM'),
+  establishment: z.string().optional(),
+})
+
 export type LocationReviewDTO = z.infer<typeof LocationReviewSchema>
 export type MasterFieldReviewDTO = z.infer<typeof MasterFieldReviewSchema>
 export type ChecklistDTO = z.infer<typeof ChecklistSchema>
@@ -162,3 +169,4 @@ export type ReviewFireExtinguisherAuditDTO = z.infer<typeof ReviewFireExtinguish
 export type BulkApproveFireExtinguisherAuditsDTO = z.infer<typeof BulkApproveFireExtinguisherAuditsSchema>
 export type ListFireExtinguisherAuditsQueryDTO = z.infer<typeof ListFireExtinguisherAuditsQuerySchema>
 export type CoverageQueryDTO = z.infer<typeof CoverageQuerySchema>
+export type AuditDashboardQueryDTO = z.infer<typeof AuditDashboardQuerySchema>

@@ -285,6 +285,22 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     ])
   })
 
+  it('excludes "moto" from vehicleMachineryCoverage — motorcycles do not carry fire extinguishers', async () => {
+    db.asset.findMany.mockResolvedValue([
+      { id: 'a1', code: 'MOT-001', name: 'Honda CB500', assetType: 'Moto', fireExtinguishers: [] },
+      { id: 'a2', code: 'MOT-002', name: 'Yamaha FZ', assetType: 'moto', fireExtinguishers: [] }, // legacy lowercase
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguishers/dashboard/summary')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    const coverage = res.body.data.vehicleMachineryCoverage
+    expect(coverage.vehiculos).toMatchObject({ total: 0, conMatafuego: 0, sinMatafuego: 0, items: [] })
+    expect(coverage.maquinaria).toMatchObject({ total: 0, conMatafuego: 0, sinMatafuego: 0, items: [] })
+  })
+
   it('returns 200 for ADMIN (bypass total)', async () => {
     const res = await request(app)
       .get('/api/v1/fire-extinguishers/dashboard/summary')

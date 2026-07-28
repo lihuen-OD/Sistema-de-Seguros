@@ -447,9 +447,10 @@ export interface Installment {
   amountUsd: number | null
   paymentStatus: PaymentStatus
   paidAt: string | null
+  paymentMethod: string | null
 }
 
-export type InstallmentUpdate = Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate'>> & {
+export type InstallmentUpdate = Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate' | 'paymentMethod'>> & {
   /** Tipo de cambio del día de pago — requerido cuando paymentStatus pasa a 'PAID' */
   exchangeRate?: number
 }

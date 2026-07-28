@@ -159,6 +159,7 @@ export default function PolicyDetailPage() {
       amountUsd: i.amountUsd,
       paymentStatus: i.paymentStatus as Installment['paymentStatus'],
       paidAt: i.paidAt,
+      paymentMethod: i.paymentMethod,
     })))
   })
   // Merge: localInstallments overrides server data for optimistic updates
@@ -174,7 +175,7 @@ export default function PolicyDetailPage() {
   const handleInstallmentUpdate = async (
     docId: string,
     instId: string,
-    updates: Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate'>>,
+    updates: InstallmentUpdate,
   ) => {
     setLocalInstallments((prev) => {
       const next = new Map(prev)
@@ -736,6 +737,7 @@ function FacturaCard({
                     inst={inst}
                     currency={currency}
                     today={today}
+                    defaultPaymentMethod={factura.paymentMethod}
                     onUpdate={(updates) => onInstallmentUpdate(factura.id, inst.id, updates)}
                   />
                 ))}
@@ -810,6 +812,7 @@ function FacturaCard({
                         inst={inst}
                         currency={modCurrency}
                         today={today}
+                        defaultPaymentMethod={mod.paymentMethod}
                         indent
                         onUpdate={(updates) => onInstallmentUpdate(mod.id, inst.id, updates)}
                       />
@@ -929,6 +932,7 @@ function StandaloneDocCard({
               inst={inst}
               currency={currency}
               today={today}
+              defaultPaymentMethod={doc.paymentMethod}
               onUpdate={(updates) => onInstallmentUpdate(doc.id, inst.id, updates)}
             />
           ))}

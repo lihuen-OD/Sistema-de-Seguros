@@ -17,12 +17,14 @@ import { getDocumentEconomicEffect } from '../../../shared/utils/documentEconomi
 import {
   downloadXLSX, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
+import type { ExportCell } from '../../../shared/utils/export'
 import { documentQueries } from '../../../shared/api/documents.api'
 import { policyQueries } from '../../../shared/api/policies.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { ExchangeRateBar } from '../../../shared/components/exchange-rate/ExchangeRateBar'
+import { resolveDocumentPaymentMethod } from '../../../shared/utils/documentPaymentMethod'
 import type { Currency, Policy, Asset, Company, CostCenter, AccountingDocument, DocumentPolicyAllocation } from '../../../shared/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -145,6 +147,12 @@ function getRows(
 // ─── Matrix data builder ──────────────────────────────────────────────────────
 
 type EconomicMatrixData = Map<string, Map<string, number>>
+type EconomicPaymentMethodMatrix = Map<string, Map<string, Map<string, number>>>
+
+interface EconomicMatrixResult {
+  matrix: EconomicMatrixData
+  paymentMethods: EconomicPaymentMethodMatrix
+}
 
 function buildEconomicMatrix(
   grouping: RowGrouping,
@@ -154,10 +162,12 @@ function buildEconomicMatrix(
   assets: Asset[],
   documents: AccountingDocument[],
   allocations: DocumentPolicyAllocation[],
-): EconomicMatrixData {
+): EconomicMatrixResult {
   const policyCtx = buildPolicyContext(policies, assets)
   const allocMap = buildDocumentAllocMap(allocations)
+  const documentsById = new Map(documents.map((doc) => [doc.id, doc]))
   const matrix: EconomicMatrixData = new Map()
+  const paymentMethods: EconomicPaymentMethodMatrix = new Map()
 
   documents.forEach((doc) => {
     const key = granularity === 'week'
@@ -165,6 +175,7 @@ function buildEconomicMatrix(
       : doc.issueDate.substring(0, 7)
     const docAllocs = allocMap.get(doc.id)
     if (!docAllocs || docAllocs.size === 0) return
+    const paymentMethod = resolveDocumentPaymentMethod(doc.id, documentsById)
 
     docAllocs.forEach((allocatedAmount, policyId) => {
       const policyAmount = allocationInCurrency(doc, allocatedAmount, displayCurrency)
@@ -184,11 +195,19 @@ function buildEconomicMatrix(
         if (!matrix.has(rowId)) matrix.set(rowId, new Map())
         const rowMap = matrix.get(rowId)!
         rowMap.set(key, (rowMap.get(key) ?? 0) + policyAmount)
+
+        if (grouping === 'empresa') {
+          if (!paymentMethods.has(rowId)) paymentMethods.set(rowId, new Map())
+          const companyMethods = paymentMethods.get(rowId)!
+          if (!companyMethods.has(paymentMethod)) companyMethods.set(paymentMethod, new Map())
+          const methodPeriods = companyMethods.get(paymentMethod)!
+          methodPeriods.set(key, (methodPeriods.get(key) ?? 0) + policyAmount)
+        }
       })
     })
   })
 
-  return matrix
+  return { matrix, paymentMethods }
 }
 
 // ─── Custom tooltips ──────────────────────────────────────────────────────────
@@ -306,7 +325,7 @@ export default function EconomicAnalysisPage() {
 
   // Matrix granularity: only 'semana' uses week keys, everything else uses month keys
   const matrixGranularity: 'week' | 'month' = colPeriod === 'semana' ? 'week' : 'month'
-  const matrixData = useMemo(
+  const { matrix: matrixData, paymentMethods: companyPaymentMatrix } = useMemo(
     () => buildEconomicMatrix(grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allAllocations),
     [grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allAllocations],
   )
@@ -349,6 +368,33 @@ export default function EconomicAnalysisPage() {
 
   function getColumnTotal(colKey: string): number {
     return rows.reduce((sum, row) => sum + getCellAmount(row.id, colKey), 0)
+  }
+
+  function getCompanyPaymentAmount(companyId: string, paymentMethod: string, colKey: string): number {
+    const methodPeriods = companyPaymentMatrix.get(companyId)?.get(paymentMethod)
+    if (!methodPeriods) return 0
+    if (colPeriod === 'mes' || colPeriod === 'semana') return methodPeriods.get(colKey) ?? 0
+    const periods = colPeriod === 'trimestre'
+      ? viewQuarters.find((quarter) => quarter.key === colKey)?.months
+      : viewYears.find((year) => year.key === colKey)?.months
+    return periods?.reduce((sum, period) => sum + (methodPeriods.get(period) ?? 0), 0) ?? 0
+  }
+
+  function getCompanyPaymentMethods(companyId: string): string[] {
+    return [...(companyPaymentMatrix.get(companyId)?.keys() ?? [])]
+      .filter((method) => columns.some((col) => getCompanyPaymentAmount(companyId, method, col.key) !== 0))
+      .sort((a, b) => {
+        if (a === 'Sin especificar') return 1
+        if (b === 'Sin especificar') return -1
+        return a.localeCompare(b, 'es')
+      })
+  }
+
+  function getCompanyPaymentTotal(companyId: string, paymentMethod: string): number {
+    return columns.reduce(
+      (sum, col) => sum + getCompanyPaymentAmount(companyId, paymentMethod, col.key),
+      0,
+    )
   }
 
   // ─── KPIs + pie data ─────────────────────────────────────────────────────────
@@ -431,56 +477,139 @@ export default function EconomicAnalysisPage() {
   const periodLabel = colPeriod === 'semana' ? 'semanal' : colPeriod === 'mes' ? 'mensual' : colPeriod === 'trimestre' ? 'trimestral' : 'anual'
   const groupingLabel = groupingButtons.find((b) => b.value === grouping)?.label ?? grouping
 
-  async function handleExportCSV() {
+  async function handleExportExcel() {
+    const numberFormat = currency === 'ARS'
+      ? '"AR$" #,##0;[Red]-"AR$" #,##0;"-"'
+      : '"US$" #,##0;[Red]-"US$" #,##0;"-"'
+
+    if (grouping === 'empresa') {
+      const header: ExportCell[] = ['Empresa', 'Medio de pago', ...columns.map((c) => c.label), 'Total']
+      const dataRows: ExportCell[][] = []
+      const totalRowIndexes: number[] = []
+
+      rows.forEach((row) => {
+        getCompanyPaymentMethods(row.id).forEach((method) => {
+          dataRows.push([
+            row.label,
+            method,
+            ...columns.map((col) => getCompanyPaymentAmount(row.id, method, col.key)),
+            getCompanyPaymentTotal(row.id, method),
+          ])
+        })
+        totalRowIndexes.push(dataRows.length + 1)
+        dataRows.push([
+          row.label,
+          'TOTAL',
+          ...columns.map((col) => getCellAmount(row.id, col.key)),
+          getRowTotal(row.id),
+        ])
+      })
+
+      await downloadXLSX(
+        [header, ...dataRows],
+        `analisis-economico-${periodLabel}-${dateFrom}-${dateTo}.xlsx`,
+        {
+          autoFilter: true,
+          numericColumnIndexes: columns.map((_, index) => index + 2).concat(columns.length + 2),
+          numberFormat,
+          totalRowIndexes,
+        },
+      )
+      return
+    }
+
     const header = [groupingLabel, ...columns.map((c) => c.label), 'Total']
-    const dataRows = rows.map((row) => [
+    const dataRows: ExportCell[][] = rows.map((row) => [
       row.label,
-      ...columns.map((c) => {
-        const v = getCellAmount(row.id, c.key)
-        return v === 0 ? '' : v.toFixed(0)
-      }),
-      getRowTotal(row.id).toFixed(0),
+      ...columns.map((c) => getCellAmount(row.id, c.key)),
+      getRowTotal(row.id),
     ])
-    const totalRow = [
+    const totalRow: ExportCell[] = [
       'TOTAL',
-      ...columns.map((c) => getColumnTotal(c.key).toFixed(0)),
-      columns.reduce((s, c) => s + getColumnTotal(c.key), 0).toFixed(0),
+      ...columns.map((c) => getColumnTotal(c.key)),
+      columns.reduce((s, c) => s + getColumnTotal(c.key), 0),
     ]
     await downloadXLSX(
       [header, ...dataRows, totalRow],
       `analisis-economico-${periodLabel}-${dateFrom}-${dateTo}.xlsx`,
+      {
+        autoFilter: true,
+        numericColumnIndexes: header.slice(1).map((_, index) => index + 1),
+        numberFormat,
+        totalRowIndexes: [dataRows.length + 1],
+      },
     )
   }
 
   async function handleExportPDF() {
     setPdfLoading(true)
     try {
-    const pdfColumns = [
-      { label: groupingLabel, align: 'left' as const },
-      ...columns.map((c) => ({ label: c.label, align: 'right' as const })),
-      { label: 'Total', align: 'right' as const },
-    ]
+      const pdfColumns = [
+        { label: groupingLabel, align: 'left' as const },
+        ...(grouping === 'empresa'
+          ? [{ label: 'Medio de pago', align: 'left' as const }]
+          : []),
+        ...columns.map((c) => ({ label: c.label, align: 'right' as const })),
+        { label: 'Total', align: 'right' as const },
+      ]
 
-    const pdfRows: { cells: string[]; isDim?: boolean; isTotal?: boolean }[] = rows.map((row) => {
-      const rowTotal = getRowTotal(row.id)
-      return {
-        cells: [
-          row.label,
-          ...columns.map((c) => fmtNumber(getCellAmount(row.id, c.key))),
-          fmtNumber(rowTotal),
-        ],
-        isDim: rowTotal === 0,
+      const pdfRows: { cells: string[]; isDim?: boolean; isTotal?: boolean }[] = []
+
+      if (grouping === 'empresa') {
+        rows.forEach((row) => {
+          getCompanyPaymentMethods(row.id).forEach((method) => {
+            pdfRows.push({
+              cells: [
+                row.label,
+                method,
+                ...columns.map((col) => fmtNumber(getCompanyPaymentAmount(row.id, method, col.key))),
+                fmtNumber(getCompanyPaymentTotal(row.id, method)),
+              ],
+            })
+          })
+
+          pdfRows.push({
+            cells: [
+              row.label,
+              'TOTAL',
+              ...columns.map((col) => fmtNumber(getCellAmount(row.id, col.key))),
+              fmtNumber(getRowTotal(row.id)),
+            ],
+            isTotal: true,
+          })
+        })
+
+        pdfRows.push({
+          cells: [
+            'Total período',
+            'TOTAL',
+            ...columns.map((col) => fmtNumber(getColumnTotal(col.key))),
+            fmtNumber(columns.reduce((sum, col) => sum + getColumnTotal(col.key), 0)),
+          ],
+          isTotal: true,
+        })
+      } else {
+        rows.forEach((row) => {
+          const rowTotal = getRowTotal(row.id)
+          pdfRows.push({
+            cells: [
+              row.label,
+              ...columns.map((col) => fmtNumber(getCellAmount(row.id, col.key))),
+              fmtNumber(rowTotal),
+            ],
+            isDim: rowTotal === 0,
+          })
+        })
+
+        pdfRows.push({
+          cells: [
+            'TOTAL',
+            ...columns.map((col) => fmtNumber(getColumnTotal(col.key))),
+            fmtNumber(columns.reduce((sum, col) => sum + getColumnTotal(col.key), 0)),
+          ],
+          isTotal: true,
+        })
       }
-    })
-
-    pdfRows.push({
-      cells: [
-        'TOTAL',
-        ...columns.map((c) => fmtNumber(getColumnTotal(c.key))),
-        fmtNumber(columns.reduce((s, c) => s + getColumnTotal(c.key), 0)),
-      ],
-      isTotal: true,
-    })
 
       await printTableAsPDF(
         'Análisis Económico',
@@ -694,7 +823,7 @@ export default function EconomicAnalysisPage() {
         actions={
           <div className="flex items-center gap-1">
             <button
-              onClick={handleExportCSV}
+              onClick={handleExportExcel}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-emerald-700 hover:border-emerald-200 transition-colors"
               title="Exportar a Excel (CSV)"
             >
@@ -723,9 +852,19 @@ export default function EconomicAnalysisPage() {
                 >
                   {groupingLabel}
                 </th>
+                {grouping === 'empresa' && (
+                  <th className="text-left min-w-[180px] whitespace-nowrap">
+                    Medio de pago
+                  </th>
+                )}
                 {columns.map((col) => (
                   <th key={col.key} className="text-right min-w-[110px] whitespace-nowrap">
-                    {col.label}
+                    {colPeriod === 'semana' ? (
+                      <span className="inline-flex flex-col items-end leading-tight">
+                        <span className="font-semibold text-slate-600">{col.label.split('\n')[0]}</span>
+                        <span className="mt-0.5 text-[10px] font-medium text-slate-400">{col.label.split('\n')[1]}</span>
+                      </span>
+                    ) : col.label}
                   </th>
                 ))}
                 <th className="text-right min-w-[120px] bg-slate-100/70 font-semibold whitespace-nowrap">
@@ -734,7 +873,75 @@ export default function EconomicAnalysisPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {grouping === 'empresa' ? rows.flatMap((row) => {
+                const methods = getCompanyPaymentMethods(row.id)
+                const detailRows = methods.map((method, index) => {
+                  const methodTotal = getCompanyPaymentTotal(row.id, method)
+                  return (
+                    <tr key={`${row.id}-${method}`}>
+                      {index === 0 && (
+                        <td
+                          rowSpan={methods.length + 1}
+                          className="sticky left-0 bg-white z-10 align-top"
+                          style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}
+                        >
+                          <span className="text-sm font-medium text-slate-800 block max-w-[240px]">
+                            {row.label}
+                          </span>
+                        </td>
+                      )}
+                      <td className="text-xs font-medium text-slate-700">{method}</td>
+                      {columns.map((col) => {
+                        const amount = getCompanyPaymentAmount(row.id, method, col.key)
+                        const isNegative = amount < 0
+                        return (
+                          <td key={col.key} className="text-right tabular-nums">
+                            {amount !== 0 ? (
+                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                                isNegative ? 'text-amber-700 bg-amber-50' : 'text-brand-700 bg-brand-50'
+                              }`}>
+                                {fmtCell(amount)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 text-xs">—</span>
+                            )}
+                          </td>
+                        )
+                      })}
+                      <td className="text-right bg-slate-50/80 tabular-nums">
+                        <span className={`text-xs font-semibold ${methodTotal < 0 ? 'text-amber-700' : 'text-slate-800'}`}>
+                          {fmtCell(methodTotal)}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })
+
+                return [
+                  ...detailRows,
+                  <tr key={`${row.id}-total`} className="bg-slate-50 border-t border-slate-200">
+                    {methods.length === 0 && (
+                      <td
+                        className="sticky left-0 bg-slate-50 z-10"
+                        style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}
+                      >
+                        <span className="text-sm font-medium text-slate-800">{row.label}</span>
+                      </td>
+                    )}
+                    <td className="text-xs font-bold text-slate-700">TOTAL</td>
+                    {columns.map((col) => (
+                      <td key={col.key} className="text-right tabular-nums">
+                        <span className="text-xs font-bold text-slate-800">
+                          {fmtCell(getCellAmount(row.id, col.key))}
+                        </span>
+                      </td>
+                    ))}
+                    <td className="text-right bg-slate-100 tabular-nums">
+                      <span className="text-xs font-bold text-slate-900">{fmtCell(getRowTotal(row.id))}</span>
+                    </td>
+                  </tr>,
+                ]
+              }) : rows.map((row) => {
                 const rowTotal = getRowTotal(row.id)
                 return (
                   <tr key={row.id} className={rowTotal === 0 ? 'opacity-40' : ''}>
@@ -792,6 +999,9 @@ export default function EconomicAnalysisPage() {
                 >
                   Total período
                 </td>
+                {grouping === 'empresa' && (
+                  <td className="text-xs font-bold text-slate-700">TOTAL</td>
+                )}
                 {columns.map((col) => {
                   const colTotal = getColumnTotal(col.key)
                   return (

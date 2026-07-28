@@ -73,7 +73,7 @@ const DOCUMENT_FINANCIAL_INCLUDE = {
     select: {
       id: true, accountingDocumentId: true, installmentNumber: true,
       dueDate: true, amount: true, currency: true, amountArs: true, amountUsd: true,
-      paymentStatus: true, paymentDate: true,
+      paymentStatus: true, paymentDate: true, paymentMethod: true,
     },
     orderBy: { installmentNumber: 'asc' as const },
   },
@@ -165,9 +165,20 @@ export const documentsService = {
     // impactar esos reportes.
     const where: Record<string, unknown> = { documentStatus: { not: 'CANCELLED' } }
     if (params?.from || params?.to) {
-      where.issueDate = {
+      const range = {
         ...(params.from && { gte: new Date(`${params.from}-01T00:00:00.000Z`) }),
-        ...(params.to && { lte: new Date(`${params.to}-31T23:59:59.999Z`) }),
+        ...(params.to && (() => {
+          const [year, month] = params.to.split('-').map(Number)
+          return { lt: new Date(Date.UTC(year, month, 1)) }
+        })()),
+      }
+      where.installments = {
+        some: {
+          OR: [
+            { paymentStatus: 'PAID', paymentDate: range },
+            { paymentStatus: { not: 'PAID' }, dueDate: range },
+          ],
+        },
       }
     }
     const docs = await prisma.accountingDocument.findMany({
@@ -205,7 +216,9 @@ export const documentsService = {
     const typeDef = getDocumentTypeDef(docData.documentType)
     if (!typeDef) throw new AppError(400, 'Tipo de documento inválido', 'BAD_REQUEST')
 
-    await this.validateTypeConstraints(typeDef, docData)
+    const inheritedPaymentMethod = await this.validateTypeConstraints(typeDef, docData)
+    const effectivePaymentMethod =
+      inheritedPaymentMethod ?? (docData.paymentMethod?.trim() || null)
 
     // El duplicado real es la combinación tipo + compañía + número
     // (documentNumber es inmutable después del alta, así que este chequeo
@@ -249,6 +262,7 @@ export const documentsService = {
         const created = await tx.accountingDocument.create({
           data: {
             ...docData,
+            paymentMethod: effectivePaymentMethod,
             documentStatus: 'ISSUED',
             relationType: typeDef.relationType ?? null,
             paymentStatus: typeDef.hasPaymentStatus ? 'PENDING' : 'NOT_APPLICABLE',
@@ -261,6 +275,7 @@ export const documentsService = {
                   dueDate: inst.dueDate,
                   amount: inst.amount,
                   currency: docData.currency,
+                  paymentMethod: effectivePaymentMethod,
                   ...computeDualAmounts(inst.amount, docData.currency as 'ARS' | 'USD', docData.exchangeRate),
                 })),
               },
@@ -285,6 +300,7 @@ export const documentsService = {
             documentType: created.documentType,
             documentStatus: created.documentStatus,
             paymentStatus: created.paymentStatus,
+            paymentMethod: created.paymentMethod,
             netAmount: created.netAmount,
             vatAmount: created.vatAmount,
             otherTaxesAmount: created.otherTaxesAmount,
@@ -349,7 +365,7 @@ export const documentsService = {
     const effectiveCurrency = docData.currency ?? existing.currency
     const effectiveExchangeRate = docData.exchangeRate ?? existing.exchangeRate
 
-    await this.validateTypeConstraints(
+    const inheritedPaymentMethod = await this.validateTypeConstraints(
       typeDef,
       {
         linkedDocumentId: effectiveLinkedId,
@@ -365,6 +381,10 @@ export const documentsService = {
       },
       id,
     )
+    const effectivePaymentMethod = inheritedPaymentMethod
+      ?? (docData.paymentMethod !== undefined
+        ? docData.paymentMethod?.trim() || null
+        : existing.paymentMethod)
 
     // documentStatus nunca viene del cliente (ver documents.schemas.ts) — esto
     // solo revalida que el estado actual siga siendo válido para el tipo
@@ -388,6 +408,7 @@ export const documentsService = {
         where: { id },
         data: {
           ...docData,
+          paymentMethod: effectivePaymentMethod,
           relationType: typeDef.relationType ?? null,
           ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
           totalAmountArs: effectiveTotalAmountArs,
@@ -402,6 +423,7 @@ export const documentsService = {
         previousData: {
           documentType: existing.documentType,
           linkedDocumentId: existing.linkedDocumentId,
+          paymentMethod: existing.paymentMethod,
           netAmount: existing.netAmount,
           vatAmount: existing.vatAmount,
           otherTaxesAmount: existing.otherTaxesAmount,
@@ -409,6 +431,7 @@ export const documentsService = {
         newData: {
           documentType: doc.documentType,
           linkedDocumentId: doc.linkedDocumentId,
+          paymentMethod: doc.paymentMethod,
           netAmount: doc.netAmount,
           vatAmount: doc.vatAmount,
           otherTaxesAmount: doc.otherTaxesAmount,
@@ -756,6 +779,7 @@ export const documentsService = {
                 dueDate: inst.dueDate,
                 amount: inst.amount,
                 currency: doc.currency,
+                paymentMethod: doc.paymentMethod?.trim() || null,
                 ...computeDualAmounts(inst.amount, doc.currency as 'ARS' | 'USD', doc.exchangeRate),
               })),
             }),
@@ -791,6 +815,12 @@ export const documentsService = {
     if (data.paymentStatus === 'PAID' && exchangeRate === undefined) {
       throw new AppError(400, 'Se requiere el tipo de cambio para marcar la cuota como pagada', 'BAD_REQUEST')
     }
+    const effectivePaymentStatus = data.paymentStatus ?? installment.paymentStatus
+    const effectivePaymentMethod =
+      data.paymentMethod !== undefined ? data.paymentMethod : installment.paymentMethod
+    if (effectivePaymentStatus === 'PAID' && !effectivePaymentMethod?.trim()) {
+      throw new AppError(400, 'Se requiere el medio de pago para marcar la cuota como pagada', 'BAD_REQUEST')
+    }
 
     const dualAmounts =
       data.paymentStatus === 'PAID'
@@ -800,7 +830,13 @@ export const documentsService = {
     const updated = await prisma.$transaction(async (tx) => {
       const inst = await tx.documentInstallment.update({
         where: { id: installmentId },
-        data: { ...installmentData, ...dualAmounts },
+        data: {
+          ...installmentData,
+          ...(installmentData.paymentMethod !== undefined && {
+            paymentMethod: installmentData.paymentMethod?.trim() || null,
+          }),
+          ...dualAmounts,
+        },
       })
 
       await this.recalculateDocumentStatus(documentId, tx)
@@ -1016,6 +1052,7 @@ export const documentsService = {
         documentNumber: true,
         currency: true,
         exchangeRate: true,
+        paymentMethod: true,
         documentType: true,
         documentStatus: true,
         linkedDocumentId: true,
@@ -1162,7 +1199,9 @@ export const documentsService = {
       currency?: string
     },
     selfId?: string,
-  ) {
+  ): Promise<string | undefined> {
+    let inheritedPaymentMethod: string | undefined
+
     if (typeDef.requiresLinkedDocument && !input.linkedDocumentId) {
       throw new AppError(
         400,
@@ -1204,6 +1243,14 @@ export const documentsService = {
           const labels = allowed.map((t) => DOCUMENT_TYPES[t]?.label ?? t).join(' o ')
           throw new AppError(400, `El documento asociado debe ser ${labels}`, 'BAD_REQUEST')
         }
+      }
+      inheritedPaymentMethod = linked.paymentMethod?.trim()
+      if (!inheritedPaymentMethod) {
+        throw new AppError(
+          400,
+          'El documento vinculado no tiene medio de pago. Completalo antes de asociar este documento.',
+          'BAD_REQUEST',
+        )
       }
     }
 
@@ -1252,6 +1299,8 @@ export const documentsService = {
     ) {
       throw new AppError(400, 'Los importes no pueden ser negativos', 'BAD_REQUEST')
     }
+
+    return inheritedPaymentMethod
   },
 
   async checkDocumentNumber(documentNumber: string, documentType?: string, insuranceCompany?: string | null) {

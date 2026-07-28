@@ -82,7 +82,7 @@ const fakeDocument = {
   description: null,
   insuranceCompany: 'MAPFRE',
   paymentStatus: 'PENDING',
-  paymentMethod: null,
+  paymentMethod: 'Transferencia bancaria',
   linkedDocumentId: null,
   relationType: null,
   adjustmentReason: null,
@@ -225,6 +225,82 @@ describe('Documents API', () => {
       expect(res.status).toBe(201)
       expect(res.body.data.totalAmount).toBe(1260)
       expect(res.body.data.documentNumber).toBe('FAC-2026-001')
+    })
+
+    it('copies the document payment method to installments created with it', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(null)
+      db.accountingDocument.create.mockResolvedValue(fakeDocument)
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          paymentMethod: 'E-Cheq',
+          installments: [
+            { installmentNumber: 1, dueDate: '2026-02-01', amount: 630 },
+            { installmentNumber: 2, dueDate: '2026-03-01', amount: 630 },
+          ],
+        })
+
+      expect(res.status).toBe(201)
+      const installmentCreates =
+        db.accountingDocument.create.mock.calls[0][0].data.installments.create
+      expect(installmentCreates).toHaveLength(2)
+      expect(installmentCreates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ paymentMethod: 'E-Cheq' }),
+          expect.objectContaining({ paymentMethod: 'E-Cheq' }),
+        ]),
+      )
+    })
+
+    it('inherits the linked document payment method for an associated document', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue({
+        ...fakeDocument,
+        paymentMethod: 'E-Cheq',
+      })
+      db.accountingDocument.create.mockResolvedValue({
+        ...fakeDocument,
+        documentType: 'CREDIT_NOTE',
+        linkedDocumentId: OTHER_ID,
+        paymentMethod: 'E-Cheq',
+      })
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          documentType: 'CREDIT_NOTE',
+          documentNumber: 'NC-001',
+          linkedDocumentId: OTHER_ID,
+          paymentMethod: 'Efectivo',
+        })
+
+      expect(res.status).toBe(201)
+      expect(db.accountingDocument.create.mock.calls[0][0].data.paymentMethod).toBe('E-Cheq')
+    })
+
+    it('rejects associating a document whose source has no payment method', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue({
+        ...fakeDocument,
+        paymentMethod: null,
+      })
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          documentType: 'CREDIT_NOTE',
+          documentNumber: 'NC-001',
+          linkedDocumentId: OTHER_ID,
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.message).toContain('no tiene medio de pago')
+      expect(db.accountingDocument.create).not.toHaveBeenCalled()
     })
 
     it('returns 409 CONFLICT when the DB unique constraint catches a duplicate the pre-check missed (race)', async () => {
@@ -656,6 +732,33 @@ describe('Documents API', () => {
       expect(res.status).toBe(200)
     })
 
+    it('keeps the linked document payment method when updating an associated document', async () => {
+      const debitNote = {
+        ...fakeDocument,
+        documentType: 'DEBIT_NOTE',
+        linkedDocumentId: OTHER_ID,
+        paymentMethod: 'Transferencia bancaria',
+      }
+      db.accountingDocument.findUnique
+        .mockResolvedValueOnce(debitNote)
+        .mockResolvedValueOnce({ ...fakeDocument, paymentMethod: 'E-Cheq' })
+      db.accountingDocument.update.mockResolvedValue({
+        ...debitNote,
+        paymentMethod: 'E-Cheq',
+        installments: [],
+        allocations: [],
+        attachments: [],
+      })
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ paymentMethod: 'Efectivo' })
+
+      expect(res.status).toBe(200)
+      expect(db.accountingDocument.update.mock.calls[0][0].data.paymentMethod).toBe('E-Cheq')
+    })
+
     it('returns 400 when linkedDocumentId points to itself', async () => {
       // assertDocumentExists is called twice: once for the document, once to validate linkedDocumentId
       db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
@@ -707,6 +810,76 @@ describe('Documents API', () => {
     })
   })
 
+  describe('GET /api/v1/documents/financial', () => {
+    it('filters by paidAt for paid installments and dueDate for pending installments', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .get('/api/v1/documents/financial?from=2026-02&to=2026-03')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.accountingDocument.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            installments: {
+              some: {
+                OR: [
+                  {
+                    paymentStatus: 'PAID',
+                    paymentDate: {
+                      gte: new Date('2026-02-01T00:00:00.000Z'),
+                      lt: new Date('2026-04-01T00:00:00.000Z'),
+                    },
+                  },
+                  {
+                    paymentStatus: { not: 'PAID' },
+                    dueDate: {
+                      gte: new Date('2026-02-01T00:00:00.000Z'),
+                      lt: new Date('2026-04-01T00:00:00.000Z'),
+                    },
+                  },
+                ],
+              },
+            },
+          }),
+        }),
+      )
+    })
+
+    it('returns the payment method stored on each installment', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([
+        {
+          ...fakeDocument,
+          installments: [{
+            id: INST_ID,
+            accountingDocumentId: DOC_ID,
+            installmentNumber: 1,
+            dueDate: BASE_DATE,
+            amount: 420,
+            currency: 'ARS',
+            amountArs: 420,
+            amountUsd: 0.35,
+            paymentStatus: 'PAID',
+            paymentDate: BASE_DATE,
+            paymentMethod: 'E-Cheq',
+          }],
+          allocations: [],
+        },
+      ])
+
+      const res = await request(app)
+        .get('/api/v1/documents/financial')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].installments[0]).toMatchObject({
+        paymentMethod: 'E-Cheq',
+        paidAt: '2026-01-01',
+      })
+    })
+  })
+
   // ── PUT /api/v1/documents/:id/installments ──────────────────────────────────
 
   describe('PUT /api/v1/documents/:id/installments', () => {
@@ -721,7 +894,7 @@ describe('Documents API', () => {
     it('returns 200 and resets paymentStatus to PENDING', async () => {
       // replaceInstallments calls assertDocumentExists, then findInstallments which also calls assertDocumentExists
       db.accountingDocument.findUnique
-        .mockResolvedValueOnce(fakeDocument) // assertDocumentExists in replaceInstallments
+        .mockResolvedValueOnce({ ...fakeDocument, paymentMethod: 'E-Cheq' }) // assertDocumentExists in replaceInstallments
         .mockResolvedValueOnce(fakeDocument) // assertDocumentExists in findInstallments
       // $transaction receives an array of Prisma lazy promises — just resolve it
       db.$transaction.mockResolvedValue([])
@@ -741,6 +914,11 @@ describe('Documents API', () => {
       expect(res.body.data).toHaveLength(3)
       // Verify the paymentStatus reset to 'PENDING'
       expect(db.accountingDocument.update.mock.calls[0][0].data.paymentStatus).toBe('PENDING')
+      expect(db.documentInstallment.createMany.mock.calls[0][0].data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ paymentMethod: 'E-Cheq' }),
+        ]),
+      )
     })
   })
 
@@ -756,6 +934,7 @@ describe('Documents API', () => {
       currency: 'ARS',
       paymentStatus: 'PENDING',
       paymentDate: null,
+      paymentMethod: null,
     }
 
     it('recalculates document status to "PAID" when all installments are paid', async () => {
@@ -770,7 +949,7 @@ describe('Documents API', () => {
       const res = await request(app)
         .put(`/api/v1/documents/${DOC_ID}/installments/${INST_ID}`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ paymentStatus: 'PAID', exchangeRate: 1200 })
+        .send({ paymentStatus: 'PAID', exchangeRate: 1200, paymentMethod: 'E-Cheq' })
 
       expect(res.status).toBe(200)
       const updateCall = db.accountingDocument.update.mock.calls[0][0]
@@ -789,7 +968,7 @@ describe('Documents API', () => {
       const res = await request(app)
         .put(`/api/v1/documents/${DOC_ID}/installments/${INST_ID}`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ paymentStatus: 'PAID', exchangeRate: 1200 })
+        .send({ paymentStatus: 'PAID', exchangeRate: 1200, paymentMethod: 'Efectivo' })
 
       expect(res.status).toBe(200)
       const updateCall = db.accountingDocument.update.mock.calls[0][0]
@@ -808,6 +987,55 @@ describe('Documents API', () => {
       expect(db.documentInstallment.update).not.toHaveBeenCalled()
     })
 
+    it('rejects marking an installment as PAID without a payment method', async () => {
+      db.documentInstallment.findFirst.mockResolvedValue(fakeInstallment)
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}/installments/${INST_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ paymentStatus: 'PAID', exchangeRate: 1200 })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.message).toContain('medio de pago')
+      expect(db.documentInstallment.update).not.toHaveBeenCalled()
+    })
+
+    it('allows editing a paid installment without resending its existing payment method', async () => {
+      const paidInstallment = {
+        ...fakeInstallment,
+        paymentStatus: 'PAID',
+        paymentMethod: 'Transferencia bancaria',
+      }
+      db.documentInstallment.findFirst.mockResolvedValue(paidInstallment)
+      db.documentInstallment.update.mockResolvedValue(paidInstallment)
+      db.documentInstallment.findMany.mockResolvedValue([{ paymentStatus: 'PAID' }])
+      db.accountingDocument.update.mockResolvedValue({ ...fakeDocument, paymentStatus: 'PAID' })
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}/installments/${INST_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ dueDate: '2026-08-15' })
+
+      expect(res.status).toBe(200)
+    })
+
+    it('rejects removing the payment method from an already-paid installment', async () => {
+      db.documentInstallment.findFirst.mockResolvedValue({
+        ...fakeInstallment,
+        paymentStatus: 'PAID',
+        paymentMethod: 'E-Cheq',
+      })
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}/installments/${INST_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ paymentMethod: null })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.message).toContain('medio de pago')
+      expect(db.documentInstallment.update).not.toHaveBeenCalled()
+    })
+
     it('computes amountArs/amountUsd from the provided exchangeRate when marking as PAID', async () => {
       db.documentInstallment.findFirst.mockResolvedValue(fakeInstallment)
       db.documentInstallment.update.mockResolvedValue({ ...fakeInstallment, paymentStatus: 'PAID' })
@@ -817,7 +1045,7 @@ describe('Documents API', () => {
       const res = await request(app)
         .put(`/api/v1/documents/${DOC_ID}/installments/${INST_ID}`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ paymentStatus: 'PAID', exchangeRate: 1200 })
+        .send({ paymentStatus: 'PAID', exchangeRate: 1200, paymentMethod: 'E-Cheq' })
 
       expect(res.status).toBe(200)
       const installmentUpdateCall = db.documentInstallment.update.mock.calls[0][0]

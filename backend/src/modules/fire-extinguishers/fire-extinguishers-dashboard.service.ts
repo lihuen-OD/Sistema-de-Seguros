@@ -27,7 +27,9 @@ function emptyBucket(): StatusBucket {
 // ("vehiculo", "maquinaria_agricola"). "Maquinaria" incluye toda la maquinaria
 // agrícola (tractor, cosechadora, pulverizadora, implemento), no solo el tipo
 // literal "Maquinaria" — es como se agrupan en CATEGORY_GROUPS del frontend.
-const VEHICLE_TYPE_KEYS = new Set(['vehiculo', 'camioneta', 'camion', 'moto', 'transportedepasajeros'])
+// "moto" queda afuera a propósito: las motos no llevan matafuego, así que no
+// corresponde que aparezcan acá como "sin matafuego".
+const VEHICLE_TYPE_KEYS = new Set(['vehiculo', 'camioneta', 'camion', 'transportedepasajeros'])
 const MACHINERY_TYPE_KEYS = new Set([
   'maquinaria',
   'maquinariaagricola',

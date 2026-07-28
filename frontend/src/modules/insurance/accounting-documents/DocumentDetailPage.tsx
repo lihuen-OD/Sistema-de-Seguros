@@ -128,6 +128,7 @@ export default function DocumentDetailPage() {
           amountUsd: i.amountUsd,
           paymentStatus: i.paymentStatus as Installment['paymentStatus'],
           paidAt: i.paidAt,
+          paymentMethod: i.paymentMethod,
         })),
       )
     }
@@ -553,6 +554,7 @@ export default function DocumentDetailPage() {
                   inst={inst}
                   currency={doc.currency}
                   today={today}
+                  defaultPaymentMethod={doc.paymentMethod}
                   onUpdate={(updates) => handleInstallmentUpdate(inst.id, updates)}
                 />
               ))}
