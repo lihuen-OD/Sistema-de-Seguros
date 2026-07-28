@@ -35,7 +35,7 @@ import type { AssetCategory, AssetAttachment, AssetAllocation, Silo } from '../.
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 const IS_WHEELED = (c: AssetCategory | '') =>
-  ['vehiculo', 'camioneta', 'camion', 'moto'].includes(c)
+  ['vehiculo', 'camioneta', 'camion', 'moto', 'transporte_pasajeros'].includes(c)
 const IS_AGRO = (c: AssetCategory | '') =>
   ['tractor', 'cosechadora', 'pulverizadora', 'implemento'].includes(c)
 const HAS_BRAND = (c: AssetCategory | '') => IS_WHEELED(c) || IS_AGRO(c)
@@ -299,7 +299,7 @@ export default function AssetNewPage() {
     const num = (v: string) => v ? parseFloat(v) : undefined
     const int = (v: string) => v ? parseInt(v, 10) : undefined
 
-    if (['vehiculo', 'camioneta', 'camion', 'moto'].includes(category)) {
+    if (['vehiculo', 'camioneta', 'camion', 'moto', 'transporte_pasajeros'].includes(category)) {
       return {
         ...(opt(form.chassisNumber) && { chassisNumber: form.chassisNumber.trim() }),
         ...(opt(form.plate) && { plate: form.plate.trim() }),

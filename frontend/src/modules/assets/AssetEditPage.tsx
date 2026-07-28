@@ -291,7 +291,7 @@ export default function AssetEditPage() {
 
   // ── Derived category from stored assetType ────────────────────────────────
   const assetCategory: AssetCategory | undefined = LABEL_TO_CATEGORY[form.assetType]
-  const isWheeled = ['vehiculo', 'camioneta', 'camion', 'moto'].includes(assetCategory ?? '')
+  const isWheeled = ['vehiculo', 'camioneta', 'camion', 'moto', 'transporte_pasajeros'].includes(assetCategory ?? '')
   const isAgroMachine = ['tractor', 'cosechadora', 'pulverizadora'].includes(assetCategory ?? '')
   const isImplemento = assetCategory === 'implemento'
   const isEdificio = assetCategory === 'edificio'

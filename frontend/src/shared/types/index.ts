@@ -160,7 +160,7 @@ export interface ClaimEvent {
 }
 
 export type AssetCategory =
-  | 'vehiculo' | 'camioneta' | 'camion' | 'moto'
+  | 'vehiculo' | 'camioneta' | 'camion' | 'moto' | 'transporte_pasajeros'
   | 'tractor' | 'cosechadora' | 'pulverizadora' | 'implemento'
   | 'edificio' | 'establecimiento'
   | 'equipo' | 'maquinaria' | 'infraestructura'
