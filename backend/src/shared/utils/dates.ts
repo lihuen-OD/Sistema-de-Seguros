@@ -1,5 +1,5 @@
 export type ExpirationStatus = 'vigente' | 'proximo_vencer' | 'vencido'
-export type PolicyStatus = 'vigente' | 'proxima_a_vencer' | 'vencida'
+export type PolicyStatus = 'vigente' | 'proxima_a_vencer' | 'vencida' | 'de_baja'
 
 export function toISODate(date: Date = new Date()): string {
   return date.toISOString().slice(0, 10)
@@ -85,13 +85,18 @@ export function computePolicyStatus(endDate: Date | string, daysWarning = 30): P
 /**
  * Filtro Prisma WHERE para pólizas por status.
  * Usa Date objects (requerido por DateTime @db.Date en Prisma).
+ *
+ * "de_baja" es manual (deactivatedAt seteado por el admin) y tiene prioridad
+ * sobre el status calculado por fecha — por eso los otros 3 status excluyen
+ * explícitamente las pólizas dadas de baja, aunque sus fechas coincidan.
  */
 export function buildPolicyStatusFilter(status: string): Record<string, unknown> {
   const today = todayDate()
   const in30Days = dateOffset(30)
 
-  if (status === 'vigente') return { endDate: { gt: in30Days } }
-  if (status === 'proxima_a_vencer') return { endDate: { gte: today, lte: in30Days } }
-  if (status === 'vencida') return { endDate: { lt: today } }
+  if (status === 'de_baja') return { deactivatedAt: { not: null } }
+  if (status === 'vigente') return { endDate: { gt: in30Days }, deactivatedAt: null }
+  if (status === 'proxima_a_vencer') return { endDate: { gte: today, lte: in30Days }, deactivatedAt: null }
+  if (status === 'vencida') return { endDate: { lt: today }, deactivatedAt: null }
   return {}
 }

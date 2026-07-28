@@ -18,7 +18,6 @@ export type NotificationCategory =
   | 'installment_overdue'
   | 'installment_near'
   | 'asset_attachment'
-  | 'policy_attachment'
 
 export interface NotificationItem {
   id: string

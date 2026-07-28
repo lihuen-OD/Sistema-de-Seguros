@@ -20,12 +20,18 @@ export interface AuditChecklistInput {
   sealStatus: string
   ringStatus: string
   hoseNozzleCondition: string
-  chargeExpirationDateObserved: string
+  chargeExpirationDateObserved?: string | null
   comments?: string
 }
 
 export interface FireExtinguisherAuditCreateInput {
   fireExtinguisherId: string
+  locationReview: LocationReview
+  masterDataReview: MasterFieldReview[]
+  checklist: AuditChecklistInput
+}
+
+export interface FireExtinguisherAuditUpdateInput {
   locationReview: LocationReview
   masterDataReview: MasterFieldReview[]
   checklist: AuditChecklistInput
@@ -109,6 +115,11 @@ export interface FireExtinguisherAuditReviewInput {
   reviewNotes?: string
 }
 
+export interface BulkApproveFireExtinguisherAuditsResult {
+  approved: string[]
+  failed: { id: string; code: string | null; message: string }[]
+}
+
 // ── Cobertura por establecimiento ───────────────────────────────────────────────
 
 export interface FireExtinguisherCoverageItem {
@@ -120,15 +131,23 @@ export interface FireExtinguisherCoverageItem {
   associatedLocationType: string
   location: string | null
   audited: boolean
+  auditId: string | null
   auditStatus: FireExtinguisherAuditStatus | null
   auditDate: string | null
 }
 
 // ── Informe de auditoría por establecimiento/sector ─────────────────────────────
 
+export interface FireExtinguisherFindingItem {
+  id: string
+  code: string | null
+  cylinderNumber: string | null
+  location: string | null
+}
+
 export interface FireExtinguisherFindingBucket {
   count: number
-  items: { id: string; code: string }[]
+  items: FireExtinguisherFindingItem[]
 }
 
 export type FireExtinguisherFindingsField =
@@ -159,8 +178,14 @@ export interface FireExtinguisherFindingsReport {
   establishments: FireExtinguisherFindingsEstablishment[]
 }
 
+export interface FireExtinguisherAuditListFilters {
+  fireExtinguisherId?: string
+}
+
 export const fireExtinguisherAuditKeys = {
   all: ['fire-extinguisher-audits'] as const,
+  list: (filters?: FireExtinguisherAuditListFilters) =>
+    filters ? ([...fireExtinguisherAuditKeys.all, filters] as const) : fireExtinguisherAuditKeys.all,
   detail: (id: string) => [...fireExtinguisherAuditKeys.all, id] as const,
 }
 
@@ -175,6 +200,11 @@ export const fireExtinguisherAuditsApi = {
     return res.data.data
   },
 
+  async update(id: string, input: FireExtinguisherAuditUpdateInput): Promise<FireExtinguisherAudit> {
+    const res = await apiClient.put<{ data: FireExtinguisherAudit }>(`/fire-extinguisher-audits/${id}`, input)
+    return res.data.data
+  },
+
   async addAttachment(auditId: string, file: File): Promise<FireExtinguisherAuditAttachment> {
     const form = new FormData()
     form.append('file', file)
@@ -186,15 +216,27 @@ export const fireExtinguisherAuditsApi = {
     return res.data.data
   },
 
-  async findAll(): Promise<FireExtinguisherAuditListItem[]> {
+  async deleteAttachment(auditId: string, attachmentId: string): Promise<void> {
+    await apiClient.delete(`/fire-extinguisher-audits/${auditId}/attachments/${attachmentId}`)
+  },
+
+  async findAll(filters?: FireExtinguisherAuditListFilters): Promise<FireExtinguisherAuditListItem[]> {
     const res = await apiClient.get<{ data: FireExtinguisherAuditListItem[] }>('/fire-extinguisher-audits', {
-      params: { limit: 200 },
+      params: { limit: 200, ...filters },
     })
     return res.data.data
   },
 
   async review(id: string, input: FireExtinguisherAuditReviewInput): Promise<FireExtinguisherAudit> {
     const res = await apiClient.post<{ data: FireExtinguisherAudit }>(`/fire-extinguisher-audits/${id}/review`, input)
+    return res.data.data
+  },
+
+  async bulkApprove(ids: string[], reviewNotes?: string): Promise<BulkApproveFireExtinguisherAuditsResult> {
+    const res = await apiClient.post<{ data: BulkApproveFireExtinguisherAuditsResult }>(
+      '/fire-extinguisher-audits/bulk-approve',
+      { ids, reviewNotes },
+    )
     return res.data.data
   },
 
@@ -217,11 +259,12 @@ export const fireExtinguisherAuditsApi = {
 // ── Query options (categoría B — semi-dinámico) ──────────────────────────────────
 
 export const fireExtinguisherAuditQueries = {
-  list: () =>
+  list: (filters?: FireExtinguisherAuditListFilters) =>
     queryOptions({
-      queryKey: fireExtinguisherAuditKeys.all,
-      queryFn: () => fireExtinguisherAuditsApi.findAll(),
+      queryKey: fireExtinguisherAuditKeys.list(filters),
+      queryFn: () => fireExtinguisherAuditsApi.findAll(filters),
       staleTime: 60 * 1000,
+      enabled: filters?.fireExtinguisherId === undefined || !!filters.fireExtinguisherId,
     }),
   detail: (id: string) =>
     queryOptions({

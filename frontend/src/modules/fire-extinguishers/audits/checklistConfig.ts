@@ -55,7 +55,7 @@ export const CHECKLIST_FIELDS: ChecklistFieldConfig[] = [
   { key: 'sealStatus', label: 'Precinto', type: 'choice', options: HAS_STATUS_OPTIONS, required: true },
   { key: 'ringStatus', label: 'Anillo', type: 'choice', options: HAS_STATUS_OPTIONS, required: true },
   { key: 'hoseNozzleCondition', label: 'Manguera y Tobera', type: 'choice', options: HOSE_NOZZLE_CONDITION_OPTIONS, required: true },
-  { key: 'chargeExpirationDateObserved', label: 'Fecha de vencimiento de la carga', type: 'date', required: true },
+  { key: 'chargeExpirationDateObserved', label: 'Fecha de vencimiento de la carga', type: 'date', required: false },
 ]
 
 export function isChecklistComplete(checklist: Record<string, string>): boolean {

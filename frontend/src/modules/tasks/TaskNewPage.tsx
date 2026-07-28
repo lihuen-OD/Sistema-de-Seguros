@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ClipboardPlus } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -16,6 +17,7 @@ import { producersApi, producerQueries, producerKeys } from '../../shared/api/pr
 import { policyQueries } from '../../shared/api/policies.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { TASK_PRIORITY_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TaskPriority } from '../../shared/types'
@@ -56,6 +58,7 @@ export default function TaskNewPage() {
     if (!title.trim()) e.title = 'El título es obligatorio'
     if (!dueDate) e.dueDate = 'La fecha de vencimiento es obligatoria'
     setErrors(e)
+    notifyValidationErrors(e as Record<string, string | undefined>)
     return Object.keys(e).length === 0
   }
 
@@ -66,6 +69,7 @@ export default function TaskNewPage() {
 
     if (!producerId) {
       setErrors({ title: 'Debe seleccionar un productor para crear la tarea' })
+      toast.error('Debe seleccionar un productor para crear la tarea')
       setSubmitting(false)
       return
     }

@@ -22,11 +22,10 @@ import { policyQueries } from '../../../shared/api/policies.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
+import { ExchangeRateBar } from '../../../shared/components/exchange-rate/ExchangeRateBar'
 import type { Currency, Policy, Asset, Company, CostCenter, Installment, DocumentPolicyAllocation } from '../../../shared/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const USD_RATE = 970
 
 type RowGrouping = 'empresa' | 'centro_costo' | 'activo' | 'poliza'
 type ColPeriod = 'semana' | 'mes' | 'trimestre'
@@ -55,11 +54,12 @@ function generateMonthRange(
 
 // ─── Data helpers ─────────────────────────────────────────────────────────────
 
-function convertAmount(amount: number, from: Currency, to: Currency): number {
-  if (from === to) return amount
-  if (from === 'ARS' && to === 'USD') return amount / USD_RATE
-  if (from === 'USD' && to === 'ARS') return amount * USD_RATE
-  return amount
+// Cada cuota ya llega cerrada en ambas monedas (amountArs/amountUsd, calculadas
+// server-side al crearla o al marcarla como pagada — ver computeDualAmounts).
+// Elegir la columna correcta según el toggle de vista reemplaza cualquier
+// reconversión con una tasa fija.
+function pickAmount(inst: Installment, displayCurrency: Currency): number {
+  return displayCurrency === 'ARS' ? (inst.amountArs ?? 0) : (inst.amountUsd ?? 0)
 }
 
 function buildPolicyContext(policies: Policy[], assets: Asset[]) {
@@ -139,25 +139,27 @@ function buildMatrixData(
     const key = granularity === 'week'
       ? getISOWeekKey(inst.dueDate)
       : inst.dueDate.substring(0, 7)
-    const amount = convertAmount(inst.amount, inst.currency, displayCurrency)
+    const amount = pickAmount(inst, displayCurrency)
     const isPaid = inst.paymentStatus === 'PAID'
     const policyIds = documentPolicies.get(inst.accountingDocumentId) ?? []
-    const matchingRowIds = new Set<string>()
+    const splitAmount = policyIds.length > 1 ? amount / policyIds.length : amount
 
+    // Se acumula una vez POR PÓLIZA (no por fila deduplicada) — si dos
+    // pólizas del mismo documento caen en la misma empresa/centro de
+    // costo/activo, esa fila debe recibir la porción de cada una, para que
+    // el total de la matriz coincida con la suma real de cuotas del período.
     policyIds.forEach((policyId) => {
       const ctx = policyContext.get(policyId)
       if (!ctx) return
+      let rowId: string | null = null
       switch (grouping) {
-        case 'empresa':      if (ctx.companyId)   matchingRowIds.add(ctx.companyId);   break
-        case 'centro_costo': if (ctx.costCenterId) matchingRowIds.add(ctx.costCenterId); break
-        case 'activo':       if (ctx.primaryAssetId) matchingRowIds.add(ctx.primaryAssetId); break
-        case 'poliza':       matchingRowIds.add(policyId); break
+        case 'empresa':      rowId = ctx.companyId || null; break
+        case 'centro_costo': rowId = ctx.costCenterId || null; break
+        case 'activo':       rowId = ctx.primaryAssetId; break
+        case 'poliza':       rowId = policyId; break
       }
-    })
+      if (!rowId) return
 
-    const splitAmount = policyIds.length > 1 ? amount / policyIds.length : amount
-
-    matchingRowIds.forEach((rowId) => {
       if (!matrix.has(rowId)) matrix.set(rowId, new Map())
       const rowMap = matrix.get(rowId)!
       if (!rowMap.has(key)) rowMap.set(key, { paid: 0, pending: 0 })
@@ -270,7 +272,7 @@ export default function FinancialAnalysisPage() {
     allInstallments.forEach((inst) => {
       const monthKey = inst.dueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
-      const amount = convertAmount(inst.amount, inst.currency, currency)
+      const amount = pickAmount(inst, currency)
       if (inst.paymentStatus === 'PAID') {
         totalPaid += amount
       } else {
@@ -289,7 +291,7 @@ export default function FinancialAnalysisPage() {
       let pending = 0
       allInstallments.forEach((inst) => {
         if (inst.dueDate.substring(0, 7) !== key) return
-        const amount = convertAmount(inst.amount, inst.currency, currency)
+        const amount = pickAmount(inst, currency)
         if (inst.paymentStatus === 'PAID') paid += amount
         else pending += amount
       })
@@ -464,6 +466,10 @@ export default function FinancialAnalysisPage() {
         title="Análisis Financiero"
         subtitle="Flujo de cuotas y vencimientos por período"
       />
+
+      <div className="mb-5">
+        <ExchangeRateBar />
+      </div>
 
       {/* Controls */}
       <div className="space-y-3 mb-6">
@@ -776,7 +782,7 @@ export default function FinancialAnalysisPage() {
         </div>
 
         {/* Legend */}
-        <div className="flex items-center gap-5 px-5 py-3 border-t border-slate-100 bg-slate-50/50">
+        <div className="flex items-center gap-5 px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-sm bg-emerald-100 border border-emerald-300 inline-block" />
             <span className="text-xs text-slate-500">Pagado</span>
@@ -785,9 +791,6 @@ export default function FinancialAnalysisPage() {
             <span className="w-3 h-3 rounded-sm bg-red-100 border border-red-300 inline-block" />
             <span className="text-xs text-slate-500">Pendiente</span>
           </div>
-          <span className="text-xs text-slate-400 ml-2">
-            · Tipo de cambio fijo: AR$ {USD_RATE.toLocaleString('es-AR')} / US$
-          </span>
         </div>
       </SectionCard>
     </PageContent>

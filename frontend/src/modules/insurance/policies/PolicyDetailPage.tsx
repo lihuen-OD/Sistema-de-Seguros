@@ -4,7 +4,7 @@ import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Building2, User, Tag, Calendar, Hash, Link2,
-  Receipt, TrendingUp, TrendingDown, CheckCircle2, Plus, ChevronDown, ChevronUp, ArrowUpRight, FileEdit,
+  Receipt, TrendingUp, TrendingDown, CheckCircle2, Plus, ChevronDown, ChevronUp, ArrowUpRight, FileEdit, Archive,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -13,13 +13,14 @@ import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
+import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import {
   formatCurrencyFull,
   formatCurrencyCompact,
   formatDate,
   daysUntil,
 } from '../../../shared/utils/format'
-import { policyQueries } from '../../../shared/api/policies.api'
+import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
 import { producerQueries } from '../../../shared/api/producers.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
@@ -29,6 +30,13 @@ import { ROUTES } from '../../../app/routes'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
 import type { AccountingDocument, Installment, InstallmentUpdate, ProducerTask, TableColumn } from '../../../shared/types'
+
+// Orden por severidad/ciclo de vida al ordenar las columnas "Prioridad" y
+// "Estado" de la tabla de tareas — alfabético dejaría, por ejemplo, "alta"
+// antes que "baja", que no refleja ninguna escala real. Mismo orden que
+// TASK_PRIORITY_LABELS / TASK_STATUS_LABELS.
+const TASK_PRIORITY_SORT_ORDER: Record<string, number> = { baja: 0, media: 1, alta: 2 }
+const TASK_STATUS_SORT_ORDER: Record<string, number> = { pendiente: 0, en_curso: 1, finalizada: 2, vencida: 3 }
 
 export default function PolicyDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -62,6 +70,15 @@ export default function PolicyDetailPage() {
   const [localInstallments, setLocalInstallments] = useState<Map<string, Installment[]>>(
     () => new Map(),
   )
+
+  const [showDeBajaConfirm, setShowDeBajaConfirm] = useState(false)
+
+  const handleDeBaja = async () => {
+    await policiesApi.markAsDeBaja(id!)
+    queryClient.invalidateQueries({ queryKey: policyKeys.detail(id!) })
+    queryClient.invalidateQueries({ queryKey: policyKeys.all })
+    setShowDeBajaConfirm(false)
+  }
 
   if (loadingPolicy) {
     return (
@@ -102,6 +119,8 @@ export default function PolicyDetailPage() {
       dueDate: i.dueDate,
       amount: i.amount,
       currency: i.currency as Installment['currency'],
+      amountArs: i.amountArs,
+      amountUsd: i.amountUsd,
       paymentStatus: i.paymentStatus as Installment['paymentStatus'],
       paidAt: i.paidAt,
     })))
@@ -158,6 +177,7 @@ export default function PolicyDetailPage() {
     {
       key: 'title',
       label: 'Tarea',
+      sortable: true,
       render: (_, row) => (
         <div>
           <p className="font-medium text-slate-800 text-sm">{row.title}</p>
@@ -168,16 +188,21 @@ export default function PolicyDetailPage() {
     {
       key: 'dueDate',
       label: 'Vencimiento',
+      sortable: true,
       render: (v) => <span className="text-xs">{formatDate(v as string)}</span>,
     },
     {
       key: 'priority',
       label: 'Prioridad',
+      sortable: true,
+      sortValue: (row) => TASK_PRIORITY_SORT_ORDER[row.priority] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     {
       key: 'status',
       label: 'Estado',
+      sortable: true,
+      sortValue: (row) => TASK_STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
   ]
@@ -193,6 +218,15 @@ export default function PolicyDetailPage() {
         badge={<StatusPill status={policy.status} />}
         actions={
           <div className="flex items-center gap-2">
+            {policy.status === 'vencida' && (
+              <button
+                onClick={() => setShowDeBajaConfirm(true)}
+                className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+              >
+                <Archive size={15} />
+                Dar de baja
+              </button>
+            )}
             <button
               onClick={() => navigate(`/insurance/policies/${policy.id}/ficha`)}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
@@ -209,6 +243,15 @@ export default function PolicyDetailPage() {
             </button>
           </div>
         }
+      />
+
+      <ConfirmDialog
+        open={showDeBajaConfirm}
+        title="Dar de baja la póliza"
+        description={`¿Dar de baja la póliza "${policy.policyNumber}"? Pasará a estado "De Baja" de forma permanente.`}
+        confirmLabel="Dar de baja"
+        onConfirm={handleDeBaja}
+        onCancel={() => setShowDeBajaConfirm(false)}
       />
 
       {/* Main 2-column layout */}
@@ -498,7 +541,7 @@ export default function PolicyDetailPage() {
         {/* Adjuntos tab */}
         {activeDocTab === 'adjuntos' && (
           <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-            <PolicyAttachmentsSection policyId={policy.id} />
+            <PolicyAttachmentsSection policyId={policy.id} policyEndDate={policy.endDate} />
           </div>
         )}
       </div>

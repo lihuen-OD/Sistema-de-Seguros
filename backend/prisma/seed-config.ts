@@ -202,10 +202,8 @@ const CATALOGS: Record<string, string[]> = {
     'Otros',
   ],
 
-  document_currency: [
-    'ARS',
-    'USD',
-  ],
+  // document_currency ya no es un catálogo editable — la moneda es un enum
+  // fijo (ARS/USD), ver frontend/src/shared/constants/index.ts#CURRENCY_OPTIONS.
 
   // ── Siniestros ──────────────────────────────────────────────────────────
   claim_type: [

@@ -25,6 +25,7 @@ import {
 import { assetQueries } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 
 const CURRENT_YEAR = new Date().getFullYear()
 
@@ -38,6 +39,7 @@ interface FormErrors {
   manufacturingYear?: string
   establishment?: string
   hydraulicTestExpirationDate?: string
+  [key: string]: string | undefined
 }
 
 export default function FireExtinguisherEditPage() {
@@ -148,6 +150,7 @@ export default function FireExtinguisherEditPage() {
       }
     }
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 

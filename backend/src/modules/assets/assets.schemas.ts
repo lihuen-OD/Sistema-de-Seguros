@@ -31,6 +31,8 @@ export const CreateAssetSchema = z.object({
   purchaseValue: z.number().positive().optional(),
   currentValue: z.number().nonnegative().optional(),
   patrimonialValueNew: z.number().nonnegative().optional(),
+  currency: z.enum(['ARS', 'USD']).default('USD'),
+  exchangeRate: z.number().positive().default(1),
   location: z.string().max(300).optional(),
   mapsUrl: z.string().max(2000).optional(),
   productiveUnit: z.string().max(150).optional(),
@@ -64,6 +66,11 @@ export const AddAttachmentSchema = z.object({
   expirationDate: ISODate.optional().nullable(),
 })
 
+export const UpdateAttachmentSchema = z.object({
+  description: z.string().max(500).nullable().optional(),
+  expirationDate: ISODate.nullable().optional(),
+})
+
 export const ListAssetsQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
   search: z.string().optional(),
   assetType: z.string().optional(),
@@ -74,4 +81,5 @@ export type UpdateAssetDTO = z.infer<typeof UpdateAssetSchema>
 export type ReplaceAllocationsDTO = z.infer<typeof ReplaceAllocationsSchema>
 export type AddValueHistoryDTO = z.infer<typeof AddValueHistorySchema>
 export type AddAttachmentDTO = z.infer<typeof AddAttachmentSchema>
+export type UpdateAttachmentDTO = z.infer<typeof UpdateAttachmentSchema>
 export type ListAssetsQueryDTO = z.infer<typeof ListAssetsQuerySchema>

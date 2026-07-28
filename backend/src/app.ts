@@ -22,6 +22,7 @@ import { fireExtinguishersRouter } from './modules/fire-extinguishers/fire-extin
 import { fireExtinguisherAuditsRouter } from './modules/fire-extinguisher-audits/fire-extinguisher-audits.router'
 import { claimsRouter } from './modules/claims/claims.router'
 import { catalogsRouter } from './modules/catalogs/catalogs.router'
+import { exchangeRateRouter } from './modules/exchange-rate/exchange-rate.router'
 import { dashboardRouter } from './modules/dashboard/dashboard.router'
 import { notificationsRouter } from './modules/notifications/notifications.router'
 
@@ -121,6 +122,8 @@ app.use('/api/v1/fire-extinguisher-audits', fireExtinguisherAuditsRouter)
 app.use('/api/v1/claims', claimsRouter)
 // Fase 11 — Catálogos dinámicos
 app.use('/api/v1/catalogs', catalogsRouter)
+// Tipo de cambio global (cierre en ambas monedas)
+app.use('/api/v1/exchange-rate', exchangeRateRouter)
 // Fase 9 — Dashboard y Analytics
 app.use('/api/v1/dashboard', dashboardRouter)
 // Fase 10 — Notificaciones

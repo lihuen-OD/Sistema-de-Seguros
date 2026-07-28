@@ -12,14 +12,13 @@ import {
 
 type StatusType =
   | 'activo' | 'inactivo' | 'en_reparacion' | 'vendido' | 'dado_de_baja' | 'pendiente_documentacion'
-  | 'vigente' | 'proximo_vencer' | 'vencida'
+  | 'vigente' | 'proximo_vencer' | 'vencida' | 'de_baja'
   | 'pendiente' | 'parcial' | 'pagado'
   | 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'NOT_APPLICABLE'
   | 'ISSUED' | 'APPLIED' | 'CANCELLED' | 'OBSERVED'
   | 'vencido' | 'sin_fecha'
   | 'en_curso' | 'finalizada'
   | 'baja' | 'media' | 'alta'
-  | 'sin_factura'
   | string
 
 const statusConfig: Record<string, { bg: string; text: string; border: string }> = {
@@ -33,7 +32,7 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   vigente:                 { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   proximo_vencer:          { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
   vencida:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
-  sin_factura:             { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200' },
+  de_baja:                 { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
   // Payment (legacy es-ES keys, kept for other modules)
   pendiente:               { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200' },
   parcial:                 { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },

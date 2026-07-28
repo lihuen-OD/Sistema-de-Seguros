@@ -1,4 +1,4 @@
-import { Plus, Building2, Trash2 } from 'lucide-react'
+import { Plus, Building2, Trash2, Copy } from 'lucide-react'
 import { FormInput, FormSelect } from '../../../shared/components/forms/FormSection'
 import type { CatalogItem } from '../../../shared/api/catalogs.api'
 
@@ -12,10 +12,11 @@ export interface EstBuilding {
 }
 
 export function EstBuildingsSection({
-  buildings, onAdd, onRemove, onChange, buildingPurposes,
+  buildings, onAdd, onDuplicate, onRemove, onChange, buildingPurposes,
 }: {
   buildings: EstBuilding[]
   onAdd: () => void
+  onDuplicate: (id: string) => void
   onRemove: (id: string) => void
   onChange: (id: string, field: keyof Omit<EstBuilding, 'id'>, value: string) => void
   buildingPurposes: CatalogItem[]
@@ -61,9 +62,19 @@ export function EstBuildingsSection({
             <div key={b.id} className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Edificio {idx + 1}</span>
-                <button type="button" onClick={() => onRemove(b.id)} className="p-1 text-slate-400 hover:text-red-500 transition-colors">
-                  <Trash2 size={14} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onDuplicate(b.id)}
+                    title="Duplicar edificio"
+                    className="p-1 text-slate-400 hover:text-brand-600 transition-colors"
+                  >
+                    <Copy size={14} />
+                  </button>
+                  <button type="button" onClick={() => onRemove(b.id)} title="Eliminar edificio" className="p-1 text-slate-400 hover:text-red-500 transition-colors">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="sm:col-span-2 lg:col-span-3">

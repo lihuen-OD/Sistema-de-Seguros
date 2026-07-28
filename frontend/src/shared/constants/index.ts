@@ -55,8 +55,7 @@ export const POLICY_STATUS_LABELS: Record<string, string> = {
   vigente: 'Vigente',
   proximo_vencer: 'Próx. a Vencer',
   vencida: 'Vencida',
-  pendiente_documentacion: 'Pend. Documentación',
-  sin_factura: 'Sin Factura',
+  de_baja: 'De Baja',
 }
 
 export const ASSET_STATUS_LABELS: Record<string, string> = {
@@ -104,3 +103,11 @@ export const PROVINCES = [
 ]
 
 export const EXPIRING_SOON_DAYS = 30
+
+// Única fuente de las dos monedas soportadas por el sistema — reemplaza el
+// catálogo editable `document_currency` que permitía cargar cualquier texto
+// libre (ej. el typo "ARG"). Usado en Documentos, Siniestros, Pólizas y Activos.
+export const CURRENCY_OPTIONS: { value: 'ARS' | 'USD'; label: string }[] = [
+  { value: 'ARS', label: 'Pesos (ARS)' },
+  { value: 'USD', label: 'Dólares (USD)' },
+]

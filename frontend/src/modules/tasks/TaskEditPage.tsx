@@ -17,6 +17,7 @@ import {
 import { producersApi, producerQueries, producerKeys } from '../../shared/api/producers.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { assetQueries } from '../../shared/api/assets.api'
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TaskPriority, TaskStatus } from '../../shared/types'
@@ -104,6 +105,7 @@ export default function TaskEditPage() {
     if (!title.trim()) e.title = 'El título es obligatorio'
     if (!dueDate) e.dueDate = 'La fecha de vencimiento es obligatoria'
     setErrors(e)
+    notifyValidationErrors(e as Record<string, string | undefined>)
     return Object.keys(e).length === 0
   }
 

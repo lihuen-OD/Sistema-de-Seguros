@@ -36,9 +36,29 @@ export const fireExtinguisherAuditsController = {
     res.json({ data: audit })
   }),
 
-  review: asyncHandler(async (req: Request<IdParam>, res: Response) => {
-    const audit = await fireExtinguisherAuditsService.review(req.params.id, req.body, req.user?.email ?? 'sistema')
+  update: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const audit = await fireExtinguisherAuditsService.update(req.params.id, req.body)
     res.json({ data: audit })
+  }),
+
+  review: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const audit = await fireExtinguisherAuditsService.review(
+      req.params.id,
+      req.body,
+      req.user?.email ?? 'sistema',
+      req.user?.role === 'ADMIN',
+    )
+    res.json({ data: audit })
+  }),
+
+  bulkApprove: asyncHandler(async (req: Request, res: Response) => {
+    const result = await fireExtinguisherAuditsService.bulkApprove(
+      req.body.ids,
+      req.user?.email ?? 'sistema',
+      req.user?.role === 'ADMIN',
+      req.body.reviewNotes,
+    )
+    res.json({ data: result })
   }),
 
   addAttachment: asyncHandler(async (req: Request<IdParam>, res: Response) => {

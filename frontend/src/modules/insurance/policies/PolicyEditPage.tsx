@@ -23,6 +23,8 @@ import { producerQueries } from '../../../shared/api/producers.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
+import { notifyValidationErrors } from '../../../shared/utils/formValidation'
+import { CURRENCY_OPTIONS } from '../../../shared/constants'
 import type { Policy } from '../../../shared/types'
 import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
 
@@ -42,7 +44,8 @@ interface PolicyForm {
   assetIds: string[]
   companyId: string
   costCenterId: string
-  insuredAmountArs: string
+  currency: 'ARS' | 'USD'
+  insuredAmount: string
   exchangeRate: string
 }
 
@@ -61,7 +64,11 @@ function policyToForm(p: Policy): PolicyForm {
     assetIds: p.assetIds ?? [],
     companyId: p.companyId ?? '',
     costCenterId: p.costCenterId ?? '',
-    insuredAmountArs: String(p.insuredAmountArs),
+    currency: p.currency,
+    // El importe mostrado siempre corresponde a la moneda histórica de la
+    // póliza — se toma directo del cierre en ambas monedas que ya calculó
+    // el backend, sin heurísticas en el cliente.
+    insuredAmount: String(p.currency === 'USD' ? p.insuredAmountUsd : p.insuredAmountArs),
     exchangeRate: String(p.exchangeRate),
   }
 }
@@ -196,7 +203,7 @@ export default function PolicyEditPage() {
     policyNumber: '', insuranceCompany: '', producerId: '', insuranceType: '',
     coverageTypes: [], startDate: '', endDate: '', description: '',
     beneficiaryDescription: '', association: 'activo', assetIds: [],
-    companyId: '', costCenterId: '', insuredAmountArs: '', exchangeRate: '',
+    companyId: '', costCenterId: '', currency: 'ARS', insuredAmount: '', exchangeRate: '',
   })
   const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm | 'coverageTypes', string>>>({})
   const [formInitialized, setFormInitialized] = useState(false)
@@ -224,12 +231,17 @@ export default function PolicyEditPage() {
   // componente pasaría de llamar N hooks (mientras loadingPolicy/!policy)
   // a llamar N+2 (una vez que la póliza carga), lo cual rompe las reglas de
   // hooks de React para la misma instancia montada.
-  const insuredAmountUsd = useMemo(() => {
-    const ars = parseFloat(form.insuredAmountArs)
+  // Suma Asegurada — el usuario elige en qué moneda carga el importe y acá
+  // solo calculamos la vista previa del equivalente en la otra moneda (el
+  // backend es quien cierra y persiste ambos montos al guardar).
+  const equivalentCurrencyLabel = form.currency === 'ARS' ? 'USD' : 'ARS'
+  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
+  const equivalentAmount = useMemo(() => {
+    const amount = parseFloat(form.insuredAmount)
     const rate = parseFloat(form.exchangeRate)
-    if (!isNaN(ars) && !isNaN(rate) && rate > 0) return (ars / rate).toFixed(2)
-    return ''
-  }, [form.insuredAmountArs, form.exchangeRate])
+    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
+    return form.currency === 'ARS' ? (amount / rate).toFixed(2) : (amount * rate).toFixed(2)
+  }, [form.insuredAmount, form.exchangeRate, form.currency])
 
   const filteredCostCenters = useMemo(
     () => costCenters.filter((cc) => cc.status === 'activo'),
@@ -264,6 +276,11 @@ export default function PolicyEditPage() {
   const setInsuranceType = (value: string) => {
     setForm((prev) => ({ ...prev, insuranceType: value, coverageTypes: [] }))
     setErrors((prev) => ({ ...prev, insuranceType: undefined, coverageTypes: undefined }))
+  }
+
+  const setCurrency = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value as 'ARS' | 'USD'
+    setForm((prev) => ({ ...prev, currency: value }))
   }
 
   const setAssociation = (value: AssociationType) => {
@@ -308,6 +325,7 @@ export default function PolicyEditPage() {
       next.beneficiaryDescription = 'Describí a quién corresponde este seguro'
     }
     setErrors(next)
+    notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 
@@ -315,7 +333,7 @@ export default function PolicyEditPage() {
     e.preventDefault()
     if (!validate()) return
 
-    const ars = parseFloat(form.insuredAmountArs) || 0
+    const amount = parseFloat(form.insuredAmount) || 0
     const rate = parseFloat(form.exchangeRate) || 1
 
     // Resolve insuranceTypeId from the loaded list
@@ -340,8 +358,8 @@ export default function PolicyEditPage() {
       beneficiaryDescription: form.beneficiaryDescription.trim() || null,
       startDate: form.startDate,
       endDate: form.endDate,
-      premium: ars,
-      currency: 'ARS',
+      premium: amount,
+      currency: form.currency,
       exchangeRate: rate,
       description: form.description.trim() || undefined,
       coverageIds: form.coverageTypes,
@@ -546,12 +564,19 @@ export default function PolicyEditPage() {
         {/* 4. Importes */}
         <SectionCard title="Importes" subtitle="Suma asegurada y tipo de cambio">
           <FormSection title="">
-            <FormField label="Suma Asegurada (ARS)" error={errors.insuredAmountArs}>
+            <FormField label="Moneda">
+              <FormSelect value={form.currency} onChange={setCurrency}>
+                {CURRENCY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </FormSelect>
+            </FormField>
+            <FormField label={`Suma Asegurada (${form.currency})`} error={errors.insuredAmount}>
               <FormInput
                 type="number"
                 placeholder="Ej: 30000000"
-                value={form.insuredAmountArs}
-                onChange={set('insuredAmountArs')}
+                value={form.insuredAmount}
+                onChange={set('insuredAmount')}
                 min="0"
                 step="1"
               />
@@ -566,11 +591,11 @@ export default function PolicyEditPage() {
                 step="0.01"
               />
             </FormField>
-            <FormField label="Suma Asegurada (USD)">
+            <FormField label={`Suma Asegurada (${equivalentCurrencyLabel})`}>
               <FormInput
                 value={
-                  insuredAmountUsd
-                    ? `US$ ${parseFloat(insuredAmountUsd).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  equivalentAmount
+                    ? `${equivalentPrefix} ${parseFloat(equivalentAmount).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     : ''
                 }
                 readOnly
@@ -587,7 +612,7 @@ export default function PolicyEditPage() {
           subtitle="Adjuntá la póliza, certificados y documentación adicional"
           noPadding
         >
-          <PolicyAttachmentsSection policyId={policy.id} />
+          <PolicyAttachmentsSection policyId={policy.id} policyEndDate={policy.endDate} />
         </SectionCard>
 
         {/* Footer */}

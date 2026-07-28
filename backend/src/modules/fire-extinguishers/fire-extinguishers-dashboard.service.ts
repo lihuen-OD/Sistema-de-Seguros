@@ -19,6 +19,72 @@ function emptyBucket(): StatusBucket {
   return { total: 0, vigente: 0, proximo_vencer: 0, vencido: 0, sin_fecha: 0 }
 }
 
+// ── Cobertura de matafuegos en Vehículos y Maquinaria ───────────────────────────
+// `assetType` es un string libre (ver ASSET_TYPES en el frontend), sin enum ni
+// catálogo en el backend — se normaliza (sin acentos, sin espacios/guiones) para
+// reconocer tanto las etiquetas canónicas ("Vehículo", "Implemento agrícola")
+// como valores legacy cargados antes de existir el catálogo de categorías
+// ("vehiculo", "maquinaria_agricola"). "Maquinaria" incluye toda la maquinaria
+// agrícola (tractor, cosechadora, pulverizadora, implemento), no solo el tipo
+// literal "Maquinaria" — es como se agrupan en CATEGORY_GROUPS del frontend.
+const VEHICLE_TYPE_KEYS = new Set(['vehiculo', 'camioneta', 'camion', 'moto'])
+const MACHINERY_TYPE_KEYS = new Set([
+  'maquinaria',
+  'maquinariaagricola',
+  'tractor',
+  'cosechadora',
+  'pulverizadora',
+  'implemento',
+  'implementoagricola',
+])
+
+const ASSET_TYPE_ACCENTS: Record<string, string> = { á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u', ü: 'u', ñ: 'n' }
+
+function normalizeAssetType(assetType: string): string {
+  const lower = assetType.toLowerCase()
+  let result = ''
+  for (const ch of lower) result += ASSET_TYPE_ACCENTS[ch] ?? ch
+  return result.replace(/[^a-z0-9]/g, '')
+}
+
+function classifyAssetType(assetType: string): 'vehiculo' | 'maquinaria' | null {
+  const normalized = normalizeAssetType(assetType)
+  if (VEHICLE_TYPE_KEYS.has(normalized)) return 'vehiculo'
+  if (MACHINERY_TYPE_KEYS.has(normalized)) return 'maquinaria'
+  return null
+}
+
+interface VehicleMachineryItem {
+  id: string
+  code: string
+  name: string
+  assetType: string
+  fireExtinguishers: { id: string; code: string; status: string }[]
+}
+
+interface VehicleMachineryGroup {
+  total: number
+  conMatafuego: number
+  sinMatafuego: number
+  items: VehicleMachineryItem[]
+}
+
+function emptyVehicleMachineryGroup(): VehicleMachineryGroup {
+  return { total: 0, conMatafuego: 0, sinMatafuego: 0, items: [] }
+}
+
+// Sin matafuego primero — son los que requieren acción, igual criterio que el
+// resto de los tableros de esta pantalla (ver AUDIT_STATUS_SORT_ORDER análogo
+// en el frontend).
+function sortVehicleMachineryItems(items: VehicleMachineryItem[]): VehicleMachineryItem[] {
+  return [...items].sort((a, b) => {
+    const aMissing = a.fireExtinguishers.length === 0
+    const bMissing = b.fireExtinguishers.length === 0
+    if (aMissing !== bMissing) return aMissing ? -1 : 1
+    return a.code.localeCompare(b.code, 'es', { numeric: true })
+  })
+}
+
 export const fireExtinguishersDashboardService = {
   async getDashboardSummary() {
     const currentPeriod = currentYearMonth()
@@ -35,6 +101,7 @@ export const fireExtinguishersDashboardService = {
       pendingReview,
       needsCorrection,
       recentAuditsRaw,
+      vehicleMachineryAssets,
     ] = await Promise.all([
       prisma.fireExtinguisher.count({ where: { isActive: true } }),
       prisma.fireExtinguisher.count({ where: { isActive: true, ...buildFireExtinguisherStatusFilter('vencido') } }),
@@ -68,6 +135,19 @@ export const fireExtinguishersDashboardService = {
         orderBy: { createdAt: 'desc' },
         take: 8,
         include: { extinguisher: { select: { code: true } } },
+      }),
+      prisma.asset.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          assetType: true,
+          fireExtinguishers: {
+            where: { isActive: true },
+            select: { id: true, code: true, expirationDate: true, manufacturingYear: true, hydraulicTestExpirationDate: true },
+          },
+        },
       }),
     ])
 
@@ -113,6 +193,33 @@ export const fireExtinguishersDashboardService = {
       createdAt: a.createdAt,
     }))
 
+    const vehiculos = emptyVehicleMachineryGroup()
+    const maquinaria = emptyVehicleMachineryGroup()
+    for (const asset of vehicleMachineryAssets) {
+      const category = classifyAssetType(asset.assetType)
+      if (!category) continue
+
+      const group = category === 'vehiculo' ? vehiculos : maquinaria
+      const fireExtinguishers = asset.fireExtinguishers.map((fe) => ({
+        id: fe.id,
+        code: fe.code ?? fe.id.slice(0, 8).toUpperCase(),
+        status: computeFireExtinguisherStatus(fe.expirationDate, fe.manufacturingYear, fe.hydraulicTestExpirationDate),
+      }))
+
+      group.total += 1
+      if (fireExtinguishers.length > 0) group.conMatafuego += 1
+      else group.sinMatafuego += 1
+      group.items.push({
+        id: asset.id,
+        code: asset.code ?? asset.id.slice(0, 8).toUpperCase(),
+        name: asset.name,
+        assetType: asset.assetType,
+        fireExtinguishers,
+      })
+    }
+    vehiculos.items = sortVehicleMachineryItems(vehiculos.items)
+    maquinaria.items = sortVehicleMachineryItems(maquinaria.items)
+
     return {
       totals: {
         total: totalActive,
@@ -132,6 +239,7 @@ export const fireExtinguishersDashboardService = {
         needsCorrection,
       },
       recentAudits,
+      vehicleMachineryCoverage: { vehiculos, maquinaria },
     }
   },
 }

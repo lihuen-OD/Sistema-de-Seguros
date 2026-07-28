@@ -2,6 +2,7 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { toDateStr } from '../../shared/utils/dates'
+import { computeDualAmounts } from '../../shared/utils/currency'
 import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import { computeTotalAmount } from '../documents/document-amounts'
@@ -66,6 +67,22 @@ function mapExpense(e: Record<string, unknown>) {
     createdBy: e.createdBy ?? null,
     createdAt: e.createdAt,
   }
+}
+
+// El sufijo "Ars" en los 4 campos de monto (claimedAmount/realAmount/
+// settledAmount/deductible) es histórico — a partir de esta feature ambos
+// pares (xxxArs/xxxUsd) siempre se calculan acá, server-side, a partir del
+// monto crudo cargado + currency + exchangeRate vigentes, sin importar en
+// qué moneda se haya tipeado. `raw` puede venir undefined (campo no incluido
+// en el payload — no tocar), null (el cliente lo quiere limpiar) o number.
+function computeAmountPair(
+  raw: number | null | undefined,
+  currency: 'ARS' | 'USD',
+  exchangeRate: number,
+): { amountArs: number | null; amountUsd: number | null } | undefined {
+  if (raw === undefined) return undefined
+  if (raw === null) return { amountArs: null, amountUsd: null }
+  return computeDualAmounts(raw, currency, exchangeRate)
 }
 
 async function generateClaimNumber(): Promise<string> {
@@ -140,6 +157,16 @@ export const claimsService = {
 
     const claimNumber = await generateClaimNumber()
 
+    // `data.claimedAmountArs`/`realAmountArs`/`settledAmountArs`/`deductibleArs`
+    // son, pese al nombre, el monto crudo tipeado por el usuario en la moneda
+    // que indica `data.currency` (no necesariamente ARS) — el frontend ya no
+    // preconvierte nada. Acá se cierra el par ARS/USD de cada concepto.
+    const currency = data.currency as 'ARS' | 'USD'
+    const claimed = computeDualAmounts(data.claimedAmountArs, currency, data.exchangeRate)
+    const real = computeAmountPair(data.realAmountArs, currency, data.exchangeRate)
+    const settled = computeAmountPair(data.settledAmountArs, currency, data.exchangeRate)
+    const deductible = computeAmountPair(data.deductibleArs, currency, data.exchangeRate)
+
     const claim = await prisma.claim.create({
       data: {
         claimNumber,
@@ -156,10 +183,14 @@ export const claimsService = {
         thirdPartyContact: data.thirdPartyContact ?? null,
         thirdPartyInsurerContact: data.thirdPartyInsurerContact ?? null,
         status: data.status,
-        claimedAmountArs: data.claimedAmountArs,
-        realAmountArs: data.realAmountArs ?? null,
-        settledAmountArs: data.settledAmountArs ?? null,
-        deductibleArs: data.deductibleArs ?? null,
+        claimedAmountArs: claimed.amountArs,
+        claimedAmountUsd: claimed.amountUsd,
+        realAmountArs: real?.amountArs ?? null,
+        realAmountUsd: real?.amountUsd ?? null,
+        settledAmountArs: settled?.amountArs ?? null,
+        settledAmountUsd: settled?.amountUsd ?? null,
+        deductibleArs: deductible?.amountArs ?? null,
+        deductibleUsd: deductible?.amountUsd ?? null,
         currency: data.currency,
         exchangeRate: data.exchangeRate,
         observations: data.observations ?? null,
@@ -186,7 +217,15 @@ export const claimsService = {
   async update(id: string, data: UpdateClaimDTO) {
     const existing = await prisma.claim.findUnique({
       where: { id },
-      select: { status: true, claimedAmountArs: true, realAmountArs: true, settledAmountArs: true },
+      select: {
+        status: true,
+        claimedAmountArs: true,
+        realAmountArs: true,
+        settledAmountArs: true,
+        deductibleArs: true,
+        currency: true,
+        exchangeRate: true,
+      },
     })
     if (!existing) throw new AppError(404, 'Siniestro no encontrado', 'NOT_FOUND')
 
@@ -200,16 +239,31 @@ export const claimsService = {
       if (!policy) throw new AppError(400, 'Póliza no encontrada o inactiva', 'INVALID_REFERENCE')
     }
 
+    // Igual que en create(): los 4 campos de monto que llegan en `data` son el
+    // valor crudo tipeado en la moneda vigente, no necesariamente ya en ARS.
+    // Un update parcial puede tocar solo el monto sin reenviar currency/
+    // exchangeRate (o viceversa) — por eso se resuelven los efectivos a
+    // partir de lo ya guardado en `existing` antes de recalcular los pares.
+    const effectiveCurrency = (data.currency ?? existing.currency) as 'ARS' | 'USD'
+    const effectiveExchangeRate = data.exchangeRate ?? existing.exchangeRate
+
+    const claimedPair = computeAmountPair(data.claimedAmountArs, effectiveCurrency, effectiveExchangeRate)
+    const realPair = computeAmountPair(data.realAmountArs, effectiveCurrency, effectiveExchangeRate)
+    const settledPair = computeAmountPair(data.settledAmountArs, effectiveCurrency, effectiveExchangeRate)
+    const deductiblePair = computeAmountPair(data.deductibleArs, effectiveCurrency, effectiveExchangeRate)
+
     // Cambios de estado/montos vía este update() genérico (ej. desde el
     // formulario de edición completo) quedan igual de auditados que los que
     // vienen del selector rápido de estado — no depende de que el frontend
     // se acuerde de llamar a addEvent() por separado. Todo en una transacción
     // para que el update y su rastro en ClaimEvent sean atómicos.
-    const amountChanges: { label: string; previous: number | null; next: number }[] = [
-      { label: 'Monto reclamado', previous: existing.claimedAmountArs, next: data.claimedAmountArs },
-      { label: 'Monto real', previous: existing.realAmountArs, next: data.realAmountArs },
-      { label: 'Monto liquidado', previous: existing.settledAmountArs, next: data.settledAmountArs },
-    ].filter((c): c is { label: string; next: number; previous: number | null } =>
+    // Se compara en ARS ya cerrado (no el crudo `data.xxxArs`, que puede venir
+    // en USD) para que el historial no muestre saltos falsos por moneda.
+    const amountChanges: { label: string; previous: number | null; next: number | null }[] = [
+      { label: 'Monto reclamado', previous: existing.claimedAmountArs, next: claimedPair?.amountArs },
+      { label: 'Monto real', previous: existing.realAmountArs, next: realPair?.amountArs },
+      { label: 'Monto liquidado', previous: existing.settledAmountArs, next: settledPair?.amountArs },
+    ].filter((c): c is { label: string; next: number | null; previous: number | null } =>
       c.next !== undefined && c.next !== c.previous,
     )
 
@@ -229,10 +283,10 @@ export const claimsService = {
           ...(data.thirdPartyContact !== undefined && { thirdPartyContact: data.thirdPartyContact }),
           ...(data.thirdPartyInsurerContact !== undefined && { thirdPartyInsurerContact: data.thirdPartyInsurerContact }),
           ...(data.status && { status: data.status }),
-          ...(data.claimedAmountArs !== undefined && { claimedAmountArs: data.claimedAmountArs }),
-          ...(data.realAmountArs !== undefined && { realAmountArs: data.realAmountArs }),
-          ...(data.settledAmountArs !== undefined && { settledAmountArs: data.settledAmountArs }),
-          ...(data.deductibleArs !== undefined && { deductibleArs: data.deductibleArs }),
+          ...(claimedPair && { claimedAmountArs: claimedPair.amountArs, claimedAmountUsd: claimedPair.amountUsd }),
+          ...(realPair && { realAmountArs: realPair.amountArs, realAmountUsd: realPair.amountUsd }),
+          ...(settledPair && { settledAmountArs: settledPair.amountArs, settledAmountUsd: settledPair.amountUsd }),
+          ...(deductiblePair && { deductibleArs: deductiblePair.amountArs, deductibleUsd: deductiblePair.amountUsd }),
           ...(data.currency && { currency: data.currency }),
           ...(data.exchangeRate !== undefined && { exchangeRate: data.exchangeRate }),
           ...(data.observations !== undefined && { observations: data.observations }),
@@ -260,7 +314,7 @@ export const claimsService = {
           data: {
             claimId: id,
             type: 'monto_actualizado',
-            description: `${change.label} actualizado: ${change.previous ?? 0} → ${change.next}.`,
+            description: `${change.label} actualizado: ${change.previous ?? 0} → ${change.next ?? 0}.`,
             date: new Date(),
             amountLabel: change.label,
             previousAmount: change.previous,

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -16,12 +16,14 @@ import { assetsApi, assetKeys } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import type { CatalogItem } from '../../shared/api/catalogs.api'
 import {
-  PROVINCES,
+  PROVINCES, CURRENCY_OPTIONS,
 } from '../../shared/constants'
 import {
   CATEGORY_LABEL,
 } from '../../shared/constants/asset-categories'
+import { exchangeRateQueries } from '../../shared/api/exchange-rate.api'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { CategoryPicker } from './components/CategoryPicker'
 import { BienDeUsoField } from './components/BienDeUsoField'
 import { AllocationEditor } from './components/AllocationEditor'
@@ -50,6 +52,8 @@ type FormState = {
   name: string
   status: string
   patrimonialValueUsd: string
+  currency: string
+  exchangeRate: string
   valuationDate: string
   brand: string
   model: string
@@ -86,7 +90,9 @@ type FormState = {
 }
 
 const EMPTY: FormState = {
-  bienDeUsoId: '', name: '', status: 'activo', patrimonialValueUsd: '', valuationDate: '',
+  bienDeUsoId: '', name: '', status: 'activo', patrimonialValueUsd: '',
+  currency: 'USD', exchangeRate: '1',
+  valuationDate: '',
   brand: '', model: '', year: '', serialNumber: '', chassisNumber: '',
   plate: '', engineNumber: '', color: '', fuelType: '',
   powerHp: '', cutWidth: '', tankCapacity: '', workWidth: '', implementType: '',
@@ -180,6 +186,41 @@ export default function AssetNewPage() {
   const [silos, setSilos] = useState<Silo[]>([])
   const [attachments, setAttachments] = useState<AssetAttachment[]>([])
 
+  // Prefill del tipo de cambio actual (global) — solo mientras el usuario no
+  // lo haya tocado a mano, y solo en Alta (en Edición no se pisa un TC
+  // histórico ya guardado).
+  const [exchangeRateTouched, setExchangeRateTouched] = useState(false)
+  const { data: currentExchangeRate } = useQuery(exchangeRateQueries.current())
+  useEffect(() => {
+    if (!exchangeRateTouched && currentExchangeRate?.rate) {
+      setForm((prev) => ({ ...prev, exchangeRate: String(currentExchangeRate.rate) }))
+    }
+  }, [currentExchangeRate, exchangeRateTouched])
+
+  // Vista previa del equivalente en la otra moneda — el backend es quien
+  // cierra y persiste ambos montos al guardar (ver computeDualAmounts).
+  const equivalentCurrencyLabel = form.currency === 'ARS' ? 'USD' : 'ARS'
+  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
+  function computeEquivalent(rawAmount: string): string {
+    const amount = parseFloat(rawAmount)
+    const rate = parseFloat(form.exchangeRate)
+    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
+    return form.currency === 'ARS' ? (amount / rate).toFixed(2) : (amount * rate).toFixed(2)
+  }
+  const equivalentReal = useMemo(
+    () => computeEquivalent(form.patrimonialValueUsd),
+    [form.patrimonialValueUsd, form.exchangeRate, form.currency],
+  )
+  const equivalentNew = useMemo(
+    () => computeEquivalent(form.patrimonialValueNew),
+    [form.patrimonialValueNew, form.exchangeRate, form.currency],
+  )
+  function formatEquivalent(value: string): string {
+    return value
+      ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : ''
+  }
+
   const { data: fuelTypes = [] } = useQuery(catalogQueries.byCategory('asset_fuel_type'))
   const { data: buildingPurposes = [] } = useQuery(catalogQueries.byCategory('asset_building_purpose'))
   const { data: infrastructureTypes = [] } = useQuery(catalogQueries.byCategory('asset_infrastructure_type'))
@@ -199,12 +240,27 @@ export default function AssetNewPage() {
   function validate(): boolean {
     const e: FormErrors = {}
     if (!form.name.trim()) e.name = 'El nombre del activo es obligatorio.'
-    if (!form.patrimonialValueUsd || parseFloat(form.patrimonialValueUsd) < 0)
-      e.patrimonialValueUsd = 'Ingresá un valor patrimonial válido.'
+    if (form.patrimonialValueUsd && parseFloat(form.patrimonialValueUsd) < 0)
+      e.patrimonialValueUsd = 'El valor patrimonial no puede ser negativo.'
     if (form.patrimonialValueUsd && !form.valuationDate)
       e.valuationDate = 'Indicá la fecha de valuación.'
+    if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0)
+      e.exchangeRate = 'El tipo de cambio debe ser mayor a 0.'
     setErrors(e)
-    return Object.keys(e).length === 0
+    notifyValidationErrors(e)
+
+    // El backend exige lo mismo (al menos una imputación completa que sume
+    // 100%) — se valida acá también para no depender de un viaje al
+    // servidor solo para descubrir que faltó elegir empresa/centro de costo.
+    const completeAllocations = allocations.filter((a) => a.companyId && a.costCenterId)
+    const allocationsTotal = completeAllocations.reduce((sum, a) => sum + (Number(a.percentage) || 0), 0)
+    if (completeAllocations.length === 0) {
+      toast.error('Asigná al menos una empresa y centro de costo en Imputación Contable.')
+    } else if (allocationsTotal !== 100) {
+      toast.error('Los porcentajes de Imputación Contable deben sumar 100%.')
+    }
+
+    return Object.keys(e).length === 0 && completeAllocations.length > 0 && allocationsTotal === 100
   }
 
   function handleCategoryChange(cat: AssetCategory) {
@@ -216,6 +272,14 @@ export default function AssetNewPage() {
 
   function addBuilding() {
     setBuildings((prev) => [...prev, { id: `b-${Date.now()}`, name: '', surfaceM2: '', purpose: '', constructionType: '', constructionYear: '' }])
+  }
+  function duplicateBuilding(id: string) {
+    setBuildings((prev) => {
+      const idx = prev.findIndex((b) => b.id === id)
+      if (idx === -1) return prev
+      const copy = { ...prev[idx], id: `b-${Date.now()}` }
+      return [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)]
+    })
   }
   function removeBuilding(id: string) { setBuildings((prev) => prev.filter((b) => b.id !== id)) }
   function updateBuilding(id: string, field: keyof Omit<EstBuilding, 'id'>, value: string) {
@@ -246,6 +310,7 @@ export default function AssetNewPage() {
     }
     if (['tractor', 'cosechadora', 'pulverizadora'].includes(category)) {
       return {
+        ...(opt(form.plate) && { plate: form.plate.trim() }),
         ...(opt(form.engineNumber) && { engineNumber: form.engineNumber.trim() }),
         ...(num(form.powerHp) !== undefined && { powerHp: num(form.powerHp) }),
         ...(num(form.cutWidth) !== undefined && { cutWidth: num(form.cutWidth) }),
@@ -255,6 +320,7 @@ export default function AssetNewPage() {
     }
     if (category === 'implemento') {
       return {
+        ...(opt(form.plate) && { plate: form.plate.trim() }),
         ...(opt(form.implementType) && { implementType: form.implementType }),
         ...(num(form.workWidth) !== undefined && { workWidth: num(form.workWidth) }),
       }
@@ -329,6 +395,8 @@ export default function AssetNewPage() {
         purchaseDate: form.valuationDate || undefined,
         currentValue: form.patrimonialValueUsd ? parseFloat(form.patrimonialValueUsd) : undefined,
         patrimonialValueNew: form.patrimonialValueNew ? parseFloat(form.patrimonialValueNew) : undefined,
+        currency: form.currency as 'ARS' | 'USD',
+        exchangeRate: form.exchangeRate ? parseFloat(form.exchangeRate) : undefined,
         mapsUrl: form.mapsUrl.trim() || undefined,
         productiveUnit: form.productiveUnit || undefined,
         area: form.area || undefined,
@@ -450,19 +518,48 @@ export default function AssetNewPage() {
                     <FormInput placeholder="Ej: RW8320P024316" value={form.serialNumber} onChange={set('serialNumber')} />
                   </FormField>
                 )}
-                <FormField label="Valor Patrimonial Real (USD)" required error={errors.patrimonialValueUsd}>
+                <FormField label="Moneda de Valuación" required>
+                  <FormSelect value={form.currency} onChange={set('currency')}>
+                    {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </FormSelect>
+                </FormField>
+                <FormField label="Tipo de Cambio" required error={errors.exchangeRate}>
+                  <FormInput
+                    type="number" min={0.01} step="0.01" placeholder="Ej: 1150"
+                    value={form.exchangeRate}
+                    onChange={(e) => { set('exchangeRate')(e); setExchangeRateTouched(true) }}
+                  />
+                </FormField>
+                <FormField label={`Valor Patrimonial Real (${form.currency})`} error={errors.patrimonialValueUsd}>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
                     <FormInput type="number" placeholder="0.00" min={0} step="0.01" className="pl-7" value={form.patrimonialValueUsd} onChange={set('patrimonialValueUsd')} />
                   </div>
+                  <p className="text-xs text-slate-400 mt-1">Dejalo en blanco si todavía no conocés el valor real.</p>
                 </FormField>
-                <FormField label="Valor Patrimonial a Nuevo (USD)">
+                <FormField label={`Valor Patrimonial Real (${equivalentCurrencyLabel})`}>
+                  <FormInput
+                    value={formatEquivalent(equivalentReal)}
+                    readOnly
+                    disabled
+                    placeholder="Se calcula automáticamente"
+                  />
+                </FormField>
+                <FormField label={`Valor Patrimonial a Nuevo (${form.currency})`}>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
                     <FormInput type="number" placeholder="0.00" min={0} step="0.01" className="pl-7" value={form.patrimonialValueNew} onChange={set('patrimonialValueNew')} />
                   </div>
                 </FormField>
-                <FormField label="Fecha de Valuación" required error={errors.valuationDate}>
+                <FormField label={`Valor Patrimonial a Nuevo (${equivalentCurrencyLabel})`}>
+                  <FormInput
+                    value={formatEquivalent(equivalentNew)}
+                    readOnly
+                    disabled
+                    placeholder="Se calcula automáticamente"
+                  />
+                </FormField>
+                <FormField label="Fecha de Valuación" required={!!form.patrimonialValueUsd} error={errors.valuationDate}>
                   <FormInput type="date" value={form.valuationDate} onChange={set('valuationDate')} />
                 </FormField>
               </FormSection>
@@ -495,6 +592,9 @@ export default function AssetNewPage() {
             {(['tractor', 'cosechadora', 'pulverizadora'] as AssetCategory[]).includes(category as AssetCategory) && (
               <SectionCard title="Datos de la maquinaria" subtitle="Especificaciones técnicas del equipo.">
                 <FormSection title="">
+                  <FormField label="Patente">
+                    <FormInput placeholder="Ej: AB 123 CD" value={form.plate} onChange={set('plate')} />
+                  </FormField>
                   <FormField label="N° de Motor">
                     <FormInput placeholder="Ej: CD6090-123456" value={form.engineNumber} onChange={set('engineNumber')} />
                   </FormField>
@@ -531,6 +631,9 @@ export default function AssetNewPage() {
                   </FormField>
                   <FormField label="Ancho de trabajo (m)">
                     <FormInput type="number" min={0} step="0.1" placeholder="Ej: 9.5" value={form.workWidth} onChange={set('workWidth')} />
+                  </FormField>
+                  <FormField label="Patente">
+                    <FormInput placeholder="Ej: AB 123 CD" value={form.plate} onChange={set('plate')} />
                   </FormField>
                 </FormSection>
               </SectionCard>
@@ -593,7 +696,7 @@ export default function AssetNewPage() {
                     <MapSection mapsUrl={form.mapsUrl} onChange={(v) => setForm((p) => ({ ...p, mapsUrl: v }))} />
                   </div>
                   <div className="border-t border-slate-100 pt-5">
-                    <EstBuildingsSection buildings={buildings} onAdd={addBuilding} onRemove={removeBuilding} onChange={updateBuilding} buildingPurposes={buildingPurposes} />
+                    <EstBuildingsSection buildings={buildings} onAdd={addBuilding} onDuplicate={duplicateBuilding} onRemove={removeBuilding} onChange={updateBuilding} buildingPurposes={buildingPurposes} />
                   </div>
                   <div className="border-t border-slate-100 pt-5">
                     <SilosSection silos={silos} siloContents={siloContents} onAdd={addSilo} onRemove={removeSilo} onChange={updateSilo} />

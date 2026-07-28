@@ -5,8 +5,10 @@ import { validate, validateQuery } from '../../middleware/validate.middleware'
 import { upload } from '../../middleware/upload.middleware'
 import {
   CreateFireExtinguisherAuditSchema,
+  UpdateFireExtinguisherAuditSchema,
   AddFireExtinguisherAuditAttachmentSchema,
   ReviewFireExtinguisherAuditSchema,
+  BulkApproveFireExtinguisherAuditsSchema,
   ListFireExtinguisherAuditsQuerySchema,
   CoverageQuerySchema,
 } from './fire-extinguisher-audits.schemas'
@@ -38,7 +40,25 @@ fireExtinguisherAuditsRouter.post(
   fireExtinguisherAuditsController.create,
 )
 
+// Aprueba varias auditorías SUBMITTED de una sola vez (ver service.bulkApprove) —
+// path fijo, sin conflicto posible con "/:id/review" (ese requiere el sufijo "/review").
+fireExtinguisherAuditsRouter.post(
+  '/bulk-approve',
+  requireModule('fire_extinguisher_audits'),
+  validate(BulkApproveFireExtinguisherAuditsSchema),
+  fireExtinguisherAuditsController.bulkApprove,
+)
+
 fireExtinguisherAuditsRouter.get('/:id', requireModule(...AUDITS_SHARED_READ_MODULES), fireExtinguisherAuditsController.getById)
+
+// Editar una auditoría propia SUBMITTED — tanto quien la auditó como quien la
+// revisa pueden corregirla sin tener que rechazarla primero (ver service.update).
+fireExtinguisherAuditsRouter.put(
+  '/:id',
+  requireModule(...AUDITS_SHARED_READ_MODULES),
+  validate(UpdateFireExtinguisherAuditSchema),
+  fireExtinguisherAuditsController.update,
+)
 
 fireExtinguisherAuditsRouter.post(
   '/:id/attachments',

@@ -15,6 +15,7 @@ import type {
   EconomicImpactTypeOption,
   AccountingDocumentAttachment,
   Installment,
+  Currency,
   DocumentPolicyAllocation,
   DocumentBalance,
   DocumentAuditLog,
@@ -28,6 +29,8 @@ export interface DocumentForFinancial extends AccountingDocument {
 interface BackendDocument {
   id: string; documentNumber: string; documentType: string; documentStatus: string; issueDate: string
   netAmount: number; vatAmount: number; otherTaxesAmount: number; totalAmount: number
+  /** Cierre de totalAmount en ambas monedas al momento de guardar (ver computeDualAmounts) */
+  totalAmountArs: number | null; totalAmountUsd: number | null
   currency: string; exchangeRate: number; description: string | null
   paymentStatus: string; insuranceCompany: string | null; paymentMethod: string | null
   linkedDocumentId: string | null; relationType: string | null
@@ -55,6 +58,9 @@ interface BackendInstallment {
   dueDate: string
   amount: number
   currency: string
+  /** Cierre de `amount` en ambas monedas (ver computeDualAmounts) */
+  amountArs: number | null
+  amountUsd: number | null
   paymentStatus: string
   paidAt: string | null
   paymentMethod: string | null
@@ -70,12 +76,14 @@ function mapDocument(b: BackendDocument): AccountingDocument {
     documentStatus: b.documentStatus as DocumentStatus,
     documentNumber: b.documentNumber,
     issueDate: b.issueDate?.slice(0, 10) ?? '',
-    currency: b.currency,
+    currency: b.currency as Currency,
     exchangeRate: b.exchangeRate,
     netAmount: b.netAmount,
     vatAmount: b.vatAmount,
     otherTaxesAmount: b.otherTaxesAmount,
     totalAmount: b.totalAmount,
+    totalAmountArs: b.totalAmountArs,
+    totalAmountUsd: b.totalAmountUsd,
     paymentStatus: b.paymentStatus as PaymentStatus,
     insuranceCompany: b.insuranceCompany ?? undefined,
     paymentMethod: b.paymentMethod ?? undefined,
@@ -170,6 +178,8 @@ export const documentsApi = {
         dueDate: i.dueDate?.slice(0, 10) ?? '',
         amount: i.amount,
         currency: i.currency as Installment['currency'],
+        amountArs: i.amountArs,
+        amountUsd: i.amountUsd,
         paymentStatus: i.paymentStatus as Installment['paymentStatus'],
         paidAt: i.paidAt,
       })),
@@ -275,13 +285,14 @@ export const documentsApi = {
   async updateInstallment(
     documentId: string,
     installmentId: string,
-    updates: { amount?: number; paymentStatus?: string; paidAt?: string | null; dueDate?: string },
+    updates: { amount?: number; paymentStatus?: string; paidAt?: string | null; dueDate?: string; exchangeRate?: number },
   ): Promise<void> {
     const body: Record<string, unknown> = {}
     if (updates.amount !== undefined) body.amount = updates.amount
     if (updates.paymentStatus !== undefined) body.paymentStatus = updates.paymentStatus
     if (updates.dueDate !== undefined) body.dueDate = updates.dueDate
     if ('paidAt' in updates) body.paymentDate = updates.paidAt
+    if (updates.exchangeRate !== undefined) body.exchangeRate = updates.exchangeRate
     await apiClient.put(`/documents/${documentId}/installments/${installmentId}`, body)
   },
 

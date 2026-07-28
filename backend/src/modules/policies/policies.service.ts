@@ -2,6 +2,7 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { computePolicyStatus, buildPolicyStatusFilter, toDateStr } from '../../shared/utils/dates'
+import { computeDualAmounts } from '../../shared/utils/currency'
 import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import { assetsService } from '../assets/assets.service'
@@ -17,6 +18,15 @@ const POLICY_LIST_INCLUDE = {
   company: { select: { id: true, name: true } },
   producer: { select: { id: true, name: true } },
   _count: { select: { attachments: true, allocations: true } },
+  // Para la ficha del Activo: mostrar un acceso directo a la tarjeta de
+  // circulación al lado del estado de la póliza, sin traer todos los
+  // adjuntos — solo el más reciente marcado como tal.
+  attachments: {
+    where: { isCirculationCard: true },
+    select: { id: true, fileUrl: true, name: true },
+    orderBy: { uploadedAt: 'desc' as const },
+    take: 1,
+  },
 }
 
 const POLICY_DETAIL_INCLUDE = {
@@ -27,23 +37,19 @@ const POLICY_DETAIL_INCLUDE = {
   _count: { select: { allocations: true, attachments: true } },
 }
 
-// expirationDate es @db.Date — normalizarlo a YYYY-MM-DD antes de exponerlo.
-function mapAttachment<T extends { expirationDate: Date | string | null }>(att: T) {
-  return { ...att, expirationDate: att.expirationDate ? toDateStr(att.expirationDate) : null }
-}
-
-// Normaliza las fechas a YYYY-MM-DD y agrega el status computado
+// Normaliza las fechas a YYYY-MM-DD y agrega el status computado.
+// "de_baja" es una acción manual del admin (deactivatedAt) — tiene prioridad
+// sobre el status calculado por fecha (vigente/próxima a vencer/vencida).
 function withStatus<T extends {
   startDate: Date | string
   endDate: Date | string
-  attachments?: Array<{ expirationDate: Date | string | null }>
+  deactivatedAt: Date | string | null
 }>(policy: T) {
   return {
     ...policy,
     startDate: toDateStr(policy.startDate),
     endDate: toDateStr(policy.endDate),
-    status: computePolicyStatus(policy.endDate),
-    ...(policy.attachments ? { attachments: policy.attachments.map(mapAttachment) } : {}),
+    status: policy.deactivatedAt ? 'de_baja' : computePolicyStatus(policy.endDate),
   }
 }
 
@@ -82,7 +88,12 @@ export const policiesService = {
         const selectedCoverages = p.insuranceType.coverages.filter((c) =>
           p.coverageIds.includes(c.id),
         )
-        return withStatus({ ...p, selectedCoverages })
+        // `p.attachments` acá ya viene filtrado a solo la tarjeta de
+        // circulación (ver POLICY_LIST_INCLUDE) — se saca del objeto para
+        // que withStatus no lo confunda con el listado completo de adjuntos
+        // que sí maneja genéricamente (ver su rama `policy.attachments ? ...`).
+        const { attachments, ...rest } = p
+        return withStatus({ ...rest, selectedCoverages, circulationCardAttachment: attachments[0] ?? null })
       }),
       total,
       { page, limit },
@@ -137,8 +148,14 @@ export const policiesService = {
       }
     }
 
+    const { amountArs, amountUsd } = computeDualAmounts(
+      data.premium,
+      data.currency as 'ARS' | 'USD',
+      data.exchangeRate,
+    )
+
     const policy = await prisma.policy.create({
-      data,
+      data: { ...data, premiumArs: amountArs, premiumUsd: amountUsd },
       include: POLICY_DETAIL_INCLUDE,
     })
 
@@ -150,7 +167,17 @@ export const policiesService = {
   },
 
   async update(id: string, data: UpdatePolicyDTO) {
-    const policy = await prisma.policy.findUnique({ where: { id }, select: { id: true, insuranceTypeId: true, companyId: true } })
+    const policy = await prisma.policy.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        insuranceTypeId: true,
+        companyId: true,
+        premium: true,
+        currency: true,
+        exchangeRate: true,
+      },
+    })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
 
     // Re-validar referencias que cambian — en paralelo
@@ -170,9 +197,17 @@ export const policiesService = {
     if (!companyCheck) throw new AppError(400, 'Empresa no encontrada o inactiva', 'INVALID_REFERENCE')
     if (!producerCheck) throw new AppError(400, 'Productor no encontrado o inactivo', 'INVALID_REFERENCE')
 
+    // Recalcular el cierre en ambas monedas siempre que se actualiza — un
+    // update parcial puede tocar solo una de las tres variables (premium,
+    // currency, exchangeRate) y las otras dos deben tomarse de lo ya guardado.
+    const effectivePremium = data.premium ?? policy.premium
+    const effectiveCurrency = (data.currency ?? policy.currency) as 'ARS' | 'USD'
+    const effectiveExchangeRate = data.exchangeRate ?? policy.exchangeRate
+    const { amountArs, amountUsd } = computeDualAmounts(effectivePremium, effectiveCurrency, effectiveExchangeRate)
+
     const updated = await prisma.policy.update({
       where: { id },
-      data,
+      data: { ...data, premiumArs: amountArs, premiumUsd: amountUsd },
       include: POLICY_DETAIL_INCLUDE,
     })
 
@@ -189,16 +224,32 @@ export const policiesService = {
     return prisma.policy.update({ where: { id }, data: { isActive: false } })
   },
 
+  // Acción manual del admin — solo permitida desde "Vencida", nunca automática.
+  async markAsDeBaja(id: string) {
+    const policy = await prisma.policy.findUnique({ where: { id }, select: { id: true, endDate: true, deactivatedAt: true } })
+    if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
+    if (policy.deactivatedAt) throw new AppError(409, 'La póliza ya está dada de baja', 'CONFLICT')
+    if (computePolicyStatus(policy.endDate) !== 'vencida') {
+      throw new AppError(400, 'Solo se puede dar de baja una póliza vencida', 'INVALID_STATE')
+    }
+    const updated = await prisma.policy.update({
+      where: { id },
+      data: { deactivatedAt: new Date() },
+      include: POLICY_DETAIL_INCLUDE,
+    })
+    const selectedCoverages = updated.insuranceType.coverages.filter((c) => updated.coverageIds.includes(c.id))
+    return withStatus({ ...updated, selectedCoverages })
+  },
+
   // ── Attachments ──────────────────────────────────────────────────────────────
 
   async findAttachments(policyId: string) {
     const policy = await prisma.policy.findUnique({ where: { id: policyId }, select: { id: true } })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
-    const attachments = await prisma.policyAttachment.findMany({
+    return prisma.policyAttachment.findMany({
       where: { policyId },
       orderBy: { uploadedAt: 'desc' },
     })
-    return attachments.map(mapAttachment)
   },
 
   async addAttachment(
@@ -228,7 +279,7 @@ export const policiesService = {
     }
 
     try {
-      const created = await prisma.policyAttachment.create({
+      return await prisma.policyAttachment.create({
         data: {
           policyId,
           name: sanitizeFileName(file.originalname),
@@ -237,11 +288,10 @@ export const policiesService = {
           fileSize: formatFileSize(file.size),
           fileUrl,
           cloudinaryPublicId,
-          expirationDate: meta.expirationDate ?? null,
+          isCirculationCard: meta.isCirculationCard ?? false,
           uploadedBy,
         },
       })
-      return mapAttachment(created)
     } catch (err) {
       if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
       throw err

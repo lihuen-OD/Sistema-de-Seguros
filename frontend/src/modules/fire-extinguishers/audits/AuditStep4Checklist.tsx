@@ -1,7 +1,14 @@
+import { X } from 'lucide-react'
 import { ChoiceGroup } from '../../../shared/components/forms/ChoiceGroup'
 import { FormField, FormInput, FormTextarea } from '../../../shared/components/forms/FormSection'
 import { FileDropzone } from '../../../shared/components/file-upload/FileDropzone'
 import { CHECKLIST_FIELDS } from './checklistConfig'
+
+export interface ExistingAuditPhoto {
+  id: string
+  url: string
+  name: string
+}
 
 interface AuditStep4ChecklistProps {
   checklist: Record<string, string>
@@ -12,6 +19,9 @@ interface AuditStep4ChecklistProps {
   onChangePhotos: (files: File[]) => void
   /** Vencimiento vigente (ya validado en el Paso 3) — precarga el observado y explica por qué. */
   masterExpirationDate: string
+  /** Fotos ya guardadas en la auditoría — solo se pasan al editar una auditoría existente. */
+  existingPhotos?: ExistingAuditPhoto[]
+  onRemoveExistingPhoto?: (id: string) => void
 }
 
 export function AuditStep4Checklist({
@@ -22,6 +32,8 @@ export function AuditStep4Checklist({
   pendingPhotos,
   onChangePhotos,
   masterExpirationDate,
+  existingPhotos,
+  onRemoveExistingPhoto,
 }: AuditStep4ChecklistProps) {
   function setField(key: string, value: string) {
     onChangeChecklist({ ...checklist, [key]: value })
@@ -50,6 +62,9 @@ export function AuditStep4Checklist({
                   Precargada con el vencimiento ya validado en Datos maestros — cambiala solo si la carga física indica otra fecha.
                 </p>
               )}
+              {field.key === 'chargeExpirationDateObserved' && !checklist[field.key] && (
+                <p className="text-xs text-slate-400">Dejalo en blanco si no se conoce la fecha de vencimiento.</p>
+              )}
             </>
           )}
         </FormField>
@@ -63,6 +78,29 @@ export function AuditStep4Checklist({
           placeholder="Notas sobre el estado general del equipo…"
         />
       </FormField>
+
+      {existingPhotos && existingPhotos.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-slate-600 mb-1.5">Fotos ya guardadas</p>
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
+            {existingPhotos.map((photo) => (
+              <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
+                <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
+                {onRemoveExistingPhoto && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveExistingPhoto(photo.id)}
+                    className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-red-600 text-white rounded-full transition-colors"
+                    title="Quitar foto"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <FileDropzone
         label="Fotos del matafuego (hasta 10)"

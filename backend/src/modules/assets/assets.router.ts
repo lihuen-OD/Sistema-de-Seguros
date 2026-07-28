@@ -9,6 +9,7 @@ import {
   ReplaceAllocationsSchema,
   AddValueHistorySchema,
   AddAttachmentSchema,
+  UpdateAttachmentSchema,
   ListAssetsQuerySchema,
 } from './assets.schemas'
 import { assetsController } from './assets.controller'
@@ -62,6 +63,12 @@ assetsRouter.post(
   upload.single('file'),
   validate(AddAttachmentSchema),
   assetsController.addAttachment,
+)
+assetsRouter.put(
+  '/:id/attachments/:attachmentId',
+  requireModule('assets'),
+  validate(UpdateAttachmentSchema),
+  assetsController.updateAttachment,
 )
 assetsRouter.delete(
   '/:id/attachments/:attachmentId',

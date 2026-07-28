@@ -22,11 +22,10 @@ import { policyQueries } from '../../../shared/api/policies.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
+import { ExchangeRateBar } from '../../../shared/components/exchange-rate/ExchangeRateBar'
 import type { Currency, Policy, Asset, Company, CostCenter, AccountingDocument, DocumentPolicyAllocation } from '../../../shared/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const USD_RATE = 970
 
 const PIE_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
@@ -59,11 +58,19 @@ function generateMonthRange(
 
 // ─── Currency conversion ──────────────────────────────────────────────────────
 
-function convertAmount(amount: number, from: string, to: string): number {
-  if (from === to) return amount
-  if (from === 'ARS' && to === 'USD') return amount / USD_RATE
-  if (from === 'USD' && to === 'ARS') return amount * USD_RATE
-  return amount
+// El documento ya llega cerrado en ambas monedas (totalAmountArs/totalAmountUsd,
+// calculadas server-side al crearlo/editarlo — ver computeDualAmounts). Elegir
+// la columna correcta reemplaza cualquier reconversión con una tasa fija.
+function pickDocTotal(doc: AccountingDocument, currency: Currency): number {
+  return currency === 'ARS' ? (doc.totalAmountArs ?? 0) : (doc.totalAmountUsd ?? 0)
+}
+
+// Una asignación (allocatedAmount) es una porción del total del documento, en
+// la moneda nativa del documento. Se re-expresa en la moneda pedida aplicando
+// la misma fracción sobre el total ya cerrado en esa moneda.
+function allocationInCurrency(doc: AccountingDocument, allocatedAmount: number, currency: Currency): number {
+  if (!doc.totalAmount) return 0
+  return (allocatedAmount / doc.totalAmount) * pickDocTotal(doc, currency)
 }
 
 // ─── Policy context builder ───────────────────────────────────────────────────
@@ -160,7 +167,7 @@ function buildEconomicMatrix(
     if (!docAllocs || docAllocs.size === 0) return
 
     docAllocs.forEach((allocatedAmount, policyId) => {
-      const policyAmount = convertAmount(allocatedAmount, doc.currency, displayCurrency)
+      const policyAmount = allocationInCurrency(doc, allocatedAmount, displayCurrency)
       const ctx = policyCtx.get(policyId)
       if (!ctx) return
 
@@ -356,14 +363,14 @@ export default function EconomicAnalysisPage() {
     allDocuments.forEach((doc) => {
       const monthKey = doc.issueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
-      totalCost += convertAmount(getDocumentEconomicEffect(doc), doc.currency, currency)
+      totalCost += getDocumentEconomicEffect({ ...doc, totalAmount: pickDocTotal(doc, currency) })
       const docAllocs = allocMap.get(doc.id)
       if (!docAllocs) return
       docAllocs.forEach((allocatedAmount, policyId) => {
         allocedPolicies.add(policyId)
         const ctx = policyCtx.get(policyId)
         if (!ctx) return
-        const policyAmount = convertAmount(allocatedAmount, doc.currency, currency)
+        const policyAmount = allocationInCurrency(doc, allocatedAmount, currency)
         byInsurer.set(ctx.insuranceCompany, (byInsurer.get(ctx.insuranceCompany) ?? 0) + policyAmount)
       })
     })
@@ -385,7 +392,7 @@ export default function EconomicAnalysisPage() {
       let total = 0
       allDocuments.forEach((doc) => {
         if (doc.issueDate.substring(0, 7) === key) {
-          total += convertAmount(getDocumentEconomicEffect(doc), doc.currency, currency)
+          total += getDocumentEconomicEffect({ ...doc, totalAmount: pickDocTotal(doc, currency) })
         }
       })
       return { label, total }
@@ -498,6 +505,10 @@ export default function EconomicAnalysisPage() {
         title="Análisis Económico"
         subtitle="Costos por fecha de factura/documento"
       />
+
+      <div className="mb-5">
+        <ExchangeRateBar />
+      </div>
 
       {/* Controls */}
       <div className="space-y-3 mb-6">
@@ -804,7 +815,7 @@ export default function EconomicAnalysisPage() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-5 px-5 py-3 border-t border-slate-100 bg-slate-50/50">
+        <div className="flex items-center gap-5 px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-sm bg-brand-100 border border-brand-300 inline-block" />
             <span className="text-xs text-slate-500">Costo</span>
@@ -813,9 +824,6 @@ export default function EconomicAnalysisPage() {
             <span className="w-3 h-3 rounded-sm bg-amber-100 border border-amber-300 inline-block" />
             <span className="text-xs text-slate-500">Nota de crédito / ajuste</span>
           </div>
-          <span className="text-xs text-slate-400 ml-auto">
-            Tipo de cambio fijo: AR$ {USD_RATE.toLocaleString('es-AR')} / US$
-          </span>
         </div>
       </SectionCard>
 

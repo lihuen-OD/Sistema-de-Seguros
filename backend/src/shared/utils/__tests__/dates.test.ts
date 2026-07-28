@@ -120,6 +120,16 @@ describe('buildPolicyStatusFilter', () => {
     expect(buildPolicyStatusFilter('')).toEqual({})
   })
 
+  it('returns deactivatedAt not-null filter for de_baja', () => {
+    expect(buildPolicyStatusFilter('de_baja')).toEqual({ deactivatedAt: { not: null } })
+  })
+
+  it('excludes dadas de baja from vigente/proxima_a_vencer/vencida (deactivatedAt: null)', () => {
+    expect(buildPolicyStatusFilter('vigente')).toHaveProperty('deactivatedAt', null)
+    expect(buildPolicyStatusFilter('proxima_a_vencer')).toHaveProperty('deactivatedAt', null)
+    expect(buildPolicyStatusFilter('vencida')).toHaveProperty('deactivatedAt', null)
+  })
+
   it('generates Date objects (not strings) in filter values, as required by Prisma for @db.Date filtering', () => {
     const filter = buildPolicyStatusFilter('vencida') as { endDate: { lt: Date } }
     expect(filter.endDate.lt).toBeInstanceOf(Date)
