@@ -9,6 +9,7 @@ import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { buildFindingsReportPdf } from '../../../shared/utils/buildFindingsReportPdf'
+import { fireExtinguisherLabel } from '../../../shared/utils/format'
 import { fireExtinguisherAuditQueries } from '../../../shared/api/fire-extinguisher-audits.api'
 import type {
   FireExtinguisherFindingBucket,
@@ -332,7 +333,7 @@ function PrimaryFieldBlock({
                         }}
                         className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors"
                       >
-                        {item.code}
+                        {fireExtinguisherLabel(item.cylinderNumber, item.location, item.code)}
                       </button>
                     ))}
                   </div>

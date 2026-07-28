@@ -3,12 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, X, Download, Paperclip, Upload, FileText, FileSpreadsheet,
   Image as ImageIcon, File as FileIcon, AlertTriangle, CheckCircle2,
-  Clock, Calendar, Loader2,
+  Clock, Loader2, IdCard,
 } from 'lucide-react'
 import type { PolicyAttachment } from '../../../shared/types'
 import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
 import { formatDate } from '../../../shared/utils/format'
 import { getExpirationStatus } from '../../../shared/utils/expiration'
+import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -95,8 +96,7 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [description, setDescription] = useState('')
-  const [hasExpiration, setHasExpiration] = useState(false)
-  const [expirationDate, setExpirationDate] = useState('')
+  const [isCirculationCard, setIsCirculationCard] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -111,8 +111,8 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
   const validate = (): boolean => {
     const e: Record<string, string> = {}
     if (!selectedFile) e.file = 'Seleccioná un archivo.'
-    if (hasExpiration && !expirationDate) e.expiration = 'Ingresá la fecha de vencimiento.'
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 
@@ -123,7 +123,7 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
     try {
       await policiesApi.addAttachment(policyId, selectedFile, {
         description: description.trim() || undefined,
-        expirationDate: hasExpiration ? expirationDate : undefined,
+        isCirculationCard,
       })
       onSuccess()
       onClose()
@@ -147,7 +147,7 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Adjuntar documento</h3>
-              <p className="text-xs text-slate-500">Póliza, certificado u otro archivo</p>
+              <p className="text-xs text-slate-500">Vence junto con la póliza — sin fecha de vencimiento propia</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
@@ -209,38 +209,17 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
 
           <div className="rounded-xl border border-slate-200 overflow-hidden">
             <div className="flex items-start gap-3 p-4 bg-slate-50/50">
-              <Checkbox
-                checked={hasExpiration}
-                onToggle={() => {
-                  const next = !hasExpiration
-                  setHasExpiration(next)
-                  if (!next) setExpirationDate('')
-                }}
-              />
+              <Checkbox checked={isCirculationCard} onToggle={() => setIsCirculationCard((v) => !v)} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-800">Este documento tiene fecha de vencimiento</p>
-                <p className="text-xs text-slate-500 mt-0.5">Registrá cuándo vence para hacer seguimiento</p>
-              </div>
-            </div>
-
-            {hasExpiration && (
-              <div className="px-4 pb-4 bg-slate-50/50">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  <Calendar size={11} className="inline mr-1 align-[-1px]" />
-                  Fecha de vencimiento <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={expirationDate}
-                  onChange={(e) => setExpirationDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 bg-white"
-                />
-                {errors.expiration && <p className="text-xs text-red-600 mt-1.5">{errors.expiration}</p>}
-                <p className="text-xs text-slate-400 mt-2">
-                  Va a aparecer en el centro de Notificaciones cuando esté por vencer.
+                <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                  <IdCard size={14} className="text-slate-400" />
+                  Es la tarjeta de circulación del vehículo
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Va a aparecer como acceso directo en la ficha del activo, junto al estado de la póliza
                 </p>
               </div>
-            )}
+            </div>
           </div>
         </div>
 
@@ -280,9 +259,11 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
 
 interface PolicyAttachmentsSectionProps {
   policyId: string
+  /** Los adjuntos no tienen vencimiento propio — siempre vencen junto con la póliza. */
+  policyEndDate: string
 }
 
-export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionProps) {
+export function PolicyAttachmentsSection({ policyId, policyEndDate }: PolicyAttachmentsSectionProps) {
   const queryClient = useQueryClient()
 
   const { data: attachments = [] } = useQuery(policyQueries.attachments(policyId))
@@ -358,7 +339,15 @@ export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionP
                     <div className="flex items-center gap-2.5">
                       <FileTypeIcon fileType={att.fileType} />
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate max-w-[220px]">{att.name}</p>
+                        <p className="text-sm font-medium text-slate-800 truncate max-w-[220px] flex items-center gap-1.5">
+                          {att.name}
+                          {att.isCirculationCard && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-brand-50 text-brand-700 border border-brand-200 flex-shrink-0">
+                              <IdCard size={9} />
+                              Tarjeta de circulación
+                            </span>
+                          )}
+                        </p>
                         <p className="text-xs text-slate-400 truncate max-w-[220px]">
                           {att.description
                             ? <>{att.description} <span className="text-slate-300">· {att.fileSize}</span></>
@@ -369,7 +358,7 @@ export function PolicyAttachmentsSection({ policyId }: PolicyAttachmentsSectionP
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <ExpirationCell date={att.expirationDate} />
+                    <ExpirationCell date={policyEndDate} />
                   </td>
                   <td className="px-4 py-3">
                     <p className="text-xs text-slate-700">{formatDate(att.uploadedAt)}</p>

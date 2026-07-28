@@ -9,7 +9,6 @@ jest.mock('../../../config/database', () => ({
     fireExtinguisher: { findMany: jest.fn() },
     documentInstallment: { findMany: jest.fn() },
     assetAttachment: { findMany: jest.fn() },
-    policyAttachment: { findMany: jest.fn() },
     notificationDismissal: { findMany: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
   },
 }))
@@ -52,10 +51,6 @@ function fakeInstallment(id: string, dueDate: Date) {
 
 function fakeAssetAttachment(id: string, expirationDate = daysFromNow(10)) {
   return { id, name: `${id}.pdf`, expirationDate, asset: { id: `asset-${id}`, name: 'Toyota Hilux' } }
-}
-
-function fakePolicyAttachment(id: string, expirationDate = daysFromNow(-1)) {
-  return { id, name: `${id}.pdf`, expirationDate, policy: { id: `policy-${id}`, policyNumber: `POL-${id}` } }
 }
 
 // Setup común: sin descartes previos, salvo que un test los sobreescriba.
@@ -105,7 +100,6 @@ describe('Notifications API', () => {
         ])
         .mockResolvedValueOnce([])
       db.assetAttachment.findMany.mockResolvedValue([fakeAssetAttachment('1')])
-      db.policyAttachment.findMany.mockResolvedValue([fakePolicyAttachment('1')])
 
       const res = await request(app)
         .get('/api/v1/notifications/preview')
@@ -117,7 +111,7 @@ describe('Notifications API', () => {
         expiringExtinguishers: 1,
         overdueInstallments: 3,
         nearInstallments: 0,
-        expiringAttachments: 2, // 1 asset + 1 policy
+        expiringAttachments: 1,
         hasAlerts: true,
       })
     })
@@ -127,7 +121,6 @@ describe('Notifications API', () => {
       db.fireExtinguisher.findMany.mockResolvedValue([])
       db.documentInstallment.findMany.mockResolvedValue([])
       db.assetAttachment.findMany.mockResolvedValue([])
-      db.policyAttachment.findMany.mockResolvedValue([])
 
       const res = await request(app)
         .get('/api/v1/notifications/preview')
@@ -143,7 +136,6 @@ describe('Notifications API', () => {
       db.fireExtinguisher.findMany.mockResolvedValue([])
       db.documentInstallment.findMany.mockResolvedValue([])
       db.assetAttachment.findMany.mockResolvedValue([])
-      db.policyAttachment.findMany.mockResolvedValue([])
       db.notificationDismissal.findMany.mockResolvedValue([
         { notificationId: 'policy:1', dueDate: policy.endDate.toISOString().slice(0, 10) },
       ])
@@ -210,14 +202,6 @@ describe('Notifications API', () => {
           asset: { id: 'asset-1', name: 'Toyota Hilux' },
         },
       ])
-      db.policyAttachment.findMany.mockResolvedValue([
-        {
-          id: 'att-policy-1',
-          name: 'endoso.pdf',
-          expirationDate: daysFromNow(-1),
-          policy: { id: 'policy-2', policyNumber: 'POL-002' },
-        },
-      ])
 
       const res = await request(app)
         .get('/api/v1/notifications')
@@ -225,7 +209,7 @@ describe('Notifications API', () => {
 
       expect(res.status).toBe(200)
       const items = res.body.data as any[]
-      expect(items).toHaveLength(6)
+      expect(items).toHaveLength(5)
       expect(items.every((i) => i.reviewed === false)).toBe(true)
 
       const byCategory = Object.fromEntries(items.map((i) => [i.category, i]))
@@ -262,13 +246,6 @@ describe('Notifications API', () => {
         entityType: 'Asset',
         entityId: 'asset-1',
       })
-      expect(byCategory.policy_attachment).toMatchObject({
-        severity: 'vencido',
-        title: 'endoso.pdf',
-        subtitle: 'Póliza: POL-002',
-        entityType: 'Policy',
-        entityId: 'policy-2',
-      })
 
       // Ordenado por dueDate ascendente — el más vencido primero
       const dueDates = items.map((i) => i.dueDate)
@@ -281,7 +258,6 @@ describe('Notifications API', () => {
       db.fireExtinguisher.findMany.mockResolvedValue([])
       db.documentInstallment.findMany.mockResolvedValue([])
       db.assetAttachment.findMany.mockResolvedValue([])
-      db.policyAttachment.findMany.mockResolvedValue([])
       const dueDateStr = policy.endDate.toISOString().slice(0, 10)
       db.notificationDismissal.findMany.mockResolvedValue([
         { notificationId: 'policy:1', dueDate: dueDateStr },
@@ -302,7 +278,6 @@ describe('Notifications API', () => {
       db.fireExtinguisher.findMany.mockResolvedValue([])
       db.documentInstallment.findMany.mockResolvedValue([])
       db.assetAttachment.findMany.mockResolvedValue([])
-      db.policyAttachment.findMany.mockResolvedValue([])
       // Descarte guardado para un vencimiento viejo, distinto al actual.
       db.notificationDismissal.findMany.mockResolvedValue([
         { notificationId: 'policy:1', dueDate: daysFromNow(-100).toISOString().slice(0, 10) },

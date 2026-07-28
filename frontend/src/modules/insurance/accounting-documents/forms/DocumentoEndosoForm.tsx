@@ -15,6 +15,7 @@ import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNu
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { policyQueries } from '../../../../shared/api/policies.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
+import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import type { AccountingDocument, EconomicImpactType } from '../../../../shared/types'
 import { ENDORSEMENT_ALLOWED_LINKED_TYPES } from '../endorsementRules'
 
@@ -95,6 +96,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
     if (!form.description.trim()) next.description = 'Requerido'
     if (!form.economicImpactType) next.economicImpactType = 'Requerido'
     setErrors(next)
+    notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 

@@ -31,6 +31,7 @@ policiesRouter.put(
   policiesController.update,
 )
 policiesRouter.delete('/:id', requireModule('policies'), policiesController.remove)
+policiesRouter.post('/:id/de-baja', requireModule('policies'), policiesController.markAsDeBaja)
 
 // Tasks
 policiesRouter.get('/:id/tasks', requireModule('policies'), policiesController.getTasks)

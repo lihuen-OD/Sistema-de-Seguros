@@ -14,7 +14,7 @@ import { ExportPresetsButton } from '../../shared/components/data-table/ExportPr
 import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
-import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
+import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
 import { companyQueries } from '../../shared/api/companies.api'
 import { costCenterQueries } from '../../shared/api/cost-centers.api'
@@ -66,7 +66,7 @@ export default function AssetsPage() {
       active,
       baja: allAssets.filter((a) => a.status === 'baja'),
       vendido: allAssets.filter((a) => a.status === 'vendido'),
-      totalValueUsd: active.reduce((s, a) => s + a.patrimonialValueUsd, 0),
+      totalValueUsd: active.reduce((s, a) => s + (a.patrimonialValueUsd ?? 0), 0),
     }
   }, [allAssets])
 
@@ -83,6 +83,7 @@ export default function AssetsPage() {
       key: 'internalCode',
       label: 'Código',
       defaultVisible: true,
+      sortable: true,
       className: 'font-mono text-slate-600',
     },
     {
@@ -90,11 +91,16 @@ export default function AssetsPage() {
       key: 'name',
       label: 'Nombre',
       defaultVisible: true,
+      sortable: true,
       exportValue: (row) => `${row.name} (${row.brand} ${row.model}${row.year > 0 ? ` ${row.year}` : ''})`.trim(),
       render: (_, row) => (
         <div className="min-w-0 max-w-[220px]">
           <OverflowCell value={row.name} lines={1} className="font-medium text-slate-800 text-sm" />
-          <p className="text-xs text-slate-400 mt-0.5">{row.brand} {row.model}{row.year > 0 ? ` — ${row.year}` : ''}</p>
+          <OverflowCell
+            value={`${row.brand} ${row.model}${row.year > 0 ? ` — ${row.year}` : ''}`.trim()}
+            lines={1}
+            className="text-xs text-slate-400 mt-0.5"
+          />
         </div>
       ),
     },
@@ -103,6 +109,7 @@ export default function AssetsPage() {
       key: 'assetType',
       label: 'Tipo',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <span className="text-slate-600 whitespace-normal">{String(v)}</span>,
     },
     {
@@ -110,6 +117,7 @@ export default function AssetsPage() {
       key: 'status',
       label: 'Estado',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <StatusPill status={v as string} />,
     },
     {
@@ -117,6 +125,8 @@ export default function AssetsPage() {
       key: 'companyId',
       label: 'Empresa',
       defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => companyNameById.get(row.companyId) ?? null,
       exportValue: (row) => companyNameById.get(row.companyId) ?? '',
       render: (v) => {
         const name = v ? companyNameById.get(v as string) : null
@@ -128,6 +138,8 @@ export default function AssetsPage() {
       key: 'costCenterId',
       label: 'C. Costo',
       defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => costCenterById.get(row.costCenterId)?.code ?? null,
       exportValue: (row) => costCenterById.get(row.costCenterId)?.code ?? '',
       render: (v) => {
         const cc = v ? costCenterById.get(v as string) : null
@@ -139,12 +151,12 @@ export default function AssetsPage() {
       key: 'patrimonialValueUsd',
       label: 'Valor (USD)',
       defaultVisible: true,
-      exportValue: (row) => String(row.patrimonialValueUsd),
-      render: (v) => (
-        <span className="font-semibold text-slate-800 tabular-nums">
-          {formatCurrencyFull(v as number, 'USD')}
-        </span>
-      ),
+      sortable: true,
+      exportValue: (row) => row.patrimonialValueUsd != null ? String(row.patrimonialValueUsd) : '',
+      render: (v) =>
+        v != null
+          ? <span className="font-semibold text-slate-800 tabular-nums">{formatCurrencyFull(v as number, 'USD')}</span>
+          : <span className="text-slate-400">Sin valuar</span>,
       className: 'text-right',
       headerClassName: 'text-right',
     },
@@ -153,6 +165,7 @@ export default function AssetsPage() {
       key: 'valuationDate',
       label: 'Valuación',
       defaultVisible: true,
+      sortable: true,
       render: (v) => <span className="text-slate-500 text-xs">{formatDate(v as string)}</span>,
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
@@ -161,6 +174,7 @@ export default function AssetsPage() {
       key: 'brand',
       label: 'Marca',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="text-sm text-slate-700">{(v as string) || '—'}</span>,
     },
     {
@@ -168,6 +182,7 @@ export default function AssetsPage() {
       key: 'model',
       label: 'Modelo',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="text-sm text-slate-700">{(v as string) || '—'}</span>,
     },
     {
@@ -175,6 +190,7 @@ export default function AssetsPage() {
       key: 'year',
       label: 'Año',
       defaultVisible: false,
+      sortable: true,
       exportValue: (row) => row.year > 0 ? String(row.year) : '',
       render: (v) => <span className="tabular-nums text-slate-600">{(v as number) > 0 ? String(v) : '—'}</span>,
       className: 'text-center',
@@ -185,6 +201,7 @@ export default function AssetsPage() {
       key: 'serialNumber',
       label: 'N° de Serie',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
@@ -192,6 +209,15 @@ export default function AssetsPage() {
       key: 'chassisNumber',
       label: 'N° Chasis',
       defaultVisible: false,
+      sortable: true,
+      render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
+    },
+    {
+      id: 'plate',
+      key: 'plate',
+      label: 'Patente',
+      defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
@@ -199,6 +225,7 @@ export default function AssetsPage() {
       key: 'engineNumber',
       label: 'N° Motor',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
@@ -206,6 +233,8 @@ export default function AssetsPage() {
       key: 'fixedAssetId',
       label: 'Bien de Uso',
       defaultVisible: false,
+      sortable: true,
+      sortValue: (row) => row.fixedAsset?.code ?? null,
       render: (_, row) => (
         <span className="font-mono text-xs text-slate-600" title={row.fixedAsset?.name}>
           {row.fixedAsset?.code || '—'}
@@ -218,6 +247,7 @@ export default function AssetsPage() {
       key: 'patrimonialValueNew',
       label: 'Valor a Nuevo (USD)',
       defaultVisible: false,
+      sortable: true,
       exportValue: (row) => row.patrimonialValueNew != null ? String(row.patrimonialValueNew) : '',
       render: (v) =>
         v != null && (v as number) > 0
@@ -231,6 +261,10 @@ export default function AssetsPage() {
       key: 'costCenterId',
       label: 'Centro de costo',
       defaultVisible: false,
+      sortable: true,
+      // Distinta de la columna "C. Costo" (que ordena por código): acá el
+      // diferencial de esta columna es el nombre, así que ordena por nombre.
+      sortValue: (row) => costCenterById.get(row.costCenterId)?.name ?? null,
       exportValue: (row) => {
         const cc = costCenterById.get(row.costCenterId)
         return cc ? `${cc.code} — ${cc.name}` : ''
@@ -247,6 +281,7 @@ export default function AssetsPage() {
       key: 'productiveUnit',
       label: 'Unidad Productiva',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="text-sm text-slate-700">{(v as string) || '—'}</span>,
     },
     {
@@ -254,6 +289,7 @@ export default function AssetsPage() {
       key: 'area',
       label: 'Área',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="text-sm text-slate-700">{(v as string) || '—'}</span>,
     },
     {
@@ -261,6 +297,7 @@ export default function AssetsPage() {
       key: 'dischargeDate',
       label: 'Fecha de baja',
       defaultVisible: false,
+      sortable: true,
       render: (v) =>
         v
           ? <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>
@@ -271,6 +308,7 @@ export default function AssetsPage() {
       key: 'saleDate',
       label: 'Fecha de venta',
       defaultVisible: false,
+      sortable: true,
       render: (v) =>
         v
           ? <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>
@@ -281,6 +319,7 @@ export default function AssetsPage() {
       key: 'attachmentsCount',
       label: 'Adjuntos',
       defaultVisible: false,
+      sortable: true,
       exportValue: (row) => String(row.attachmentsCount ?? 0),
       render: (v) => {
         const n = v as number | undefined
@@ -296,6 +335,7 @@ export default function AssetsPage() {
       key: 'createdAt',
       label: 'Fecha de alta',
       defaultVisible: false,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
     // ── Acciones ────────────────────────────────────────────────────────────────
@@ -350,7 +390,7 @@ export default function AssetsPage() {
 
       <MetricGrid cols={4} className="mb-6">
         <KpiCard label="Activos Totales" value={allAssets.length} description={`${active.length} activos operativos`} icon={Package} variant="info" />
-        <KpiCard label="Valor Patrimonial" value={`US$ ${(totalValueUsd / 1_000_000).toFixed(1).replace('.', ',')}M`} description="Activos operativos" icon={DollarSign} variant="success" />
+        <KpiCard label="Valor Patrimonial" value={formatCurrencyCompact(totalValueUsd, 'USD')} description="Activos operativos" icon={DollarSign} variant="success" />
         <KpiCard label="Dados de Baja" value={baja.length} description="Activos inactivos o retirados" icon={AlertTriangle} variant={baja.length > 0 ? 'warning' : 'default'} />
         <KpiCard label="Vendidos" value={vendido.length} description="Activos transferidos o vendidos" icon={Archive} variant="default" />
       </MetricGrid>

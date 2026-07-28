@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Plus, Flame, ShieldCheck, ShieldOff, AlertTriangle, Eye, RefreshCw, X, Trash2 } from 'lucide-react'
+import { Plus, Flame, ShieldCheck, ShieldOff, AlertTriangle, CalendarOff, Eye, RefreshCw, X, Trash2 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -28,6 +28,10 @@ import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { FireExtinguisher, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
+
+// Orden por severidad al ordenar la columna "Estado" — alfabético dejaría
+// "próximo_vencer" antes que "vencido", que no es el orden que espera nadie.
+const STATUS_SORT_ORDER: Record<string, number> = { vigente: 0, proximo_vencer: 1, vencido: 2, sin_fecha: 3 }
 
 // `fe.status` ya es el peor de tres estados (carga, vida útil por
 // fabricación y prueba hidráulica — ver computeFireExtinguisherStatus en el
@@ -111,6 +115,7 @@ export default function FireExtinguishersPage() {
       label: 'Código',
       defaultVisible: true,
       hideable: true,
+      sortable: true,
       render: (v) => <span className="font-mono text-xs text-slate-600">{v as string}</span>,
     },
     {
@@ -119,6 +124,7 @@ export default function FireExtinguishersPage() {
       label: 'N° Cilindro',
       defaultVisible: false,
       hideable: true,
+      sortable: true,
       render: (v) => (v ? <span className="font-mono text-xs text-slate-600">{v as string}</span> : <span className="text-slate-400">—</span>),
     },
     {
@@ -127,15 +133,17 @@ export default function FireExtinguishersPage() {
       label: 'Tipo',
       defaultVisible: true,
       hideable: true,
+      sortable: true,
       render: (v) => <span className="font-medium text-slate-800">{v as string}</span>,
     },
-    { id: 'capacity', key: 'capacity', label: 'Cap.', defaultVisible: true, hideable: true, className: 'text-xs text-slate-500' },
+    { id: 'capacity', key: 'capacity', label: 'Cap.', defaultVisible: true, hideable: true, sortable: true, className: 'text-xs text-slate-500' },
     {
       id: 'brand',
       key: 'brand',
       label: 'Marca',
       defaultVisible: false,
       hideable: true,
+      sortable: true,
       render: (v) => (v ? <span className="text-xs text-slate-600">{v as string}</span> : <span className="text-slate-400">—</span>),
     },
     {
@@ -144,6 +152,7 @@ export default function FireExtinguishersPage() {
       label: 'Año Fab.',
       defaultVisible: false,
       hideable: true,
+      sortable: true,
       render: (v) => (v != null ? <span className="text-xs text-slate-600 tabular-nums">{v as number}</span> : <span className="text-slate-400">—</span>),
     },
     {
@@ -152,6 +161,7 @@ export default function FireExtinguishersPage() {
       label: 'Establecimiento',
       defaultVisible: true,
       hideable: true,
+      sortable: true,
       exportValue: (row) => [row.establishment, row.associatedLocationType].filter(Boolean).join(' — '),
       render: (v, row) =>
         v ? (
@@ -169,6 +179,11 @@ export default function FireExtinguishersPage() {
       label: 'Activo / Ubicación',
       defaultVisible: true,
       hideable: true,
+      sortable: true,
+      sortValue: (row) => {
+        const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
+        return asset ? asset.name : row.associatedLocationType
+      },
       exportValue: (row) => {
         const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
         const locationLabel = row.associatedLocationType
@@ -183,12 +198,12 @@ export default function FireExtinguishersPage() {
             className="text-left block min-w-0 max-w-[200px] group"
           >
             <OverflowCell value={asset.name} lines={1} className="text-xs text-brand-600 group-hover:underline" />
-            <span className="block text-xs text-slate-400 mt-0.5">{locationLabel}</span>
+            <OverflowCell value={locationLabel} lines={1} className="text-xs text-slate-400 mt-0.5" />
           </button>
         ) : (
           <div className="min-w-0 max-w-[200px]">
             <span className="block text-xs text-slate-400">Sin activo</span>
-            <span className="block text-xs text-slate-400">{locationLabel}</span>
+            <OverflowCell value={locationLabel} lines={1} className="text-xs text-slate-400" />
           </div>
         )
       },
@@ -199,6 +214,7 @@ export default function FireExtinguishersPage() {
       label: 'Ubicación (detalle)',
       defaultVisible: false,
       hideable: true,
+      sortable: true,
       render: (v) => (v ? <OverflowCell value={v as string} lines={1} className="text-xs text-slate-500 max-w-[180px]" /> : <span className="text-slate-400">—</span>),
     },
     {
@@ -207,6 +223,7 @@ export default function FireExtinguishersPage() {
       label: 'Fecha Carga',
       defaultVisible: true,
       hideable: true,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
     {
@@ -215,6 +232,7 @@ export default function FireExtinguishersPage() {
       label: 'Vencimiento',
       defaultVisible: true,
       hideable: true,
+      sortable: true,
       render: (v, row) => {
         const { isExp, isSoon } = getExpiryFlags(row)
         return (
@@ -230,6 +248,7 @@ export default function FireExtinguishersPage() {
       label: 'Venc. Prueba Hidráulica',
       defaultVisible: false,
       hideable: true,
+      sortable: true,
       render: (v, row) => {
         if (!v) return <span className="text-slate-400">—</span>
         const isExp = row.hydraulicTestStatus === 'vencido'
@@ -247,6 +266,8 @@ export default function FireExtinguishersPage() {
       label: 'Estado',
       defaultVisible: true,
       hideable: true,
+      sortable: true,
+      sortValue: (row) => STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     {
@@ -255,6 +276,7 @@ export default function FireExtinguishersPage() {
       label: 'Días',
       defaultVisible: true,
       hideable: true,
+      sortable: true,
       render: (_, row) => {
         const { days, isExp, isSoon } = getExpiryFlags(row)
         if (days == null) return <span className="text-slate-400">—</span>
@@ -276,6 +298,7 @@ export default function FireExtinguishersPage() {
       label: 'Observaciones',
       defaultVisible: false,
       hideable: true,
+      sortable: true,
       render: (v) => (v ? <OverflowCell value={v as string} lines={1} className="text-xs text-slate-500 max-w-[200px]" /> : <span className="text-slate-400">—</span>),
     },
     {
@@ -284,6 +307,7 @@ export default function FireExtinguishersPage() {
       label: 'Fecha de alta',
       defaultVisible: false,
       hideable: true,
+      sortable: true,
       render: (v) => <span className="text-xs text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
     {
@@ -321,6 +345,7 @@ export default function FireExtinguishersPage() {
     vigente:        all.filter((f) => f.status === 'vigente').length,
     proximo_vencer: all.filter((f) => f.status === 'proximo_vencer').length,
     vencido:        all.filter((f) => f.status === 'vencido').length,
+    sin_fecha:      all.filter((f) => f.status === 'sin_fecha').length,
   }), [all])
 
   // Desglose del banner de vencidos por establecimiento + asignación física —
@@ -407,10 +432,11 @@ export default function FireExtinguishersPage() {
         }
       />
 
-      <MetricGrid cols={4} className="mb-5">
+      <MetricGrid cols={5} className="mb-5">
         <KpiCard label="Vigentes"          value={counts.vigente}        description="Con carga al día"                icon={ShieldCheck} variant="success" />
         <KpiCard label="Próximos a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
         <KpiCard label="Vencidos"          value={counts.vencido}        description="Requieren recarga inmediata"     icon={ShieldOff} variant={counts.vencido > 0 ? 'danger' : 'default'} />
+        <KpiCard label="Sin Fecha"         value={counts.sin_fecha}      description="Sin vencimiento cargado"         icon={CalendarOff} variant={counts.sin_fecha > 0 ? 'warning' : 'default'} />
         <KpiCard label="Total"             value={all.length}            description="Matafuegos registrados"          icon={Flame} variant="default" />
       </MetricGrid>
 

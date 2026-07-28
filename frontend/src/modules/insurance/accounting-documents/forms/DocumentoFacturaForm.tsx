@@ -15,7 +15,9 @@ import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNu
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { policyQueries } from '../../../../shared/api/policies.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
-import type { AccountingDocument } from '../../../../shared/types'
+import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
+import { CURRENCY_OPTIONS } from '../../../../shared/constants'
+import type { AccountingDocument, Currency } from '../../../../shared/types'
 
 interface DocumentoFacturaFormProps {
   initialDoc?: AccountingDocument
@@ -26,7 +28,7 @@ interface FormState {
   insuranceCompany: string
   documentNumber: string
   issueDate: string
-  currency: string
+  currency: Currency | ''
   exchangeRate: string
   paymentMethod: string
   netAmount: string
@@ -69,7 +71,6 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   const { data: allPolicies = [] } = useQuery(policyQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: paymentMethods = [] } = useQuery(catalogQueries.byCategory('document_payment_method'))
-  const { data: currencies = [] } = useQuery(catalogQueries.byCategory('document_currency'))
 
   const { data: sourcePolicy } = useQuery({
     ...policyQueries.detail(sourcePolicyId!),
@@ -171,6 +172,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     if (!form.otherTaxesAmount || isNaN(parseFloat(form.otherTaxesAmount))) next.otherTaxesAmount = 'Requerido'
     if (policyRows.length === 0 || policyRows.every((r) => !r.policyId)) next.policies = 'Asociá al menos una póliza'
     setErrors(next)
+    notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 
@@ -323,7 +325,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
             <FormField label="Moneda" required error={errors.currency}>
               <FormSelect value={form.currency} onChange={set('currency')} required>
                 <option value="">Seleccionar moneda…</option>
-                {currencies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
+                {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </FormSelect>
             </FormField>
             <FormField label="Tipo de Cambio (ARS/USD)" required error={errors.exchangeRate}>

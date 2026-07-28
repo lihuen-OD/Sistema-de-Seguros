@@ -121,11 +121,13 @@ export default function AssetFichaPage() {
           <div className="flex-shrink-0 text-right">
             <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Valor patrimonial</p>
             <p className="text-xl font-bold text-brand-700 tabular-nums">
-              {formatCurrencyFull(asset.patrimonialValueUsd, 'USD')}
+              {asset.patrimonialValueUsd != null ? formatCurrencyFull(asset.patrimonialValueUsd, 'USD') : 'Sin valuar'}
             </p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Al {formatDate(asset.valuationDate)}
-            </p>
+            {asset.patrimonialValueUsd != null && (
+              <p className="text-xs text-slate-400 mt-0.5">
+                Al {formatDate(asset.valuationDate)}
+              </p>
+            )}
           </div>
         </div>
 
@@ -157,6 +159,7 @@ export default function AssetFichaPage() {
                     {asset.year > 0 && <FichaRow label="Año" value={String(asset.year)} />}
                     {asset.serialNumber && <FichaRow label="N° de serie" value={asset.serialNumber} />}
                     {hasChassis && asset.chassisNumber && <FichaRow label="N° de chasis" value={asset.chassisNumber} />}
+                    {asset.plate && <FichaRow label="Patente" value={asset.plate} />}
                     {asset.engineNumber && <FichaRow label="N° de motor" value={asset.engineNumber} />}
                   </>
                 )}
@@ -208,7 +211,7 @@ export default function AssetFichaPage() {
               <div className="space-y-2.5">
                 <FichaRow
                   label="Valor patrimonial real"
-                  value={formatCurrencyFull(asset.patrimonialValueUsd, 'USD')}
+                  value={asset.patrimonialValueUsd != null ? formatCurrencyFull(asset.patrimonialValueUsd, 'USD') : 'Sin valuar'}
                   highlight
                 />
                 {latestReal && (

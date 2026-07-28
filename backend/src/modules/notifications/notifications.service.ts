@@ -13,7 +13,6 @@ export type NotificationCategory =
   | 'installment_overdue'
   | 'installment_near'
   | 'asset_attachment'
-  | 'policy_attachment'
 
 export interface NotificationItem {
   id: string
@@ -44,7 +43,7 @@ export const notificationsService = {
     const expiringExtinguishers = countBy('fire_extinguisher')
     const overdueInstallments = countBy('installment_overdue')
     const nearInstallments = countBy('installment_near')
-    const expiringAttachments = countBy('asset_attachment') + countBy('policy_attachment')
+    const expiringAttachments = countBy('asset_attachment')
 
     return {
       expiringPolicies,
@@ -71,7 +70,7 @@ export const notificationsService = {
     // más adjuntos vencen en la ventana de 30 días).
     const ITEM_CAP = 200
 
-    const [policies, extinguishers, overdueInstallments, nearInstallments, assetAttachments, policyAttachments, dismissals] =
+    const [policies, extinguishers, overdueInstallments, nearInstallments, assetAttachments, dismissals] =
       await Promise.all([
         prisma.policy.findMany({
           where: { isActive: true, endDate: { gte: today, lte: in30Days } },
@@ -99,12 +98,6 @@ export const notificationsService = {
         prisma.assetAttachment.findMany({
           where: { expirationDate: { lte: in30Days } },
           include: { asset: { select: { id: true, name: true } } },
-          orderBy: { expirationDate: 'asc' },
-          take: ITEM_CAP,
-        }),
-        prisma.policyAttachment.findMany({
-          where: { expirationDate: { lte: in30Days } },
-          include: { policy: { select: { id: true, policyNumber: true } } },
           orderBy: { expirationDate: 'asc' },
           take: ITEM_CAP,
         }),
@@ -175,17 +168,6 @@ export const notificationsService = {
         entityType: 'Asset',
         entityId: a.asset.id,
         reviewed: isReviewed(`asset_attachment:${a.id}`, toDateStr(a.expirationDate)),
-      })),
-      ...policyAttachments.map((a): NotificationItem => ({
-        id: `policy_attachment:${a.id}`,
-        category: 'policy_attachment',
-        severity: computeExpirationStatus(a.expirationDate!) === 'vencido' ? 'vencido' : 'proximo_vencer',
-        title: a.name,
-        subtitle: `Póliza: ${a.policy.policyNumber}`,
-        dueDate: toDateStr(a.expirationDate),
-        entityType: 'Policy',
-        entityId: a.policy.id,
-        reviewed: isReviewed(`policy_attachment:${a.id}`, toDateStr(a.expirationDate)),
       })),
     ]
 

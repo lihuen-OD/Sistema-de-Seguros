@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, Clock, AlertTriangle, Check, X } from 'lucide-react'
 import clsx from 'clsx'
 import { formatDate } from '../../utils/format'
+import { exchangeRateQueries } from '../../api/exchange-rate.api'
 import type { Installment, InstallmentUpdate } from '../../types'
 
 interface InstallmentRowProps {
@@ -19,11 +21,14 @@ export function InstallmentRow({
   indent = false,
   onUpdate,
 }: InstallmentRowProps) {
+  const { data: currentRate } = useQuery(exchangeRateQueries.current())
+
   const [mode, setMode] = useState<'view' | 'edit'>('view')
   const [editAmount, setEditAmount] = useState(String(Math.abs(inst.amount)))
   const [editStatus, setEditStatus] = useState<Installment['paymentStatus']>(inst.paymentStatus)
   const [editPaidAt, setEditPaidAt] = useState(inst.paidAt ?? today)
   const [editDueDate, setEditDueDate] = useState(inst.dueDate)
+  const [editExchangeRate, setEditExchangeRate] = useState(currentRate?.rate != null ? String(currentRate.rate) : '')
 
   const isPaid = inst.paymentStatus === 'PAID'
   const isOverdue = !isPaid && inst.dueDate < today
@@ -33,6 +38,7 @@ export function InstallmentRow({
     setEditStatus(inst.paymentStatus)
     setEditPaidAt(inst.paidAt ?? today)
     setEditDueDate(inst.dueDate)
+    setEditExchangeRate(currentRate?.rate != null ? String(currentRate.rate) : '')
     setMode('edit')
   }
 
@@ -43,6 +49,7 @@ export function InstallmentRow({
       paymentStatus: editStatus,
       paidAt: editStatus === 'PAID' ? editPaidAt : null,
       dueDate: editDueDate,
+      exchangeRate: editStatus === 'PAID' ? parseFloat(editExchangeRate) : undefined,
     })
     setMode('view')
   }
@@ -92,15 +99,29 @@ export function InstallmentRow({
             </select>
           </div>
           {editStatus === 'PAID' && (
-            <div>
-              <label className="text-[10px] font-semibold text-slate-500 block mb-1">Fecha de pago</label>
-              <input
-                type="date"
-                value={editPaidAt}
-                onChange={(e) => setEditPaidAt(e.target.value)}
-                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
-            </div>
+            <>
+              <div>
+                <label className="text-[10px] font-semibold text-slate-500 block mb-1">Fecha de pago</label>
+                <input
+                  type="date"
+                  value={editPaidAt}
+                  onChange={(e) => setEditPaidAt(e.target.value)}
+                  className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-slate-500 block mb-1">Tipo de Cambio</label>
+                <input
+                  type="number"
+                  value={editExchangeRate}
+                  onChange={(e) => setEditExchangeRate(e.target.value)}
+                  min="0.01"
+                  step="0.01"
+                  required
+                  className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+            </>
           )}
         </div>
         <div className="flex items-center gap-2">

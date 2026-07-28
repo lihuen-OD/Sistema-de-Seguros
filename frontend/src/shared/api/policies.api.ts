@@ -17,7 +17,9 @@ interface BackendPolicy {
   costCenterId: string | null; producerId: string | null
   insuredName: string; assetIds: string[]; beneficiaryDescription: string | null
   startDate: string; endDate: string
-  premium: number; currency: string; exchangeRate: number; description: string | null; coverageIds: string[]
+  premium: number; currency: string; exchangeRate: number
+  premiumArs: number | null; premiumUsd: number | null
+  description: string | null; coverageIds: string[]
   isActive: boolean; status: string; createdAt: string; updatedAt: string
   insuranceType?: BackendInsuranceType
   company?: BackendCompany
@@ -25,6 +27,7 @@ interface BackendPolicy {
   selectedCoverages?: BackendCoverage[]
   selectedAssets?: BackendPolicyAsset[]
   _count?: { attachments: number; allocations: number }
+  circulationCardAttachment?: { id: string; fileUrl: string; name: string } | null
 }
 interface BackendTask {
   id: string; producerId: string; title: string; description: string | null
@@ -33,7 +36,6 @@ interface BackendTask {
   policyId: string | null; assetId: string | null
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
-interface BackendPolicyAttachment extends Omit<PolicyAttachment, 'expirationDate'> { expirationDate: string | null }
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -60,12 +62,8 @@ function mapTask(t: BackendTask): ProducerTask {
 
 function mapStatus(s: string): PolicyStatus {
   if (s === 'proxima_a_vencer') return 'proximo_vencer'
-  if (s === 'vigente' || s === 'vencida') return s as PolicyStatus
+  if (s === 'vigente' || s === 'vencida' || s === 'de_baja') return s as PolicyStatus
   return 'vigente'
-}
-
-function mapPolicyAttachment(a: BackendPolicyAttachment): PolicyAttachment {
-  return { ...a, expirationDate: a.expirationDate ? a.expirationDate.slice(0, 10) : null }
 }
 
 function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
@@ -100,11 +98,12 @@ function mapPolicy(b: BackendPolicy): Policy {
     costCenterId: b.costCenterId ?? null,
     currency: (b.currency === 'USD' ? 'USD' : 'ARS') as 'ARS' | 'USD',
     exchangeRate: b.exchangeRate ?? 1,
-    insuredAmountArs: b.currency === 'USD' ? 0 : b.premium,
-    insuredAmountUsd: b.currency === 'USD' ? b.premium : (b.exchangeRate ?? 1) > 1 ? b.premium / b.exchangeRate : 0,
+    insuredAmountArs: b.premiumArs ?? 0,
+    insuredAmountUsd: b.premiumUsd ?? 0,
     description: b.description ?? '',
     status: mapStatus(b.status),
     attachmentsCount: b._count?.attachments ?? 0,
+    circulationCardAttachment: b.circulationCardAttachment ?? null,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   }
@@ -142,26 +141,31 @@ export const policiesApi = {
     await apiClient.delete(`/policies/${id}`)
   },
 
+  async markAsDeBaja(id: string): Promise<Policy> {
+    const res = await apiClient.post<{ data: BackendPolicy }>(`/policies/${id}/de-baja`)
+    return mapPolicy(res.data.data)
+  },
+
   async findAttachments(policyId: string): Promise<PolicyAttachment[]> {
-    const res = await apiClient.get<{ data: BackendPolicyAttachment[] }>(`/policies/${policyId}/attachments`)
-    return res.data.data.map(mapPolicyAttachment)
+    const res = await apiClient.get<{ data: PolicyAttachment[] }>(`/policies/${policyId}/attachments`)
+    return res.data.data
   },
 
   async addAttachment(
     policyId: string,
     file: File,
-    meta: { description?: string; expirationDate?: string },
+    meta: { description?: string; isCirculationCard?: boolean },
   ): Promise<PolicyAttachment> {
     const form = new FormData()
     form.append('file', file)
     if (meta.description) form.append('description', meta.description)
-    if (meta.expirationDate) form.append('expirationDate', meta.expirationDate)
-    const res = await apiClient.post<{ data: BackendPolicyAttachment }>(
+    if (meta.isCirculationCard) form.append('isCirculationCard', 'true')
+    const res = await apiClient.post<{ data: PolicyAttachment }>(
       `/policies/${policyId}/attachments`,
       form,
       { headers: { 'Content-Type': 'multipart/form-data' } },
     )
-    return mapPolicyAttachment(res.data.data)
+    return res.data.data
   },
 
   async deleteAttachment(policyId: string, attachmentId: string): Promise<void> {

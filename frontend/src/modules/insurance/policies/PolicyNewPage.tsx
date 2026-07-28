@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -26,6 +26,9 @@ import { producerQueries } from '../../../shared/api/producers.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
+import { exchangeRateQueries } from '../../../shared/api/exchange-rate.api'
+import { notifyValidationErrors } from '../../../shared/utils/formValidation'
+import { CURRENCY_OPTIONS } from '../../../shared/constants'
 import type { PolicyAttachment } from '../../../shared/types'
 
 type AssociationType = 'activo' | 'sin_activo'
@@ -45,7 +48,8 @@ interface PolicyForm {
   assetIds: string[]
   companyId: string
   costCenterId: string
-  insuredAmountArs: string
+  currency: 'ARS' | 'USD'
+  insuredAmount: string
   exchangeRate: string
 }
 
@@ -63,7 +67,8 @@ const INITIAL: PolicyForm = {
   assetIds: [],
   companyId: '',
   costCenterId: '',
-  insuredAmountArs: '',
+  currency: 'ARS',
+  insuredAmount: '',
   exchangeRate: '',
 }
 
@@ -196,9 +201,22 @@ export default function PolicyNewPage() {
 
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
 
+  const { data: currentExchangeRate } = useQuery(exchangeRateQueries.current())
+  const [exchangeRatePrefilled, setExchangeRatePrefilled] = useState(false)
+
   const createMutation = useMutation({
     mutationFn: (input: Parameters<typeof policiesApi.create>[0]) => policiesApi.create(input),
   })
+
+  // Prefill de conveniencia: si hay un tipo de cambio global cargado, lo
+  // sugerimos como valor inicial — el usuario puede editarlo libremente
+  // después. Solo corre una vez y solo si el campo sigue vacío.
+  useEffect(() => {
+    if (currentExchangeRate?.rate && !exchangeRatePrefilled && !form.exchangeRate) {
+      setForm((prev) => ({ ...prev, exchangeRate: String(currentExchangeRate.rate) }))
+      setExchangeRatePrefilled(true)
+    }
+  }, [currentExchangeRate, exchangeRatePrefilled, form.exchangeRate])
 
   const set =
     (key: keyof PolicyForm) =>
@@ -210,6 +228,11 @@ export default function PolicyNewPage() {
   const setInsuranceType = (value: string) => {
     setForm((prev) => ({ ...prev, insuranceType: value, coverageTypes: [] }))
     setErrors((prev) => ({ ...prev, insuranceType: undefined, coverageTypes: undefined }))
+  }
+
+  const setCurrency = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value as 'ARS' | 'USD'
+    setForm((prev) => ({ ...prev, currency: value }))
   }
 
   const setAssociation = (value: AssociationType) => {
@@ -233,12 +256,17 @@ export default function PolicyNewPage() {
     setErrors((prev) => ({ ...prev, assetIds: undefined }))
   }
 
-  const insuredAmountUsd = useMemo(() => {
-    const ars = parseFloat(form.insuredAmountArs)
+  // Suma Asegurada — el usuario elige en qué moneda carga el importe y acá
+  // solo calculamos la vista previa del equivalente en la otra moneda (el
+  // backend es quien cierra y persiste ambos montos al guardar).
+  const equivalentCurrencyLabel = form.currency === 'ARS' ? 'USD' : 'ARS'
+  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
+  const equivalentAmount = useMemo(() => {
+    const amount = parseFloat(form.insuredAmount)
     const rate = parseFloat(form.exchangeRate)
-    if (!isNaN(ars) && !isNaN(rate) && rate > 0) return (ars / rate).toFixed(2)
-    return ''
-  }, [form.insuredAmountArs, form.exchangeRate])
+    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
+    return form.currency === 'ARS' ? (amount / rate).toFixed(2) : (amount * rate).toFixed(2)
+  }, [form.insuredAmount, form.exchangeRate, form.currency])
 
   const filteredCostCenters = useMemo(
     () => costCenters.filter((cc) => cc.status === 'activo'),
@@ -267,6 +295,7 @@ export default function PolicyNewPage() {
       next.beneficiaryDescription = 'Describí a quién corresponde este seguro'
     }
     setErrors(next)
+    notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 
@@ -274,7 +303,7 @@ export default function PolicyNewPage() {
     e.preventDefault()
     if (!validate()) return
 
-    const ars = parseFloat(form.insuredAmountArs) || 0
+    const amount = parseFloat(form.insuredAmount) || 0
     const rate = parseFloat(form.exchangeRate) || 1
 
     const insuranceTypeObj = insuranceTypes.find((t) => t.label === form.insuranceType)
@@ -300,8 +329,8 @@ export default function PolicyNewPage() {
         beneficiaryDescription: form.beneficiaryDescription.trim() || null,
         startDate: form.startDate,
         endDate: form.endDate,
-        premium: ars,
-        currency: 'ARS',
+        premium: amount,
+        currency: form.currency,
         exchangeRate: rate,
         description: form.description.trim() || undefined,
         coverageIds: form.coverageTypes,
@@ -312,7 +341,7 @@ export default function PolicyNewPage() {
       for (const att of pending) {
         await policiesApi.addAttachment(newPolicy.id, att.pendingFile!, {
           description: att.description || undefined,
-          expirationDate: att.expirationDate ?? undefined,
+          isCirculationCard: att.isCirculationCard,
         })
       }
 
@@ -524,12 +553,19 @@ export default function PolicyNewPage() {
         {/* 4. Importes */}
         <SectionCard title="Importes" subtitle="Suma asegurada y tipo de cambio al momento del alta">
           <FormSection title="">
-            <FormField label="Suma Asegurada (ARS)" error={errors.insuredAmountArs}>
+            <FormField label="Moneda">
+              <FormSelect value={form.currency} onChange={setCurrency}>
+                {CURRENCY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </FormSelect>
+            </FormField>
+            <FormField label={`Suma Asegurada (${form.currency})`} error={errors.insuredAmount}>
               <FormInput
                 type="number"
                 placeholder="Ej: 30000000"
-                value={form.insuredAmountArs}
-                onChange={set('insuredAmountArs')}
+                value={form.insuredAmount}
+                onChange={set('insuredAmount')}
                 min="0"
                 step="1"
               />
@@ -544,11 +580,11 @@ export default function PolicyNewPage() {
                 step="0.01"
               />
             </FormField>
-            <FormField label="Suma Asegurada (USD)">
+            <FormField label={`Suma Asegurada (${equivalentCurrencyLabel})`}>
               <FormInput
                 value={
-                  insuredAmountUsd
-                    ? `US$ ${parseFloat(insuredAmountUsd).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  equivalentAmount
+                    ? `${equivalentPrefix} ${parseFloat(equivalentAmount).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     : ''
                 }
                 readOnly
@@ -588,7 +624,7 @@ export default function PolicyNewPage() {
             >
               <Paperclip size={18} className="mx-auto text-slate-300 mb-1.5" />
               <p className="text-sm text-slate-500">Adjuntá la póliza, certificados u otros documentos</p>
-              <p className="text-xs text-slate-400 mt-0.5">PDF, Excel o imágenes — con fecha de vencimiento opcional</p>
+              <p className="text-xs text-slate-400 mt-0.5">PDF, Excel o imágenes — vencen junto con la póliza</p>
             </div>
           ) : (
             <ul className="space-y-2">
@@ -596,14 +632,21 @@ export default function PolicyNewPage() {
                 <li key={idx} className="flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-xl group">
                   <FileTypeIcon fileType={att.fileType} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-800 truncate">{att.name}</p>
+                    <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5">
+                      {att.name}
+                      {att.isCirculationCard && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-brand-50 text-brand-700 border border-brand-200 flex-shrink-0">
+                          Tarjeta de circulación
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-slate-400">
                       {att.description ? <>{att.description} · {att.fileSize}</> : att.fileSize}
                     </p>
                   </div>
-                  {att.expirationDate && (
+                  {form.endDate && (
                     <div className="flex-shrink-0">
-                      <ExpirationCell date={att.expirationDate} />
+                      <ExpirationCell date={form.endDate} />
                     </div>
                   )}
                   <button
@@ -621,13 +664,14 @@ export default function PolicyNewPage() {
           {showAttachModal && (
             <AddAttachmentModal
               onClose={() => setShowAttachModal(false)}
+              isPolicyAttachment
               onAdd={(partial) => {
                 setAttachmentDrafts((prev) => [...prev, {
                   name: partial.name,
                   description: partial.description,
                   fileType: partial.fileType,
                   fileSize: partial.fileSize,
-                  expirationDate: partial.expirationDate,
+                  isCirculationCard: partial.isCirculationCard ?? false,
                   uploadedAt: partial.uploadedAt,
                   uploadedBy: partial.uploadedBy,
                   pendingFile: partial.pendingFile,

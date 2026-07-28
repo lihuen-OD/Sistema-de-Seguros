@@ -1227,11 +1227,12 @@ async function main() {
     catalogBatch('fire_ext_location_type', ['Vehículo', 'Maquinaria', 'Establecimiento', 'Edificio', 'Infraestructura']),
     catalogBatch('task_type', ['Solicitar cotización', 'Renovar póliza', 'Enviar documentación', 'Gestionar siniestro', 'Solicitar endoso', 'Reclamar documentación', 'Revisar vencimiento', 'Auditoría de activos']),
     catalogBatch('document_payment_method', ['Transferencia bancaria', 'E-Cheq', 'Efectivo', 'Débito automático', 'Otros']),
-    catalogBatch('document_currency', ['ARS', 'USD']),
+    // document_currency ya no es un catálogo editable — la moneda es un enum
+    // fijo (ARS/USD), ver frontend/src/shared/constants/index.ts#CURRENCY_OPTIONS.
     catalogBatch('claim_type', ['Accidente', 'Robo con violencia', 'Hurto', 'Incendio', 'Granizo', 'Granizo (cosecha)', 'Inundación', 'Daños materiales', 'Daños eléctricos', 'Rotura mecánica', 'Responsabilidad civil', 'Muerte accidental', 'Incapacidad', 'Otro']),
     catalogBatch('claim_status', ['Denunciado', 'En trámite', 'Liquidado', 'Rechazado', 'Cerrado']),
   ])
-  console.log('  OK Catálogos (17 categorías)')
+  console.log('  OK Catálogos (16 categorías)')
 
   // ─────────────────────────────────────────────────────────────────────────
   // Resumen final

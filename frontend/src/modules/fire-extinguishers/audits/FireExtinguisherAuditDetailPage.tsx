@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ImageOff } from 'lucide-react'
+import { ImageOff, Pencil } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -33,14 +33,16 @@ export default function FireExtinguisherAuditDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user } = useCurrentUser()
-  // Revisar/aprobar es un permiso distinto de auditar — quien solo puede
-  // auditar no tiene forma de navegar hasta acá (la pestaña "Auditorías" ni
-  // se le muestra), pero esto cierra el caso de una URL escrita a mano.
+  // Revisar/aprobar es un permiso distinto de auditar. Quien solo audita
+  // ahora sí puede entrar acá (de solo lectura, salvo para editar mientras
+  // está pendiente) — necesita ver el detalle de lo que auditó para poder
+  // corregirlo sin tener que memorizar lo que cargó.
   const canReview = user?.role === 'ADMIN' || (user?.modules.includes('fire_extinguisher_audits') ?? false)
+  const canAudit = user?.role === 'ADMIN' || (user?.modules.includes('fire_extinguisher_audit_coverage') ?? false)
 
   useEffect(() => {
-    if (user && !canReview) navigate(ROUTES.FIRE_EXTINGUISHERS_AUDITS, { replace: true })
-  }, [user, canReview, navigate])
+    if (user && !canReview && !canAudit) navigate(ROUTES.FIRE_EXTINGUISHERS_AUDITS, { replace: true })
+  }, [user, canReview, canAudit, navigate])
 
   const [decisions, setDecisions] = useState<Record<string, 'APPROVED' | 'REJECTED'>>({})
   const [auditDecision, setAuditDecision] = useState<'APPROVED' | 'REJECTED' | 'NEEDS_CORRECTION' | null>(null)
@@ -71,7 +73,7 @@ export default function FireExtinguisherAuditDetailPage() {
     onError: () => setShowConfirm(false),
   })
 
-  if (!canReview || isLoading || !audit) {
+  if ((!canReview && !canAudit) || isLoading || !audit) {
     return (
       <PageContent>
         <p className="text-sm text-slate-400 py-10 text-center">Cargando auditoría…</p>
@@ -79,7 +81,11 @@ export default function FireExtinguisherAuditDetailPage() {
     )
   }
 
-  const isReviewable = audit.status === 'SUBMITTED'
+  // "Decisión final" (aprobar/rechazar) es exclusivo de quien revisa.
+  const isReviewable = audit.status === 'SUBMITTED' && canReview
+  // Editar en cambio lo puede hacer tanto quien audita como quien revisa,
+  // mientras la auditoría siga pendiente de revisión.
+  const canEdit = audit.status === 'SUBMITTED' && (canReview || canAudit)
   const pendingChanges = audit.proposedChanges.filter((c) => c.status === 'PENDING')
   const allDecided = pendingChanges.every((c) => decisions[c.id] != null)
   const canSubmit = auditDecision !== null && (auditDecision !== 'APPROVED' || allDecided)
@@ -94,6 +100,18 @@ export default function FireExtinguisherAuditDetailPage() {
         backTo={ROUTES.FIRE_EXTINGUISHERS_AUDITS}
         backLabel="Volver a auditorías"
         badge={<StatusPill status={audit.status} />}
+        actions={
+          canEdit ? (
+            <button
+              type="button"
+              onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_EDIT(audit.id))}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
+            >
+              <Pencil size={14} />
+              Editar auditoría
+            </button>
+          ) : undefined
+        }
       />
 
       <SectionCard title="Matafuego auditado" className="mb-5">

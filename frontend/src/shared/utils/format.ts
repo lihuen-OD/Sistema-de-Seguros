@@ -1,9 +1,9 @@
 export function formatCurrencyCompact(value: number, currency: string = 'ARS'): string {
-  if (currency === 'ARS') {
-    return `AR$ ${value.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-  }
-
-  const prefix = 'US$'
+  // Mismo formato compacto (K/M/B) para ambas monedas — antes ARS mostraba el
+  // número completo sin abreviar, lo que desbordaba KPIs y ejes de gráficos
+  // con montos grandes (ver docs/PROJECT_CONTEXT.md: "AR$ 266,5M" es el
+  // formato esperado, igual que "US$ 23,0M").
+  const prefix = currency === 'ARS' ? 'AR$' : 'US$'
   const abs = Math.abs(value)
   const sign = value < 0 ? '-' : ''
 
@@ -79,4 +79,18 @@ export function isExpired(dateStr: string): boolean {
 export function isExpiringSoon(dateStr: string, days = 30): boolean {
   const d = daysUntil(dateStr)
   return d >= 0 && d <= days
+}
+
+/**
+ * Identificador principal a mostrar de un matafuego: cilindro + detalle de
+ * ubicación (lo que sirve para encontrarlo en el campo), con el código
+ * autogenerado (MAT-XXX-A) solo como último recurso si no hay cargado
+ * ninguno de los dos.
+ */
+export function fireExtinguisherLabel(
+  cylinderNumber: string | null | undefined,
+  location: string | null | undefined,
+  code: string | null | undefined,
+): string {
+  return [cylinderNumber, location].filter(Boolean).join(' · ') || code || '—'
 }

@@ -3,7 +3,7 @@ import { asyncHandler } from '../../shared/utils/async-handler'
 import { assetsService } from './assets.service'
 import { AppError } from '../../shared/errors/AppError'
 import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
-import type { ListAssetsQueryDTO } from './assets.schemas'
+import type { ListAssetsQueryDTO, UpdateAttachmentDTO } from './assets.schemas'
 
 type IdParam = { id: string }
 type AttachmentParam = { id: string; attachmentId: string }
@@ -72,6 +72,11 @@ export const assetsController = {
       req.user?.email ?? 'sistema',
     )
     res.status(201).json({ data: attachment })
+  }),
+
+  updateAttachment: asyncHandler(async (req: Request<AttachmentParam, unknown, UpdateAttachmentDTO>, res: Response) => {
+    const attachment = await assetsService.updateAttachment(req.params.id, req.params.attachmentId, req.body)
+    res.json({ data: attachment })
   }),
 
   deleteAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {

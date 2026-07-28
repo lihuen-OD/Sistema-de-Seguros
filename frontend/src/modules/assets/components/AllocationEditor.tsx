@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { useQuery } from '@tanstack/react-query'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { companyQueries } from '../../../shared/api/companies.api'
+import { SearchableSelect } from '../../../shared/components/forms/SearchableSelect'
 import type { AssetAllocation } from '../../../shared/types'
 
 interface AllocationEditorProps {
@@ -30,7 +31,9 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
   }
 
   const total = allocations.reduce((sum, a) => sum + (Number(a.percentage) || 0), 0)
-  const isValid = total === 100
+  const incompleteCount = allocations.filter((a) => !a.companyId || !a.costCenterId).length
+  const isTotalValid = total === 100
+  const isValid = isTotalValid && incompleteCount === 0
 
   return (
     <div>
@@ -69,7 +72,7 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
                   <select
                     value={alloc.companyId}
                     onChange={(e) => update(alloc.id, 'companyId', e.target.value)}
-                    className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-500"
                   >
                     <option value="">Seleccionar…</option>
                     {activeCompanies.map((c) => (
@@ -79,16 +82,14 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
                 </div>
                 <div className="flex-1 min-w-0">
                   <label className="block text-xs font-medium text-slate-500 mb-1">Centro de Costo</label>
-                  <select
+                  <SearchableSelect
                     value={alloc.costCenterId}
-                    onChange={(e) => update(alloc.id, 'costCenterId', e.target.value)}
-                    className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  >
-                    <option value="">Seleccionar…</option>
-                    {activeCostCenters.map((cc) => (
-                      <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>
-                    ))}
-                  </select>
+                    onChange={(v) => update(alloc.id, 'costCenterId', v)}
+                    placeholder="Seleccionar…"
+                    searchPlaceholder="Buscar por código o nombre…"
+                    emptyOptionLabel="Seleccionar…"
+                    options={activeCostCenters.map((cc) => ({ value: cc.id, label: cc.code, sublabel: cc.name }))}
+                  />
                 </div>
                 <div className="w-28 flex-shrink-0">
                   <label className="block text-xs font-medium text-slate-500 mb-1">% Imputación</label>
@@ -99,7 +100,7 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
                       max={100}
                       value={alloc.percentage || ''}
                       onChange={(e) => update(alloc.id, 'percentage', parseInt(e.target.value) || 0)}
-                      className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 pr-6 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2.5 pr-6 focus:outline-none focus:ring-2 focus:ring-brand-500"
                       placeholder="0"
                     />
                     <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
@@ -120,11 +121,20 @@ export function AllocationEditor({ allocations, onChange }: AllocationEditorProp
             </div>
           ))}
           <div className={clsx(
-            'flex items-center justify-end gap-2 px-2 py-1.5 rounded-lg text-sm font-semibold',
+            'flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold',
             isValid ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50',
           )}>
-            <span>Total: {total}%</span>
-            {isValid ? <Check size={14} /> : <span className="text-xs font-normal">(debe ser 100%)</span>}
+            <span>
+              {incompleteCount > 0 && (
+                <>
+                  {incompleteCount === 1 ? 'Falta elegir empresa y/o centro de costo en 1 fila' : `Faltan elegir empresa y/o centro de costo en ${incompleteCount} filas`}
+                </>
+              )}
+            </span>
+            <span className="flex items-center gap-2 flex-shrink-0">
+              <span>Total: {total}%</span>
+              {isValid ? <Check size={14} /> : <span className="text-xs font-normal">{!isTotalValid && '(debe ser 100%)'}</span>}
+            </span>
           </div>
         </div>
       )}

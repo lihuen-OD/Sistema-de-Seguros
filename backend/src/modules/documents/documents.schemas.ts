@@ -33,7 +33,7 @@ const DocumentBaseSchema = z.object({
   netAmount: z.number({ required_error: 'El monto neto es requerido' }),
   vatAmount: z.number().default(0),
   otherTaxesAmount: z.number().default(0),
-  currency: z.string().min(1).max(10).default('ARS'),
+  currency: z.enum(['ARS', 'USD']).default('ARS'),
   exchangeRate: z.number().positive().default(1),
   description: z.string().max(1000).optional().nullable(),
   insuranceCompany: z.string().max(300).optional().nullable(),
@@ -65,7 +65,7 @@ export const ListDocumentsQuerySchema = PaginationSchema.extend({
   search: z.string().optional(),
   paymentStatus: z.enum(['PENDING', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'NOT_APPLICABLE']).optional(),
   documentType: z.string().max(100).optional(),
-  currency: z.string().max(10).optional(),
+  currency: z.enum(['ARS', 'USD']).optional(),
   year: z.coerce.number().int().min(2000).max(2100).optional(),
 })
 
@@ -76,6 +76,10 @@ export const UpdateInstallmentSchema = z.object({
   paymentDate: ISODate.optional().nullable(),
   paymentMethod: z.string().max(100).optional().nullable(),
   notes: z.string().max(500).optional().nullable(),
+  // Tipo de cambio del día de pago — solo se usa para calcular amountArs/
+  // amountUsd al momento de guardar. Se vuelve obligatorio (validado en el
+  // service, no acá) cuando paymentStatus pasa a 'PAID' en la misma request.
+  exchangeRate: z.number().positive().optional(),
 })
 
 export const ReplaceInstallmentsSchema = z.object({

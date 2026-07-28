@@ -24,7 +24,6 @@ const CATEGORY_LABELS: Record<NotificationCategory, string> = {
   installment_overdue: 'Cuota vencida',
   installment_near: 'Cuota próxima',
   asset_attachment: 'Adjunto de Activo',
-  policy_attachment: 'Adjunto de Póliza',
 }
 
 const CATEGORY_ICONS: Record<NotificationCategory, React.ElementType> = {
@@ -33,8 +32,12 @@ const CATEGORY_ICONS: Record<NotificationCategory, React.ElementType> = {
   installment_overdue: CreditCard,
   installment_near: CreditCard,
   asset_attachment: Paperclip,
-  policy_attachment: Paperclip,
 }
+
+// Orden por severidad al ordenar la columna "Estado" — alfabético dejaría
+// "proximo_vencer" antes que "vencido", que no es el orden que espera nadie
+// (mismo criterio que STATUS_SORT_ORDER en FireExtinguishersPage).
+const SEVERITY_SORT_ORDER: Record<string, number> = { proximo_vencer: 0, vencido: 1 }
 
 function resolveLink(item: NotificationItem): string {
   switch (item.entityType) {
@@ -111,6 +114,8 @@ export default function NotificationsPage() {
     {
       key: 'category',
       label: 'Categoría',
+      sortable: true,
+      sortValue: (row) => CATEGORY_LABELS[row.category] ?? row.category,
       render: (v) => {
         const category = v as NotificationCategory
         const Icon = CATEGORY_ICONS[category]
@@ -125,6 +130,7 @@ export default function NotificationsPage() {
     {
       key: 'title',
       label: 'Detalle',
+      sortable: true,
       render: (v, row) => (
         <div className="min-w-0 max-w-[280px]">
           <p className="text-sm font-medium text-slate-800 truncate">{String(v)}</p>
@@ -135,6 +141,7 @@ export default function NotificationsPage() {
     {
       key: 'dueDate',
       label: 'Vencimiento',
+      sortable: true,
       render: (v) => {
         const days = daysUntil(v as string)
         return (
@@ -149,6 +156,8 @@ export default function NotificationsPage() {
     {
       key: 'severity',
       label: 'Estado',
+      sortable: true,
+      sortValue: (row) => SEVERITY_SORT_ORDER[row.severity] ?? 99,
       render: (v) => (
         <StatusPill status={v as string} label={v === 'vencido' ? 'Vencido' : 'Próx. vencer'} size="sm" />
       ),

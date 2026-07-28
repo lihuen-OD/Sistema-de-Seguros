@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { FormField, FormInput } from '../../shared/components/forms/FormSection'
 import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
+import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import type { ClaimExpense } from '../../shared/types'
 
 interface ClaimExpensesCardProps {
@@ -208,6 +209,7 @@ function ExpenseFormModal({ claimId, expense, onClose, onSuccess }: ExpenseFormM
     if (!provider.trim()) e.provider = 'Ingresá el proveedor.'
     if (!netAmount || isNaN(Number(netAmount)) || Number(netAmount) < 0) e.netAmount = 'Ingresá un monto neto válido.'
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 

@@ -3,7 +3,8 @@ import { apiClient } from './client'
 
 export interface ChartCostPoint {
   mes: string
-  costo: number
+  costoArs: number
+  costoUsd: number
 }
 
 export interface DashboardCharts {
@@ -14,15 +15,15 @@ const MONTH_ABBR = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep
 
 export const dashboardApi = {
   async getCharts(year?: number): Promise<DashboardCharts> {
-    const res = await apiClient.get<{ data: { costEvolution: { month: string; amount: number }[] } }>(
-      '/dashboard/charts',
-      { params: year ? { year } : undefined },
-    )
+    const res = await apiClient.get<{
+      data: { costEvolution: { month: string; amountArs: number; amountUsd: number }[] }
+    }>('/dashboard/charts', { params: year ? { year } : undefined })
     const { costEvolution } = res.data.data
     return {
       costEvolution: costEvolution.map((p) => ({
         mes: MONTH_ABBR[parseInt(p.month.slice(5, 7), 10) - 1] ?? p.month,
-        costo: p.amount,
+        costoArs: p.amountArs,
+        costoUsd: p.amountUsd,
       })),
     }
   },

@@ -35,18 +35,6 @@ export default function PoliciesConfigPage() {
             addPlaceholder="Ej: Cheque diferido"
           />
         </SectionCard>
-
-        <SectionCard
-          title="Monedas"
-          subtitle="Monedas disponibles en documentos"
-          noPadding
-        >
-          <CatalogManager
-            category="document_currency"
-            title="Monedas"
-            addPlaceholder="Ej: EUR"
-          />
-        </SectionCard>
       </div>
     </PageContent>
   )

@@ -126,6 +126,10 @@ export const producerQueries = {
       queryKey: producerKeys.all,
       queryFn: () => producersApi.findAll(),
       staleTime: 60 * 1000,
+      // Se usa como origen de varios desplegables (Tareas, Pólizas,
+      // Siniestros) además de su propia página de listado — puede editarse
+      // en otra pestaña mientras un formulario queda abierto acá.
+      refetchOnWindowFocus: 'always',
     }),
   detail: (id: string) =>
     queryOptions({

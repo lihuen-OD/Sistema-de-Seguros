@@ -13,6 +13,7 @@ import { Modal } from '../../../shared/components/modals/Modal'
 import { FormField, FormInput, FormSelect } from '../../../shared/components/forms/FormSection'
 import { PasswordInput } from '../../../shared/components/forms/PasswordInput'
 import { formatDate } from '../../../shared/utils/format'
+import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import {
   usersApi,
   userQueries,
@@ -64,6 +65,7 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
     if (!email.trim()) e.email = 'El email es obligatorio'
     if (!isEdit && password.length < 8) e.password = 'Mínimo 8 caracteres, con al menos una letra y un número'
     setErrors(e)
+    notifyValidationErrors(e)
     return Object.keys(e).length === 0
   }
 
@@ -269,6 +271,7 @@ export default function UsersPage() {
     {
       key: 'name',
       label: 'Usuario',
+      sortable: true,
       render: (v, row) => (
         <div>
           <span className="font-medium text-slate-800 text-sm block">{String(v)}</span>
@@ -279,6 +282,7 @@ export default function UsersPage() {
     {
       key: 'role',
       label: 'Rol',
+      sortable: true,
       render: (v, row) => {
         const Icon = ROLE_ICONS[String(v)] ?? UserCheck
         return (
@@ -299,6 +303,7 @@ export default function UsersPage() {
     {
       key: 'lastLoginAt',
       label: 'Último acceso',
+      sortable: true,
       render: (v) => (
         <span className="text-xs text-slate-500 tabular-nums">{v ? formatDate(v as string) : 'Nunca'}</span>
       ),
@@ -306,6 +311,7 @@ export default function UsersPage() {
     {
       key: 'isActive',
       label: 'Estado',
+      sortable: true,
       render: (v) => <StatusPill status={v ? 'activo' : 'inactivo'} size="sm" />,
     },
     {

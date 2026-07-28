@@ -34,6 +34,11 @@ export const policiesController = {
     res.json({ data: { message: 'Póliza desactivada correctamente' } })
   }),
 
+  markAsDeBaja: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const policy = await policiesService.markAsDeBaja(req.params.id)
+    res.json({ data: policy })
+  }),
+
   // Tasks
   getTasks: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     const tasks = await policiesService.findTasks(req.params.id)
