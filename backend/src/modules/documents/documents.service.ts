@@ -46,6 +46,11 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
   NOT_APPLICABLE: 'No Aplica',
 }
 
+// Únicos 3 tipos que hoy afectan el "saldo" calculado de una factura vinculada
+// (documents-balance.service.ts) — al aplicarlos, además, se reparte su monto
+// entre las cuotas no pagas de esa factura (ver apply()/cancel()).
+const INSTALLMENT_ADJUSTING_TYPES = ['CREDIT_NOTE', 'DEBIT_NOTE', 'ADJUSTMENT_ENTRY']
+
 const DOCUMENT_LIST_INCLUDE = {
   _count: { select: { installments: true, allocations: true, attachments: true } },
   allocations: { select: { policyId: true } },
@@ -521,6 +526,15 @@ export const documentsService = {
             }
           }
 
+          // Reparto en partes iguales entre las cuotas NO pagas de la factura
+          // vinculada — así "Total Pendiente" (Dashboard/Documentos/Análisis
+          // Financiero) refleja el efecto real de la NC/ND/Ajuste en vez de
+          // quedar inmutado (antes solo se actualizaba el "saldo" calculado
+          // on-the-fly, nunca las cuotas). Las cuotas ya PAID nunca se tocan.
+          if (INSTALLMENT_ADJUSTING_TYPES.includes(doc.documentType) && doc.linkedDocumentId) {
+            await this.redistributeAdjustmentAcrossInstallments(tx, doc, id)
+          }
+
           const doc2 = await tx.accountingDocument.update({
             where: { id },
             data: { documentStatus: 'APPLIED' },
@@ -537,7 +551,12 @@ export const documentsService = {
 
           return doc2
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        // El timeout default de Prisma (5s) no alcanza cuando hay que repartir
+        // el monto entre varias cuotas — cada una implica un update + un
+        // insert de rastreo, todos contra una DB remota (Neon). Sin este
+        // timeout más generoso, una factura con varias cuotas elegibles podía
+        // abortar la transacción con P2028 ("Transaction not found").
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 20000 },
       )
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') {
@@ -564,6 +583,13 @@ export const documentsService = {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Si este documento había repartido su monto entre cuotas de una
+      // factura vinculada (ver redistributeAdjustmentAcrossInstallments), hay
+      // que devolverlas a su monto original antes de anular — si no, la NC/ND/
+      // Ajuste desaparece pero las cuotas quedan modificadas para siempre.
+      // No-op si el documento nunca aplicó ningún reparto (ISSUED, u otro tipo).
+      await this.reverseInstallmentAdjustments(tx, id)
+
       const doc2 = await tx.accountingDocument.update({
         where: { id },
         data: { documentStatus: 'CANCELLED' },
@@ -580,7 +606,10 @@ export const documentsService = {
       }, tx)
 
       return doc2
-    })
+    // Ver el mismo comentario en apply(): revertir el reparto entre varias
+    // cuotas implica varios round-trips contra Neon, el timeout default (5s)
+    // puede no alcanzar.
+    }, { timeout: 20000 })
 
     return {
       ...withTotalAmount(updated),
@@ -1002,6 +1031,120 @@ export const documentsService = {
     })
     if (!doc) throw new AppError(404, 'Documento no encontrado', 'NOT_FOUND')
     return doc
+  },
+
+  // Reparte el monto de una NC/ND/Ajuste, en partes iguales, entre las cuotas
+  // NO pagas de su factura vinculada (las PAID nunca se tocan). El resto de
+  // redondeo se lleva la última cuota elegible (por installmentNumber), para
+  // que la suma cierre exacta contra el monto del documento. Si el ajuste
+  // supera lo que le queda a una cuota puntual, esa cuota se clampea en 0 —
+  // el sobrante no se cascada a otras cuotas (limitación conocida, ver plan).
+  // Guarda un InstallmentAdjustmentApplication por cuota tocada para poder
+  // revertir con precisión si el documento se anula después (ver
+  // reverseInstallmentAdjustments).
+  async redistributeAdjustmentAcrossInstallments(
+    tx: Prisma.TransactionClient,
+    doc: {
+      documentType: string
+      netAmount: number
+      vatAmount: number
+      otherTaxesAmount: number
+      adjustmentSign: string | null
+      linkedDocumentId: string | null
+    },
+    sourceDocumentId: string,
+  ) {
+    if (!doc.linkedDocumentId) return
+    const linkedInvoice = await tx.accountingDocument.findUnique({
+      where: { id: doc.linkedDocumentId },
+      select: { currency: true, exchangeRate: true },
+    })
+    if (!linkedInvoice) return
+
+    const eligible = await tx.documentInstallment.findMany({
+      where: { accountingDocumentId: doc.linkedDocumentId, paymentStatus: { not: 'PAID' } },
+      orderBy: { installmentNumber: 'asc' },
+    })
+    if (eligible.length === 0) return
+
+    const rawTotal = computeTotalAmount(doc)
+    const signedAmount =
+      doc.documentType === 'CREDIT_NOTE' ? -Math.abs(rawTotal) :
+      doc.documentType === 'DEBIT_NOTE' ? Math.abs(rawTotal) :
+      Math.abs(rawTotal) * (doc.adjustmentSign === 'NEGATIVE' ? -1 : 1)
+
+    const share = +(signedAmount / eligible.length).toFixed(2)
+    const currency = linkedInvoice.currency as 'ARS' | 'USD'
+
+    // Los updates de cuota van uno por uno (cada una tiene un monto propio),
+    // pero las filas de rastreo se insertan todas juntas al final con
+    // createMany — evita un round-trip extra por cuota contra la DB remota,
+    // que sumado al resto de la transacción podía superar el timeout.
+    const applicationRows: {
+      installmentId: string
+      sourceDocumentId: string
+      deltaAmount: number
+      deltaAmountArs: number
+      deltaAmountUsd: number
+    }[] = []
+
+    for (let i = 0; i < eligible.length; i++) {
+      const inst = eligible[i]
+      const isLast = i === eligible.length - 1
+      const rawDelta = isLast ? +(signedAmount - share * (eligible.length - 1)).toFixed(2) : share
+      const newAmount = Math.max(0, +(inst.amount + rawDelta).toFixed(2))
+      const actualDelta = +(newAmount - inst.amount).toFixed(2)
+      if (actualDelta === 0) continue
+
+      const dual = computeDualAmounts(newAmount, currency, linkedInvoice.exchangeRate)
+      const deltaDual = computeDualAmounts(actualDelta, currency, linkedInvoice.exchangeRate)
+
+      await tx.documentInstallment.update({
+        where: { id: inst.id },
+        data: { amount: newAmount, amountArs: dual.amountArs, amountUsd: dual.amountUsd },
+      })
+      applicationRows.push({
+        installmentId: inst.id,
+        sourceDocumentId,
+        deltaAmount: actualDelta,
+        deltaAmountArs: deltaDual.amountArs,
+        deltaAmountUsd: deltaDual.amountUsd,
+      })
+    }
+
+    if (applicationRows.length > 0) {
+      await tx.installmentAdjustmentApplication.createMany({ data: applicationRows })
+    }
+
+    await this.recalculateDocumentStatus(doc.linkedDocumentId, tx)
+  },
+
+  // Revierte exactamente el reparto hecho por redistributeAdjustmentAcrossInstallments
+  // cuando el documento que lo generó se anula — sin esto, anular una NC/ND/Ajuste
+  // ya aplicada dejaría las cuotas reducidas/aumentadas para siempre.
+  async reverseInstallmentAdjustments(tx: Prisma.TransactionClient, sourceDocumentId: string) {
+    const applications = await tx.installmentAdjustmentApplication.findMany({
+      where: { sourceDocumentId },
+      include: { installment: { include: { document: { select: { currency: true, exchangeRate: true } } } } },
+    })
+    if (applications.length === 0) return
+
+    let linkedDocumentId: string | null = null
+    for (const app of applications) {
+      const inst = app.installment
+      linkedDocumentId = inst.accountingDocumentId
+      const restoredAmount = +(inst.amount - app.deltaAmount).toFixed(2)
+      const dual = computeDualAmounts(restoredAmount, inst.document.currency as 'ARS' | 'USD', inst.document.exchangeRate)
+      await tx.documentInstallment.update({
+        where: { id: inst.id },
+        data: { amount: restoredAmount, amountArs: dual.amountArs, amountUsd: dual.amountUsd },
+      })
+    }
+
+    await tx.installmentAdjustmentApplication.deleteMany({ where: { sourceDocumentId } })
+    if (linkedDocumentId) {
+      await this.recalculateDocumentStatus(linkedDocumentId, tx)
+    }
   },
 
   async validateTypeConstraints(

@@ -39,6 +39,11 @@ jest.mock('../../../config/database', () => ({
       create:   jest.fn(),
       findMany: jest.fn(),
     },
+    installmentAdjustmentApplication: {
+      findMany:   jest.fn(),
+      createMany: jest.fn(),
+      deleteMany: jest.fn(),
+    },
     policy: { findMany: jest.fn() },
     $transaction: jest.fn(),
   },
@@ -1184,8 +1189,11 @@ describe('Documents API', () => {
       expect(auditCall.data.action).toBe('APPLY')
     })
 
-    it('applies a DEBIT_NOTE successfully (generic status flip, no balance check)', async () => {
+    it('applies a DEBIT_NOTE successfully (generic status flip, no balance check, no eligible installments to redistribute)', async () => {
       db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, documentType: 'DEBIT_NOTE', documentStatus: 'ISSUED', linkedDocumentId: OTHER_ID })
+      // Sin cuotas elegibles en la factura vinculada → redistributeAdjustmentAcrossInstallments
+      // corta temprano (eligible.length === 0) y no toca nada.
+      db.documentInstallment.findMany.mockResolvedValue([])
       db.accountingDocument.update.mockResolvedValue({ ...fakeDocument, documentType: 'DEBIT_NOTE', documentStatus: 'APPLIED', installments: [], allocations: [], attachments: [] })
 
       const res = await request(app)
@@ -1194,6 +1202,7 @@ describe('Documents API', () => {
 
       expect(res.status).toBe(200)
       expect(db.accountingDocument.update.mock.calls[0][0].data.documentStatus).toBe('APPLIED')
+      expect(db.documentInstallment.update).not.toHaveBeenCalled()
     })
 
     it('returns 400 when a CREDIT_NOTE exceeds the linked invoice available balance', async () => {
@@ -1303,6 +1312,237 @@ describe('Documents API', () => {
         .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(403)
+    })
+  })
+
+  // ── Reparto entre cuotas de NC/ND/Ajuste (apply) y reversión (cancel) ───────
+
+  describe('Reparto automático entre cuotas no pagas al aplicar NC/ND/Ajuste', () => {
+    const INVOICE_ID = OTHER_ID
+    const INST_PAID    = '30000000-0000-0000-0000-000000000001'
+    const INST_PENDING_1 = '30000000-0000-0000-0000-000000000002'
+    const INST_PENDING_2 = '30000000-0000-0000-0000-000000000003'
+    const INST_PENDING_3 = '30000000-0000-0000-0000-000000000004'
+
+    const invoiceFixture = {
+      ...fakeDocument,
+      id: INVOICE_ID,
+      documentType: 'INVOICE',
+      documentStatus: 'ISSUED',
+      currency: 'ARS',
+      exchangeRate: 1,
+      netAmount: 4000,
+      vatAmount: 0,
+      otherTaxesAmount: 0,
+      linkedDocumentId: null,
+    }
+
+    function installmentRow(id: string, num: number, amount: number, paymentStatus: string) {
+      return {
+        id,
+        accountingDocumentId: INVOICE_ID,
+        installmentNumber: num,
+        dueDate: BASE_DATE,
+        amount,
+        amountArs: amount,
+        amountUsd: amount,
+        currency: 'ARS',
+        paymentStatus,
+        paymentDate: paymentStatus === 'PAID' ? BASE_DATE : null,
+      }
+    }
+
+    // Factura con 4 cuotas de $1000: la primera ya PAID, las otras 3 PENDING.
+    const paidInstallment = installmentRow(INST_PAID, 1, 1000, 'PAID')
+    const pendingInstallments = [
+      installmentRow(INST_PENDING_1, 2, 1000, 'PENDING'),
+      installmentRow(INST_PENDING_2, 3, 1000, 'PENDING'),
+      installmentRow(INST_PENDING_3, 4, 1000, 'PENDING'),
+    ]
+
+    function mockFindUniqueByType(sourceDoc: Record<string, unknown>) {
+      db.accountingDocument.findUnique.mockImplementation(({ where }: { where: { id: string } }) => {
+        if (where.id === DOC_ID) return Promise.resolve(sourceDoc)
+        if (where.id === INVOICE_ID) return Promise.resolve(invoiceFixture)
+        return Promise.resolve(null)
+      })
+    }
+
+    // documentInstallment.findMany se usa con distintos `where` (cuotas
+    // pagas para el saldo, cuotas elegibles para el reparto, todas para
+    // recalculateDocumentStatus) — discriminamos por el shape del where en
+    // vez de encadenar mockResolvedValueOnce, más robusto ante el orden real
+    // de llamadas dentro de la transacción.
+    function mockEligibleInstallments() {
+      db.documentInstallment.findMany.mockImplementation(({ where }: { where: Record<string, unknown> }) => {
+        if (where.paymentStatus === 'PAID') return Promise.resolve([paidInstallment])
+        if (where.paymentStatus && typeof where.paymentStatus === 'object' && (where.paymentStatus as { not?: string }).not === 'PAID') {
+          return Promise.resolve(pendingInstallments)
+        }
+        // recalculateDocumentStatus: sin filtro de paymentStatus, todas las cuotas
+        return Promise.resolve([paidInstallment, ...pendingInstallments])
+      })
+    }
+
+    it("redistributes a CREDIT_NOTE's amount in equal parts across non-PAID installments, remainder to the last, and never touches the PAID one", async () => {
+      // Total 100 repartido en 3 cuotas no pagas → -33.33, -33.33, -33.34 (el resto a la última)
+      const creditNote = { ...fakeDocument, documentType: 'CREDIT_NOTE', documentStatus: 'ISSUED', linkedDocumentId: INVOICE_ID, netAmount: 100, vatAmount: 0, otherTaxesAmount: 0 }
+      mockFindUniqueByType(creditNote)
+      mockEligibleInstallments()
+      db.accountingDocument.findMany.mockResolvedValue([]) // sin otros documentos relacionados a la factura
+      db.documentPolicyAllocation.findMany.mockResolvedValue([])
+      db.accountingDocument.update.mockResolvedValue({ ...creditNote, documentStatus: 'APPLIED', installments: [], allocations: [], attachments: [] })
+
+      const res = await request(app)
+        .post(`/api/v1/documents/${DOC_ID}/apply`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+
+      // Se consulta explícitamente excluyendo las cuotas PAID.
+      expect(db.documentInstallment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { accountingDocumentId: INVOICE_ID, paymentStatus: { not: 'PAID' } },
+        }),
+      )
+
+      expect(db.documentInstallment.update).toHaveBeenCalledTimes(3)
+      const updateCalls = db.documentInstallment.update.mock.calls
+      expect(updateCalls.find((c: any) => c[0].where.id === INST_PAID)).toBeUndefined()
+
+      const byId = Object.fromEntries(updateCalls.map((c: any) => [c[0].where.id, c[0].data]))
+      expect(byId[INST_PENDING_1].amount).toBeCloseTo(966.67, 2)
+      expect(byId[INST_PENDING_2].amount).toBeCloseTo(966.67, 2)
+      expect(byId[INST_PENDING_3].amount).toBeCloseTo(966.66, 2)
+
+      // La suma de los deltas debe cerrar exacto contra el monto de la NC (-100).
+      const totalDelta = (byId[INST_PENDING_1].amount + byId[INST_PENDING_2].amount + byId[INST_PENDING_3].amount) - 3000
+      expect(totalDelta).toBeCloseTo(-100, 2)
+
+      // Las filas de rastreo se insertan en un solo createMany, no una por cuota.
+      expect(db.installmentAdjustmentApplication.createMany).toHaveBeenCalledTimes(1)
+      expect(db.installmentAdjustmentApplication.createMany.mock.calls[0][0].data).toHaveLength(3)
+    })
+
+    it('applies a DEBIT_NOTE and adds its amount (positive) to the eligible installments', async () => {
+      const debitNote = { ...fakeDocument, documentType: 'DEBIT_NOTE', documentStatus: 'ISSUED', linkedDocumentId: INVOICE_ID, netAmount: 300, vatAmount: 0, otherTaxesAmount: 0 }
+      mockFindUniqueByType(debitNote)
+      mockEligibleInstallments()
+      db.accountingDocument.update.mockResolvedValue({ ...debitNote, documentStatus: 'APPLIED', installments: [], allocations: [], attachments: [] })
+
+      const res = await request(app)
+        .post(`/api/v1/documents/${DOC_ID}/apply`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const updateCalls = db.documentInstallment.update.mock.calls
+      const byId = Object.fromEntries(updateCalls.map((c: any) => [c[0].where.id, c[0].data]))
+      // 300 repartido en 3 cuotas de $1000 c/u → +100 cada una
+      expect(byId[INST_PENDING_1].amount).toBeCloseTo(1100, 2)
+      expect(byId[INST_PENDING_2].amount).toBeCloseTo(1100, 2)
+      expect(byId[INST_PENDING_3].amount).toBeCloseTo(1100, 2)
+    })
+
+    it('applies a NEGATIVE ADJUSTMENT_ENTRY and subtracts its amount from the eligible installments', async () => {
+      const adjustment = {
+        ...fakeDocument,
+        documentType: 'ADJUSTMENT_ENTRY',
+        documentStatus: 'ISSUED',
+        linkedDocumentId: INVOICE_ID,
+        netAmount: 300,
+        vatAmount: 0,
+        otherTaxesAmount: 0,
+        adjustmentSign: 'NEGATIVE',
+      }
+      mockFindUniqueByType(adjustment)
+      mockEligibleInstallments()
+      db.accountingDocument.update.mockResolvedValue({ ...adjustment, documentStatus: 'APPLIED', installments: [], allocations: [], attachments: [] })
+
+      const res = await request(app)
+        .post(`/api/v1/documents/${DOC_ID}/apply`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const updateCalls = db.documentInstallment.update.mock.calls
+      const byId = Object.fromEntries(updateCalls.map((c: any) => [c[0].where.id, c[0].data]))
+      expect(byId[INST_PENDING_1].amount).toBeCloseTo(900, 2)
+      expect(byId[INST_PENDING_2].amount).toBeCloseTo(900, 2)
+      expect(byId[INST_PENDING_3].amount).toBeCloseTo(900, 2)
+    })
+
+    it('does not modify any installment when the linked invoice has none eligible (all already PAID)', async () => {
+      const creditNote = { ...fakeDocument, documentType: 'CREDIT_NOTE', documentStatus: 'ISSUED', linkedDocumentId: INVOICE_ID, netAmount: 100, vatAmount: 0, otherTaxesAmount: 0 }
+      mockFindUniqueByType(creditNote)
+      db.accountingDocument.findMany.mockResolvedValue([])
+      db.documentPolicyAllocation.findMany.mockResolvedValue([])
+      // Ninguna cuota elegible (todas ya pagas) → eligible.length === 0
+      db.documentInstallment.findMany.mockResolvedValue([])
+      db.accountingDocument.update.mockResolvedValue({ ...creditNote, documentStatus: 'APPLIED', installments: [], allocations: [], attachments: [] })
+
+      const res = await request(app)
+        .post(`/api/v1/documents/${DOC_ID}/apply`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      // Se permite aplicar igual, sin tocar ninguna cuota.
+      expect(res.status).toBe(200)
+      expect(db.documentInstallment.update).not.toHaveBeenCalled()
+      expect(db.installmentAdjustmentApplication.createMany).not.toHaveBeenCalled()
+    })
+
+    it('reverses the installment amounts exactly when an APPLIED CREDIT_NOTE that redistributed is cancelled', async () => {
+      const creditNote = { ...fakeDocument, id: DOC_ID, documentType: 'CREDIT_NOTE', documentStatus: 'APPLIED', linkedDocumentId: INVOICE_ID }
+
+      db.accountingDocument.findUnique.mockResolvedValue(creditNote)
+      // Reparto previamente aplicado: -33.33 / -33.33 / -33.34 sobre cuotas que hoy están en 966.67/966.67/966.66
+      db.installmentAdjustmentApplication.findMany.mockResolvedValue([
+        {
+          id: 'a1', installmentId: INST_PENDING_1, sourceDocumentId: DOC_ID,
+          deltaAmount: -33.33, deltaAmountArs: -33.33, deltaAmountUsd: -33.33,
+          installment: { ...installmentRow(INST_PENDING_1, 2, 966.67, 'PENDING'), document: { currency: 'ARS', exchangeRate: 1 } },
+        },
+        {
+          id: 'a2', installmentId: INST_PENDING_2, sourceDocumentId: DOC_ID,
+          deltaAmount: -33.33, deltaAmountArs: -33.33, deltaAmountUsd: -33.33,
+          installment: { ...installmentRow(INST_PENDING_2, 3, 966.67, 'PENDING'), document: { currency: 'ARS', exchangeRate: 1 } },
+        },
+        {
+          id: 'a3', installmentId: INST_PENDING_3, sourceDocumentId: DOC_ID,
+          deltaAmount: -33.34, deltaAmountArs: -33.34, deltaAmountUsd: -33.34,
+          installment: { ...installmentRow(INST_PENDING_3, 4, 966.66, 'PENDING'), document: { currency: 'ARS', exchangeRate: 1 } },
+        },
+      ])
+      db.documentInstallment.findMany.mockResolvedValue([paidInstallment, ...pendingInstallments])
+      db.accountingDocument.update.mockResolvedValue({ ...creditNote, documentStatus: 'CANCELLED', installments: [], allocations: [], attachments: [] })
+
+      const res = await request(app)
+        .post(`/api/v1/documents/${DOC_ID}/cancel`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+
+      const updateCalls = db.documentInstallment.update.mock.calls
+      const byId = Object.fromEntries(updateCalls.map((c: any) => [c[0].where.id, c[0].data]))
+      // amount - deltaAmount vuelve exactamente a $1000 en las 3 cuotas
+      expect(byId[INST_PENDING_1].amount).toBeCloseTo(1000, 2)
+      expect(byId[INST_PENDING_2].amount).toBeCloseTo(1000, 2)
+      expect(byId[INST_PENDING_3].amount).toBeCloseTo(1000, 2)
+      expect(byId[INST_PAID]).toBeUndefined()
+
+      expect(db.installmentAdjustmentApplication.deleteMany).toHaveBeenCalledWith({ where: { sourceDocumentId: DOC_ID } })
+    })
+
+    it('does nothing when cancelling a document that never redistributed anything (no tracking rows)', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, documentStatus: 'ISSUED' })
+      db.installmentAdjustmentApplication.findMany.mockResolvedValue([])
+      db.accountingDocument.update.mockResolvedValue({ ...fakeDocument, documentStatus: 'CANCELLED', installments: [], allocations: [], attachments: [] })
+
+      const res = await request(app)
+        .post(`/api/v1/documents/${DOC_ID}/cancel`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.documentInstallment.update).not.toHaveBeenCalled()
+      expect(db.installmentAdjustmentApplication.deleteMany).not.toHaveBeenCalled()
     })
   })
 

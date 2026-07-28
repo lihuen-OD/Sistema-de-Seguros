@@ -66,11 +66,16 @@ export default function DocumentsPage() {
   // pago parcial (antes solo miraba el estado del documento completo, así que
   // un documento "Pago Parcial" no aportaba nada a ninguno de los dos totales).
   const documentIds = useMemo(() => allDocuments.map((d) => d.id), [allDocuments])
-  const { data: allInstallments = [] } = useQuery({
+  const { data: allInstallments = [], isLoading: isLoadingInstallments } = useQuery({
     queryKey: [...documentKeys.all, 'installments-bulk', documentIds],
     queryFn: () => documentsApi.findInstallmentsBulk(documentIds),
     enabled: documentIds.length > 0,
   })
+  // Mientras allDocuments ya resolvió pero las cuotas todavía no, "totals" no
+  // puede confiar en qué documentos tienen cuotas propias — sin este flag, las
+  // KPI mostrarían primero un total aproximado (sin cuotas) y un instante
+  // después el total real, un salto visible y engañoso en vez de un loading.
+  const totalsReady = documentIds.length === 0 || !isLoadingInstallments
 
   const totals = useMemo(() => {
     let pendingArs = 0, pendingUsd = 0, paidArs = 0, paidUsd = 0
@@ -375,8 +380,8 @@ export default function DocumentsPage() {
 
       <MetricGrid cols={4} className="mb-6">
         <KpiCard label="Total Documentos" value={allDocuments.length} description="Todos los tipos de documentos" icon={FileText} variant="default" />
-        <KpiCard label="Total Pendiente" value={formatCurrencyCompact(totals.pendingArs, 'ARS')} description={formatCurrencyCompact(totals.pendingUsd, 'USD')} icon={Clock} variant="warning" />
-        <KpiCard label="Total Pagado" value={formatCurrencyCompact(totals.paidArs, 'ARS')} description={formatCurrencyCompact(totals.paidUsd, 'USD')} icon={CheckCircle2} variant="success" />
+        <KpiCard label="Total Pendiente" value={totalsReady ? formatCurrencyCompact(totals.pendingArs, 'ARS') : '—'} description={totalsReady ? formatCurrencyCompact(totals.pendingUsd, 'USD') : 'Calculando…'} icon={Clock} variant="warning" />
+        <KpiCard label="Total Pagado" value={totalsReady ? formatCurrencyCompact(totals.paidArs, 'ARS') : '—'} description={totalsReady ? formatCurrencyCompact(totals.paidUsd, 'USD') : 'Calculando…'} icon={CheckCircle2} variant="success" />
         <KpiCard label="Pago Parcial" value={partialCount} description="Documentos con pago parcial" icon={AlertCircle} variant="warning" />
       </MetricGrid>
 

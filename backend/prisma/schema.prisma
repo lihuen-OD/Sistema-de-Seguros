@@ -363,6 +363,9 @@ model AccountingDocument {
   attachments  DocumentAttachment[]
   auditLogs    DocumentAuditLog[]
   policy       Policy?                    @relation(fields: [policyId], references: [id])
+  // Cuotas de OTRA factura que este documento (NC/ND/Ajuste) repartió al
+  // aplicarse — ver InstallmentAdjustmentApplication.
+  installmentAdjustments InstallmentAdjustmentApplication[] @relation("InstallmentAdjustmentSource")
 
   @@index([paymentStatus])
   @@index([issueDate])
@@ -412,10 +415,33 @@ model DocumentInstallment {
   paymentMethod        String?
   notes                String?
   document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
+  adjustmentApplications InstallmentAdjustmentApplication[]
 
   @@index([accountingDocumentId])
   @@index([paymentStatus, dueDate])
   @@map("document_installments")
+}
+
+// Rastro de qué cuota se modificó y por cuánto al aplicar una Nota de
+// Crédito/Débito/Ajuste contra su factura vinculada (ver
+// documents.service.ts#apply). Append-only: si el documento origen se anula,
+// se revierte exactamente este delta por cuota y se borran estas filas (el
+// DocumentAuditLog de la anulación ya deja constancia del hecho).
+model InstallmentAdjustmentApplication {
+  id               String   @id @default(uuid())
+  installmentId    String
+  sourceDocumentId String
+  deltaAmount      Float
+  deltaAmountArs   Float
+  deltaAmountUsd   Float
+  createdAt        DateTime @default(now())
+
+  installment    DocumentInstallment @relation(fields: [installmentId], references: [id], onDelete: Cascade)
+  sourceDocument AccountingDocument  @relation("InstallmentAdjustmentSource", fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([installmentId])
+  @@index([sourceDocumentId])
+  @@map("installment_adjustment_applications")
 }
 
 model DocumentPolicyAllocation {

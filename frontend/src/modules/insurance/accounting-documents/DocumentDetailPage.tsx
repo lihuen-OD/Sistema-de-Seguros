@@ -197,6 +197,11 @@ export default function DocumentDetailPage() {
     queryClient.invalidateQueries({ queryKey: documentKeys.financial() })
     if (doc?.linkedDocumentId) {
       queryClient.invalidateQueries({ queryKey: documentKeys.balance(doc.linkedDocumentId) })
+      // Aplicar/cancelar una NC/ND/Ajuste reparte su monto entre las cuotas
+      // de la factura vinculada (ver documents.service.ts) — hay que refrescar
+      // sus cuotas y su detalle, no solo su "saldo".
+      queryClient.invalidateQueries({ queryKey: documentKeys.installments(doc.linkedDocumentId) })
+      queryClient.invalidateQueries({ queryKey: documentKeys.detail(doc.linkedDocumentId) })
     }
   }
 
