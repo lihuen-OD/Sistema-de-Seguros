@@ -85,6 +85,11 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     ...documentQueries.installments(initialDoc?.id ?? ''),
     enabled: isEdit,
   })
+  // Reusa la misma query que DocumentAttachmentsSection (misma key, sin costo
+  // extra de red) — solo para saber cuántos adjuntos tiene el documento y
+  // mostrar un resumen real en el preview de "Enviar por mail" en vez de un
+  // texto fijo que no reflejaba si había o no archivos cargados.
+  const { data: docAttachments = [] } = useQuery(documentQueries.attachments(savedDocId ?? ''))
 
   useEffect(() => {
     if (!sourcePolicy) return
@@ -493,7 +498,11 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                     </div>
                     <div className="flex items-center justify-between border-t border-slate-100 pt-2.5">
                       <span className="text-xs text-slate-500">Adjuntos</span>
-                      <span className="text-xs text-slate-400 italic">Ver en la plataforma</span>
+                      <span className="text-xs text-slate-400 italic">
+                        {docAttachments.length === 0
+                          ? 'Sin adjuntos'
+                          : `Se adjuntan ${docAttachments.length} archivo${docAttachments.length !== 1 ? 's' : ''} al mail`}
+                      </span>
                     </div>
                   </div>
                 </div>
