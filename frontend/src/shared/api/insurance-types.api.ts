@@ -39,8 +39,11 @@ function mapInsuranceType(b: BackendInsuranceType): InsuranceTypeConfig {
 
 export const insuranceTypesApi = {
   async findAll(): Promise<InsuranceTypeConfig[]> {
+    // isActive: true — sin este filtro, un tipo "eliminado" (soft-delete)
+    // seguía devuelto por el backend y reaparecía en la lista como si borrar
+    // no hubiera hecho nada (mismo criterio que companies.api.ts#findActive).
     const res = await apiClient.get<PaginatedResponse<BackendInsuranceType>>('/insurance-types', {
-      params: { limit: 200 },
+      params: { limit: 200, isActive: true },
     })
     const mapped = res.data.data.map(mapInsuranceType)
     return mapped
@@ -50,6 +53,13 @@ export const insuranceTypesApi = {
     const res = await apiClient.post<{ data: BackendInsuranceType }>('/insurance-types', {
       name: label,
       coverages: [],
+    })
+    return mapInsuranceType(res.data.data)
+  },
+
+  async update(id: string, label: string): Promise<InsuranceTypeConfig> {
+    const res = await apiClient.put<{ data: BackendInsuranceType }>(`/insurance-types/${id}`, {
+      name: label,
     })
     return mapInsuranceType(res.data.data)
   },
