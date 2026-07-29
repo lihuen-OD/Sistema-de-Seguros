@@ -28,6 +28,7 @@ import type { Policy, FireExtinguisher, TableColumn, AssetValueEntry, Accounting
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
 import { AssociateFireExtinguisherModal } from './AssociateFireExtinguisherModal'
+import { AddValuationModal } from './AddValuationModal'
 
 const TABS = ['Pólizas', 'Doc. Contables', 'Matafuegos', 'Siniestros', 'Valuaciones', 'Adjuntos'] as const
 type Tab = (typeof TABS)[number]
@@ -82,7 +83,7 @@ function ValuacionesEntryList({ entries, accent }: { entries: AssetValueEntry[];
   )
 }
 
-function ValuacionesTab({ history }: { history: AssetValueEntry[] }) {
+function ValuacionesTab({ history, onAdd }: { history: AssetValueEntry[]; onAdd: (type: 'real' | 'nuevo') => void }) {
   const byDate = (a: AssetValueEntry, b: AssetValueEntry) => b.date.localeCompare(a.date)
   const realEntries = [...history].filter((e) => e.type === 'real').sort(byDate)
   const nuevoEntries = [...history].filter((e) => e.type === 'nuevo').sort(byDate)
@@ -90,11 +91,31 @@ function ValuacionesTab({ history }: { history: AssetValueEntry[] }) {
     <div className="p-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <p className="text-xs font-semibold text-brand-700 uppercase tracking-wide mb-2">Valor Patrimonial Real</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-brand-700 uppercase tracking-wide">Valor Patrimonial Real</p>
+            <button
+              type="button"
+              onClick={() => onAdd('real')}
+              title="Agregar valuación"
+              className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors"
+            >
+              <Plus size={12} strokeWidth={2.5} />
+            </button>
+          </div>
           <ValuacionesEntryList entries={realEntries} accent="blue" />
         </div>
         <div>
-          <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-2">Valor Patrimonial a Nuevo</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide">Valor Patrimonial a Nuevo</p>
+            <button
+              type="button"
+              onClick={() => onAdd('nuevo')}
+              title="Agregar valuación"
+              className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-purple-600 bg-purple-50 hover:bg-purple-100 transition-colors"
+            >
+              <Plus size={12} strokeWidth={2.5} />
+            </button>
+          </div>
           <ValuacionesEntryList entries={nuevoEntries} accent="purple" />
         </div>
       </div>
@@ -113,6 +134,7 @@ export default function AssetDetailPage() {
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0)
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
   const [uploadingPhotos, setUploadingPhotos] = useState(false)
+  const [addValuationType, setAddValuationType] = useState<'real' | 'nuevo' | null>(null)
   const [showAssociateModal, setShowAssociateModal] = useState(false)
   const queryClient = useQueryClient()
   const attachmentsKey = assetKeys.attachments(id!)
@@ -464,13 +486,13 @@ export default function AssetDetailPage() {
           <div className="flex-1 min-w-0 px-5 py-4">
             <p className="text-xs text-slate-500 mb-1">Valor Patrimonial Real</p>
             <p className="text-sm font-semibold text-slate-800 tabular-nums">
-              {asset.patrimonialValueUsd != null ? formatCurrencyFull(asset.patrimonialValueUsd, 'USD') : <span className="text-slate-400 font-normal">Sin valuar</span>}
+              {displayRealUsd != null ? formatCurrencyFull(displayRealUsd, 'USD') : <span className="text-slate-400 font-normal">Sin valuar</span>}
             </p>
           </div>
-          {asset.patrimonialValueNew != null && (
+          {displayNuevoUsd != null && (
             <div className="flex-1 min-w-0 px-5 py-4">
               <p className="text-xs text-slate-500 mb-1">Valor Patrimonial a Nuevo</p>
-              <p className="text-sm font-semibold text-slate-800 tabular-nums">{formatCurrencyFull(asset.patrimonialValueNew, 'USD')}</p>
+              <p className="text-sm font-semibold text-slate-800 tabular-nums">{formatCurrencyFull(displayNuevoUsd, 'USD')}</p>
             </div>
           )}
           <div className="flex-1 min-w-0 px-5 py-4">
@@ -937,7 +959,7 @@ export default function AssetDetailPage() {
             <AssetClaimsTab assetId={asset.id} policies={policies} claims={claims} />
           )}
           {activeTab === 'Valuaciones' && (
-            <ValuacionesTab history={asset.valueHistory ?? []} />
+            <ValuacionesTab history={asset.valueHistory ?? []} onAdd={setAddValuationType} />
           )}
           {activeTab === 'Adjuntos' && (
             <AssetAttachmentsTab assetId={asset.id} />
@@ -950,6 +972,16 @@ export default function AssetDetailPage() {
           assetId={asset.id}
           assetName={asset.name}
           onClose={() => setShowAssociateModal(false)}
+        />
+      )}
+
+      {addValuationType && (
+        <AddValuationModal
+          assetId={asset.id}
+          type={addValuationType}
+          defaultCurrency={asset.currency ?? 'USD'}
+          defaultExchangeRate={asset.exchangeRate ?? 1}
+          onClose={() => setAddValuationType(null)}
         />
       )}
     </PageContent>

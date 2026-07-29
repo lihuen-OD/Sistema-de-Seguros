@@ -105,6 +105,38 @@ async function syncValueHistoryEntry(
   } else {
     await tx.assetValueHistory.create({ data: { ...data, assetId, type, date } })
   }
+  await syncAssetCurrentValueIfLatest(tx, assetId, type, rawValue, dual, date)
+}
+
+// El valor "actual" del activo (currentValue/currentValueArs/Usd, o su
+// equivalente "a nuevo") siempre debe reflejar la entrada de historial con la
+// fecha más reciente para ese tipo — sin importar si esa entrada se cargó
+// editando el activo o agregándola directamente desde el "+" de la pestaña
+// Valuaciones. Si `date` no es la más reciente (ya existe una entrada
+// posterior cargada por el otro camino), no se toca nada acá: pisar el activo
+// con un valor viejo dejaría currentValue/currentValueArs/Usd desincronizados
+// del historial real.
+async function syncAssetCurrentValueIfLatest(
+  tx: Prisma.TransactionClient,
+  assetId: string,
+  type: 'real' | 'nuevo',
+  rawValue: number,
+  dual: { amountArs: number; amountUsd: number },
+  date: Date,
+) {
+  const [latest] = await tx.assetValueHistory.findMany({
+    where: { assetId, type },
+    orderBy: { date: 'desc' },
+    take: 1,
+  })
+  if (!latest || latest.date.getTime() !== date.getTime()) return
+
+  await tx.asset.update({
+    where: { id: assetId },
+    data: type === 'real'
+      ? { currentValue: rawValue, currentValueArs: dual.amountArs, currentValueUsd: dual.amountUsd }
+      : { patrimonialValueNew: rawValue, patrimonialValueNewArs: dual.amountArs, patrimonialValueNewUsd: dual.amountUsd },
+  })
 }
 
 export const assetsService = {
@@ -272,10 +304,6 @@ export const assetsService = {
     const newDual = assetData.patrimonialValueNew != null
       ? computeDualAmounts(assetData.patrimonialValueNew, effectiveCurrency, effectiveExchangeRate)
       : null
-    const dualData = {
-      ...(currentDual && { currentValueArs: currentDual.amountArs, currentValueUsd: currentDual.amountUsd }),
-      ...(newDual && { patrimonialValueNewArs: newDual.amountArs, patrimonialValueNewUsd: newDual.amountUsd }),
-    }
 
     // Fecha que traza el historial de valuación — la nueva si se está
     // actualizando en este guardado, si no la ya guardada (mismo fallback que create()).
@@ -286,14 +314,20 @@ export const assetsService = {
       : assetData.status === 'vendido' ? assetData.saleDate
       : reactivationDate ?? new Date()
 
+    // currentValue/patrimonialValueNew (crudos y su cierre en ambas monedas)
+    // NO se aplican acá — quedan a cargo exclusivo de syncValueHistoryEntry
+    // (vía syncAssetCurrentValueIfLatest) más abajo, así una edición con una
+    // fecha de valuación vieja no pisa un valor más nuevo cargado desde la
+    // pestaña Valuaciones (ver esa función para el detalle).
+    const { currentValue: _currentValue, patrimonialValueNew: _patrimonialValueNew, ...assetDataWithoutValues } = assetData
+
     await prisma.$transaction(async (tx) => {
       await tx.asset.update({
         where: { id },
         data: {
-          ...assetData,
+          ...assetDataWithoutValues,
           ...(fixedAssetCode !== undefined && { fixedAssetCode }),
           metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
-          ...dualData,
         },
         select: { id: true },
       }).catch(handleUpdateNotFound)
@@ -399,15 +433,35 @@ export const assetsService = {
     })
   },
 
+  // Carga rápida desde la pestaña Valuaciones (botón "+" por columna
+  // Real/Nuevo) — misma regla de "una fila por fecha" que al editar el activo
+  // (ver syncValueHistoryEntry): si ya hay una entrada para esa fecha se
+  // actualiza en vez de duplicar.
   async addValueHistory(assetId: string, data: AddValueHistoryDTO) {
-    await assertAssetExists(assetId)
-    // El valor de este historial es siempre USD (ver AddValueHistorySchema) —
-    // cierre en ambas monedas con el tipo de cambio de ESTE registro, nunca
-    // reconvertido después (mismo criterio que el resto de la app).
-    const { exchangeRate, ...rest } = data
-    const dual = computeDualAmounts(data.value, 'USD', exchangeRate)
-    return prisma.assetValueHistory.create({
-      data: { ...rest, assetId, valueArs: dual.amountArs, valueUsd: dual.amountUsd },
+    const asset = await prisma.asset.findUnique({ where: { id: assetId }, select: { currency: true } })
+    if (!asset) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
+
+    // `value` se carga en la moneda que se haya elegido para ESTE registro
+    // (currency) — cierre en ambas monedas con el tipo de cambio de ESTE
+    // registro, nunca reconvertido después (mismo criterio que el resto de la
+    // app). No tiene que coincidir con la moneda del activo: cada entrada del
+    // historial cierra su propio equivalente.
+    const { exchangeRate, value, currency, date, type, note } = data
+    const dual = computeDualAmounts(value, currency, exchangeRate)
+    const rawValue = asset.currency === 'ARS' ? dual.amountArs : dual.amountUsd
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.assetValueHistory.findFirst({
+        where: { assetId, type, date },
+        select: { id: true },
+      })
+      const historyData = { value, valueArs: dual.amountArs, valueUsd: dual.amountUsd, note }
+      const entry = existing
+        ? await tx.assetValueHistory.update({ where: { id: existing.id }, data: historyData })
+        : await tx.assetValueHistory.create({ data: { ...historyData, assetId, type, date } })
+
+      await syncAssetCurrentValueIfLatest(tx, assetId, type, rawValue, dual, date)
+      return entry
     })
   },
 
