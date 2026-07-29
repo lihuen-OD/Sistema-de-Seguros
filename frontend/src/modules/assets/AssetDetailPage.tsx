@@ -884,6 +884,7 @@ export default function AssetDetailPage() {
         <div>
           {activeTab === 'Pólizas' && (
             <DataTable
+              tableKey="asset-detail-policies"
               columns={policyColumns}
               data={policies}
               rowKey="id"
@@ -894,6 +895,7 @@ export default function AssetDetailPage() {
           )}
           {activeTab === 'Doc. Contables' && (
             <DataTable
+              tableKey="asset-detail-documents"
               columns={docColumns}
               data={documents}
               rowKey="id"
@@ -921,6 +923,7 @@ export default function AssetDetailPage() {
                 </button>
               </div>
               <DataTable
+                tableKey="asset-detail-fire-extinguishers"
                 columns={feColumns}
                 data={fireExtinguishers}
                 rowKey="id"

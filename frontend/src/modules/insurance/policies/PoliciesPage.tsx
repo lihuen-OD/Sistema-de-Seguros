@@ -498,6 +498,7 @@ export default function PoliciesPage() {
           </div>
         </div>
         <DataTable
+          tableKey="policies"
           columns={visibleColumns}
           data={filtered}
           loading={isLoading}

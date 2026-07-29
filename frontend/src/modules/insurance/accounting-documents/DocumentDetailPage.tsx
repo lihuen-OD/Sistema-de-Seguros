@@ -526,6 +526,7 @@ export default function DocumentDetailPage() {
           noPadding
         >
           <DataTable
+            tableKey="document-detail-allocations"
             columns={allocationColumns}
             data={allocations}
             rowKey="id"

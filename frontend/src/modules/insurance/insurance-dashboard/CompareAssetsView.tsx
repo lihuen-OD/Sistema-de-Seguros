@@ -165,6 +165,7 @@ export function CompareAssetsView({ summaries }: CompareAssetsViewProps) {
         )}
 
         <DataTable
+          tableKey="insurance-dashboard-compare"
           columns={columns}
           data={filtered}
           rowKey="assetId"

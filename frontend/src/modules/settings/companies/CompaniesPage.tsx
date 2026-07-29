@@ -311,6 +311,7 @@ export default function CompaniesPage() {
           </span>
         </div>
         <DataTable
+          tableKey="companies"
           columns={columns}
           data={filtered}
           rowKey="id"

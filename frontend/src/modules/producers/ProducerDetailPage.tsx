@@ -308,6 +308,7 @@ export default function ProducerDetailPage() {
             noPadding
           >
             <DataTable
+              tableKey="producer-detail-policies"
               columns={policyColumns}
               data={policies}
               rowKey="id"
@@ -341,6 +342,7 @@ export default function ProducerDetailPage() {
         noPadding
       >
         <DataTable
+          tableKey="producer-detail-tasks"
           columns={taskColumns}
           data={tasks}
           rowKey="id"

@@ -322,6 +322,7 @@ export default function AccessProfilesPage() {
           </span>
         </div>
         <DataTable
+          tableKey="access-profiles"
           columns={columns}
           data={filtered}
           rowKey="id"

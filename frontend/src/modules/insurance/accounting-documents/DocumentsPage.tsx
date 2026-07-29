@@ -431,6 +431,7 @@ export default function DocumentsPage() {
           </div>
         </div>
         <DataTable
+          tableKey="documents"
           columns={visibleColumns}
           data={filtered}
           loading={isLoading}

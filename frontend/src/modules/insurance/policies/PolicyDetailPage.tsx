@@ -581,6 +581,7 @@ export default function PolicyDetailPage() {
           ) : (
             <SectionCard noPadding>
               <DataTable
+                tableKey="policy-detail-tasks"
                 columns={taskColumns}
                 data={tasks}
                 rowKey="id"

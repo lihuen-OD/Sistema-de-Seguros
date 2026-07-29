@@ -441,6 +441,7 @@ export default function ClaimsPage() {
           </div>
         </div>
         <DataTable
+          tableKey="claims"
           columns={visibleColumns}
           data={filtered}
           loading={isLoading}

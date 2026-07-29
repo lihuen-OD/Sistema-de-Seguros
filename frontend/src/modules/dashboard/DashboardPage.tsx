@@ -17,6 +17,7 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { ChartCard } from '../../shared/components/cards/ChartCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
+import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
 import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
 import { ASSET_TYPES } from '../../shared/constants'
 import { assetQueries } from '../../shared/api/assets.api'
@@ -30,26 +31,26 @@ import { dashboardQueries } from '../../shared/api/dashboard.api'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
+const MONTH_ABBR = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
 export default function DashboardPage() {
   const navigate = useNavigate()
 
   // ── Filter state ──────────────────────────────────────────────────
-  const [filterCompany, setFilterCompany] = useState('')
+  const [filterCompanies, setFilterCompanies] = useState<string[]>([])
   const [filterCostCenter, setFilterCostCenter] = useState('')
   const [filterAssetType, setFilterAssetType] = useState('')
 
-  const activeFilterCount = [filterCompany, filterCostCenter, filterAssetType].filter(Boolean).length
+  const activeFilterCount =
+    Number(filterCompanies.length > 0) +
+    Number(Boolean(filterCostCenter)) +
+    Number(Boolean(filterAssetType))
+  const hasScopeFilters = activeFilterCount > 0
 
   function clearFilters() {
-    setFilterCompany('')
+    setFilterCompanies([])
     setFilterCostCenter('')
     setFilterAssetType('')
-  }
-
-  function handleCompanyChange(value: string) {
-    setFilterCompany(value)
-    setFilterCostCenter('')
   }
 
   // ── Data queries ──────────────────────────────────────────────────
@@ -67,10 +68,33 @@ export default function DashboardPage() {
     queries: allProducers.map((p) => producerQueries.tasks(p.id)),
   })
 
+  const selectedCompanyIds = useMemo(
+    () => new Set(filterCompanies),
+    [filterCompanies],
+  )
+
   const assetById = useMemo(
     () => new Map(allAssets.map((a) => [a.id, a])),
     [allAssets],
   )
+
+  const companyOptions = useMemo(
+    () =>
+      allCompanies
+        .map((company) => ({ value: company.id, label: company.name }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'es')),
+    [allCompanies],
+  )
+
+  function handleCompanyFilterChange(companyIds: string[]) {
+    // Elegir manualmente todas las opciones es equivalente a "Todas":
+    // conserva también los registros globales que todavía no tienen empresa.
+    setFilterCompanies(
+      companyOptions.length > 0 && companyIds.length === companyOptions.length
+        ? []
+        : companyIds,
+    )
+  }
 
   // ── Cascading cost center options ─────────────────────────────────
   const costCenterOptions = useMemo(
@@ -79,52 +103,141 @@ export default function DashboardPage() {
   )
 
   // ── Filtered datasets ─────────────────────────────────────────────
+  // El mapa conserva cuánto del valor patrimonial pertenece al alcance elegido.
+  // Si un activo está distribuido entre varias empresas/centros de costo, se
+  // suma únicamente el porcentaje de las asignaciones que cumplen los filtros.
+  const assetScopeRatioById = useMemo(() => {
+    const ratios = new Map<string, number>()
+
+    for (const asset of allAssets) {
+      if (filterAssetType && asset.assetType !== filterAssetType) continue
+
+      if (filterCompanies.length === 0 && !filterCostCenter) {
+        ratios.set(asset.id, 1)
+        continue
+      }
+
+      const allocations = asset.allocations?.length
+        ? asset.allocations
+        : [{
+            id: `legacy-${asset.id}`,
+            companyId: asset.companyId,
+            costCenterId: asset.costCenterId,
+            percentage: 100,
+          }]
+
+      const matchingPercentage = allocations.reduce((total, allocation) => {
+        if (filterCompanies.length > 0 && !selectedCompanyIds.has(allocation.companyId)) return total
+        if (filterCostCenter && allocation.costCenterId !== filterCostCenter) return total
+        return total + allocation.percentage
+      }, 0)
+
+      const ratio = Math.min(1, Math.max(0, matchingPercentage / 100))
+      if (ratio > 0) ratios.set(asset.id, ratio)
+    }
+
+    return ratios
+  }, [
+    allAssets,
+    filterAssetType,
+    filterCompanies.length,
+    filterCostCenter,
+    selectedCompanyIds,
+  ])
+
   const filteredAssets = useMemo(
-    () =>
-      allAssets.filter((a) => {
-        if (filterCompany && a.companyId !== filterCompany) return false
-        if (filterCostCenter && a.costCenterId !== filterCostCenter) return false
-        if (filterAssetType && a.assetType !== filterAssetType) return false
-        return true
-      }),
-    [filterCompany, filterCostCenter, filterAssetType, allAssets],
+    () => allAssets.filter((asset) => assetScopeRatioById.has(asset.id)),
+    [allAssets, assetScopeRatioById],
   )
 
   const filteredPolicies = useMemo(
     () =>
-      allPolicies.filter((p) => {
-        if (!filterCompany && !filterCostCenter && !filterAssetType) return true
-        const primaryAssetId = p.assetIds?.[0]
-        const asset = primaryAssetId ? assetById.get(primaryAssetId) : undefined
-        if (filterCompany && p.companyId !== filterCompany && asset?.companyId !== filterCompany) return false
-        if (filterCostCenter && p.costCenterId !== filterCostCenter && asset?.costCenterId !== filterCostCenter) return false
-        if (filterAssetType && asset?.assetType !== filterAssetType) return false
+      allPolicies.filter((policy) => {
+        if (!hasScopeFilters) return true
+
+        const policyAssets = policy.assetIds
+          .map((assetId) => assetById.get(assetId))
+          .filter((asset) => asset !== undefined)
+
+        if (filterCompanies.length > 0) {
+          const companyMatches = policy.companyId
+            ? selectedCompanyIds.has(policy.companyId)
+            : policyAssets.some((asset) =>
+                (asset.allocations?.length ? asset.allocations : [{
+                  companyId: asset.companyId,
+                  costCenterId: asset.costCenterId,
+                  percentage: 100,
+                }]).some((allocation) => selectedCompanyIds.has(allocation.companyId)),
+              )
+          if (!companyMatches) return false
+        }
+
+        if (filterCostCenter) {
+          const costCenterMatches =
+            policy.costCenterId === filterCostCenter ||
+            policyAssets.some((asset) =>
+              (asset.allocations?.length ? asset.allocations : [{
+                companyId: asset.companyId,
+                costCenterId: asset.costCenterId,
+                percentage: 100,
+              }]).some((allocation) =>
+                allocation.costCenterId === filterCostCenter &&
+                (filterCompanies.length === 0 || selectedCompanyIds.has(allocation.companyId)),
+              ),
+            )
+          if (!costCenterMatches) return false
+        }
+
+        if (filterAssetType && !policyAssets.some((asset) => asset.assetType === filterAssetType)) return false
         return true
       }),
-    [filterCompany, filterCostCenter, filterAssetType, assetById, allPolicies],
+    [
+      allPolicies,
+      assetById,
+      filterAssetType,
+      filterCompanies.length,
+      filterCostCenter,
+      hasScopeFilters,
+      selectedCompanyIds,
+    ],
+  )
+
+  const filteredAssetIds = useMemo(
+    () => new Set(filteredAssets.map((asset) => asset.id)),
+    [filteredAssets],
+  )
+
+  const filteredPolicyIds = useMemo(
+    () => new Set(filteredPolicies.map((policy) => policy.id)),
+    [filteredPolicies],
   )
 
   const filteredFireExtinguishers = useMemo(
     () =>
       allFireExtinguishers.filter((fe) => {
-        if (!filterCompany && !filterCostCenter && !filterAssetType) return true
+        if (!hasScopeFilters) return true
         if (!fe.associatedAssetId) return false
-        const asset = assetById.get(fe.associatedAssetId)
-        if (!asset) return false
-        if (filterCompany && asset.companyId !== filterCompany) return false
-        if (filterCostCenter && asset.costCenterId !== filterCostCenter) return false
-        if (filterAssetType && asset.assetType !== filterAssetType) return false
-        return true
+        return filteredAssetIds.has(fe.associatedAssetId)
       }),
-    [filterCompany, filterCostCenter, filterAssetType, assetById, allFireExtinguishers],
+    [allFireExtinguishers, filteredAssetIds, hasScopeFilters],
   )
 
   // ── KPI calculations ─────────────────────────────────────────────
   // Cada total se suma por columna ya cerrada (Ars/Usd), nunca mezclando
   // registros en distinta moneda dentro del mismo número (ver computeDualAmounts).
   const activeAssets = filteredAssets.filter((a) => a.status === 'activo')
-  const totalPatrimonialUsd = activeAssets.reduce((s, a) => s + (a.currentValueUsd ?? a.patrimonialValueUsd ?? 0), 0)
-  const totalPatrimonialArs = activeAssets.reduce((s, a) => s + (a.currentValueArs ?? 0), 0)
+  const totalPatrimonialUsd = activeAssets.reduce(
+    (sum, asset) =>
+      sum +
+      (asset.currentValueUsd ?? asset.patrimonialValueUsd ?? 0) *
+        (assetScopeRatioById.get(asset.id) ?? 0),
+    0,
+  )
+  const totalPatrimonialArs = activeAssets.reduce(
+    (sum, asset) =>
+      sum + (asset.currentValueArs ?? 0) * (assetScopeRatioById.get(asset.id) ?? 0),
+    0,
+  )
 
   const vigentePolicies = filteredPolicies.filter((p) => p.status === 'vigente')
   const expiredPolicies = filteredPolicies.filter((p) => p.status === 'vencida')
@@ -132,25 +245,99 @@ export default function DashboardPage() {
   const totalInsuredArs = vigentePolicies.reduce((s, p) => s + p.insuredAmountArs, 0)
   const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + p.insuredAmountUsd, 0)
 
-  // Documents — global (no company filter in current model)
-  const pendingDocs = allDocuments.filter((d) => d.paymentStatus !== 'PAID')
-  const pendingTotalArs = pendingDocs.reduce((s, d) => s + (d.totalAmountArs ?? 0), 0)
-  const pendingTotalUsd = pendingDocs.reduce((s, d) => s + (d.totalAmountUsd ?? 0), 0)
+  // Los documentos pueden distribuirse entre pólizas de distintas empresas.
+  // El ratio evita atribuir el documento completo a cada empresa seleccionada.
+  const documentScopeRatioById = useMemo(() => {
+    const ratios = new Map<string, number>()
+
+    for (const document of financialDocs) {
+      if (!hasScopeFilters) {
+        ratios.set(document.id, 1)
+        continue
+      }
+
+      if (document.allocations.length > 0) {
+        const matchingPercentage = document.allocations.reduce(
+          (total, allocation) =>
+            filteredPolicyIds.has(allocation.policyId)
+              ? total + allocation.allocationPercentage
+              : total,
+          0,
+        )
+        const ratio = Math.min(1, Math.max(0, matchingPercentage / 100))
+        if (ratio > 0) ratios.set(document.id, ratio)
+        continue
+      }
+
+      if (document.policyIds.some((policyId) => filteredPolicyIds.has(policyId))) {
+        ratios.set(document.id, 1)
+      }
+    }
+
+    return ratios
+  }, [financialDocs, filteredPolicyIds, hasScopeFilters])
+
+  const filteredFinancialDocs = useMemo(
+    () => financialDocs.filter((document) => documentScopeRatioById.has(document.id)),
+    [documentScopeRatioById, financialDocs],
+  )
+
+  // Sin filtros se mantiene exactamente la fuente histórica del dashboard.
+  // Con un alcance activo se usa la versión financiera, que trae allocations.
+  const pendingDocs = (hasScopeFilters ? filteredFinancialDocs : allDocuments)
+    .filter((document) => document.paymentStatus !== 'PAID')
+  const pendingTotalArs = pendingDocs.reduce(
+    (sum, document) =>
+      sum +
+      (document.totalAmountArs ?? 0) *
+        (hasScopeFilters ? documentScopeRatioById.get(document.id) ?? 0 : 1),
+    0,
+  )
+  const pendingTotalUsd = pendingDocs.reduce(
+    (sum, document) =>
+      sum +
+      (document.totalAmountUsd ?? 0) *
+        (hasScopeFilters ? documentScopeRatioById.get(document.id) ?? 0 : 1),
+    0,
+  )
 
   const expiredFe = filteredFireExtinguishers.filter((f) => f.status === 'vencido')
   const expiringFe = filteredFireExtinguishers.filter((f) => f.status === 'proximo_vencer')
 
-  const overdueTasks = useMemo(
-    () => taskQueries.flatMap((q) => q.data ?? []).filter((t) => t.status === 'vencida'),
+  const allTasks = useMemo(
+    () => taskQueries.flatMap((query) => query.data ?? []),
     [taskQueries],
+  )
+
+  const overdueTasks = useMemo(
+    () =>
+      allTasks.filter((task) => {
+        if (task.status !== 'vencida') return false
+        if (!hasScopeFilters) return true
+        return (
+          (task.policyId !== null && filteredPolicyIds.has(task.policyId)) ||
+          (task.assetId !== null && filteredAssetIds.has(task.assetId))
+        )
+      }),
+    [allTasks, filteredAssetIds, filteredPolicyIds, hasScopeFilters],
   )
 
   const allInstallments = useMemo(
     () =>
-      financialDocs.flatMap((d) =>
-        d.installments.map((i) => ({ ...i, documentNumber: d.documentNumber, insuranceCompany: d.insuranceCompany })),
+      filteredFinancialDocs.flatMap((document) =>
+        document.installments.map((installment) => {
+          const scopeRatio = documentScopeRatioById.get(document.id) ?? 0
+          return {
+            ...installment,
+            amount: installment.amount * scopeRatio,
+            amountArs: (installment.amountArs ?? 0) * scopeRatio,
+            amountUsd: (installment.amountUsd ?? 0) * scopeRatio,
+            documentNumber: document.documentNumber,
+            insuranceCompany: document.insuranceCompany,
+          }
+        }),
       ),
-    [financialDocs],
+    [documentScopeRatioById, filteredFinancialDocs],
   )
   const pendingInstallments = useMemo(
     () => allInstallments.filter((i) => i.paymentStatus !== 'PAID'),
@@ -189,7 +376,26 @@ export default function DashboardPage() {
   ]
 
   // ── Monthly cost trend ────────────────────────────────────────────
-  const monthlyData = charts?.costEvolution ?? []
+  const filteredMonthlyData = useMemo(() => {
+    const currentYear = String(new Date().getFullYear())
+    const totals = Array.from({ length: 12 }, () => ({ costoArs: 0, costoUsd: 0 }))
+
+    for (const installment of allInstallments) {
+      if (!installment.dueDate.startsWith(`${currentYear}-`)) continue
+      const monthIndex = Number(installment.dueDate.slice(5, 7)) - 1
+      if (monthIndex < 0 || monthIndex > 11) continue
+      totals[monthIndex].costoArs += installment.amountArs ?? 0
+      totals[monthIndex].costoUsd += installment.amountUsd ?? 0
+    }
+
+    return totals.map((total, monthIndex) => ({
+      mes: MONTH_ABBR[monthIndex],
+      ...total,
+    }))
+  }, [allInstallments])
+  const monthlyData = hasScopeFilters
+    ? filteredMonthlyData
+    : charts?.costEvolution ?? []
 
   // ── Upcoming policy expirations ───────────────────────────────────
   const upcomingPolicies = filteredPolicies
@@ -218,40 +424,54 @@ export default function DashboardPage() {
         title="Dashboard Ejecutivo"
         subtitle="Resumen operativo y financiero al día de hoy"
         actions={
-          <div className="hidden sm:flex items-center gap-2 text-xs">
-            <span className="text-slate-400">Datos al</span>
-            <span className="font-semibold text-slate-600">{new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+          <div className="hidden sm:flex flex-col items-end gap-0.5 text-xs">
+            <span className="font-semibold text-slate-700">
+              {filterCompanies.length === 0
+                ? 'Todas las empresas'
+                : filterCompanies.length === 1
+                  ? allCompanies.find((company) => company.id === filterCompanies[0])?.name ?? '1 empresa'
+                  : `${filterCompanies.length} empresas seleccionadas`}
+            </span>
+            <span className="text-slate-400">
+              Datos al {new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            </span>
           </div>
         }
       />
 
       {/* ─── Filter bar ───────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 flex-wrap mb-5 bg-white border border-slate-200 rounded-xl px-4 py-3">
-        <FilterBar
-          filters={[
-            {
-              key: 'company',
-              label: 'Empresa',
-              value: filterCompany,
-              onChange: handleCompanyChange,
-              options: allCompanies.map((c) => ({ value: c.id, label: c.name })),
-            },
-            {
-              key: 'costCenter',
-              label: 'Centro de Costo',
-              value: filterCostCenter,
-              onChange: setFilterCostCenter,
-              options: costCenterOptions.map((cc) => ({ value: cc.id, label: cc.name })),
-            },
-            {
-              key: 'assetType',
-              label: 'Tipo de Activo',
-              value: filterAssetType,
-              onChange: setFilterAssetType,
-              options: ASSET_TYPES.map((t) => ({ value: t, label: t })),
-            },
-          ]}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500 whitespace-nowrap hidden sm:block">
+              Empresas
+            </span>
+            <MultiSelectFilter
+              label={filterCompanies.length === 0 ? 'Todas las empresas' : 'Empresas'}
+              options={companyOptions}
+              value={filterCompanies}
+              onChange={handleCompanyFilterChange}
+            />
+          </div>
+          <FilterBar
+            filters={[
+              {
+                key: 'costCenter',
+                label: 'Centro de Costo',
+                value: filterCostCenter,
+                onChange: setFilterCostCenter,
+                options: costCenterOptions.map((cc) => ({ value: cc.id, label: cc.name })),
+              },
+              {
+                key: 'assetType',
+                label: 'Tipo de Activo',
+                value: filterAssetType,
+                onChange: setFilterAssetType,
+                options: ASSET_TYPES.map((t) => ({ value: t, label: t })),
+              },
+            ]}
+          />
+        </div>
         <div className="flex items-center gap-3">
           {activeFilterCount > 0 && (
             <>
@@ -335,7 +555,7 @@ export default function DashboardPage() {
         <KpiCard
           label="Pólizas Total"
           value={filteredPolicies.length}
-          description={`${allCompanies.length} empresas aseguradas`}
+          description={`${filterCompanies.length || allCompanies.length} empresas en alcance`}
           icon={TrendingUp}
           variant="default"
           onClick={() => navigate('/insurance/policies')}

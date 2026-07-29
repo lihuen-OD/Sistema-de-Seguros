@@ -532,6 +532,7 @@ export default function FireExtinguishersPage() {
         )}
 
         <DataTable
+          tableKey="fire-extinguishers"
           columns={visibleColumns}
           data={filtered}
           rowKey="id"

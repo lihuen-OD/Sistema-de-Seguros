@@ -574,6 +574,7 @@ export default function FireExtinguisherDetailPage() {
               </span>
             </div>
             <DataTable
+              tableKey="fire-extinguisher-detail-audits"
               columns={AUDIT_COLUMNS}
               data={audits}
               rowKey="id"

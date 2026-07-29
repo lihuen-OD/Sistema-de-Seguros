@@ -123,7 +123,7 @@ export function InsurersView({ summaries }: InsurersViewProps) {
       </MetricGrid>
 
       <SectionCard title="Comparativa por aseguradora" subtitle="Cartera sobre pólizas vigentes · siniestros sin ese filtro (importa la historia completa)" noPadding>
-        <DataTable columns={columns} data={summaries} rowKey="insuranceCompany" />
+        <DataTable tableKey="insurance-dashboard-insurers" columns={columns} data={summaries} rowKey="insuranceCompany" />
       </SectionCard>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
