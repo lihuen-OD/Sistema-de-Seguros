@@ -117,7 +117,7 @@ export interface PolicyCreateInput {
 }
 
 export const policiesApi = {
-  async findAll(filters?: { assetId?: string; companyId?: string; producerId?: string }): Promise<Policy[]> {
+  async findAll(filters?: { assetId?: string; companyId?: string; producerId?: string; limit?: number }): Promise<Policy[]> {
     const res = await apiClient.get<Paginated<BackendPolicy>>('/policies', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapPolicy)
   },
@@ -188,7 +188,7 @@ export const policiesApi = {
 // es la convención que ya domina en el código (PolicyDetailPage/Edit/Ficha) — se
 // mantiene así a propósito para no fragmentar cache con lo ya existente.
 
-type PolicyFilters = { assetId?: string; companyId?: string; producerId?: string }
+type PolicyFilters = { assetId?: string; companyId?: string; producerId?: string; limit?: number }
 
 export const policyKeys = {
   all: ['policies'] as const,

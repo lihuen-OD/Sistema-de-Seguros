@@ -104,7 +104,7 @@ export interface ClaimCreateInput {
 }
 
 export const claimsApi = {
-  async findAll(filters?: { assetId?: string; policyId?: string; status?: string }): Promise<Claim[]> {
+  async findAll(filters?: { assetId?: string; policyId?: string; status?: string; limit?: number }): Promise<Claim[]> {
     const res = await apiClient.get<Paginated<BackendClaim>>('/claims', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapClaim)
   },
@@ -221,7 +221,7 @@ export const claimsApi = {
 
 // ── Query keys / query options (categoría B — semi-dinámico) ────────────────────
 
-type ClaimFilters = { assetId?: string; policyId?: string; status?: string }
+type ClaimFilters = { assetId?: string; policyId?: string; status?: string; limit?: number }
 
 export const claimKeys = {
   all: ['claims'] as const,
