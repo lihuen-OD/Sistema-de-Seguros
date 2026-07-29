@@ -640,6 +640,7 @@ model FireExtinguisherAttachment {
 model Claim {
   id                         String   @id @default(uuid())
   claimNumber                String   @unique
+  title                      String?
   assetId                    String?
   policyId                   String?
   claimType                  String
@@ -694,12 +695,31 @@ model ClaimExpense {
   netAmount        Float
   vatAmount        Float    @default(0)
   otherTaxesAmount Float    @default(0)
+  comment          String?
   createdAt        DateTime @default(now())
   createdBy        String?
   claim            Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  attachments      ClaimExpenseAttachment[]
 
   @@index([claimId])
   @@map("claim_expenses")
+}
+
+model ClaimExpenseAttachment {
+  id                 String       @id @default(uuid())
+  expenseId          String
+  name               String
+  description        String?
+  fileType           String
+  fileSize           String
+  fileUrl            String
+  cloudinaryPublicId String?
+  uploadedAt         DateTime     @default(now())
+  uploadedBy         String
+  expense            ClaimExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId])
+  @@map("claim_expense_attachments")
 }
 
 model ClaimAttachment {

@@ -111,6 +111,14 @@ export default function ClaimsPage() {
       className: 'font-mono text-xs text-slate-600 min-w-[140px]',
     },
     {
+      id: 'title',
+      key: 'title',
+      label: 'Título',
+      defaultVisible: true,
+      sortable: true,
+      render: (v) => v ? <OverflowCell value={v as string} lines={1} className="text-sm text-slate-700 max-w-[220px]" /> : <span className="text-xs text-slate-400">—</span>,
+    },
+    {
       id: 'claimType',
       key: 'claimType',
       label: 'Tipo',

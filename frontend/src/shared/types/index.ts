@@ -536,6 +536,7 @@ export interface Claim {
   assetId: string | null
   policyId: string | null
   claimNumber: string
+  title?: string | null
   claimType: string
   occurrenceDate: string
   reportDate: string
@@ -574,6 +575,18 @@ export interface ClaimAttachment {
   uploadedBy: string
 }
 
+export interface ClaimExpenseAttachment {
+  id: string
+  expenseId: string
+  name: string
+  description: string | null
+  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileSize: string
+  fileUrl?: string
+  uploadedAt: string
+  uploadedBy: string
+}
+
 export interface ClaimExpense {
   id: string
   claimId: string
@@ -583,6 +596,8 @@ export interface ClaimExpense {
   netAmount: number
   vatAmount: number
   otherTaxesAmount: number
+  comment?: string | null
+  attachments: ClaimExpenseAttachment[]
   createdAt: string
   createdBy?: string | null
 }

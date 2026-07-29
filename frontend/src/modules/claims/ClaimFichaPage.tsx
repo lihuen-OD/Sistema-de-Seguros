@@ -92,7 +92,7 @@ export default function ClaimFichaPage() {
               </span>
               <StatusPill status={claim.status} />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 leading-tight">{claim.claimType}</h1>
+            <h1 className="text-2xl font-bold text-slate-900 leading-tight">{claim.title || claim.claimType}</h1>
             <p className="text-sm text-slate-500 mt-1">{claim.insuranceCompany}</p>
           </div>
           <div className="flex-shrink-0 text-right">
@@ -117,6 +117,7 @@ export default function ClaimFichaPage() {
               <SectionHeading>Datos del Siniestro</SectionHeading>
               <div className="space-y-2.5">
                 <FichaRow label="N° de siniestro" value={claim.claimNumber} mono />
+                {claim.title && <FichaRow label="Título" value={claim.title} />}
                 <FichaRow label="Tipo de siniestro" value={claim.claimType} />
                 <FichaRow label="Compañía aseguradora" value={claim.insuranceCompany} />
                 <FichaRow label="Fecha de ocurrencia" value={formatDate(claim.occurrenceDate)} />
