@@ -9,7 +9,7 @@ export type Role = 'ADMIN' | 'USER'
 export const MODULE_KEYS = [
   'dashboard',
   'assets',
-  'policies', 'documents', 'financial_analysis', 'economic_analysis',
+  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'insurance_dashboard',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
   'producers', 'tasks',
@@ -25,6 +25,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   documents: 'Documentos',
   financial_analysis: 'Análisis Financiero',
   economic_analysis: 'Análisis Económico',
+  insurance_dashboard: 'Dashboard de Seguros',
   claims: 'Siniestros',
   fire_extinguishers: 'Matafuegos',
   fire_extinguisher_audits: 'Auditoría de Matafuegos',
@@ -50,7 +51,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   { label: 'Principal', modules: ['dashboard'] },
   { label: 'Patrimonio', modules: ['assets'] },
   { label: 'Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard'] },
-  { label: 'Seguros', modules: ['policies', 'documents', 'financial_analysis', 'economic_analysis', 'claims'] },
+  { label: 'Seguros', modules: ['policies', 'documents', 'financial_analysis', 'economic_analysis', 'insurance_dashboard', 'claims'] },
   { label: 'Operaciones', modules: ['producers', 'tasks'] },
   { label: 'Configuración', modules: ['companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config'] },
 ]
@@ -160,7 +161,7 @@ export interface ClaimEvent {
 }
 
 export type AssetCategory =
-  | 'vehiculo' | 'camioneta' | 'camion' | 'moto'
+  | 'vehiculo' | 'camioneta' | 'camion' | 'moto' | 'transporte_pasajeros'
   | 'tractor' | 'cosechadora' | 'pulverizadora' | 'implemento'
   | 'edificio' | 'establecimiento'
   | 'equipo' | 'maquinaria' | 'infraestructura'
@@ -398,6 +399,7 @@ export interface RelatedDocSummary {
   documentType: DocumentType
   documentStatus: DocumentStatus
   totalAmount: number
+  currency: Currency
   adjustmentSign: AdjustmentSign | null
   // true cuando este es el documento al que el documento consultado fue
   // aplicado (su propio linkedDocumentId), no uno de los que lo afectan a él.
@@ -446,9 +448,10 @@ export interface Installment {
   amountUsd: number | null
   paymentStatus: PaymentStatus
   paidAt: string | null
+  paymentMethod: string | null
 }
 
-export type InstallmentUpdate = Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate'>> & {
+export type InstallmentUpdate = Partial<Pick<Installment, 'amount' | 'paymentStatus' | 'paidAt' | 'dueDate' | 'paymentMethod'>> & {
   /** Tipo de cambio del día de pago — requerido cuando paymentStatus pasa a 'PAID' */
   exchangeRate?: number
 }
@@ -493,6 +496,7 @@ export interface FireExtinguisher {
   establishment: string | null
   brand: string | null
   cylinderNumber: string | null
+  iramCertificateNumber: string | null
   manufacturingYear: number | null
   status: FireExtStatus
   chargeStatus: FireExtStatus
@@ -533,6 +537,7 @@ export interface Claim {
   assetId: string | null
   policyId: string | null
   claimNumber: string
+  title?: string | null
   claimType: string
   occurrenceDate: string
   reportDate: string
@@ -571,6 +576,18 @@ export interface ClaimAttachment {
   uploadedBy: string
 }
 
+export interface ClaimExpenseAttachment {
+  id: string
+  expenseId: string
+  name: string
+  description: string | null
+  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileSize: string
+  fileUrl?: string
+  uploadedAt: string
+  uploadedBy: string
+}
+
 export interface ClaimExpense {
   id: string
   claimId: string
@@ -580,6 +597,8 @@ export interface ClaimExpense {
   netAmount: number
   vatAmount: number
   otherTaxesAmount: number
+  comment?: string | null
+  attachments: ClaimExpenseAttachment[]
   createdAt: string
   createdBy?: string | null
 }

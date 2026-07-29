@@ -23,8 +23,10 @@ jest.mock('../../../config/database', () => ({
       createMany: jest.fn(),
     },
     assetValueHistory: {
-      findMany: jest.fn(),
-      create:   jest.fn(),
+      findMany:  jest.fn(),
+      findFirst: jest.fn(),
+      create:    jest.fn(),
+      update:    jest.fn(),
     },
     assetAttachment: {
       findMany:  jest.fn(),
@@ -313,9 +315,27 @@ describe('Assets API', () => {
   // ── PUT /api/v1/assets/:id ──────────────────────────────────────────────────
 
   describe('PUT /api/v1/assets/:id', () => {
+    // update() ahora corre todo en una única transacción interactiva
+    // ($transaction(async (tx) => {...})) — se mockea pasándole un tx de
+    // prueba con los mismos jest.fn() que se quieran inspeccionar.
+    function mockUpdateTransaction(tx: Record<string, unknown> = {}) {
+      db.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          asset: { update: jest.fn().mockResolvedValue({ id: ASSET_ID }) },
+          assetStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          assetValueHistory: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockResolvedValue({}),
+            update: jest.fn().mockResolvedValue({}),
+          },
+          ...tx,
+        }),
+      )
+    }
+
     it('returns 200 when ADMIN updates asset fields', async () => {
       db.asset.findUnique.mockResolvedValue(fakeAsset)
-      db.asset.update.mockResolvedValue({ ...fakeAsset, name: 'Toyota Hilux Pro', allocations: fakeAsset.allocations, valueHistory: [], attachments: [], _count: fakeAsset._count })
+      mockUpdateTransaction()
 
       const res = await request(app)
         .put(`/api/v1/assets/${ASSET_ID}`)
@@ -345,6 +365,82 @@ describe('Assets API', () => {
         .send({ name: 'Updated' })
 
       expect(res.status).toBe(403)
+    })
+
+    it('does not touch value history when neither currentValue nor patrimonialValueNew are in the payload', async () => {
+      db.asset.findUnique.mockResolvedValue(fakeAsset)
+      const findFirst = jest.fn()
+      mockUpdateTransaction({ assetValueHistory: { findFirst, create: jest.fn(), update: jest.fn() } })
+
+      const res = await request(app)
+        .put(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ name: 'Toyota Hilux Pro' })
+
+      expect(res.status).toBe(200)
+      expect(findFirst).not.toHaveBeenCalled()
+    })
+
+    it('creates a new value-history entry when currentValue is saved on a valuation date with no existing entry', async () => {
+      db.asset.findUnique.mockResolvedValue({ ...fakeAsset, purchaseDate: new Date('2026-01-01T00:00:00.000Z') })
+      const findFirst = jest.fn().mockResolvedValue(null)
+      const historyCreate = jest.fn().mockResolvedValue({})
+      mockUpdateTransaction({ assetValueHistory: { findFirst, create: historyCreate, update: jest.fn() } })
+
+      const res = await request(app)
+        .put(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ currentValue: 45000, currency: 'USD', exchangeRate: 1500, purchaseDate: '2026-07-29' })
+
+      expect(res.status).toBe(200)
+      expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ assetId: ASSET_ID, type: 'real' }),
+      }))
+      expect(historyCreate).toHaveBeenCalledTimes(1)
+      const data = historyCreate.mock.calls[0][0].data
+      expect(data.value).toBe(45000)
+      expect(data.valueUsd).toBe(45000)
+      expect(data.valueArs).toBe(67500000)
+      expect(data.type).toBe('real')
+    })
+
+    it('updates the existing value-history entry instead of creating a new one when the valuation date is unchanged', async () => {
+      const sameDate = new Date('2026-07-29T00:00:00.000Z')
+      db.asset.findUnique.mockResolvedValue({ ...fakeAsset, purchaseDate: sameDate })
+      const findFirst = jest.fn().mockResolvedValue({ id: 'vh-existing-1' })
+      const historyUpdate = jest.fn().mockResolvedValue({})
+      const historyCreate = jest.fn()
+      mockUpdateTransaction({ assetValueHistory: { findFirst, create: historyCreate, update: historyUpdate } })
+
+      const res = await request(app)
+        .put(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ currentValue: 46000, currency: 'USD', exchangeRate: 1500, purchaseDate: '2026-07-29' })
+
+      expect(res.status).toBe(200)
+      expect(historyCreate).not.toHaveBeenCalled()
+      expect(historyUpdate).toHaveBeenCalledWith({
+        where: { id: 'vh-existing-1' },
+        data: expect.objectContaining({ value: 46000, valueUsd: 46000, valueArs: 69000000 }),
+      })
+    })
+
+    it('syncs the patrimonialValueNew entry independently under type "nuevo"', async () => {
+      db.asset.findUnique.mockResolvedValue({ ...fakeAsset, purchaseDate: new Date('2026-07-29T00:00:00.000Z') })
+      const findFirst = jest.fn().mockResolvedValue(null)
+      const historyCreate = jest.fn().mockResolvedValue({})
+      mockUpdateTransaction({ assetValueHistory: { findFirst, create: historyCreate, update: jest.fn() } })
+
+      const res = await request(app)
+        .put(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ patrimonialValueNew: 52000, currency: 'USD', exchangeRate: 1500, purchaseDate: '2026-07-29' })
+
+      expect(res.status).toBe(200)
+      expect(historyCreate).toHaveBeenCalledTimes(1)
+      const data = historyCreate.mock.calls[0][0].data
+      expect(data.type).toBe('nuevo')
+      expect(data.value).toBe(52000)
     })
   })
 
@@ -426,6 +522,59 @@ describe('Assets API', () => {
         .send({ allocations: [{ companyId: COMPANY_ID, costCenterId: CC_ID, percentage: 100 }] })
 
       expect(res.status).toBe(200)
+    })
+  })
+
+  // ── POST /api/v1/assets/:id/value-history ───────────────────────────────────
+
+  describe('POST /api/v1/assets/:id/value-history', () => {
+    it('closes valueArs/valueUsd from value + exchangeRate (value is always USD)', async () => {
+      db.asset.findUnique.mockResolvedValue(fakeAsset) // assertAssetExists
+      db.assetValueHistory.create.mockResolvedValue({})
+
+      const res = await request(app)
+        .post(`/api/v1/assets/${ASSET_ID}/value-history`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ value: 1000, exchangeRate: 1200, date: '2026-07-14', type: 'real' })
+
+      expect(res.status).toBe(201)
+      const createCall = db.assetValueHistory.create.mock.calls[0][0]
+      expect(createCall.data.value).toBe(1000)
+      expect(createCall.data.valueUsd).toBe(1000)
+      expect(createCall.data.valueArs).toBe(1200000)
+      // exchangeRate es solo para calcular — nunca se persiste como columna propia.
+      expect(createCall.data.exchangeRate).toBeUndefined()
+    })
+
+    it('rejects a new value-history entry without exchangeRate', async () => {
+      const res = await request(app)
+        .post(`/api/v1/assets/${ASSET_ID}/value-history`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ value: 1000, date: '2026-07-14', type: 'real' })
+
+      expect(res.status).toBe(422)
+      expect(db.assetValueHistory.create).not.toHaveBeenCalled()
+    })
+
+    it('rejects a negative or zero exchangeRate', async () => {
+      const res = await request(app)
+        .post(`/api/v1/assets/${ASSET_ID}/value-history`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ value: 1000, exchangeRate: 0, date: '2026-07-14', type: 'real' })
+
+      expect(res.status).toBe(422)
+      expect(db.assetValueHistory.create).not.toHaveBeenCalled()
+    })
+
+    it('returns 404 when the asset does not exist', async () => {
+      db.asset.findUnique.mockResolvedValue(null)
+
+      const res = await request(app)
+        .post(`/api/v1/assets/${OTHER_ID}/value-history`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ value: 1000, exchangeRate: 1200, date: '2026-07-14', type: 'real' })
+
+      expect(res.status).toBe(404)
     })
   })
 })

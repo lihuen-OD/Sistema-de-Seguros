@@ -333,6 +333,7 @@ export default function FixedAssetsPage() {
           </span>
         </div>
         <DataTable
+          tableKey="fixed-assets"
           columns={columns}
           data={filtered}
           rowKey="id"

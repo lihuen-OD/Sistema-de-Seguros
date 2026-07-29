@@ -3,7 +3,8 @@ import { asyncHandler } from '../../shared/utils/async-handler'
 import { AppError } from '../../shared/errors/AppError'
 import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
 import { fireExtinguisherAuditsService } from './fire-extinguisher-audits.service'
-import type { ListFireExtinguisherAuditsQueryDTO, CoverageQueryDTO } from './fire-extinguisher-audits.schemas'
+import { fireExtinguisherAuditDashboardService } from './fire-extinguisher-audit-dashboard.service'
+import type { ListFireExtinguisherAuditsQueryDTO, CoverageQueryDTO, AuditDashboardQueryDTO } from './fire-extinguisher-audits.schemas'
 
 type IdParam = { id: string }
 type AttachmentParam = { id: string; attachmentId: string }
@@ -25,9 +26,9 @@ export const fireExtinguisherAuditsController = {
     res.json({ data })
   }),
 
-  findingsReport: asyncHandler(async (req: Request, res: Response) => {
-    const { period } = req.query as unknown as CoverageQueryDTO
-    const data = await fireExtinguisherAuditsService.getFindingsReport(period)
+  auditDashboard: asyncHandler(async (req: Request, res: Response) => {
+    const { period, establishment } = req.query as unknown as AuditDashboardQueryDTO
+    const data = await fireExtinguisherAuditDashboardService.getAuditDashboard(period, establishment)
     res.json({ data })
   }),
 

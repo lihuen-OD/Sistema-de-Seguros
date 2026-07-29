@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { triggerBlobDownload } from '../utils/downloadFile'
-import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment, ClaimExpense, Currency } from '../types'
+import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment, ClaimExpense, ClaimExpenseAttachment, Currency } from '../types'
 
 interface BackendClaimEvent {
   id: string; claimId: string; type: string; date: string; description: string
@@ -13,10 +13,11 @@ interface BackendClaimExpense {
   id: string; claimId: string; date: string; provider: string
   receiptNumber: string | null
   netAmount: number; vatAmount: number; otherTaxesAmount: number
+  comment: string | null; attachments?: ClaimExpenseAttachment[]
   createdAt: string; createdBy: string | null
 }
 interface BackendClaim {
-  id: string; claimNumber: string; assetId: string | null; policyId: string | null
+  id: string; claimNumber: string; title: string | null; assetId: string | null; policyId: string | null
   claimType: string; occurrenceDate: string; reportDate: string; description: string | null
   insuranceCompany: string | null
   ownershipType: string | null
@@ -48,7 +49,7 @@ function mapEvent(e: BackendClaimEvent): ClaimEvent {
 
 function mapClaim(b: BackendClaim): Claim {
   return {
-    id: b.id, claimNumber: b.claimNumber,
+    id: b.id, claimNumber: b.claimNumber, title: b.title ?? null,
     assetId: b.assetId ?? null, policyId: b.policyId ?? null,
     claimType: b.claimType,
     occurrenceDate: b.occurrenceDate?.slice(0, 10) ?? '',
@@ -83,12 +84,14 @@ function mapExpense(e: BackendClaimExpense): ClaimExpense {
     provider: e.provider,
     receiptNumber: e.receiptNumber ?? undefined,
     netAmount: e.netAmount, vatAmount: e.vatAmount, otherTaxesAmount: e.otherTaxesAmount,
+    comment: e.comment ?? undefined,
+    attachments: e.attachments ?? [],
     createdAt: e.createdAt, createdBy: e.createdBy ?? undefined,
   }
 }
 
 export interface ClaimCreateInput {
-  claimNumber: string; claimType: string; occurrenceDate: string; reportDate: string
+  claimNumber: string; title?: string; claimType: string; occurrenceDate: string; reportDate: string
   description: string; assetId?: string; policyId?: string; insuranceCompany?: string
   status?: string; claimedAmountArs?: number; currency?: Currency
   realAmountArs?: number; settledAmountArs?: number; deductibleArs?: number
@@ -101,7 +104,7 @@ export interface ClaimCreateInput {
 }
 
 export const claimsApi = {
-  async findAll(filters?: { assetId?: string; policyId?: string; status?: string }): Promise<Claim[]> {
+  async findAll(filters?: { assetId?: string; policyId?: string; status?: string; limit?: number }): Promise<Claim[]> {
     const res = await apiClient.get<Paginated<BackendClaim>>('/claims', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapClaim)
   },
@@ -172,7 +175,7 @@ export const claimsApi = {
 
   async addExpense(claimId: string, input: {
     date: string; provider: string; receiptNumber?: string
-    netAmount: number; vatAmount: number; otherTaxesAmount: number
+    netAmount: number; vatAmount: number; otherTaxesAmount: number; comment?: string
   }): Promise<ClaimExpense> {
     const res = await apiClient.post<{ data: BackendClaimExpense }>(`/claims/${claimId}/expenses`, input)
     return mapExpense(res.data.data)
@@ -180,7 +183,7 @@ export const claimsApi = {
 
   async updateExpense(claimId: string, expenseId: string, input: {
     date: string; provider: string; receiptNumber?: string
-    netAmount: number; vatAmount: number; otherTaxesAmount: number
+    netAmount: number; vatAmount: number; otherTaxesAmount: number; comment?: string
   }): Promise<ClaimExpense> {
     const res = await apiClient.put<{ data: BackendClaimExpense }>(`/claims/${claimId}/expenses/${expenseId}`, input)
     return mapExpense(res.data.data)
@@ -189,11 +192,36 @@ export const claimsApi = {
   async deleteExpense(claimId: string, expenseId: string): Promise<void> {
     await apiClient.delete(`/claims/${claimId}/expenses/${expenseId}`)
   },
+
+  async findExpenseAttachments(claimId: string, expenseId: string): Promise<ClaimExpenseAttachment[]> {
+    const res = await apiClient.get<{ data: ClaimExpenseAttachment[] }>(`/claims/${claimId}/expenses/${expenseId}/attachments`)
+    return res.data.data
+  },
+
+  async addExpenseAttachment(claimId: string, expenseId: string, file: File): Promise<ClaimExpenseAttachment> {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post<{ data: ClaimExpenseAttachment }>(
+      `/claims/${claimId}/expenses/${expenseId}/attachments`,
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    return res.data.data
+  },
+
+  async deleteExpenseAttachment(claimId: string, expenseId: string, attachmentId: string): Promise<void> {
+    await apiClient.delete(`/claims/${claimId}/expenses/${expenseId}/attachments/${attachmentId}`)
+  },
+
+  async downloadExpenseAttachment(claimId: string, expenseId: string, attachmentId: string, filename: string): Promise<void> {
+    const res = await apiClient.get(`/claims/${claimId}/expenses/${expenseId}/attachments/${attachmentId}/download`, { responseType: 'blob' })
+    triggerBlobDownload(res.data, filename)
+  },
 }
 
 // ── Query keys / query options (categoría B — semi-dinámico) ────────────────────
 
-type ClaimFilters = { assetId?: string; policyId?: string; status?: string }
+type ClaimFilters = { assetId?: string; policyId?: string; status?: string; limit?: number }
 
 export const claimKeys = {
   all: ['claims'] as const,

@@ -88,6 +88,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
       (!form.insuranceCompany || d.insuranceCompany === form.insuranceCompany),
   )
   const linkedInvoice = allDocuments.find((d) => d.id === form.linkedDocumentId) ?? null
+  const effectivePaymentMethod = linkedInvoice?.paymentMethod ?? form.paymentMethod
 
   const parsedNet = parseFloat(form.netAmount) || 0
   const parsedVat = parseFloat(form.vatAmount) || 0
@@ -112,7 +113,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
     if (!form.issueDate) next.issueDate = 'Requerido'
     if (!form.currency) next.currency = 'Requerido'
     if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0) next.exchangeRate = 'Requerido'
-    if (!form.paymentMethod) next.paymentMethod = 'Requerido'
+    if (!effectivePaymentMethod) next.paymentMethod = 'Requerido'
     if (!form.netAmount || isNaN(parseFloat(form.netAmount))) next.netAmount = 'Requerido'
     setErrors(next)
     notifyValidationErrors(next)
@@ -135,7 +136,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
         vatAmount: parsedVat,
         otherTaxesAmount: parsedOther,
         insuranceCompany: form.insuranceCompany,
-        paymentMethod: form.paymentMethod,
+        paymentMethod: effectivePaymentMethod,
         description: form.description || undefined,
         linkedDocumentId: form.linkedDocumentId || undefined,
         allocations: [],
@@ -153,7 +154,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
         vatAmount: parsedVat,
         otherTaxesAmount: parsedOther,
         insuranceCompany: form.insuranceCompany,
-        paymentMethod: form.paymentMethod,
+        paymentMethod: effectivePaymentMethod,
         description: form.description || undefined,
         linkedDocumentId: form.linkedDocumentId || undefined,
       })
@@ -223,7 +224,20 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
               <DocumentRelationSelector
                 documents={linkableInvoices}
                 value={form.linkedDocumentId}
-                onChange={(id) => { setForm((p) => ({ ...p, linkedDocumentId: id })); markUnsaved() }}
+                onChange={(id) => {
+                  // Si se vincula a una factura, la moneda tiene que coincidir
+                  // con la de esa factura — si queda sin vincular, la Nota de
+                  // Débito es un documento propio y la moneda vuelve a quedar
+                  // libre para elegir.
+                  const linked = allDocuments.find((d) => d.id === id)
+                  setForm((p) => ({
+                    ...p,
+                    linkedDocumentId: id,
+                    currency: linked?.currency ?? p.currency,
+                    paymentMethod: linked?.paymentMethod ?? '',
+                  }))
+                  markUnsaved()
+                }}
                 emptyMessage="No hay facturas disponibles para vincular."
                 helperText="Si no se asocia a ninguna factura, esta Nota de Débito funciona como documento propio pagable."
               />
@@ -238,19 +252,36 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
         <SectionCard title="Importes y Pago" subtitle="Moneda, tipo de cambio y forma de pago">
           <FormSection title="">
             <FormField label="Moneda" required error={errors.currency}>
-              <FormSelect value={form.currency} onChange={set('currency')} required>
+              <FormSelect value={form.currency} onChange={set('currency')} required disabled={!!form.linkedDocumentId}>
                 <option value="">Seleccionar moneda…</option>
                 {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </FormSelect>
+              {form.linkedDocumentId && (
+                <p className="text-xs text-slate-400 mt-1">Se toma automáticamente de la factura asociada.</p>
+              )}
             </FormField>
             <FormField label="Tipo de Cambio" required error={errors.exchangeRate}>
               <FormInput type="number" placeholder="Ej: 1150" value={form.exchangeRate} onChange={set('exchangeRate')} min="0.01" step="0.01" required />
             </FormField>
             <FormField label="Forma de Pago" required error={errors.paymentMethod}>
-              <FormSelect value={form.paymentMethod} onChange={set('paymentMethod')} required>
-                <option value="">Seleccionar forma…</option>
-                {paymentMethods.map((m) => <option key={m.id} value={m.label}>{m.label}</option>)}
-              </FormSelect>
+              {form.linkedDocumentId ? (
+                <>
+                  <FormInput
+                    value={effectivePaymentMethod || 'Sin especificar'}
+                    readOnly
+                    disabled
+                    className="bg-slate-50 text-slate-500 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Se toma automáticamente de la factura asociada.
+                  </p>
+                </>
+              ) : (
+                <FormSelect value={form.paymentMethod} onChange={set('paymentMethod')} required>
+                  <option value="">Seleccionar forma…</option>
+                  {paymentMethods.map((m) => <option key={m.id} value={m.label}>{m.label}</option>)}
+                </FormSelect>
+              )}
             </FormField>
             <FormField label="Neto" required error={errors.netAmount}>
               <FormInput type="number" placeholder="0.00" value={form.netAmount} onChange={set('netAmount')} min="0" step="0.01" required />

@@ -17,13 +17,18 @@ import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils
 import {
   downloadXLSX, printTableAsPDF, getISOWeekKey, generateWeekRange,
 } from '../../../shared/utils/export'
+import type { ExportCell } from '../../../shared/utils/export'
 import { documentQueries } from '../../../shared/api/documents.api'
 import { policyQueries } from '../../../shared/api/policies.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { ExchangeRateBar } from '../../../shared/components/exchange-rate/ExchangeRateBar'
-import type { Currency, Policy, Asset, Company, CostCenter, Installment, DocumentPolicyAllocation } from '../../../shared/types'
+import {
+  normalizePaymentMethod,
+  resolveDocumentPaymentMethod,
+} from '../../../shared/utils/documentPaymentMethod'
+import type { Currency, Policy, Asset, Company, CostCenter, Installment, DocumentPolicyAllocation, AccountingDocument } from '../../../shared/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -121,6 +126,16 @@ function getRows(
 
 interface CellData { paid: number; pending: number }
 type MatrixData = Map<string, Map<string, CellData>>
+type PaymentMethodMatrix = Map<string, Map<string, Map<string, number>>>
+
+interface FinancialMatrixResult {
+  matrix: MatrixData
+  paymentMethods: PaymentMethodMatrix
+}
+
+function getInstallmentEffectiveDate(inst: Installment): string {
+  return inst.paymentStatus === 'PAID' ? (inst.paidAt ?? inst.dueDate) : inst.dueDate
+}
 
 function buildMatrixData(
   grouping: RowGrouping,
@@ -128,19 +143,33 @@ function buildMatrixData(
   granularity: 'week' | 'month',
   policies: Policy[],
   assets: Asset[],
+  documents: AccountingDocument[],
   installments: Installment[],
   allocations: DocumentPolicyAllocation[],
-): MatrixData {
+): FinancialMatrixResult {
   const policyContext = buildPolicyContext(policies, assets)
   const documentPolicies = buildDocumentPolicies(allocations)
+  const documentsById = new Map(documents.map((doc) => [doc.id, doc]))
+  const documentPaymentMethods = new Map(
+    documents.map((doc) => [doc.id, resolveDocumentPaymentMethod(doc.id, documentsById)]),
+  )
   const matrix: MatrixData = new Map()
+  const paymentMethods: PaymentMethodMatrix = new Map()
 
   installments.forEach((inst) => {
+    const effectiveDate = getInstallmentEffectiveDate(inst)
     const key = granularity === 'week'
-      ? getISOWeekKey(inst.dueDate)
-      : inst.dueDate.substring(0, 7)
+      ? getISOWeekKey(effectiveDate)
+      : effectiveDate.substring(0, 7)
     const amount = pickAmount(inst, displayCurrency)
     const isPaid = inst.paymentStatus === 'PAID'
+    const paymentMethod = isPaid
+      ? (
+          normalizePaymentMethod(inst.paymentMethod)
+          || documentPaymentMethods.get(inst.accountingDocumentId)
+          || 'Sin especificar'
+        )
+      : 'Pendiente'
     const policyIds = documentPolicies.get(inst.accountingDocumentId) ?? []
     const splitAmount = policyIds.length > 1 ? amount / policyIds.length : amount
 
@@ -166,10 +195,18 @@ function buildMatrixData(
       const cell = rowMap.get(key)!
       if (isPaid) cell.paid += splitAmount
       else cell.pending += splitAmount
+
+      if (grouping === 'empresa') {
+        if (!paymentMethods.has(rowId)) paymentMethods.set(rowId, new Map())
+        const companyMethods = paymentMethods.get(rowId)!
+        if (!companyMethods.has(paymentMethod)) companyMethods.set(paymentMethod, new Map())
+        const methodPeriods = companyMethods.get(paymentMethod)!
+        methodPeriods.set(key, (methodPeriods.get(key) ?? 0) + splitAmount)
+      }
     })
   })
 
-  return matrix
+  return { matrix, paymentMethods }
 }
 
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
@@ -253,9 +290,9 @@ export default function FinancialAnalysisPage() {
 
   // Matrix granularity depends on period: weeks use week keys, the rest use month keys
   const matrixGranularity: 'week' | 'month' = colPeriod === 'semana' ? 'week' : 'month'
-  const matrixData = useMemo(
-    () => buildMatrixData(grouping, currency, matrixGranularity, allPolicies, allAssets, allInstallments, allAllocations),
-    [grouping, currency, matrixGranularity, allPolicies, allAssets, allInstallments, allAllocations],
+  const { matrix: matrixData, paymentMethods: companyPaymentMatrix } = useMemo(
+    () => buildMatrixData(grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allInstallments, allAllocations),
+    [grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allInstallments, allAllocations],
   )
   const rows = useMemo(
     () => getRows(grouping, allCompanies, allCostCenters, allAssets, allPolicies),
@@ -270,7 +307,7 @@ export default function FinancialAnalysisPage() {
     let overdueCount = 0
     const today = new Date(2026, 5, 10)
     allInstallments.forEach((inst) => {
-      const monthKey = inst.dueDate.substring(0, 7)
+      const monthKey = getInstallmentEffectiveDate(inst).substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
       const amount = pickAmount(inst, currency)
       if (inst.paymentStatus === 'PAID') {
@@ -290,7 +327,7 @@ export default function FinancialAnalysisPage() {
       let paid = 0
       let pending = 0
       allInstallments.forEach((inst) => {
-        if (inst.dueDate.substring(0, 7) !== key) return
+        if (getInstallmentEffectiveDate(inst).substring(0, 7) !== key) return
         const amount = pickAmount(inst, currency)
         if (inst.paymentStatus === 'PAID') paid += amount
         else pending += amount
@@ -338,6 +375,33 @@ export default function FinancialAnalysisPage() {
     return { paid, pending }
   }
 
+  function getCompanyPaymentAmount(companyId: string, paymentMethod: string, colKey: string): number {
+    const methodPeriods = companyPaymentMatrix.get(companyId)?.get(paymentMethod)
+    if (!methodPeriods) return 0
+    if (colPeriod === 'mes' || colPeriod === 'semana') return methodPeriods.get(colKey) ?? 0
+    const quarter = quarters.find((q) => q.key === colKey)
+    return quarter?.months.reduce((sum, month) => sum + (methodPeriods.get(month) ?? 0), 0) ?? 0
+  }
+
+  function getCompanyPaymentMethods(companyId: string): string[] {
+    const methods = [...(companyPaymentMatrix.get(companyId)?.keys() ?? [])]
+      .filter((method) => columns.some((col) => getCompanyPaymentAmount(companyId, method, col.key) !== 0))
+    return methods.sort((a, b) => {
+      if (a === 'Pendiente') return 1
+      if (b === 'Pendiente') return -1
+      if (a === 'Sin especificar') return 1
+      if (b === 'Sin especificar') return -1
+      return a.localeCompare(b, 'es')
+    })
+  }
+
+  function getCompanyPaymentTotal(companyId: string, paymentMethod: string): number {
+    return columns.reduce(
+      (sum, col) => sum + getCompanyPaymentAmount(companyId, paymentMethod, col.key),
+      0,
+    )
+  }
+
   function fmtCell(value: number): string {
     return value === 0 ? '—' : formatCurrencyCompact(value, currency)
   }
@@ -366,81 +430,183 @@ export default function FinancialAnalysisPage() {
   const periodLabel = colPeriod === 'semana' ? 'semanal' : colPeriod === 'mes' ? 'mensual' : 'trimestral'
   const groupingLabel = groupingButtons.find((b) => b.value === grouping)?.label ?? grouping
 
-  async function handleExportCSV() {
+  async function handleExportExcel() {
+    const numberFormat = currency === 'ARS'
+      ? '"AR$" #,##0;[Red]-"AR$" #,##0;"-"'
+      : '"US$" #,##0;[Red]-"US$" #,##0;"-"'
+
+    if (grouping === 'empresa') {
+      const header: ExportCell[] = ['Empresa', 'Medio de pago', ...columns.map((c) => c.label), 'Total']
+      const dataRows: ExportCell[][] = []
+      const totalRowIndexes: number[] = []
+
+      rows.forEach((row) => {
+        getCompanyPaymentMethods(row.id).forEach((method) => {
+          dataRows.push([
+            row.label,
+            method,
+            ...columns.map((col) => getCompanyPaymentAmount(row.id, method, col.key)),
+            getCompanyPaymentTotal(row.id, method),
+          ])
+        })
+        totalRowIndexes.push(dataRows.length + 1)
+        const totals = getRowTotals(row.id)
+        dataRows.push([
+          row.label,
+          'TOTAL',
+          ...columns.map((col) => {
+            const cell = getCellValue(row.id, col.key)
+            return cell.paid + cell.pending
+          }),
+          totals.paid + totals.pending,
+        ])
+      })
+
+      await downloadXLSX(
+        [header, ...dataRows],
+        `analisis-financiero-${periodLabel}-${dateFrom}-${dateTo}.xlsx`,
+        {
+          autoFilter: true,
+          numericColumnIndexes: columns.map((_, index) => index + 2).concat(columns.length + 2),
+          numberFormat,
+          totalRowIndexes,
+        },
+      )
+      return
+    }
+
     const header = [groupingLabel, ...columns.map((c) => `${c.label} Pag`), ...columns.map((c) => `${c.label} Pen`), 'Total Pag', 'Total Pen']
-    const dataRows = rows.map((row) => {
+    const dataRows: ExportCell[][] = rows.map((row) => {
       const totals = getRowTotals(row.id)
       return [
         row.label,
-        ...columns.map((c) => {
-          const v = getCellValue(row.id, c.key).paid
-          return v === 0 ? '' : v.toFixed(0)
-        }),
-        ...columns.map((c) => {
-          const v = getCellValue(row.id, c.key).pending
-          return v === 0 ? '' : v.toFixed(0)
-        }),
-        totals.paid === 0 ? '' : totals.paid.toFixed(0),
-        totals.pending === 0 ? '' : totals.pending.toFixed(0),
+        ...columns.map((c) => getCellValue(row.id, c.key).paid),
+        ...columns.map((c) => getCellValue(row.id, c.key).pending),
+        totals.paid,
+        totals.pending,
       ]
     })
 
-    // Column totals row
-    const colTotals = columns.flatMap((col) => {
-      let paid = 0, pending = 0
-      rows.forEach((r) => { const c = getCellValue(r.id, col.key); paid += c.paid; pending += c.pending })
-      return [paid.toFixed(0), pending.toFixed(0)]
-    })
-    dataRows.push(['TOTAL', ...colTotals, kpis.totalPaid.toFixed(0), kpis.totalPending.toFixed(0)])
+    const paidTotals = columns.map((col) =>
+      rows.reduce((sum, row) => sum + getCellValue(row.id, col.key).paid, 0))
+    const pendingTotals = columns.map((col) =>
+      rows.reduce((sum, row) => sum + getCellValue(row.id, col.key).pending, 0))
+    dataRows.push(['TOTAL', ...paidTotals, ...pendingTotals, kpis.totalPaid, kpis.totalPending])
 
-    await downloadXLSX([header, ...dataRows], `analisis-financiero-${periodLabel}-${dateFrom}-${dateTo}.xlsx`)
+    await downloadXLSX(
+      [header, ...dataRows],
+      `analisis-financiero-${periodLabel}-${dateFrom}-${dateTo}.xlsx`,
+      {
+        autoFilter: true,
+        numericColumnIndexes: header.slice(1).map((_, index) => index + 1),
+        numberFormat,
+        totalRowIndexes: [dataRows.length],
+      },
+    )
   }
 
   async function handleExportPDF() {
     setPdfLoading(true)
     try {
-    const pdfColumns = [
-      { label: groupingLabel, align: 'left' as const },
-      ...columns.map((c) => ({ label: c.label, align: 'right' as const })),
-      { label: 'Total', align: 'right' as const },
-    ]
+      const pdfColumns = [
+        { label: groupingLabel, align: 'left' as const },
+        ...(grouping === 'empresa'
+          ? [{ label: 'Medio de pago', align: 'left' as const }]
+          : []),
+        ...columns.map((c) => ({ label: c.label, align: 'right' as const })),
+        { label: 'Total', align: 'right' as const },
+      ]
 
-    const pdfRows: { cells: string[]; isDim?: boolean; isTotal?: boolean }[] = rows.map((row) => {
-      const totals = getRowTotals(row.id)
-      const hasData = totals.paid + totals.pending > 0
-      return {
-        cells: [
-          row.label,
-          ...columns.map((c) => {
-            const cell = getCellValue(row.id, c.key)
-            if (!cell.paid && !cell.pending) return '—'
-            const parts = []
-            if (cell.paid)    parts.push(`+${fmtNumber(cell.paid)}`)
-            if (cell.pending) parts.push(`-${fmtNumber(cell.pending)}`)
-            return parts.join(' / ')
-          }),
-          totals.paid + totals.pending === 0
-            ? '—'
-            : `${fmtNumber(totals.paid)} / ${fmtNumber(totals.pending)}`,
-        ],
-        isDim: !hasData,
+      const pdfRows: { cells: string[]; isDim?: boolean; isTotal?: boolean }[] = []
+
+      if (grouping === 'empresa') {
+        rows.forEach((row) => {
+          getCompanyPaymentMethods(row.id).forEach((method) => {
+            pdfRows.push({
+              cells: [
+                row.label,
+                method,
+                ...columns.map((col) => fmtNumber(getCompanyPaymentAmount(row.id, method, col.key))),
+                fmtNumber(getCompanyPaymentTotal(row.id, method)),
+              ],
+            })
+          })
+
+          const totals = getRowTotals(row.id)
+          pdfRows.push({
+            cells: [
+              row.label,
+              'TOTAL',
+              ...columns.map((col) => {
+                const cell = getCellValue(row.id, col.key)
+                return fmtNumber(cell.paid + cell.pending)
+              }),
+              fmtNumber(totals.paid + totals.pending),
+            ],
+            isTotal: true,
+          })
+        })
+
+        pdfRows.push({
+          cells: [
+            'Total período',
+            'TOTAL',
+            ...columns.map((col) => {
+              let paid = 0
+              let pending = 0
+              rows.forEach((row) => {
+                const cell = getCellValue(row.id, col.key)
+                paid += cell.paid
+                pending += cell.pending
+              })
+              return fmtNumber(paid + pending)
+            }),
+            fmtNumber(kpis.totalPaid + kpis.totalPending),
+          ],
+          isTotal: true,
+        })
+      } else {
+        rows.forEach((row) => {
+          const totals = getRowTotals(row.id)
+          const hasData = totals.paid + totals.pending > 0
+          pdfRows.push({
+            cells: [
+              row.label,
+              ...columns.map((col) => {
+                const cell = getCellValue(row.id, col.key)
+                if (!cell.paid && !cell.pending) return '—'
+                const parts = []
+                if (cell.paid) parts.push(`+${fmtNumber(cell.paid)}`)
+                if (cell.pending) parts.push(`-${fmtNumber(cell.pending)}`)
+                return parts.join(' / ')
+              }),
+              totals.paid + totals.pending === 0
+                ? '—'
+                : `${fmtNumber(totals.paid)} / ${fmtNumber(totals.pending)}`,
+            ],
+            isDim: !hasData,
+          })
+        })
+
+        pdfRows.push({
+          cells: [
+            'TOTAL',
+            ...columns.map((col) => {
+              let paid = 0
+              let pending = 0
+              rows.forEach((row) => {
+                const cell = getCellValue(row.id, col.key)
+                paid += cell.paid
+                pending += cell.pending
+              })
+              if (!paid && !pending) return '—'
+              return `${fmtNumber(paid)} / ${fmtNumber(pending)}`
+            }),
+            `${fmtNumber(kpis.totalPaid)} / ${fmtNumber(kpis.totalPending)}`,
+          ],
+          isTotal: true,
+        })
       }
-    })
-
-    // Totals row
-    pdfRows.push({
-      cells: [
-        'TOTAL',
-        ...columns.map((col) => {
-          let paid = 0, pending = 0
-          rows.forEach((r) => { const c = getCellValue(r.id, col.key); paid += c.paid; pending += c.pending })
-          if (!paid && !pending) return '—'
-          return `${fmtNumber(paid)} / ${fmtNumber(pending)}`
-        }),
-        `${fmtNumber(kpis.totalPaid)} / ${fmtNumber(kpis.totalPending)}`,
-      ],
-      isTotal: true,
-    })
 
       await printTableAsPDF(
         'Análisis Financiero',
@@ -625,7 +791,7 @@ export default function FinancialAnalysisPage() {
         actions={
           <div className="flex items-center gap-1">
             <button
-              onClick={handleExportCSV}
+              onClick={handleExportExcel}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-emerald-700 hover:border-emerald-200 transition-colors"
               title="Exportar a Excel (CSV)"
             >
@@ -654,9 +820,19 @@ export default function FinancialAnalysisPage() {
                 >
                   {groupingLabel}
                 </th>
+                {grouping === 'empresa' && (
+                  <th className="text-left min-w-[180px] whitespace-nowrap">
+                    Medio de pago
+                  </th>
+                )}
                 {columns.map((col) => (
                   <th key={col.key} className="text-right min-w-[110px] whitespace-nowrap">
-                    {col.label}
+                    {colPeriod === 'semana' ? (
+                      <span className="inline-flex flex-col items-end leading-tight">
+                        <span className="font-semibold text-slate-600">{col.label.split('\n')[0]}</span>
+                        <span className="mt-0.5 text-[10px] font-medium text-slate-400">{col.label.split('\n')[1]}</span>
+                      </span>
+                    ) : col.label}
                   </th>
                 ))}
                 <th className="text-right min-w-[120px] bg-slate-100/70 font-semibold whitespace-nowrap">
@@ -665,7 +841,83 @@ export default function FinancialAnalysisPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {grouping === 'empresa' ? rows.flatMap((row) => {
+                const methods = getCompanyPaymentMethods(row.id)
+                const rowTotals = getRowTotals(row.id)
+                const detailRows = methods.map((method, index) => {
+                  const methodTotal = getCompanyPaymentTotal(row.id, method)
+                  const isPending = method === 'Pendiente'
+                  return (
+                    <tr key={`${row.id}-${method}`}>
+                      {index === 0 && (
+                        <td
+                          rowSpan={methods.length + 1}
+                          className="sticky left-0 bg-white z-10 align-top"
+                          style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}
+                        >
+                          <span className="text-sm font-medium text-slate-800 block max-w-[240px]">
+                            {row.label}
+                          </span>
+                        </td>
+                      )}
+                      <td className={`text-xs font-medium ${isPending ? 'text-red-600' : 'text-slate-700'}`}>
+                        {method}
+                      </td>
+                      {columns.map((col) => {
+                        const amount = getCompanyPaymentAmount(row.id, method, col.key)
+                        return (
+                          <td key={col.key} className="text-right tabular-nums">
+                            {amount !== 0 ? (
+                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                                isPending ? 'text-red-600 bg-red-50' : 'text-emerald-700 bg-emerald-50'
+                              }`}>
+                                {fmtCell(amount)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 text-xs">—</span>
+                            )}
+                          </td>
+                        )
+                      })}
+                      <td className="text-right bg-slate-50/80 tabular-nums">
+                        <span className={`text-xs font-semibold ${isPending ? 'text-red-600' : 'text-slate-800'}`}>
+                          {fmtCell(methodTotal)}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })
+
+                return [
+                  ...detailRows,
+                  <tr key={`${row.id}-total`} className="bg-slate-50 border-t border-slate-200">
+                    {methods.length === 0 && (
+                      <td
+                        className="sticky left-0 bg-slate-50 z-10"
+                        style={{ boxShadow: '1px 0 0 0 #e2e8f0' }}
+                      >
+                        <span className="text-sm font-medium text-slate-800">{row.label}</span>
+                      </td>
+                    )}
+                    <td className="text-xs font-bold text-slate-700">TOTAL</td>
+                    {columns.map((col) => {
+                      const cell = getCellValue(row.id, col.key)
+                      return (
+                        <td key={col.key} className="text-right tabular-nums">
+                          <span className="text-xs font-bold text-slate-800">
+                            {fmtCell(cell.paid + cell.pending)}
+                          </span>
+                        </td>
+                      )
+                    })}
+                    <td className="text-right bg-slate-100 tabular-nums">
+                      <span className="text-xs font-bold text-slate-900">
+                        {fmtCell(rowTotals.paid + rowTotals.pending)}
+                      </span>
+                    </td>
+                  </tr>,
+                ]
+              }) : rows.map((row) => {
                 const rowTotals = getRowTotals(row.id)
                 const hasData = rowTotals.paid + rowTotals.pending > 0
                 return (
@@ -742,6 +994,9 @@ export default function FinancialAnalysisPage() {
                 >
                   Total período
                 </td>
+                {grouping === 'empresa' && (
+                  <td className="text-xs font-bold text-slate-700">TOTAL</td>
+                )}
                 {columns.map((col) => {
                   let colPaid = 0, colPending = 0
                   rows.forEach((row) => {

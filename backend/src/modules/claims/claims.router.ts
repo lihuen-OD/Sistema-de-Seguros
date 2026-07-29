@@ -10,6 +10,7 @@ import {
   ListClaimsQuerySchema,
   AddEventSchema,
   AddClaimAttachmentSchema,
+  AddClaimExpenseAttachmentSchema,
   CreateExpenseSchema,
   UpdateExpenseSchema,
 } from './claims.schemas'
@@ -67,6 +68,30 @@ claimsRouter.delete(
   '/:id/expenses/:expenseId',
   requireModule('claims'),
   claimsController.deleteExpense,
+)
+
+// ── Adjuntos de gastos ────────────────────────────────────────────────────────
+claimsRouter.get(
+  '/:id/expenses/:expenseId/attachments',
+  requireModule('claims'),
+  claimsController.getExpenseAttachments,
+)
+claimsRouter.post(
+  '/:id/expenses/:expenseId/attachments',
+  requireModule('claims'),
+  upload.single('file'),
+  validate(AddClaimExpenseAttachmentSchema),
+  claimsController.addExpenseAttachment,
+)
+claimsRouter.delete(
+  '/:id/expenses/:expenseId/attachments/:attachmentId',
+  requireModule('claims'),
+  claimsController.deleteExpenseAttachment,
+)
+claimsRouter.get(
+  '/:id/expenses/:expenseId/attachments/:attachmentId/download',
+  requireModule('claims'),
+  claimsController.downloadExpenseAttachment,
 )
 
 // ── Attachments ───────────────────────────────────────────────────────────────

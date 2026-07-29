@@ -95,6 +95,9 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
     if (!form.endorsementEffectiveDate) next.endorsementEffectiveDate = 'Requerido'
     if (!form.description.trim()) next.description = 'Requerido'
     if (!form.economicImpactType) next.economicImpactType = 'Requerido'
+    if (form.linkedDocumentId && !linkedDocument?.paymentMethod) {
+      next.linkedDocumentId = 'El documento asociado no tiene forma de pago'
+    }
     setErrors(next)
     notifyValidationErrors(next)
     return Object.keys(next).length === 0
@@ -236,6 +239,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
             {(form.economicImpactType === 'INCREASES_COST' || form.economicImpactType === 'DECREASES_COST') && (
               <FormField
                 label={form.economicImpactType === 'INCREASES_COST' ? 'Vincular Factura o Nota de Débito' : 'Vincular Nota de Crédito'}
+                error={errors.linkedDocumentId}
                 fullWidth
               >
                 <DocumentRelationSelector
@@ -245,6 +249,20 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
                   emptyMessage="No hay documentos disponibles para vincular todavía — podés dejarlo pendiente."
                   helperText="Podés dejarlo sin vincular y cargarlo después."
                 />
+              </FormField>
+            )}
+
+            {form.linkedDocumentId && (
+              <FormField label="Forma de Pago">
+                <FormInput
+                  value={linkedDocument?.paymentMethod ?? 'Sin especificar'}
+                  readOnly
+                  disabled
+                  className="bg-slate-50 text-slate-500 cursor-not-allowed"
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Se hereda del documento contable asociado.
+                </p>
               </FormField>
             )}
           </FormSection>

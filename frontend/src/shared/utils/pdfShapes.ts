@@ -1,5 +1,5 @@
 // Primitivas de dibujo compartidas por los generadores de PDF nativos
-// (buildFindingsReportPdf, buildFireExtinguisherDashboardPdf) — nada de
+// (buildAuditDashboardPdf, buildFireExtinguisherDashboardPdf) — nada de
 // html2canvas/capturas de pantalla, todo texto y figuras vectoriales.
 
 export function hexToRgb(hex: string): [number, number, number] {

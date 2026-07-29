@@ -76,6 +76,9 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
     if (!form.documentNumber.trim()) next.documentNumber = 'Requerido'
     if (!form.issueDate) next.issueDate = 'Requerido'
     if (!form.linkedDocumentId) next.linkedDocumentId = 'El documento a ajustar es requerido'
+    else if (!linkedDocument?.paymentMethod) {
+      next.linkedDocumentId = 'El documento asociado no tiene forma de pago'
+    }
     if (!form.adjustmentReason) next.adjustmentReason = 'Requerido'
     if (!form.adjustmentSign) next.adjustmentSign = 'Requerido'
     if (!form.amount || isNaN(parseFloat(form.amount)) || parseFloat(form.amount) <= 0) next.amount = 'Requerido'
@@ -191,6 +194,20 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
                 emptyMessage="No hay documentos disponibles para ajustar."
               />
             </FormField>
+
+            {form.linkedDocumentId && (
+              <FormField label="Forma de Pago">
+                <FormInput
+                  value={linkedDocument?.paymentMethod ?? 'Sin especificar'}
+                  readOnly
+                  disabled
+                  className="bg-slate-50 text-slate-500 cursor-not-allowed"
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Se hereda del documento que se está ajustando.
+                </p>
+              </FormField>
+            )}
           </FormSection>
         </SectionCard>
 

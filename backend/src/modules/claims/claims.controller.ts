@@ -3,12 +3,20 @@ import { asyncHandler } from '../../shared/utils/async-handler'
 import { claimsService } from './claims.service'
 import { AppError } from '../../shared/errors/AppError'
 import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
-import type { ListClaimsQueryDTO, AddEventDTO, AddClaimAttachmentDTO, CreateExpenseDTO, UpdateExpenseDTO } from './claims.schemas'
+import type {
+  ListClaimsQueryDTO,
+  AddEventDTO,
+  AddClaimAttachmentDTO,
+  AddClaimExpenseAttachmentDTO,
+  CreateExpenseDTO,
+  UpdateExpenseDTO,
+} from './claims.schemas'
 
 type IdParam = { id: string }
 type EventParam = { id: string; eventId: string }
 type AttachmentParam = { id: string; attachmentId: string }
 type ExpenseParam = { id: string; expenseId: string }
+type ExpenseAttachmentParam = { id: string; expenseId: string; attachmentId: string }
 
 export const claimsController = {
   list: asyncHandler(async (req: Request, res: Response) => {
@@ -110,6 +118,40 @@ export const claimsController = {
 
   downloadAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
     const attachment = await claimsService.getAttachmentForDownload(req.params.id, req.params.attachmentId)
+    await sendAttachmentDownload(res, attachment)
+  }),
+
+  // ── Expense Attachments ───────────────────────────────────────────────────────
+
+  getExpenseAttachments: asyncHandler(async (req: Request<ExpenseParam>, res: Response) => {
+    const attachments = await claimsService.findExpenseAttachments(req.params.id, req.params.expenseId)
+    res.json({ data: attachments })
+  }),
+
+  addExpenseAttachment: asyncHandler(async (req: Request<ExpenseParam>, res: Response) => {
+    if (!req.file) throw new AppError(400, 'No se recibió ningún archivo', 'FILE_MISSING')
+    const meta = req.body as AddClaimExpenseAttachmentDTO
+    const attachment = await claimsService.addExpenseAttachment(
+      req.params.id,
+      req.params.expenseId,
+      req.file,
+      meta,
+      req.user?.email ?? 'sistema',
+    )
+    res.status(201).json({ data: attachment })
+  }),
+
+  deleteExpenseAttachment: asyncHandler(async (req: Request<ExpenseAttachmentParam>, res: Response) => {
+    await claimsService.deleteExpenseAttachment(req.params.id, req.params.expenseId, req.params.attachmentId)
+    res.json({ data: { message: 'Adjunto eliminado correctamente' } })
+  }),
+
+  downloadExpenseAttachment: asyncHandler(async (req: Request<ExpenseAttachmentParam>, res: Response) => {
+    const attachment = await claimsService.getExpenseAttachmentForDownload(
+      req.params.id,
+      req.params.expenseId,
+      req.params.attachmentId,
+    )
     await sendAttachmentDownload(res, attachment)
   }),
 }

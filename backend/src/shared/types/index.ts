@@ -7,15 +7,15 @@ export type Role = 'ADMIN' | 'USER'
 // lecturas (GET), no solo las escrituras: un módulo de solo-lectura como
 // `dashboard`/`financial_analysis`/`economic_analysis`/`fire_extinguisher_dashboard`
 // igual expone datos sensibles y necesita el mismo gate que un POST/PUT/DELETE.
-// `economic_analysis` no tiene un endpoint propio — la página compone datos de
-// policies/assets/documents(financial)/companies/cost_centers, cada uno ya
+// `economic_analysis`/`insurance_dashboard` no tienen endpoint propio —
+// componen datos de policies/assets/documents(financial)/claims, cada uno ya
 // protegido por su propio módulo. Notificaciones NO es un módulo otorgable —
 // agrega datos de todos los módulos sin filtrar por permisos, así que queda
 // exclusivo del ADMIN (requireRole en su router).
 export const MODULE_KEYS = [
   'dashboard',
   'assets',
-  'policies', 'documents', 'financial_analysis', 'economic_analysis',
+  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'insurance_dashboard',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
   'producers', 'tasks',

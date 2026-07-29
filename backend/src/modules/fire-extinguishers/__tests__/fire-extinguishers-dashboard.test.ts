@@ -249,6 +249,11 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
       },
       // Vehículo legacy (minúscula, sin acento), sin matafuego.
       { id: 'a2', code: 'VEH-002', name: 'Camión Scania', assetType: 'vehiculo', fireExtinguishers: [] },
+      // Transporte de pasajeros canónico, parte del grupo Vehículos.
+      {
+        id: 'a6', code: 'VEH-003', name: 'Minibús Mercedes-Benz', assetType: 'Transporte de pasajeros',
+        fireExtinguishers: [{ id: 'fe3', code: 'MAT-VEH003-A', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024, hydraulicTestExpirationDate: null }],
+      },
       // Maquinaria agrícola legacy con guion bajo, sin matafuego.
       { id: 'a3', code: 'MAQ-001', name: 'Sembradora', assetType: 'maquinaria_agricola', fireExtinguishers: [] },
       // Tractor (parte del grupo "Maquinaria agrícola"), con matafuego.
@@ -267,8 +272,8 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     expect(res.status).toBe(200)
     const coverage = res.body.data.vehicleMachineryCoverage
 
-    expect(coverage.vehiculos).toMatchObject({ total: 2, conMatafuego: 1, sinMatafuego: 1 })
-    expect(coverage.vehiculos.items.map((i: any) => i.code)).toEqual(['VEH-002', 'VEH-001']) // sin matafuego primero
+    expect(coverage.vehiculos).toMatchObject({ total: 3, conMatafuego: 2, sinMatafuego: 1 })
+    expect(coverage.vehiculos.items.map((i: any) => i.code)).toEqual(['VEH-002', 'VEH-001', 'VEH-003']) // sin matafuego primero
     expect(coverage.vehiculos.items.find((i: any) => i.code === 'VEH-001').fireExtinguishers).toEqual([
       { id: 'fe1', code: 'MAT-VEH001-A', status: 'vigente' },
     ])
@@ -278,6 +283,22 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     expect(coverage.maquinaria.items.find((i: any) => i.code === 'MAQ-002').fireExtinguishers).toEqual([
       { id: 'fe2', code: 'MAT-MAQ002-A', status: 'vencido' },
     ])
+  })
+
+  it('excludes "moto" from vehicleMachineryCoverage — motorcycles do not carry fire extinguishers', async () => {
+    db.asset.findMany.mockResolvedValue([
+      { id: 'a1', code: 'MOT-001', name: 'Honda CB500', assetType: 'Moto', fireExtinguishers: [] },
+      { id: 'a2', code: 'MOT-002', name: 'Yamaha FZ', assetType: 'moto', fireExtinguishers: [] }, // legacy lowercase
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguishers/dashboard/summary')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    const coverage = res.body.data.vehicleMachineryCoverage
+    expect(coverage.vehiculos).toMatchObject({ total: 0, conMatafuego: 0, sinMatafuego: 0, items: [] })
+    expect(coverage.maquinaria).toMatchObject({ total: 0, conMatafuego: 0, sinMatafuego: 0, items: [] })
   })
 
   it('returns 200 for ADMIN (bypass total)', async () => {

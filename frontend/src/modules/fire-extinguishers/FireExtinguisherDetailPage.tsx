@@ -493,6 +493,10 @@ export default function FireExtinguisherDetailPage() {
               <dd className="text-sm font-mono text-slate-700">{fe.cylinderNumber ?? '—'}</dd>
             </div>
             <div>
+              <dt className="text-xs text-slate-500 mb-0.5">N° de certificado IRAM</dt>
+              <dd className="text-sm font-mono text-slate-700">{fe.iramCertificateNumber ?? '—'}</dd>
+            </div>
+            <div>
               <dt className="text-xs text-slate-500 mb-0.5">Año de fabricación</dt>
               <dd className="text-sm text-slate-700">
                 {fe.manufacturingYear ?? '—'}
@@ -570,6 +574,7 @@ export default function FireExtinguisherDetailPage() {
               </span>
             </div>
             <DataTable
+              tableKey="fire-extinguisher-detail-audits"
               columns={AUDIT_COLUMNS}
               data={audits}
               rowKey="id"

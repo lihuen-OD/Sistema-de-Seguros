@@ -7,13 +7,52 @@ import { packIntoPages } from './pdfPagination'
 // sin parche disponible vía npm) — se carga dinámicamente recién al
 // exportar, no en el chunk inicial de cada página de listado que usa
 // ExportPresetsButton.
-export async function downloadXLSX(rows: string[][], filename: string): Promise<void> {
+export type ExportCell = string | number | boolean | Date | null
+
+export interface XLSXExportOptions {
+  autoFilter?: boolean
+  numericColumnIndexes?: number[]
+  numberFormat?: string
+  totalRowIndexes?: number[]
+}
+
+export async function downloadXLSX(
+  rows: ExportCell[][],
+  filename: string,
+  options: XLSXExportOptions = {},
+): Promise<void> {
   if (rows.length === 0) return
   const ExcelJS = await import('exceljs')
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet('Datos')
 
   sheet.addRows(rows)
+
+  const headerRow = sheet.getRow(1)
+  const hasMultilineHeader = rows[0].some((cell) => String(cell ?? '').includes('\n'))
+  headerRow.height = hasMultilineHeader ? 34 : 22
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } }
+  headerRow.alignment = { vertical: 'middle', wrapText: hasMultilineHeader }
+
+  if (options.autoFilter && rows[0]?.length) {
+    sheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: rows[0].length },
+    }
+  }
+
+  options.numericColumnIndexes?.forEach((columnIndex) => {
+    const column = sheet.getColumn(columnIndex + 1)
+    column.numFmt = options.numberFormat ?? '#,##0;[Red]-#,##0;"-"'
+    column.alignment = { horizontal: 'right' }
+  })
+
+  options.totalRowIndexes?.forEach((rowIndex) => {
+    const row = sheet.getRow(rowIndex + 1)
+    row.font = { bold: true, color: { argb: 'FF0F172A' } }
+    row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }
+  })
 
   // Auto column widths capped at 60 chars. Nota (verificado con Playwright
   // contra el bundle real del navegador): el build de exceljs para browser
@@ -24,7 +63,7 @@ export async function downloadXLSX(rows: string[][], filename: string): Promise<
   // ancho default de Excel en vez del autoajustado, el resto de las columnas
   // y todos los datos se exportan bien.
   rows[0].forEach((_, colIdx) => {
-    const width = Math.min(60, Math.max(...rows.map((row) => String(row[colIdx] ?? '').length), 8))
+    const width = Math.min(60, Math.max(...rows.map((row) => String(row[colIdx] ?? '').length), 8) + 2)
     sheet.getColumn(colIdx + 1).width = width
   })
 
@@ -94,6 +133,19 @@ export interface PrintRow {
   isDim?: boolean
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (character) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    })[character] ?? character,
+  )
+}
+
 export async function printTableAsPDF(
   title: string,
   subtitle: string,
@@ -110,7 +162,7 @@ export async function printTableAsPDF(
   const thCells = columns
     .map(
       (c) =>
-        `<th style="text-align:${c.align ?? 'right'};padding:4px 7px;background:#f1f5f9;border:1px solid #e2e8f0;font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#475569;white-space:nowrap">${c.label}</th>`,
+        `<th style="text-align:${c.align ?? 'right'};padding:4px 7px;background:#f1f5f9;border:1px solid #e2e8f0;font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#475569;white-space:nowrap">${escapeHtml(c.label).replace(/\n/g, '<br>')}</th>`,
     )
     .join('')
 
@@ -124,7 +176,7 @@ export async function printTableAsPDF(
       const tds = row.cells
         .map(
           (cell, i) =>
-            `<td style="text-align:${columns[i]?.align ?? 'right'};padding:3px 7px;border:1px solid #e2e8f0;font-size:8.5px;white-space:nowrap">${cell}</td>`,
+            `<td style="text-align:${columns[i]?.align ?? 'right'};padding:3px 7px;border:1px solid #e2e8f0;font-size:8.5px;white-space:nowrap">${escapeHtml(cell)}</td>`,
         )
         .join('')
       return `<tr style="${bg}">${tds}</tr>`
@@ -138,8 +190,8 @@ export async function printTableAsPDF(
   container.style.cssText = 'visibility:hidden;position:absolute;top:0;left:0;background:#ffffff;padding:24px;font-family:Helvetica Neue,Arial,sans-serif;color:#1e293b;'
   container.innerHTML = `
     <div data-pdf-header>
-      <h1 style="font-size:14px;font-weight:700;margin:0 0 4px">${title}</h1>
-      <p style="font-size:9px;color:#64748b;margin:0 0 16px">${subtitle}</p>
+      <h1 style="font-size:14px;font-weight:700;margin:0 0 4px">${escapeHtml(title)}</h1>
+      <p style="font-size:9px;color:#64748b;margin:0 0 16px">${escapeHtml(subtitle)}</p>
     </div>
     <table style="border-collapse:collapse;width:100%">
       <thead><tr>${thCells}</tr></thead>
@@ -233,7 +285,7 @@ export function getISOWeekKey(dateStr: string): string {
 export function generateWeekRange(
   from: string,
   to: string,
-): { key: string; label: string }[] {
+): { key: string; label: string; weekLabel: string; dateLabel: string }[] {
   const [fy, fm] = from.split('-').map(Number)
   const [ty, tm] = to.split('-').map(Number)
   const endDate = new Date(ty, tm, 0) // last day of to-month
@@ -243,12 +295,13 @@ export function generateWeekRange(
   const dow = cur.getDay() || 7
   cur.setDate(cur.getDate() - dow + 1)
 
-  const result: { key: string; label: string }[] = []
+  const result: { key: string; label: string; weekLabel: string; dateLabel: string }[] = []
   while (cur <= endDate && result.length < 130) {
     const isoStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`
     const key = getISOWeekKey(isoStr)
-    const label = `${String(cur.getDate()).padStart(2, '0')}/${String(cur.getMonth() + 1).padStart(2, '0')}`
-    result.push({ key, label })
+    const weekLabel = `Sem ${result.length + 1}`
+    const dateLabel = `${String(cur.getDate()).padStart(2, '0')}/${String(cur.getMonth() + 1).padStart(2, '0')}`
+    result.push({ key, label: `${weekLabel}\n${dateLabel}`, weekLabel, dateLabel })
     cur.setDate(cur.getDate() + 7)
   }
   return result

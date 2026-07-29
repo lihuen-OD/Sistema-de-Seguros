@@ -22,7 +22,7 @@ export const FIRE_EXT_AUDIT_HOSE_NOZZLE_CONDITION = [
 ] as const
 
 // Campos del maestro que Paso 3 del wizard puede proponer modificar.
-export const FIRE_EXT_AUDIT_MASTER_FIELDS = ['cylinderNumber', 'expirationDate', 'capacity', 'type', 'brand'] as const
+export const FIRE_EXT_AUDIT_MASTER_FIELDS = ['cylinderNumber', 'expirationDate', 'capacity', 'type', 'brand', 'iramCertificateNumber'] as const
 
 export const FIRE_EXT_AUDIT_STATUSES = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'NEEDS_CORRECTION'] as const
 

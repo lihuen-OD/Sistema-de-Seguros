@@ -251,6 +251,7 @@ export default function NotificationsPage() {
         </div>
 
         <DataTable
+          tableKey="notifications"
           columns={columns}
           data={filtered}
           loading={isLoading}

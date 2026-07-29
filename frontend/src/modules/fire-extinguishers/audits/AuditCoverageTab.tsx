@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { CalendarDays, Building2, Flame, ClipboardCheck, Pencil, ChevronDown, ChevronUp } from 'lucide-react'
@@ -105,6 +105,17 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canA
       return next
     })
   }
+
+  // Establecimientos y zonas vienen cerrados por defecto — se re-cierran
+  // cada vez que llegan datos nuevos (cambio de período), en vez de arrancar
+  // con todo abierto.
+  useEffect(() => {
+    const groups = groupByEstablishment(data)
+    setCollapsedEstablishments(new Set(groups.map((g) => g.establishment)))
+    setCollapsedLocationTypes(
+      new Set(groups.flatMap((g) => g.byLocationType.map((lt) => locationTypeKey(g.establishment, lt.locationType)))),
+    )
+  }, [data])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()

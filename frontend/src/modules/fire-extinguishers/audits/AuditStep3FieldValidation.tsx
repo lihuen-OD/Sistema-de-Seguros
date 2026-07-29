@@ -18,6 +18,7 @@ export const FIELD_VALIDATION_CONFIG: FieldValidationConfigItem[] = [
   { key: 'capacity', label: 'Capacidad', inputType: 'select', getCurrentValue: (fe) => fe.capacity },
   { key: 'type', label: 'Tipo de agente extintor', inputType: 'select', getCurrentValue: (fe) => fe.type },
   { key: 'brand', label: 'Marca', inputType: 'text', getCurrentValue: (fe) => fe.brand ?? '' },
+  { key: 'iramCertificateNumber', label: 'N° de certificado IRAM', inputType: 'text', getCurrentValue: (fe) => fe.iramCertificateNumber ?? '' },
 ]
 
 interface AuditStep3FieldValidationProps {

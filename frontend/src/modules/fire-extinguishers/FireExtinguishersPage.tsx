@@ -147,6 +147,15 @@ export default function FireExtinguishersPage() {
       render: (v) => (v ? <span className="text-xs text-slate-600">{v as string}</span> : <span className="text-slate-400">—</span>),
     },
     {
+      id: 'iramCertificateNumber',
+      key: 'iramCertificateNumber',
+      label: 'N° Cert. IRAM',
+      defaultVisible: false,
+      hideable: true,
+      sortable: true,
+      render: (v) => (v ? <span className="font-mono text-xs text-slate-600">{v as string}</span> : <span className="text-slate-400">—</span>),
+    },
+    {
       id: 'manufacturingYear',
       key: 'manufacturingYear',
       label: 'Año Fab.',
@@ -374,6 +383,7 @@ export default function FireExtinguishersPage() {
         fe.code.toLowerCase().includes(q) ||
         fe.type.toLowerCase().includes(q) ||
         (fe.cylinderNumber?.toLowerCase().includes(q) ?? false) ||
+        (fe.iramCertificateNumber?.toLowerCase().includes(q) ?? false) ||
         (fe.establishment?.toLowerCase().includes(q) ?? false) ||
         (fe.location?.toLowerCase().includes(q) ?? false) ||
         (fe.brand?.toLowerCase().includes(q) ?? false) ||
@@ -522,6 +532,7 @@ export default function FireExtinguishersPage() {
         )}
 
         <DataTable
+          tableKey="fire-extinguishers"
           columns={visibleColumns}
           data={filtered}
           rowKey="id"

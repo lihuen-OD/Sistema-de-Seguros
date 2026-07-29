@@ -234,13 +234,17 @@ export default function AssetsPage() {
       label: 'Bien de Uso',
       defaultVisible: false,
       sortable: true,
-      sortValue: (row) => row.fixedAsset?.code ?? null,
-      render: (_, row) => (
-        <span className="font-mono text-xs text-slate-600" title={row.fixedAsset?.name}>
-          {row.fixedAsset?.code || '—'}
-        </span>
-      ),
-      exportValue: (row) => row.fixedAsset?.code ?? '',
+      sortValue: (row) => row.fixedAsset?.name ?? null,
+      render: (_, row) =>
+        row.fixedAsset ? (
+          <div className="min-w-0">
+            <OverflowCell value={row.fixedAsset.name} lines={1} className="text-xs text-slate-700" />
+            <span className="block text-[10px] text-slate-400 font-mono">{row.fixedAsset.code}</span>
+          </div>
+        ) : (
+          <span className="text-slate-400">—</span>
+        ),
+      exportValue: (row) => (row.fixedAsset ? `${row.fixedAsset.name} (${row.fixedAsset.code})` : ''),
     },
     {
       id: 'patrimonialValueNew',
@@ -427,6 +431,7 @@ export default function AssetsPage() {
           </div>
         </div>
         <DataTable
+          tableKey="assets"
           columns={visibleColumns}
           data={filtered}
           loading={isLoading}

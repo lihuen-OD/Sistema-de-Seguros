@@ -108,6 +108,9 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
     if (!form.documentNumber.trim()) next.documentNumber = 'Requerido'
     if (!form.issueDate) next.issueDate = 'Requerido'
     if (!form.linkedDocumentId) next.linkedDocumentId = 'La factura asociada es requerida'
+    else if (!linkedInvoice?.paymentMethod) {
+      next.linkedDocumentId = 'La factura asociada no tiene forma de pago'
+    }
     if (!form.currency) next.currency = 'Requerido'
     if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0) next.exchangeRate = 'Requerido'
     if (!form.netAmount || isNaN(parseFloat(form.netAmount)) || parsedNet <= 0) next.netAmount = 'Requerido'
@@ -219,7 +222,15 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
               <DocumentRelationSelector
                 documents={linkableInvoices}
                 value={form.linkedDocumentId}
-                onChange={(id) => { setForm((p) => ({ ...p, linkedDocumentId: id })); markUnsaved() }}
+                onChange={(id) => {
+                  // La moneda de la NC/ND siempre tiene que coincidir con la
+                  // de la factura que ajusta — si no, el saldo y los totales
+                  // combinados dejan de tener sentido (se estaría restando un
+                  // monto en una moneda de un total en otra).
+                  const linked = allDocuments.find((d) => d.id === id)
+                  setForm((p) => ({ ...p, linkedDocumentId: id, currency: linked?.currency ?? p.currency }))
+                  markUnsaved()
+                }}
                 required
                 emptyMessage={
                   !form.insuranceCompany
@@ -228,6 +239,20 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
                 }
               />
             </FormField>
+
+            {form.linkedDocumentId && (
+              <FormField label="Forma de Pago">
+                <FormInput
+                  value={linkedInvoice?.paymentMethod ?? 'Sin especificar'}
+                  readOnly
+                  disabled
+                  className="bg-slate-50 text-slate-500 cursor-not-allowed"
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Se hereda de la factura asociada.
+                </p>
+              </FormField>
+            )}
 
             <FormField label="Motivo / Descripción" fullWidth>
               <FormTextarea rows={2} value={form.description} onChange={set('description')} placeholder="Ej: corrección de prima, error de facturación…" />
@@ -238,10 +263,13 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
         <SectionCard title="Importes" subtitle="Moneda y monto del crédito">
           <FormSection title="">
             <FormField label="Moneda" required error={errors.currency}>
-              <FormSelect value={form.currency} onChange={set('currency')} required>
+              <FormSelect value={form.currency} onChange={set('currency')} required disabled={!!form.linkedDocumentId}>
                 <option value="">Seleccionar moneda…</option>
                 {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </FormSelect>
+              {form.linkedDocumentId && (
+                <p className="text-xs text-slate-400 mt-1">Se toma automáticamente de la factura asociada.</p>
+              )}
             </FormField>
             <FormField label="Tipo de Cambio" required error={errors.exchangeRate}>
               <FormInput type="number" placeholder="Ej: 1150" value={form.exchangeRate} onChange={set('exchangeRate')} min="0.01" step="0.01" required />
