@@ -222,10 +222,6 @@ export const assetsApi = {
     triggerBlobDownload(res.data, filename)
   },
 
-  async addValueHistory(assetId: string, entry: { value: number; date: string; type: 'real' | 'nuevo'; note?: string }): Promise<void> {
-    await apiClient.post(`/assets/${assetId}/value-history`, entry)
-  },
-
   async findStatusHistory(assetId: string): Promise<AssetStatusHistory[]> {
     const res = await apiClient.get<{ data: AssetStatusHistory[] }>(`/assets/${assetId}/status-history`)
     return res.data.data.map((h) => ({ ...h, date: h.date.slice(0, 10) }))

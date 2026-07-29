@@ -3,7 +3,7 @@ import { apiClient } from './client'
 
 // ── Contrato (ver plan de Fase 3 — reconciliado entre backend y frontend) ──────
 
-export type FireExtAuditMasterField = 'cylinderNumber' | 'expirationDate' | 'capacity' | 'type' | 'brand'
+export type FireExtAuditMasterField = 'cylinderNumber' | 'expirationDate' | 'capacity' | 'type' | 'brand' | 'iramCertificateNumber'
 
 export type MasterFieldReview =
   | { field: FireExtAuditMasterField; action: 'OK' }

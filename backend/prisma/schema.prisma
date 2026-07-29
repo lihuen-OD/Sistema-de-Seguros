@@ -490,6 +490,7 @@ model FireExtinguisher {
   capacity          String
   brand             String?
   cylinderNumber    String?
+  iramCertificateNumber String?
   manufacturingYear Int?
   expirationDate    DateTime? @db.Date
   lastRechargeDate  DateTime? @db.Date

@@ -6,5 +6,6 @@ export const PROPOSED_CHANGE_FIELD_LABELS: Record<string, string> = {
   capacity: 'Capacidad',
   type: 'Tipo de agente extintor',
   brand: 'Marca',
+  iramCertificateNumber: 'N° de certificado IRAM',
   location: 'Ubicación',
 }

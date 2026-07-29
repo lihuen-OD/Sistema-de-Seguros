@@ -495,6 +495,7 @@ export interface FireExtinguisher {
   establishment: string | null
   brand: string | null
   cylinderNumber: string | null
+  iramCertificateNumber: string | null
   manufacturingYear: number | null
   status: FireExtStatus
   chargeStatus: FireExtStatus

@@ -68,6 +68,7 @@ export default function FireExtinguisherNewPage() {
   const [associatedLocationType, setAssociatedLocationType] = useState('')
   const [observations, setObservations] = useState('')
   const [cylinderNumber, setCylinderNumber] = useState('')
+  const [iramCertificateNumber, setIramCertificateNumber] = useState('')
   const [brand, setBrand] = useState('')
   const [manufacturingYear, setManufacturingYear] = useState('')
   const [establishment, setEstablishment] = useState('')
@@ -119,6 +120,7 @@ export default function FireExtinguisherNewPage() {
         establishment,
         brand: brand.trim() || undefined,
         cylinderNumber: cylinderNumber.trim(),
+        iramCertificateNumber: iramCertificateNumber.trim() || undefined,
         manufacturingYear: parseInt(manufacturingYear, 10),
         observations: observations.trim(),
       }
@@ -160,6 +162,14 @@ export default function FireExtinguisherNewPage() {
               selectPlaceholder="Seleccionar marca…"
               otherPlaceholder="Escribir marca…"
             />
+            <FormField label="N° de certificado IRAM">
+              <FormInput
+                type="text"
+                value={iramCertificateNumber}
+                onChange={(e) => setIramCertificateNumber(e.target.value)}
+                placeholder="Ej: IRAM-12345"
+              />
+            </FormField>
             <FormField label="Año de fabricación" required error={errors.manufacturingYear}>
               <FormInput
                 type="number"

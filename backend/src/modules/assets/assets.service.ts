@@ -81,6 +81,32 @@ function handleUpdateNotFound(e: unknown) {
   throw e
 }
 
+// Traza el historial de valuación en base a la fecha de valuación (assetId +
+// type + date): si ya existe un registro para esa fecha se actualiza su valor
+// (así guardados repetidos sobre la misma fecha no ensucian el historial con
+// filas duplicadas), si no se crea uno nuevo — cada fecha de valuación
+// distinta queda como su propio punto histórico.
+async function syncValueHistoryEntry(
+  tx: Prisma.TransactionClient,
+  assetId: string,
+  type: 'real' | 'nuevo',
+  rawValue: number | null | undefined,
+  dual: { amountArs: number; amountUsd: number } | null,
+  date: Date,
+) {
+  if (rawValue == null || !dual) return
+  const existing = await tx.assetValueHistory.findFirst({
+    where: { assetId, type, date },
+    select: { id: true },
+  })
+  const data = { value: rawValue, valueArs: dual.amountArs, valueUsd: dual.amountUsd }
+  if (existing) {
+    await tx.assetValueHistory.update({ where: { id: existing.id }, data })
+  } else {
+    await tx.assetValueHistory.create({ data: { ...data, assetId, type, date } })
+  }
+}
+
 export const assetsService = {
   async findAll(query: ListAssetsQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
@@ -229,7 +255,7 @@ export const assetsService = {
 
     const current = await prisma.asset.findUnique({
       where: { id },
-      select: { id: true, status: true, currency: true, exchangeRate: true },
+      select: { id: true, status: true, currency: true, exchangeRate: true, purchaseDate: true },
     })
     if (!current) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
 
@@ -251,36 +277,17 @@ export const assetsService = {
       ...(newDual && { patrimonialValueNewArs: newDual.amountArs, patrimonialValueNewUsd: newDual.amountUsd }),
     }
 
-    if (assetData.status && assetData.status !== current.status) {
-      const statusDate = assetData.status === 'baja' ? assetData.dischargeDate
-        : assetData.status === 'vendido' ? assetData.saleDate
-        : reactivationDate ?? new Date()
+    // Fecha que traza el historial de valuación — la nueva si se está
+    // actualizando en este guardado, si no la ya guardada (mismo fallback que create()).
+    const historyDate = assetData.purchaseDate ?? current.purchaseDate ?? new Date()
 
-      await prisma.$transaction([
-        prisma.asset.update({
-          where: { id },
-          data: {
-            ...assetData,
-            ...(fixedAssetCode !== undefined && { fixedAssetCode }),
-            metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
-            ...dualData,
-          },
-          select: { id: true },
-        }),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (prisma as any).assetStatusHistory.create({
-          data: {
-            assetId: id,
-            status: assetData.status,
-            date: statusDate ?? new Date(),
-            note: assetData.status === 'baja' ? 'Activo dado de baja'
-              : assetData.status === 'vendido' ? 'Activo vendido'
-              : 'Activo reactivado',
-          },
-        }),
-      ])
-    } else {
-      await prisma.asset.update({
+    const statusChanged = !!assetData.status && assetData.status !== current.status
+    const statusDate = assetData.status === 'baja' ? assetData.dischargeDate
+      : assetData.status === 'vendido' ? assetData.saleDate
+      : reactivationDate ?? new Date()
+
+    await prisma.$transaction(async (tx) => {
+      await tx.asset.update({
         where: { id },
         data: {
           ...assetData,
@@ -290,7 +297,26 @@ export const assetsService = {
         },
         select: { id: true },
       }).catch(handleUpdateNotFound)
-    }
+
+      if (statusChanged) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (tx as any).assetStatusHistory.create({
+          data: {
+            assetId: id,
+            status: assetData.status,
+            date: statusDate ?? new Date(),
+            note: assetData.status === 'baja' ? 'Activo dado de baja'
+              : assetData.status === 'vendido' ? 'Activo vendido'
+              : 'Activo reactivado',
+          },
+        })
+      }
+
+      // El valor patrimonial real/a nuevo se traza solo en el historial en
+      // cada guardado, sin carga manual — ver syncValueHistoryEntry.
+      await syncValueHistoryEntry(tx, id, 'real', assetData.currentValue, currentDual, historyDate)
+      await syncValueHistoryEntry(tx, id, 'nuevo', assetData.patrimonialValueNew, newDual, historyDate)
+    })
 
     return { id }
   },
@@ -375,7 +401,14 @@ export const assetsService = {
 
   async addValueHistory(assetId: string, data: AddValueHistoryDTO) {
     await assertAssetExists(assetId)
-    return prisma.assetValueHistory.create({ data: { ...data, assetId } })
+    // El valor de este historial es siempre USD (ver AddValueHistorySchema) —
+    // cierre en ambas monedas con el tipo de cambio de ESTE registro, nunca
+    // reconvertido después (mismo criterio que el resto de la app).
+    const { exchangeRate, ...rest } = data
+    const dual = computeDualAmounts(data.value, 'USD', exchangeRate)
+    return prisma.assetValueHistory.create({
+      data: { ...rest, assetId, valueArs: dual.amountArs, valueUsd: dual.amountUsd },
+    })
   },
 
   // ── Attachments ──────────────────────────────────────────────────────────────

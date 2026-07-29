@@ -335,6 +335,8 @@ export default function AssetEditPage() {
       e.patrimonialValueUsd = 'El valor patrimonial no puede ser negativo.'
     if (!exchangeRate || parseFloat(exchangeRate) <= 0)
       e.exchangeRate = 'El tipo de cambio debe ser mayor a 0.'
+    if (patrimonialValueUsd && !valuationDate)
+      e.valuationDate = 'Indicá la fecha de valuación.'
     setErrors(e)
     notifyValidationErrors(e)
 
@@ -374,11 +376,6 @@ export default function AssetEditPage() {
   function removeBuilding(bid: string) { setBuildings((prev) => prev.filter((b) => b.id !== bid)) }
   function updateBuilding(bid: string, field: keyof Omit<EstBuilding, 'id'>, value: string) {
     setBuildings((prev) => prev.map((b) => b.id === bid ? { ...b, [field]: value } : b))
-  }
-
-  function handleAddValueEntry(entry: Omit<AssetValueEntry, 'id'>) {
-    const newEntry: AssetValueEntry = { id: `vh-${Date.now()}`, ...entry }
-    setValueHistory((prev) => [...prev, newEntry])
   }
 
   function buildMetadata(): Record<string, unknown> {
@@ -474,9 +471,10 @@ export default function AssetEditPage() {
       const currentIds = new Set(attachments.filter((a) => !a.pendingFile).map((a) => a.id))
       const toDelete = [...existingIds].filter((eid) => !currentIds.has(eid))
       const toUpload = attachments.filter((a) => a.pendingFile)
-      const newHistoryEntries = valueHistory.filter((e) => e.id.startsWith('vh-'))
 
-      // Update asset + allocations + delete attachments + history entries — all in parallel
+      // Update asset + allocations + delete attachments — all in parallel.
+      // El historial de valuación se registra solo, en el backend, a partir
+      // de currentValue/patrimonialValueNew + purchaseDate de este mismo PUT.
       await Promise.all([
         assetsApi.update(asset.id, {
           name: form.name.trim(),
@@ -508,14 +506,6 @@ export default function AssetEditPage() {
             )
           : Promise.resolve(),
         ...toDelete.map((attId) => assetsApi.deleteAttachment(asset.id, attId)),
-        ...newHistoryEntries.map((entry) =>
-          assetsApi.addValueHistory(asset.id, {
-            value: entry.valueUsd,
-            date: entry.date,
-            type: entry.type,
-            note: entry.notes || undefined,
-          }),
-        ),
       ])
 
       // Uploads are sequential (multipart, can't parallelize safely)
@@ -905,15 +895,18 @@ export default function AssetEditPage() {
                     placeholder="Se calcula automáticamente"
                   />
                 </FormField>
-                <FormField label="Fecha de valuación">
-                  <FormInput type="date" value={valuationDate} onChange={(e) => setValuationDate(e.target.value)} />
+                <FormField label="Fecha de valuación" required={!!patrimonialValueUsd} error={errors.valuationDate as string | undefined}>
+                  <FormInput
+                    type="date"
+                    value={valuationDate}
+                    onChange={(e) => { setValuationDate(e.target.value); setErrors((p) => ({ ...p, valuationDate: undefined })) }}
+                  />
                 </FormField>
               </FormSection>
               <div className="border-t border-slate-100 pt-4">
                 <ValueHistorySection
                   history={valueHistory}
                   currentValue={patrimonialValueUsd}
-                  onAdd={handleAddValueEntry}
                 />
               </div>
             </div>
