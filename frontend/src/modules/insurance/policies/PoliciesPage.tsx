@@ -439,7 +439,7 @@ export default function PoliciesPage() {
         <KpiCard label="Vigentes" value={counts.vigente} description="Pólizas con cobertura activa" icon={ShieldCheck} variant="success" />
         <KpiCard label="Vencidas" value={counts.vencida} description="Requieren renovación" icon={ShieldOff} variant="danger" />
         <KpiCard label="Próximas a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
-        <KpiCard label="Suma Asegurada" value={formatCurrencyCompact(totalInsuredArs, 'ARS')} description={`${formatCurrencyCompact(totalInsuredUsd, 'USD')} · vigentes y próx. a vencer`} icon={DollarSign} variant="info" />
+        <KpiCard label="Suma Asegurada" value={formatCurrencyCompact(totalInsuredUsd, 'USD')} description={`${formatCurrencyCompact(totalInsuredArs, 'ARS')} · vigentes y próx. a vencer`} icon={DollarSign} variant="info" />
       </MetricGrid>
 
       <SectionCard noPadding>
