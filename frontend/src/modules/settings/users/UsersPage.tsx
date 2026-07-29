@@ -367,6 +367,7 @@ export default function UsersPage() {
 
       <SectionCard noPadding>
         <DataTable
+          tableKey="users"
           columns={columns}
           data={users}
           loading={isLoading}

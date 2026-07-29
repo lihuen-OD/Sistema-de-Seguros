@@ -24,6 +24,7 @@ export const OWNERSHIP_TYPES = ['propio', 'terceros'] as const
 
 const ClaimBaseSchema = z.object({
   claimNumber: z.string().min(1).max(100).optional(),
+  title: z.string().max(300).optional().nullable(),
   assetId: z.string().uuid('ID de activo inválido').optional().nullable(),
   policyId: z.string().uuid('ID de póliza inválido').optional().nullable(),
   claimType: z.string().min(1, 'El tipo de siniestro es requerido').max(100),
@@ -98,6 +99,10 @@ export const AddClaimAttachmentSchema = z.object({
   description: z.string().max(500).optional(),
 })
 
+export const AddClaimExpenseAttachmentSchema = z.object({
+  description: z.string().max(500).optional(),
+})
+
 export const CreateExpenseSchema = z.object({
   date: ISODate,
   provider: z.string().min(1, 'El proveedor es requerido').max(300),
@@ -105,6 +110,7 @@ export const CreateExpenseSchema = z.object({
   netAmount: z.number().min(0, 'El monto neto no puede ser negativo'),
   vatAmount: z.number().min(0).default(0),
   otherTaxesAmount: z.number().min(0).default(0),
+  comment: z.string().max(2000).optional().nullable(),
 })
 
 export const UpdateExpenseSchema = CreateExpenseSchema.partial()
@@ -114,6 +120,7 @@ export type UpdateClaimDTO = z.infer<typeof UpdateClaimSchema>
 export type ListClaimsQueryDTO = z.infer<typeof ListClaimsQuerySchema>
 export type AddEventDTO = z.infer<typeof AddEventSchema>
 export type AddClaimAttachmentDTO = z.infer<typeof AddClaimAttachmentSchema>
+export type AddClaimExpenseAttachmentDTO = z.infer<typeof AddClaimExpenseAttachmentSchema>
 export type CreateExpenseDTO = z.infer<typeof CreateExpenseSchema>
 export type UpdateExpenseDTO = z.infer<typeof UpdateExpenseSchema>
 export type OwnershipType = (typeof OWNERSHIP_TYPES)[number]

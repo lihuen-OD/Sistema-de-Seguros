@@ -60,6 +60,7 @@ const fakeFireExt = {
   capacity: '10 kg',
   type: 'Polvo seco ABC',
   brand: 'Cesa',
+  iramCertificateNumber: 'IRAM-12345',
   location: 'Planta baja',
   establishment: 'PLANTA',
   isActive: true,
@@ -534,6 +535,7 @@ describe('Fire Extinguisher Audits — Review API', () => {
             { field: 'capacity', action: 'OK' },
             { field: 'type', action: 'OK' },
             { field: 'brand', action: 'OK' },
+            { field: 'iramCertificateNumber', action: 'OK' },
           ],
           checklist: {
             cleanliness: 'IMPECABLE',

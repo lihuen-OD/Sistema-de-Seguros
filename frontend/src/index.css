@@ -68,6 +68,10 @@
     min-width: var(--table-min-width, 900px);
     table-layout: auto;
   }
+  body.is-resizing-table-column {
+    cursor: col-resize;
+    user-select: none;
+  }
 
   /* OverflowCell — texto largo clampeado con popover */
   .overflow-cell-trigger {

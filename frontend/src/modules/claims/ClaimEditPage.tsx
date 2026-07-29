@@ -74,6 +74,7 @@ export default function ClaimEditPage() {
   const [thirdPartyInsurerContact, setThirdPartyInsurerContact] = useState('')
 
   const [claimNumber, setClaimNumber] = useState('')
+  const [title, setTitle] = useState('')
   const [status, setStatus] = useState('')
   const [claimType, setClaimType] = useState('')
   const [occurrenceDate, setOccurrenceDate] = useState('')
@@ -100,6 +101,7 @@ export default function ClaimEditPage() {
     setThirdPartyContact(original.thirdPartyContact ?? '')
     setThirdPartyInsurerContact(original.thirdPartyInsurerContact ?? '')
     setClaimNumber(original.claimNumber ?? '')
+    setTitle(original.title ?? '')
     setStatus(original.status)
     setClaimType(original.claimType)
     setOccurrenceDate(original.occurrenceDate)
@@ -204,6 +206,7 @@ export default function ClaimEditPage() {
     try {
       await claimsApi.update(original.id, {
         claimNumber: claimNumber.trim() || undefined,
+        title: title.trim() || undefined,
         ownershipType: ownershipType as 'propio' | 'terceros',
         responsiblePersonName: ownershipType === 'propio' ? (responsiblePersonName.trim() || undefined) : undefined,
         thirdPartyInsuranceCompany: ownershipType === 'terceros' ? thirdPartyInsuranceCompany.trim() : undefined,
@@ -266,6 +269,18 @@ export default function ClaimEditPage() {
           {/* Estado y tipo */}
           <SectionCard title="Estado y clasificación">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <Field label="Título">
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Ej: Choque camioneta Ruta 5"
+                    className={inputCls}
+                  />
+                </Field>
+              </div>
+
               <Field label="N° de siniestro (aseguradora)">
                 <input
                   type="text"

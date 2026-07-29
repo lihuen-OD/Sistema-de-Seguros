@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Receipt, Pencil, Trash2, X, Loader2 } from 'lucide-react'
+import { Plus, Receipt, Pencil, Trash2, X, Loader2, MessageSquare, Paperclip, Download, FileText } from 'lucide-react'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
-import { FormField, FormInput } from '../../shared/components/forms/FormSection'
+import { FormField, FormInput, FormTextarea } from '../../shared/components/forms/FormSection'
+import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
 import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
-import type { ClaimExpense } from '../../shared/types'
+import type { ClaimExpense, ClaimExpenseAttachment } from '../../shared/types'
 
 interface ClaimExpensesCardProps {
   claimId: string
@@ -93,7 +94,25 @@ export function ClaimExpensesCard({ claimId, claimedAmountArs }: ClaimExpensesCa
                   {expenses.map((e) => (
                     <tr key={e.id} className="hover:bg-slate-50/60 transition-colors group">
                       <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{formatDate(e.date)}</td>
-                      <td className="px-4 py-3 text-slate-800 font-medium">{e.provider}</td>
+                      <td className="px-4 py-3 text-slate-800">
+                        <span className="font-medium">{e.provider}</span>
+                        {(e.comment || e.attachments.length > 0) && (
+                          <div className="flex items-center gap-2.5 mt-0.5">
+                            {e.comment && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-slate-400" title={e.comment}>
+                                <MessageSquare size={11} />
+                                Comentario
+                              </span>
+                            )}
+                            {e.attachments.length > 0 && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                                <Paperclip size={11} />
+                                {e.attachments.length}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-slate-500">{e.receiptNumber || '—'}</td>
                       <td className="px-4 py-3 text-right text-slate-700 tabular-nums">{formatCurrencyFull(e.netAmount, 'ARS')}</td>
                       <td className="px-4 py-3 text-right text-slate-700 tabular-nums">{formatCurrencyFull(e.vatAmount, 'ARS')}</td>
@@ -197,11 +216,30 @@ function ExpenseFormModal({ claimId, expense, onClose, onSuccess }: ExpenseFormM
   const [netAmount, setNetAmount] = useState(expense ? String(expense.netAmount) : '')
   const [vatAmount, setVatAmount] = useState(expense ? String(expense.vatAmount) : '0')
   const [otherTaxesAmount, setOtherTaxesAmount] = useState(expense ? String(expense.otherTaxesAmount) : '0')
+  const [comment, setComment] = useState(expense?.comment ?? '')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
+  // Adjuntos ya guardados (solo existen si isEditing) — se actualizan en el
+  // momento local, sin esperar a que el padre refetchee la lista de gastos.
+  const [attachments, setAttachments] = useState<ClaimExpenseAttachment[]>(expense?.attachments ?? [])
+  // Archivos elegidos antes de que el gasto exista (alta nueva) — se suben
+  // recién después de crear el gasto, mismo patrón que ClaimNewPage.tsx.
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+
   const total = (parseFloat(netAmount) || 0) + (parseFloat(vatAmount) || 0) + (parseFloat(otherTaxesAmount) || 0)
+
+  const handleDeleteAttachment = async (attachmentId: string) => {
+    if (!expense) return
+    try {
+      await claimsApi.deleteExpenseAttachment(claimId, expense.id, attachmentId)
+      setAttachments((prev) => prev.filter((a) => a.id !== attachmentId))
+    } catch {
+      setAttachmentError('No se pudo eliminar el adjunto. Intentá de nuevo.')
+    }
+  }
 
   const validate = (): boolean => {
     const e: Record<string, string> = {}
@@ -224,12 +262,16 @@ function ExpenseFormModal({ claimId, expense, onClose, onSuccess }: ExpenseFormM
       netAmount: parseFloat(netAmount) || 0,
       vatAmount: parseFloat(vatAmount) || 0,
       otherTaxesAmount: parseFloat(otherTaxesAmount) || 0,
+      comment: comment.trim() || undefined,
     }
     try {
       if (isEditing) {
         await claimsApi.updateExpense(claimId, expense!.id, payload)
       } else {
-        await claimsApi.addExpense(claimId, payload)
+        const created = await claimsApi.addExpense(claimId, payload)
+        await Promise.all(
+          pendingFiles.map((file) => claimsApi.addExpenseAttachment(claimId, created.id, file)),
+        )
       }
       onSuccess()
       onClose()
@@ -302,6 +344,71 @@ function ExpenseFormModal({ claimId, expense, onClose, onSuccess }: ExpenseFormM
               <span className="text-sm font-bold text-slate-800 tabular-nums">{formatCurrencyFull(total, 'ARS')}</span>
             </div>
           )}
+
+          <FormField label="Comentario" fullWidth>
+            <FormTextarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={2}
+              placeholder="Notas sobre este gasto — ej: presupuesto aprobado por el perito"
+            />
+          </FormField>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Adjuntos</label>
+            {attachmentError && <p className="text-xs text-red-600 mb-2">{attachmentError}</p>}
+            {attachments.length > 0 && (
+              <ul className="space-y-2 mb-3">
+                {attachments.map((att) => (
+                  <li key={att.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-slate-200 bg-white">
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                      <FileText size={13} className="text-slate-500" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-slate-700 truncate">{att.name}</p>
+                      <p className="text-[11px] text-slate-400">{att.fileSize}</p>
+                    </div>
+                    {att.fileUrl && !att.fileUrl.startsWith('local://') && (
+                      <button
+                        type="button"
+                        onClick={() => claimsApi.downloadExpenseAttachment(claimId, expense!.id, att.id, att.name)}
+                        className="p-1.5 text-slate-400 hover:text-brand-600 transition-colors flex-shrink-0"
+                        title="Descargar"
+                      >
+                        <Download size={13} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAttachment(att.id)}
+                      className="p-1.5 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"
+                      title="Eliminar"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {isEditing ? (
+              <FileDropzone
+                label="Agregar adjuntos"
+                maxFiles={10}
+                onFilesSelected={async (files) => {
+                  for (const file of files) {
+                    const uploaded = await claimsApi.addExpenseAttachment(claimId, expense!.id, file)
+                    setAttachments((prev) => [uploaded, ...prev])
+                  }
+                }}
+              />
+            ) : (
+              <FileDropzone
+                label="Agregar adjuntos"
+                maxFiles={10}
+                onFilesPicked={(files) => setPendingFiles((prev) => [...prev, ...files])}
+              />
+            )}
+          </div>
         </div>
 
         {/* Footer */}

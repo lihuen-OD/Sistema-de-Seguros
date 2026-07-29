@@ -37,6 +37,7 @@ const DocumentFichaPage = lazy(() => import('../modules/insurance/accounting-doc
 // Insurance — Analysis
 const FinancialAnalysisPage = lazy(() => import('../modules/insurance/financial-analysis/FinancialAnalysisPage'))
 const EconomicAnalysisPage = lazy(() => import('../modules/insurance/economic-analysis/EconomicAnalysisPage'))
+const InsuranceDashboardPage = lazy(() => import('../modules/insurance/insurance-dashboard/InsuranceDashboardPage'))
 
 // Producers
 const ProducersPage = lazy(() => import('../modules/producers/ProducersPage'))
@@ -137,6 +138,7 @@ export default function App() {
           {/* Analysis */}
           <Route path="/insurance/financial-analysis" element={<FinancialAnalysisPage />} />
           <Route path="/insurance/economic-analysis" element={<EconomicAnalysisPage />} />
+          <Route path="/insurance/dashboard" element={<InsuranceDashboardPage />} />
 
           {/* Producers */}
           <Route path="/producers" element={<ProducersPage />} />

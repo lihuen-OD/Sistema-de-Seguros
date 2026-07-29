@@ -12,6 +12,7 @@ import type {
   ListClaimsQueryDTO,
   AddEventDTO,
   AddClaimAttachmentDTO,
+  AddClaimExpenseAttachmentDTO,
   CreateExpenseDTO,
   UpdateExpenseDTO,
 } from './claims.schemas'
@@ -24,11 +25,15 @@ const CLAIM_LIST_INCLUDE = {
   _count: { select: { events: true, expenses: true } },
 }
 
+const EXPENSE_INCLUDE = {
+  attachments: { orderBy: { uploadedAt: 'desc' as const } },
+}
+
 const CLAIM_DETAIL_INCLUDE = {
   asset: { select: { id: true, name: true, assetType: true } },
   policy: { select: { id: true, policyNumber: true, insuredName: true } },
   events: { orderBy: { date: 'desc' as const }, take: 100 },
-  expenses: { orderBy: { date: 'desc' as const } },
+  expenses: { orderBy: { date: 'desc' as const }, include: EXPENSE_INCLUDE },
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -64,6 +69,8 @@ function mapExpense(e: Record<string, unknown>) {
     vatAmount,
     otherTaxesAmount,
     totalAmount: computeTotalAmount({ netAmount, vatAmount, otherTaxesAmount }),
+    comment: e.comment ?? null,
+    attachments: Array.isArray(e.attachments) ? e.attachments : [],
     createdBy: e.createdBy ?? null,
     createdAt: e.createdAt,
   }
@@ -170,6 +177,7 @@ export const claimsService = {
     const claim = await prisma.claim.create({
       data: {
         claimNumber,
+        title: data.title ?? null,
         assetId: data.assetId ?? null,
         policyId: data.policyId ?? null,
         claimType: data.claimType,
@@ -272,6 +280,7 @@ export const claimsService = {
         where: { id },
         data: {
           ...(data.claimNumber && { claimNumber: data.claimNumber }),
+          ...(data.title !== undefined && { title: data.title }),
           ...(data.claimType && { claimType: data.claimType }),
           ...(data.occurrenceDate && { occurrenceDate: data.occurrenceDate }),
           ...(data.reportDate && { reportDate: data.reportDate }),
@@ -387,6 +396,7 @@ export const claimsService = {
     const expenses = await prisma.claimExpense.findMany({
       where: { claimId },
       orderBy: { date: 'desc' },
+      include: EXPENSE_INCLUDE,
     })
     return expenses.map((e) => mapExpense(e as unknown as Record<string, unknown>))
   },
@@ -410,6 +420,7 @@ export const claimsService = {
           netAmount: data.netAmount,
           vatAmount: data.vatAmount,
           otherTaxesAmount: data.otherTaxesAmount,
+          comment: data.comment ?? null,
           createdBy: createdBy ?? null,
         },
       }),
@@ -447,6 +458,7 @@ export const claimsService = {
           ...(data.netAmount !== undefined && { netAmount: data.netAmount }),
           ...(data.vatAmount !== undefined && { vatAmount: data.vatAmount }),
           ...(data.otherTaxesAmount !== undefined && { otherTaxesAmount: data.otherTaxesAmount }),
+          ...(data.comment !== undefined && { comment: data.comment }),
         },
       }),
       prisma.claimEvent.create({
@@ -554,10 +566,94 @@ export const claimsService = {
     return attachment
   },
 
+  // ── Expense Attachments ──────────────────────────────────────────────────────
+  // Mismo patrón que los adjuntos a nivel siniestro (arriba), pero colgados de
+  // un ClaimExpense puntual — un gasto puede tener varios (factura, comprobante
+  // de pago, foto, etc.), a diferencia del comentario único de ClaimExpense.comment.
+
+  async findExpenseAttachments(claimId: string, expenseId: string) {
+    await this.assertExpenseExists(claimId, expenseId)
+    return prisma.claimExpenseAttachment.findMany({
+      where: { expenseId },
+      orderBy: { uploadedAt: 'desc' },
+    })
+  },
+
+  async addExpenseAttachment(
+    claimId: string,
+    expenseId: string,
+    file: Express.Multer.File,
+    meta: AddClaimExpenseAttachmentDTO,
+    uploadedBy: string,
+  ) {
+    await this.assertExpenseExists(claimId, expenseId)
+
+    if (!isAllowedMimetype(file.mimetype)) {
+      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video', 'UNSUPPORTED_MEDIA_TYPE')
+    }
+
+    if (!matchesDeclaredMimetype(file.buffer, file.mimetype)) {
+      throw new AppError(415, 'El contenido del archivo no coincide con su tipo declarado', 'FILE_TYPE_MISMATCH')
+    }
+
+    let fileUrl = `local://${file.originalname}`
+    let cloudinaryPublicId: string | null = null
+
+    if (isCloudinaryConfigured()) {
+      const result = await uploadToCloudinary(file.buffer, 'claim-expenses', file.mimetype)
+      fileUrl = result.secure_url
+      cloudinaryPublicId = result.public_id
+    }
+
+    try {
+      return await prisma.claimExpenseAttachment.create({
+        data: {
+          expenseId,
+          name: sanitizeFileName(file.originalname),
+          description: meta.description ?? null,
+          fileType: detectFileType(file.mimetype),
+          fileSize: formatFileSize(file.size),
+          fileUrl,
+          cloudinaryPublicId,
+          uploadedBy,
+        },
+      })
+    } catch (err) {
+      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
+      throw err
+    }
+  },
+
+  async deleteExpenseAttachment(claimId: string, expenseId: string, attachmentId: string) {
+    await this.assertExpenseExists(claimId, expenseId)
+    const attachment = await prisma.claimExpenseAttachment.findFirst({
+      where: { id: attachmentId, expenseId },
+    })
+    if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    if (attachment.cloudinaryPublicId) {
+      await deleteFromCloudinary(attachment.cloudinaryPublicId)
+    }
+    await prisma.claimExpenseAttachment.delete({ where: { id: attachmentId } })
+  },
+
+  async getExpenseAttachmentForDownload(claimId: string, expenseId: string, attachmentId: string) {
+    await this.assertExpenseExists(claimId, expenseId)
+    const attachment = await prisma.claimExpenseAttachment.findFirst({
+      where: { id: attachmentId, expenseId },
+    })
+    if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+    return attachment
+  },
+
   // ── Private ───────────────────────────────────────────────────────────────────
 
   async assertExists(id: string) {
     const claim = await prisma.claim.findUnique({ where: { id }, select: { id: true } })
     if (!claim) throw new AppError(404, 'Siniestro no encontrado', 'NOT_FOUND')
+  },
+
+  async assertExpenseExists(claimId: string, expenseId: string) {
+    const expense = await prisma.claimExpense.findFirst({ where: { id: expenseId, claimId }, select: { id: true } })
+    if (!expense) throw new AppError(404, 'Gasto no encontrado', 'NOT_FOUND')
   },
 }

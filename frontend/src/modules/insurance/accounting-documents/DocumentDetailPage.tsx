@@ -128,6 +128,7 @@ export default function DocumentDetailPage() {
           amountUsd: i.amountUsd,
           paymentStatus: i.paymentStatus as Installment['paymentStatus'],
           paidAt: i.paidAt,
+          paymentMethod: i.paymentMethod,
         })),
       )
     }
@@ -197,6 +198,11 @@ export default function DocumentDetailPage() {
     queryClient.invalidateQueries({ queryKey: documentKeys.financial() })
     if (doc?.linkedDocumentId) {
       queryClient.invalidateQueries({ queryKey: documentKeys.balance(doc.linkedDocumentId) })
+      // Aplicar/cancelar una NC/ND/Ajuste reparte su monto entre las cuotas
+      // de la factura vinculada (ver documents.service.ts) — hay que refrescar
+      // sus cuotas y su detalle, no solo su "saldo".
+      queryClient.invalidateQueries({ queryKey: documentKeys.installments(doc.linkedDocumentId) })
+      queryClient.invalidateQueries({ queryKey: documentKeys.detail(doc.linkedDocumentId) })
     }
   }
 
@@ -520,6 +526,7 @@ export default function DocumentDetailPage() {
           noPadding
         >
           <DataTable
+            tableKey="document-detail-allocations"
             columns={allocationColumns}
             data={allocations}
             rowKey="id"
@@ -548,6 +555,7 @@ export default function DocumentDetailPage() {
                   inst={inst}
                   currency={doc.currency}
                   today={today}
+                  defaultPaymentMethod={doc.paymentMethod}
                   onUpdate={(updates) => handleInstallmentUpdate(inst.id, updates)}
                 />
               ))}
@@ -614,7 +622,7 @@ export default function DocumentDetailPage() {
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="text-xs font-semibold text-slate-700 tabular-nums">
-                        {formatCurrencyCompact(Math.abs(r.totalAmount), doc.currency)}
+                        {formatCurrencyCompact(Math.abs(r.totalAmount), r.currency)}
                       </span>
                       <StatusPill status={r.documentStatus} size="sm" />
                     </div>

@@ -17,6 +17,7 @@ export interface RelatedDocSummary {
   documentType: string
   documentStatus: string
   totalAmount: number
+  currency: string
   adjustmentSign: string | null
   // true cuando este es el documento al que el documento consultado fue
   // aplicado (su propio linkedDocumentId), no uno de los que lo afectan a él.
@@ -69,6 +70,7 @@ export const documentsBalanceService = {
             netAmount: true,
             vatAmount: true,
             otherTaxesAmount: true,
+            currency: true,
             adjustmentSign: true,
           },
         })
@@ -87,6 +89,7 @@ export const documentsBalanceService = {
         netAmount: true,
         vatAmount: true,
         otherTaxesAmount: true,
+        currency: true,
         adjustmentSign: true,
       },
     })
@@ -162,6 +165,7 @@ export const documentsBalanceService = {
                 documentType: origin.documentType,
                 documentStatus: origin.documentStatus,
                 totalAmount: computeTotalAmount(origin),
+                currency: origin.currency,
                 adjustmentSign: origin.adjustmentSign,
                 isOrigin: true,
               },
@@ -173,6 +177,7 @@ export const documentsBalanceService = {
           documentType: r.documentType,
           documentStatus: r.documentStatus,
           totalAmount: computeTotalAmount(r),
+          currency: r.currency,
           adjustmentSign: r.adjustmentSign,
           isOrigin: false,
         })),

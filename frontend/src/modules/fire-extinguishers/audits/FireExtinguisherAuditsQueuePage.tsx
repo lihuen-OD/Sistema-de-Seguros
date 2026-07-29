@@ -354,6 +354,7 @@ export default function FireExtinguisherAuditsQueuePage() {
             )}
 
             <DataTable
+              tableKey="fire-extinguisher-audits"
               columns={columns}
               data={filtered}
               rowKey="id"

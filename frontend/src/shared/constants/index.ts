@@ -3,6 +3,7 @@ export const ASSET_TYPES = [
   'Camioneta',
   'Camión',
   'Moto',
+  'Transporte de pasajeros',
   'Tractor',
   'Cosechadora',
   'Pulverizadora',

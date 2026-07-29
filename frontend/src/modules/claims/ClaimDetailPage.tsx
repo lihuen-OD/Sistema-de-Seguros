@@ -387,8 +387,8 @@ export default function ClaimDetailPage() {
   return (
     <PageContent>
       <PageHeader
-        title={claim.claimNumber}
-        subtitle={`${claim.claimType} · ${claim.insuranceCompany}`}
+        title={claim.title || claim.claimNumber}
+        subtitle={claim.title ? `${claim.claimNumber} · ${claim.claimType} · ${claim.insuranceCompany}` : `${claim.claimType} · ${claim.insuranceCompany}`}
         category="Siniestro"
         backTo={ROUTES.CLAIMS}
         backLabel="Volver a siniestros"
@@ -484,6 +484,7 @@ export default function ClaimDetailPage() {
           <SectionCard title="Datos del Siniestro">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
               <InfoRow label="N° Siniestro" value={<span className="font-mono">{claim.claimNumber}</span>} />
+              {claim.title && <InfoRow label="Título" value={claim.title} />}
               <InfoRow label="Tipo" value={claim.claimType} />
               <InfoRow label="Fecha del hecho" value={formatDate(claim.occurrenceDate)} />
               <InfoRow label="Fecha de denuncia" value={formatDate(claim.reportDate)} />

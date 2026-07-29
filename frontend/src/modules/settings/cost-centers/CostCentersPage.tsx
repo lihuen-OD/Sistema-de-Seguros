@@ -333,6 +333,7 @@ export default function CostCentersPage() {
           </span>
         </div>
         <DataTable
+          tableKey="cost-centers"
           columns={columns}
           data={filtered}
           rowKey="id"

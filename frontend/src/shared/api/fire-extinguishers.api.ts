@@ -20,6 +20,7 @@ interface BackendExtinguisher {
   manufacturingYear: number | null; manufacturingExpirationYear: number | null
   observations: string
   brand: string | null; cylinderNumber?: string | null; serialNumber?: string | null
+  iramCertificateNumber?: string | null
   isActive: boolean; createdAt: string; updatedAt: string
   history?: BackendHistory[]
 }
@@ -59,6 +60,7 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
     establishment: b.establishment ?? null,
     brand: b.brand ?? null,
     cylinderNumber: b.cylinderNumber ?? b.serialNumber ?? null,
+    iramCertificateNumber: b.iramCertificateNumber ?? null,
     manufacturingYear: b.manufacturingYear ?? null,
     status: b.status as FireExtStatus,
     chargeStatus: (b.chargeStatus as FireExtStatus) ?? (b.status as FireExtStatus),
@@ -77,7 +79,7 @@ export interface FireExtinguisherCreateInput {
   hydraulicTestExpirationDate?: string | null
   associatedAssetId?: string; associatedLocationType: string; location?: string
   establishment: string; observations?: string
-  brand?: string; cylinderNumber: string; manufacturingYear: number
+  brand?: string; cylinderNumber: string; iramCertificateNumber?: string; manufacturingYear: number
 }
 
 export interface RechargeInput {

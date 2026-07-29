@@ -4,12 +4,14 @@ import { CheckCircle2, Clock, AlertTriangle, Check, X } from 'lucide-react'
 import clsx from 'clsx'
 import { formatDate } from '../../utils/format'
 import { exchangeRateQueries } from '../../api/exchange-rate.api'
+import { catalogQueries } from '../../api/catalogs.api'
 import type { Installment, InstallmentUpdate } from '../../types'
 
 interface InstallmentRowProps {
   inst: Installment
   currency: string
   today: string
+  defaultPaymentMethod?: string | null
   indent?: boolean
   onUpdate: (updates: InstallmentUpdate) => void
 }
@@ -18,10 +20,12 @@ export function InstallmentRow({
   inst,
   currency,
   today,
+  defaultPaymentMethod,
   indent = false,
   onUpdate,
 }: InstallmentRowProps) {
   const { data: currentRate } = useQuery(exchangeRateQueries.current())
+  const { data: paymentMethods = [] } = useQuery(catalogQueries.byCategory('document_payment_method'))
 
   const [mode, setMode] = useState<'view' | 'edit'>('view')
   const [editAmount, setEditAmount] = useState(String(Math.abs(inst.amount)))
@@ -29,6 +33,9 @@ export function InstallmentRow({
   const [editPaidAt, setEditPaidAt] = useState(inst.paidAt ?? today)
   const [editDueDate, setEditDueDate] = useState(inst.dueDate)
   const [editExchangeRate, setEditExchangeRate] = useState(currentRate?.rate != null ? String(currentRate.rate) : '')
+  const [editPaymentMethod, setEditPaymentMethod] = useState(
+    inst.paymentMethod ?? defaultPaymentMethod ?? '',
+  )
 
   const isPaid = inst.paymentStatus === 'PAID'
   const isOverdue = !isPaid && inst.dueDate < today
@@ -39,6 +46,7 @@ export function InstallmentRow({
     setEditPaidAt(inst.paidAt ?? today)
     setEditDueDate(inst.dueDate)
     setEditExchangeRate(currentRate?.rate != null ? String(currentRate.rate) : '')
+    setEditPaymentMethod(inst.paymentMethod ?? defaultPaymentMethod ?? '')
     setMode('edit')
   }
 
@@ -49,6 +57,7 @@ export function InstallmentRow({
       paymentStatus: editStatus,
       paidAt: editStatus === 'PAID' ? editPaidAt : null,
       dueDate: editDueDate,
+      paymentMethod: editStatus === 'PAID' ? editPaymentMethod : null,
       exchangeRate: editStatus === 'PAID' ? parseFloat(editExchangeRate) : undefined,
     })
     setMode('view')
@@ -60,7 +69,7 @@ export function InstallmentRow({
         <p className="text-[10px] font-bold uppercase tracking-widest text-brand-500 mb-2.5">
           Cuota {String(inst.installmentNumber).padStart(2, '0')} — editar
         </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
           <div>
             <label className="text-[10px] font-semibold text-slate-500 block mb-1">Vencimiento</label>
             <input
@@ -121,6 +130,20 @@ export function InstallmentRow({
                   className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
+              <div>
+                <label className="text-[10px] font-semibold text-slate-500 block mb-1">Medio de pago</label>
+                <select
+                  value={editPaymentMethod}
+                  onChange={(e) => setEditPaymentMethod(e.target.value)}
+                  required
+                  className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="">Seleccionar…</option>
+                  {paymentMethods.map((method) => (
+                    <option key={method.id} value={method.label}>{method.label}</option>
+                  ))}
+                </select>
+              </div>
             </>
           )}
         </div>
@@ -128,7 +151,8 @@ export function InstallmentRow({
           <button
             type="button"
             onClick={handleConfirm}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg transition-colors"
+            disabled={editStatus === 'PAID' && (!editPaymentMethod || !editExchangeRate || parseFloat(editExchangeRate) <= 0)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors"
           >
             <Check size={11} />
             Confirmar
@@ -156,6 +180,11 @@ export function InstallmentRow({
         {inst.paidAt && (
           <span className="text-xs text-slate-400 hidden sm:block">
             Pagado {formatDate(inst.paidAt)}
+          </span>
+        )}
+        {isPaid && inst.paymentMethod && (
+          <span className="text-xs text-slate-400 hidden lg:block">
+            · {inst.paymentMethod}
           </span>
         )}
       </div>
@@ -189,7 +218,7 @@ export function InstallmentRow({
         <button
           type="button"
           onClick={openEdit}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-[11px] font-medium text-brand-600 hover:text-brand-700 px-2 py-0.5 rounded-md hover:bg-brand-50 whitespace-nowrap"
+          className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-[11px] font-medium text-brand-600 hover:text-brand-700 px-2 py-0.5 rounded-md hover:bg-brand-50 whitespace-nowrap"
         >
           {isPaid ? 'Editar' : 'Registrar pago'}
         </button>

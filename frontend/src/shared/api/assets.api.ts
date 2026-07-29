@@ -160,8 +160,8 @@ export interface AssetCreateInput {
 }
 
 export const assetsApi = {
-  async findAll(): Promise<Asset[]> {
-    const res = await apiClient.get<Paginated<BackendAsset>>('/assets', { params: { limit: 200 } })
+  async findAll(filters?: { isActive?: boolean; assetType?: string; limit?: number }): Promise<Asset[]> {
+    const res = await apiClient.get<Paginated<BackendAsset>>('/assets', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapAsset)
   },
 
@@ -222,10 +222,6 @@ export const assetsApi = {
     triggerBlobDownload(res.data, filename)
   },
 
-  async addValueHistory(assetId: string, entry: { value: number; date: string; type: 'real' | 'nuevo'; note?: string }): Promise<void> {
-    await apiClient.post(`/assets/${assetId}/value-history`, entry)
-  },
-
   async findStatusHistory(assetId: string): Promise<AssetStatusHistory[]> {
     const res = await apiClient.get<{ data: AssetStatusHistory[] }>(`/assets/${assetId}/status-history`)
     return res.data.data.map((h) => ({ ...h, date: h.date.slice(0, 10) }))
@@ -237,18 +233,21 @@ export const assetsApi = {
 // (`['assets']`, `['assets', id]`, etc.) para no fragmentar cache mientras se
 // migran los call sites — no se inventa un esquema nuevo de sub-namespacing.
 
+type AssetFilters = { isActive?: boolean; assetType?: string; limit?: number }
+
 export const assetKeys = {
   all: ['assets'] as const,
+  list: (filters?: AssetFilters) => (filters ? ([...assetKeys.all, filters] as const) : assetKeys.all),
   detail: (id: string) => [...assetKeys.all, id] as const,
   attachments: (id: string) => [...assetKeys.all, id, 'attachments'] as const,
   statusHistory: (id: string) => ['asset-status-history', id] as const,
 }
 
 export const assetQueries = {
-  list: () =>
+  list: (filters?: AssetFilters) =>
     queryOptions({
-      queryKey: assetKeys.all,
-      queryFn: () => assetsApi.findAll(),
+      queryKey: assetKeys.list(filters),
+      queryFn: () => assetsApi.findAll(filters),
       staleTime: 60 * 1000,
     }),
   detail: (id: string) =>

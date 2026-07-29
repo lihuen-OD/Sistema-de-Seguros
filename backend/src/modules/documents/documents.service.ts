@@ -46,6 +46,11 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
   NOT_APPLICABLE: 'No Aplica',
 }
 
+// Únicos 3 tipos que hoy afectan el "saldo" calculado de una factura vinculada
+// (documents-balance.service.ts) — al aplicarlos, además, se reparte su monto
+// entre las cuotas no pagas de esa factura (ver apply()/cancel()).
+const INSTALLMENT_ADJUSTING_TYPES = ['CREDIT_NOTE', 'DEBIT_NOTE', 'ADJUSTMENT_ENTRY']
+
 const DOCUMENT_LIST_INCLUDE = {
   _count: { select: { installments: true, allocations: true, attachments: true } },
   allocations: { select: { policyId: true } },
@@ -68,7 +73,7 @@ const DOCUMENT_FINANCIAL_INCLUDE = {
     select: {
       id: true, accountingDocumentId: true, installmentNumber: true,
       dueDate: true, amount: true, currency: true, amountArs: true, amountUsd: true,
-      paymentStatus: true, paymentDate: true,
+      paymentStatus: true, paymentDate: true, paymentMethod: true,
     },
     orderBy: { installmentNumber: 'asc' as const },
   },
@@ -160,9 +165,20 @@ export const documentsService = {
     // impactar esos reportes.
     const where: Record<string, unknown> = { documentStatus: { not: 'CANCELLED' } }
     if (params?.from || params?.to) {
-      where.issueDate = {
+      const range = {
         ...(params.from && { gte: new Date(`${params.from}-01T00:00:00.000Z`) }),
-        ...(params.to && { lte: new Date(`${params.to}-31T23:59:59.999Z`) }),
+        ...(params.to && (() => {
+          const [year, month] = params.to.split('-').map(Number)
+          return { lt: new Date(Date.UTC(year, month, 1)) }
+        })()),
+      }
+      where.installments = {
+        some: {
+          OR: [
+            { paymentStatus: 'PAID', paymentDate: range },
+            { paymentStatus: { not: 'PAID' }, dueDate: range },
+          ],
+        },
       }
     }
     const docs = await prisma.accountingDocument.findMany({
@@ -200,7 +216,9 @@ export const documentsService = {
     const typeDef = getDocumentTypeDef(docData.documentType)
     if (!typeDef) throw new AppError(400, 'Tipo de documento inválido', 'BAD_REQUEST')
 
-    await this.validateTypeConstraints(typeDef, docData)
+    const inheritedPaymentMethod = await this.validateTypeConstraints(typeDef, docData)
+    const effectivePaymentMethod =
+      inheritedPaymentMethod ?? (docData.paymentMethod?.trim() || null)
 
     // El duplicado real es la combinación tipo + compañía + número
     // (documentNumber es inmutable después del alta, así que este chequeo
@@ -244,6 +262,7 @@ export const documentsService = {
         const created = await tx.accountingDocument.create({
           data: {
             ...docData,
+            paymentMethod: effectivePaymentMethod,
             documentStatus: 'ISSUED',
             relationType: typeDef.relationType ?? null,
             paymentStatus: typeDef.hasPaymentStatus ? 'PENDING' : 'NOT_APPLICABLE',
@@ -256,6 +275,7 @@ export const documentsService = {
                   dueDate: inst.dueDate,
                   amount: inst.amount,
                   currency: docData.currency,
+                  paymentMethod: effectivePaymentMethod,
                   ...computeDualAmounts(inst.amount, docData.currency as 'ARS' | 'USD', docData.exchangeRate),
                 })),
               },
@@ -280,6 +300,7 @@ export const documentsService = {
             documentType: created.documentType,
             documentStatus: created.documentStatus,
             paymentStatus: created.paymentStatus,
+            paymentMethod: created.paymentMethod,
             netAmount: created.netAmount,
             vatAmount: created.vatAmount,
             otherTaxesAmount: created.otherTaxesAmount,
@@ -344,7 +365,7 @@ export const documentsService = {
     const effectiveCurrency = docData.currency ?? existing.currency
     const effectiveExchangeRate = docData.exchangeRate ?? existing.exchangeRate
 
-    await this.validateTypeConstraints(
+    const inheritedPaymentMethod = await this.validateTypeConstraints(
       typeDef,
       {
         linkedDocumentId: effectiveLinkedId,
@@ -356,9 +377,14 @@ export const documentsService = {
         netAmount: effectiveNetAmount,
         vatAmount: effectiveVatAmount,
         otherTaxesAmount: effectiveOtherTaxesAmount,
+        currency: effectiveCurrency,
       },
       id,
     )
+    const effectivePaymentMethod = inheritedPaymentMethod
+      ?? (docData.paymentMethod !== undefined
+        ? docData.paymentMethod?.trim() || null
+        : existing.paymentMethod)
 
     // documentStatus nunca viene del cliente (ver documents.schemas.ts) — esto
     // solo revalida que el estado actual siga siendo válido para el tipo
@@ -382,6 +408,7 @@ export const documentsService = {
         where: { id },
         data: {
           ...docData,
+          paymentMethod: effectivePaymentMethod,
           relationType: typeDef.relationType ?? null,
           ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
           totalAmountArs: effectiveTotalAmountArs,
@@ -396,6 +423,7 @@ export const documentsService = {
         previousData: {
           documentType: existing.documentType,
           linkedDocumentId: existing.linkedDocumentId,
+          paymentMethod: existing.paymentMethod,
           netAmount: existing.netAmount,
           vatAmount: existing.vatAmount,
           otherTaxesAmount: existing.otherTaxesAmount,
@@ -403,6 +431,7 @@ export const documentsService = {
         newData: {
           documentType: doc.documentType,
           linkedDocumentId: doc.linkedDocumentId,
+          paymentMethod: doc.paymentMethod,
           netAmount: doc.netAmount,
           vatAmount: doc.vatAmount,
           otherTaxesAmount: doc.otherTaxesAmount,
@@ -520,6 +549,15 @@ export const documentsService = {
             }
           }
 
+          // Reparto en partes iguales entre las cuotas NO pagas de la factura
+          // vinculada — así "Total Pendiente" (Dashboard/Documentos/Análisis
+          // Financiero) refleja el efecto real de la NC/ND/Ajuste en vez de
+          // quedar inmutado (antes solo se actualizaba el "saldo" calculado
+          // on-the-fly, nunca las cuotas). Las cuotas ya PAID nunca se tocan.
+          if (INSTALLMENT_ADJUSTING_TYPES.includes(doc.documentType) && doc.linkedDocumentId) {
+            await this.redistributeAdjustmentAcrossInstallments(tx, doc, id)
+          }
+
           const doc2 = await tx.accountingDocument.update({
             where: { id },
             data: { documentStatus: 'APPLIED' },
@@ -536,7 +574,12 @@ export const documentsService = {
 
           return doc2
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        // El timeout default de Prisma (5s) no alcanza cuando hay que repartir
+        // el monto entre varias cuotas — cada una implica un update + un
+        // insert de rastreo, todos contra una DB remota (Neon). Sin este
+        // timeout más generoso, una factura con varias cuotas elegibles podía
+        // abortar la transacción con P2028 ("Transaction not found").
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 20000 },
       )
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') {
@@ -563,6 +606,13 @@ export const documentsService = {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Si este documento había repartido su monto entre cuotas de una
+      // factura vinculada (ver redistributeAdjustmentAcrossInstallments), hay
+      // que devolverlas a su monto original antes de anular — si no, la NC/ND/
+      // Ajuste desaparece pero las cuotas quedan modificadas para siempre.
+      // No-op si el documento nunca aplicó ningún reparto (ISSUED, u otro tipo).
+      await this.reverseInstallmentAdjustments(tx, id)
+
       const doc2 = await tx.accountingDocument.update({
         where: { id },
         data: { documentStatus: 'CANCELLED' },
@@ -579,7 +629,10 @@ export const documentsService = {
       }, tx)
 
       return doc2
-    })
+    // Ver el mismo comentario en apply(): revertir el reparto entre varias
+    // cuotas implica varios round-trips contra Neon, el timeout default (5s)
+    // puede no alcanzar.
+    }, { timeout: 20000 })
 
     return {
       ...withTotalAmount(updated),
@@ -726,6 +779,7 @@ export const documentsService = {
                 dueDate: inst.dueDate,
                 amount: inst.amount,
                 currency: doc.currency,
+                paymentMethod: doc.paymentMethod?.trim() || null,
                 ...computeDualAmounts(inst.amount, doc.currency as 'ARS' | 'USD', doc.exchangeRate),
               })),
             }),
@@ -761,6 +815,12 @@ export const documentsService = {
     if (data.paymentStatus === 'PAID' && exchangeRate === undefined) {
       throw new AppError(400, 'Se requiere el tipo de cambio para marcar la cuota como pagada', 'BAD_REQUEST')
     }
+    const effectivePaymentStatus = data.paymentStatus ?? installment.paymentStatus
+    const effectivePaymentMethod =
+      data.paymentMethod !== undefined ? data.paymentMethod : installment.paymentMethod
+    if (effectivePaymentStatus === 'PAID' && !effectivePaymentMethod?.trim()) {
+      throw new AppError(400, 'Se requiere el medio de pago para marcar la cuota como pagada', 'BAD_REQUEST')
+    }
 
     const dualAmounts =
       data.paymentStatus === 'PAID'
@@ -770,7 +830,13 @@ export const documentsService = {
     const updated = await prisma.$transaction(async (tx) => {
       const inst = await tx.documentInstallment.update({
         where: { id: installmentId },
-        data: { ...installmentData, ...dualAmounts },
+        data: {
+          ...installmentData,
+          ...(installmentData.paymentMethod !== undefined && {
+            paymentMethod: installmentData.paymentMethod?.trim() || null,
+          }),
+          ...dualAmounts,
+        },
       })
 
       await this.recalculateDocumentStatus(documentId, tx)
@@ -986,6 +1052,7 @@ export const documentsService = {
         documentNumber: true,
         currency: true,
         exchangeRate: true,
+        paymentMethod: true,
         documentType: true,
         documentStatus: true,
         linkedDocumentId: true,
@@ -1003,6 +1070,120 @@ export const documentsService = {
     return doc
   },
 
+  // Reparte el monto de una NC/ND/Ajuste, en partes iguales, entre las cuotas
+  // NO pagas de su factura vinculada (las PAID nunca se tocan). El resto de
+  // redondeo se lleva la última cuota elegible (por installmentNumber), para
+  // que la suma cierre exacta contra el monto del documento. Si el ajuste
+  // supera lo que le queda a una cuota puntual, esa cuota se clampea en 0 —
+  // el sobrante no se cascada a otras cuotas (limitación conocida, ver plan).
+  // Guarda un InstallmentAdjustmentApplication por cuota tocada para poder
+  // revertir con precisión si el documento se anula después (ver
+  // reverseInstallmentAdjustments).
+  async redistributeAdjustmentAcrossInstallments(
+    tx: Prisma.TransactionClient,
+    doc: {
+      documentType: string
+      netAmount: number
+      vatAmount: number
+      otherTaxesAmount: number
+      adjustmentSign: string | null
+      linkedDocumentId: string | null
+    },
+    sourceDocumentId: string,
+  ) {
+    if (!doc.linkedDocumentId) return
+    const linkedInvoice = await tx.accountingDocument.findUnique({
+      where: { id: doc.linkedDocumentId },
+      select: { currency: true, exchangeRate: true },
+    })
+    if (!linkedInvoice) return
+
+    const eligible = await tx.documentInstallment.findMany({
+      where: { accountingDocumentId: doc.linkedDocumentId, paymentStatus: { not: 'PAID' } },
+      orderBy: { installmentNumber: 'asc' },
+    })
+    if (eligible.length === 0) return
+
+    const rawTotal = computeTotalAmount(doc)
+    const signedAmount =
+      doc.documentType === 'CREDIT_NOTE' ? -Math.abs(rawTotal) :
+      doc.documentType === 'DEBIT_NOTE' ? Math.abs(rawTotal) :
+      Math.abs(rawTotal) * (doc.adjustmentSign === 'NEGATIVE' ? -1 : 1)
+
+    const share = +(signedAmount / eligible.length).toFixed(2)
+    const currency = linkedInvoice.currency as 'ARS' | 'USD'
+
+    // Los updates de cuota van uno por uno (cada una tiene un monto propio),
+    // pero las filas de rastreo se insertan todas juntas al final con
+    // createMany — evita un round-trip extra por cuota contra la DB remota,
+    // que sumado al resto de la transacción podía superar el timeout.
+    const applicationRows: {
+      installmentId: string
+      sourceDocumentId: string
+      deltaAmount: number
+      deltaAmountArs: number
+      deltaAmountUsd: number
+    }[] = []
+
+    for (let i = 0; i < eligible.length; i++) {
+      const inst = eligible[i]
+      const isLast = i === eligible.length - 1
+      const rawDelta = isLast ? +(signedAmount - share * (eligible.length - 1)).toFixed(2) : share
+      const newAmount = Math.max(0, +(inst.amount + rawDelta).toFixed(2))
+      const actualDelta = +(newAmount - inst.amount).toFixed(2)
+      if (actualDelta === 0) continue
+
+      const dual = computeDualAmounts(newAmount, currency, linkedInvoice.exchangeRate)
+      const deltaDual = computeDualAmounts(actualDelta, currency, linkedInvoice.exchangeRate)
+
+      await tx.documentInstallment.update({
+        where: { id: inst.id },
+        data: { amount: newAmount, amountArs: dual.amountArs, amountUsd: dual.amountUsd },
+      })
+      applicationRows.push({
+        installmentId: inst.id,
+        sourceDocumentId,
+        deltaAmount: actualDelta,
+        deltaAmountArs: deltaDual.amountArs,
+        deltaAmountUsd: deltaDual.amountUsd,
+      })
+    }
+
+    if (applicationRows.length > 0) {
+      await tx.installmentAdjustmentApplication.createMany({ data: applicationRows })
+    }
+
+    await this.recalculateDocumentStatus(doc.linkedDocumentId, tx)
+  },
+
+  // Revierte exactamente el reparto hecho por redistributeAdjustmentAcrossInstallments
+  // cuando el documento que lo generó se anula — sin esto, anular una NC/ND/Ajuste
+  // ya aplicada dejaría las cuotas reducidas/aumentadas para siempre.
+  async reverseInstallmentAdjustments(tx: Prisma.TransactionClient, sourceDocumentId: string) {
+    const applications = await tx.installmentAdjustmentApplication.findMany({
+      where: { sourceDocumentId },
+      include: { installment: { include: { document: { select: { currency: true, exchangeRate: true } } } } },
+    })
+    if (applications.length === 0) return
+
+    let linkedDocumentId: string | null = null
+    for (const app of applications) {
+      const inst = app.installment
+      linkedDocumentId = inst.accountingDocumentId
+      const restoredAmount = +(inst.amount - app.deltaAmount).toFixed(2)
+      const dual = computeDualAmounts(restoredAmount, inst.document.currency as 'ARS' | 'USD', inst.document.exchangeRate)
+      await tx.documentInstallment.update({
+        where: { id: inst.id },
+        data: { amount: restoredAmount, amountArs: dual.amountArs, amountUsd: dual.amountUsd },
+      })
+    }
+
+    await tx.installmentAdjustmentApplication.deleteMany({ where: { sourceDocumentId } })
+    if (linkedDocumentId) {
+      await this.recalculateDocumentStatus(linkedDocumentId, tx)
+    }
+  },
+
   async validateTypeConstraints(
     typeDef: DocumentTypeDef,
     input: {
@@ -1015,9 +1196,12 @@ export const documentsService = {
       netAmount?: number
       vatAmount?: number
       otherTaxesAmount?: number
+      currency?: string
     },
     selfId?: string,
-  ) {
+  ): Promise<string | undefined> {
+    let inheritedPaymentMethod: string | undefined
+
     if (typeDef.requiresLinkedDocument && !input.linkedDocumentId) {
       throw new AppError(
         400,
@@ -1034,6 +1218,18 @@ export const documentsService = {
       if (linked.documentStatus === 'CANCELLED') {
         throw new AppError(400, 'El documento vinculado está anulado', 'BAD_REQUEST')
       }
+      // La moneda de un NC/ND/Refacturación/Ajuste siempre tiene que coincidir
+      // con la del documento que ajusta — de lo contrario el saldo y los
+      // totales combinados no tienen sentido (se estaría restando un monto en
+      // una moneda de un total en otra). El frontend ya lo bloquea, pero el
+      // backend es quien lo tiene que garantizar.
+      if (input.currency && input.currency !== linked.currency) {
+        throw new AppError(
+          400,
+          'La moneda debe coincidir con la del documento vinculado',
+          'BAD_REQUEST',
+        )
+      }
       if (typeDef.linkedDocumentType && linked.documentType !== typeDef.linkedDocumentType) {
         const expectedLabel = DOCUMENT_TYPES[typeDef.linkedDocumentType]?.label ?? typeDef.linkedDocumentType
         throw new AppError(400, `El documento vinculado debe ser de tipo ${expectedLabel}`, 'BAD_REQUEST')
@@ -1047,6 +1243,14 @@ export const documentsService = {
           const labels = allowed.map((t) => DOCUMENT_TYPES[t]?.label ?? t).join(' o ')
           throw new AppError(400, `El documento asociado debe ser ${labels}`, 'BAD_REQUEST')
         }
+      }
+      inheritedPaymentMethod = linked.paymentMethod?.trim()
+      if (!inheritedPaymentMethod) {
+        throw new AppError(
+          400,
+          'El documento vinculado no tiene medio de pago. Completalo antes de asociar este documento.',
+          'BAD_REQUEST',
+        )
       }
     }
 
@@ -1095,6 +1299,8 @@ export const documentsService = {
     ) {
       throw new AppError(400, 'Los importes no pueden ser negativos', 'BAD_REQUEST')
     }
+
+    return inheritedPaymentMethod
   },
 
   async checkDocumentNumber(documentNumber: string, documentType?: string, insuranceCompany?: string | null) {

@@ -30,6 +30,12 @@ jest.mock('../../../config/database', () => ({
       update:    jest.fn(),
       delete:    jest.fn(),
     },
+    claimExpenseAttachment: {
+      findMany:  jest.fn(),
+      findFirst: jest.fn(),
+      create:    jest.fn(),
+      delete:    jest.fn(),
+    },
     $queryRaw: jest.fn(),
     // claims.service.ts::update() envuelve el update + el ClaimEvent
     // automático (estado/monto) en $transaction(async (tx) => ...). Acá el
@@ -39,6 +45,12 @@ jest.mock('../../../config/database', () => ({
     // en array que ya usa addExpense().
     $transaction: jest.fn(),
   },
+}))
+
+jest.mock('../../../config/cloudinary', () => ({
+  isCloudinaryConfigured: jest.fn(() => false),
+  uploadToCloudinary:     jest.fn(),
+  deleteFromCloudinary:   jest.fn(),
 }))
 
 import { prisma } from '../../../config/database'
@@ -54,6 +66,10 @@ beforeEach(() => {
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const BASE_DATE = new Date('2026-01-15T00:00:00.000Z')
+
+// Firma JPEG real (FF D8 FF) — necesaria para pasar la validación de magic
+// bytes que compara el contenido real contra el Content-Type declarado.
+const FAKE_JPEG_BUFFER = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.from('fake-image-bytes')])
 
 const fakeClaim = {
   id: 'claim-uuid-1',
@@ -286,6 +302,21 @@ describe('Claims API', () => {
       expect(createCall.data.events.create.type).toBe('siniestro_creado')
     })
 
+    it('passes an optional title through to the created claim', async () => {
+      db.$queryRaw.mockResolvedValue([{ nextval: BigInt(6) }])
+      db.claim.create.mockResolvedValue({ ...fakeClaim, title: 'Choque camioneta Ruta 5' })
+
+      const res = await request(app)
+        .post('/api/v1/claims')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ ...validClaimBody, title: 'Choque camioneta Ruta 5' })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.title).toBe('Choque camioneta Ruta 5')
+      const createCall = db.claim.create.mock.calls[0][0]
+      expect(createCall.data.title).toBe('Choque camioneta Ruta 5')
+    })
+
     it('returns 201 with ownershipType "propio" by default (no third-party fields required)', async () => {
       db.$queryRaw.mockResolvedValue([{ nextval: BigInt(4) }])
       db.claim.create.mockResolvedValue(fakeClaim)
@@ -363,6 +394,19 @@ describe('Claims API', () => {
           newStatus: 'en_tramite',
         }),
       })
+    })
+
+    it('passes an optional title through to the updated claim', async () => {
+      db.claim.findUnique.mockResolvedValue(fakeClaim)
+      db.claim.findUniqueOrThrow.mockResolvedValue({ ...fakeClaim, title: 'Granizo en establecimiento Norte' })
+
+      const res = await request(app)
+        .put('/api/v1/claims/claim-uuid-1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ title: 'Granizo en establecimiento Norte' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.title).toBe('Granizo en establecimiento Norte')
     })
 
     it('returns 403 when a USER without the claims module tries to update', async () => {
@@ -544,6 +588,27 @@ describe('Claims API', () => {
       expect(db.$transaction).toHaveBeenCalledTimes(1)
     })
 
+    it('passes an optional comment through to the created expense', async () => {
+      db.claim.findUnique.mockResolvedValue(fakeClaim) // assertExists
+      db.claimExpense.create.mockResolvedValue({ ...fakeExpense, comment: 'Presupuesto aprobado por el perito' })
+      db.claimEvent.create.mockResolvedValue({ id: 'event-uuid-6', type: 'gasto_agregado' })
+
+      const res = await request(app)
+        .post('/api/v1/claims/claim-uuid-1/expenses')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          date: '2026-01-15',
+          provider: 'Taller Scania Cordoba',
+          netAmount: 210000,
+          comment: 'Presupuesto aprobado por el perito',
+        })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.comment).toBe('Presupuesto aprobado por el perito')
+      const createCall = db.claimExpense.create.mock.calls[0][0]
+      expect(createCall.data.comment).toBe('Presupuesto aprobado por el perito')
+    })
+
     it('returns 403 when a USER without the claims module tries to add an expense', async () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
 
@@ -664,6 +729,146 @@ describe('Claims API', () => {
 
       const res = await request(app)
         .delete('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-x')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(404)
+    })
+  })
+
+  // ── POST /api/v1/claims/:id/expenses/:expenseId/attachments ────────────────
+
+  describe('POST /api/v1/claims/:id/expenses/:expenseId/attachments', () => {
+    const existingExpense = { id: 'expense-uuid-1', claimId: 'claim-uuid-1', provider: 'Taller Scania Cordoba' }
+
+    it('returns 201 for a valid JPEG photo', async () => {
+      db.claimExpense.findFirst.mockResolvedValue(existingExpense) // assertExpenseExists
+      db.claimExpenseAttachment.create.mockResolvedValue({
+        id: 'exp-att-1',
+        expenseId: 'expense-uuid-1',
+        name: 'factura.jpg',
+        fileType: 'image',
+        fileSize: '1.0 KB',
+        fileUrl: 'local://factura.jpg',
+        uploadedAt: BASE_DATE,
+        uploadedBy: 'test@losodwyer.com',
+      })
+
+      const res = await request(app)
+        .post('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1/attachments')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .attach('file', FAKE_JPEG_BUFFER, { filename: 'factura.jpg', contentType: 'image/jpeg' })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.expenseId).toBe('expense-uuid-1')
+      const createCall = db.claimExpenseAttachment.create.mock.calls[0][0]
+      expect(createCall.data.expenseId).toBe('expense-uuid-1')
+    })
+
+    it('returns 415 when the file content does not match its declared mimetype', async () => {
+      db.claimExpense.findFirst.mockResolvedValue(existingExpense)
+
+      // Declara image/jpeg (pasa el filtro general de multer) pero el
+      // contenido real no tiene la firma JPEG — matchesDeclaredMimetype lo
+      // detecta y rechaza en el service, no en multer.
+      const res = await request(app)
+        .post('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1/attachments')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .attach('file', Buffer.from('this is not really a jpeg'), { filename: 'factura.jpg', contentType: 'image/jpeg' })
+
+      expect(res.status).toBe(415)
+      expect(res.body.error.code).toBe('FILE_TYPE_MISMATCH')
+      expect(db.claimExpenseAttachment.create).not.toHaveBeenCalled()
+    })
+
+    it('returns 404 when the expense does not belong to the claim', async () => {
+      db.claimExpense.findFirst.mockResolvedValue(null)
+
+      const res = await request(app)
+        .post('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-x/attachments')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .attach('file', FAKE_JPEG_BUFFER, { filename: 'factura.jpg', contentType: 'image/jpeg' })
+
+      expect(res.status).toBe(404)
+    })
+
+    it('returns 403 when a USER without the claims module tries to upload', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+      const res = await request(app)
+        .post('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1/attachments')
+        .set('Authorization', `Bearer ${userToken()}`)
+        .attach('file', FAKE_JPEG_BUFFER, { filename: 'factura.jpg', contentType: 'image/jpeg' })
+
+      expect(res.status).toBe(403)
+    })
+  })
+
+  // ── GET /api/v1/claims/:id/expenses/:expenseId/attachments ─────────────────
+
+  describe('GET /api/v1/claims/:id/expenses/:expenseId/attachments', () => {
+    it('returns 200 with the list of attachments for that expense', async () => {
+      db.claimExpense.findFirst.mockResolvedValue({ id: 'expense-uuid-1', claimId: 'claim-uuid-1' })
+      db.claimExpenseAttachment.findMany.mockResolvedValue([
+        { id: 'exp-att-1', expenseId: 'expense-uuid-1', name: 'factura.jpg' },
+      ])
+
+      const res = await request(app)
+        .get('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1/attachments')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+    })
+
+    it('returns 404 when the expense does not belong to the claim', async () => {
+      db.claimExpense.findFirst.mockResolvedValue(null)
+
+      const res = await request(app)
+        .get('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-x/attachments')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(404)
+    })
+  })
+
+  // ── DELETE /api/v1/claims/:id/expenses/:expenseId/attachments/:attachmentId ─
+
+  describe('DELETE /api/v1/claims/:id/expenses/:expenseId/attachments/:attachmentId', () => {
+    it('deletes the Cloudinary file and the DB row', async () => {
+      const { deleteFromCloudinary } = jest.requireMock('../../../config/cloudinary') as { deleteFromCloudinary: jest.Mock }
+      db.claimExpense.findFirst.mockResolvedValue({ id: 'expense-uuid-1', claimId: 'claim-uuid-1' })
+      db.claimExpenseAttachment.findFirst.mockResolvedValue({
+        id: 'exp-att-1', expenseId: 'expense-uuid-1', cloudinaryPublicId: 'claim-expenses/abc',
+      })
+      db.claimExpenseAttachment.delete.mockResolvedValue({})
+      deleteFromCloudinary.mockResolvedValue(undefined)
+
+      const res = await request(app)
+        .delete('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1/attachments/exp-att-1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(deleteFromCloudinary).toHaveBeenCalledWith('claim-expenses/abc')
+      expect(db.claimExpenseAttachment.delete).toHaveBeenCalledWith({ where: { id: 'exp-att-1' } })
+    })
+
+    it('returns 404 when the attachment does not belong to that expense', async () => {
+      db.claimExpense.findFirst.mockResolvedValue({ id: 'expense-uuid-1', claimId: 'claim-uuid-1' })
+      db.claimExpenseAttachment.findFirst.mockResolvedValue(null)
+
+      const res = await request(app)
+        .delete('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-1/attachments/exp-att-x')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(404)
+      expect(db.claimExpenseAttachment.delete).not.toHaveBeenCalled()
+    })
+
+    it('returns 404 when the expense does not belong to the claim', async () => {
+      db.claimExpense.findFirst.mockResolvedValue(null)
+
+      const res = await request(app)
+        .delete('/api/v1/claims/claim-uuid-1/expenses/expense-uuid-x/attachments/exp-att-1')
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(404)

@@ -29,6 +29,7 @@ const PATH_TO_MODULE: Array<{ prefix: string; modules: ModuleKey[]; landable?: b
   { prefix: '/insurance/documents', modules: ['documents'] },
   { prefix: '/insurance/financial-analysis', modules: ['financial_analysis'] },
   { prefix: '/insurance/economic-analysis', modules: ['economic_analysis'] },
+  { prefix: '/insurance/dashboard', modules: ['insurance_dashboard'] },
   { prefix: '/claims', modules: ['claims'] },
   // Crear/auditar es un permiso distinto de revisar/aprobar — ver el detalle
   // en cada componente (FireExtinguisherAuditsQueuePage/DetailPage), que

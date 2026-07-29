@@ -20,6 +20,7 @@ const FireExtBaseSchema = z.object({
   establishment: z.string().min(1, 'El establecimiento es requerido').max(100),
   brand: z.string().max(100).optional().nullable(),
   cylinderNumber: z.string().trim().min(1, 'El número de cilindro es requerido').max(100),
+  iramCertificateNumber: z.string().max(100).optional().nullable(),
   manufacturingYear: z.coerce
     .number()
     .int('El año de fabricación debe ser un número entero')

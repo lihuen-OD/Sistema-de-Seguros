@@ -20,6 +20,7 @@ import {
   ClipboardCheck,
   SlidersHorizontal,
   BarChart3,
+  Gauge,
   Bell,
   UserCog,
   KeyRound,
@@ -73,6 +74,7 @@ const navGroups: NavGroup[] = [
       { label: 'Siniestros', to: '/claims', icon: ShieldAlert },
       { label: 'Análisis Financiero', to: '/insurance/financial-analysis', icon: BarChart2 },
       { label: 'Análisis Económico', to: '/insurance/economic-analysis', icon: TrendingUp },
+      { label: 'Dashboard de Seguros', to: '/insurance/dashboard', icon: Gauge },
     ],
   },
   {

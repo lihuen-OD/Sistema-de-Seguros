@@ -11,6 +11,7 @@ import {
   BulkApproveFireExtinguisherAuditsSchema,
   ListFireExtinguisherAuditsQuerySchema,
   CoverageQuerySchema,
+  AuditDashboardQuerySchema,
 } from './fire-extinguisher-audits.schemas'
 import { fireExtinguisherAuditsController } from './fire-extinguisher-audits.controller'
 
@@ -27,10 +28,10 @@ fireExtinguisherAuditsRouter.get('/', requireModule(...AUDITS_SHARED_READ_MODULE
 // Antes de "/:id" — si no, Express interpreta "coverage"/"findings-report" como un :id.
 fireExtinguisherAuditsRouter.get('/coverage', requireModule(...AUDITS_SHARED_READ_MODULES), validateQuery(CoverageQuerySchema), fireExtinguisherAuditsController.coverage)
 fireExtinguisherAuditsRouter.get(
-  '/findings-report',
+  '/audit-dashboard',
   requireModule('fire_extinguisher_audits'),
-  validateQuery(CoverageQuerySchema),
-  fireExtinguisherAuditsController.findingsReport,
+  validateQuery(AuditDashboardQuerySchema),
+  fireExtinguisherAuditsController.auditDashboard,
 )
 
 fireExtinguisherAuditsRouter.post(

@@ -97,6 +97,7 @@ export default function ClaimNewPage() {
   // Identity
   const [assetId, setAssetId] = useState(preselectedAssetId)
   const [policyId, setPolicyId] = useState(preselectedPolicyId)
+  const [title, setTitle] = useState('')
   const [claimType, setClaimType] = useState('')
   const [status, setStatus] = useState('')
   const [occurrenceDate, setOccurrenceDate] = useState('')
@@ -204,6 +205,7 @@ export default function ClaimNewPage() {
       const claimNumber = `SIN-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 90000) + 10000)}`
       const created = await claimsApi.create({
         claimNumber,
+        title: title.trim() || undefined,
         claimType,
         occurrenceDate,
         reportDate,
@@ -412,6 +414,17 @@ export default function ClaimNewPage() {
 
           {/* Sección 3: Datos del hecho */}
           <SectionCard title="Datos del Hecho" subtitle="Fechas y descripción del siniestro">
+            <div className="mb-4">
+              <FormField label="Título" fullWidth>
+                <FormInput
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Ej: Choque camioneta Ruta 5"
+                />
+              </FormField>
+            </div>
+
             <FormSection title="">
               <FormField label="Fecha del hecho" required error={errors.occurrenceDate}>
                 <FormInput

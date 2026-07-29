@@ -137,6 +137,7 @@ export default function FireExtinguisherFichaPage() {
                 <FichaRow label="Capacidad" value={fe.capacity} />
                 <FichaRow label="Estado" value={FIRE_EXT_STATUS_LABELS[fe.status] ?? fe.status} />
                 <FichaRow label="Ubicación" value={LOCATION_TYPE_LABELS[fe.associatedLocationType] ?? fe.associatedLocationType} />
+                {fe.iramCertificateNumber && <FichaRow label="N° Certificado IRAM" value={fe.iramCertificateNumber} mono />}
               </div>
             </div>
 

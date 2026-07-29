@@ -15,9 +15,9 @@ import { LABEL_TO_CATEGORY } from '../../shared/constants/asset-categories'
 
 const EMISSION_DATE = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
-const VEHICLE_CATS = new Set(['vehiculo', 'camioneta', 'camion', 'moto', 'tractor', 'cosechadora', 'pulverizadora', 'implemento'])
+const VEHICLE_CATS = new Set(['vehiculo', 'camioneta', 'camion', 'moto', 'transporte_pasajeros', 'tractor', 'cosechadora', 'pulverizadora', 'implemento'])
 const LOCATION_CATS = new Set(['edificio', 'establecimiento'])
-const HAS_CHASSIS = new Set(['vehiculo', 'camioneta', 'camion', 'moto', 'tractor', 'cosechadora', 'pulverizadora'])
+const HAS_CHASSIS = new Set(['vehiculo', 'camioneta', 'camion', 'moto', 'transporte_pasajeros', 'tractor', 'cosechadora', 'pulverizadora'])
 
 export default function AssetFichaPage() {
   const { id } = useParams<{ id: string }>()

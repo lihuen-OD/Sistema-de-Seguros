@@ -1,5 +1,5 @@
 import {
-  Car, Truck, Settings2, Layers, Wrench,
+  Bus, Car, Truck, Settings2, Layers, Wrench,
   Building2, Landmark, Box, Cog, Network, Package, Bike,
 } from 'lucide-react'
 import type { ElementType } from 'react'
@@ -26,6 +26,7 @@ export const CATEGORY_GROUPS: CategoryGroup[] = [
       { key: 'camioneta', label: 'Camioneta', desc: 'Pick-up 4x4 o doble cabina',          icon: Truck, color: 'text-brand-600 bg-brand-50' },
       { key: 'camion',    label: 'Camión',    desc: 'Camión de carga o transporte pesado', icon: Truck, color: 'text-slate-600 bg-slate-100' },
       { key: 'moto',      label: 'Moto',      desc: 'Motocicleta o cuatriciclo',           icon: Bike,  color: 'text-brand-600 bg-brand-50' },
+      { key: 'transporte_pasajeros', label: 'Transporte de pasajeros', desc: 'Minibús, combi, colectivo u ómnibus', icon: Bus, color: 'text-brand-600 bg-brand-50' },
     ],
   },
   {
@@ -62,6 +63,7 @@ export const CATEGORY_GROUPS: CategoryGroup[] = [
 
 export const CATEGORY_LABEL: Record<AssetCategory, string> = {
   vehiculo: 'Vehículo', camioneta: 'Camioneta', camion: 'Camión', moto: 'Moto',
+  transporte_pasajeros: 'Transporte de pasajeros',
   tractor: 'Tractor', cosechadora: 'Cosechadora', pulverizadora: 'Pulverizadora', implemento: 'Implemento',
   edificio: 'Edificio', establecimiento: 'Establecimiento',
   equipo: 'Equipo', maquinaria: 'Maquinaria', infraestructura: 'Infraestructura',

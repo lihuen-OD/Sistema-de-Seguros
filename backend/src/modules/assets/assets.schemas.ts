@@ -56,6 +56,9 @@ export const ReplaceAllocationsSchema = z.object({
 
 export const AddValueHistorySchema = z.object({
   value: z.number().positive('El valor debe ser positivo'),
+  // Requerido (no default a 1) — el valor es siempre USD, así que sin un tipo
+  // de cambio real no se puede cerrar el equivalente en pesos.
+  exchangeRate: z.number().positive('El tipo de cambio debe ser positivo'),
   date: ISODate,
   type: z.enum(['real', 'nuevo']).default('real'),
   note: z.string().max(500).optional(),
