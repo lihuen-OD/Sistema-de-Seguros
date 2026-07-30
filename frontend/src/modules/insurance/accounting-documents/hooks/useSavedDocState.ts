@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-// Estado compartido de "guardado en curso" por los 6 formularios de
+// Estado compartido de "guardado en curso" por los 5 formularios de
 // documentos. En modo creación arranca vacío; en modo edición arranca ya
 // guardado con el id existente. A partir de ahí, crear y editar convergen en
 // el mismo flujo: mientras no haya savedDocId, "Guardar" crea; una vez que

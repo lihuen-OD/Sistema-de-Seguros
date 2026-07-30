@@ -23,7 +23,7 @@ import type {
 
 export interface DocumentForFinancial extends AccountingDocument {
   installments: Installment[]
-  allocations: Pick<DocumentPolicyAllocation, 'id' | 'accountingDocumentId' | 'policyId' | 'allocatedAmount' | 'allocationPercentage'>[]
+  allocations: Pick<DocumentPolicyAllocation, 'id' | 'accountingDocumentId' | 'policyAssetCoverageId' | 'policyId' | 'assetId' | 'allocatedAmount' | 'allocationPercentage'>[]
 }
 
 interface BackendDocument {
@@ -45,10 +45,27 @@ interface BackendDocument {
 interface BackendAllocation {
   id: string
   accountingDocumentId: string
+  policyAssetCoverageId: string
   policyId: string
+  assetId: string | null
   allocatedAmount: number
   allocationPercentage: number
   policy?: { id: string; policyNumber: string; insuredName: string }
+  asset?: { id: string; name: string; code: string | null; fixedAssetCode: string | null } | null
+}
+
+function mapAllocation(a: BackendAllocation): DocumentPolicyAllocation {
+  return {
+    id: a.id,
+    accountingDocumentId: a.accountingDocumentId,
+    policyAssetCoverageId: a.policyAssetCoverageId,
+    policyId: a.policyId,
+    assetId: a.assetId,
+    allocatedAmount: a.allocatedAmount,
+    allocationPercentage: a.allocationPercentage,
+    ...(a.policy && { policy: { id: a.policy.id, policyNumber: a.policy.policyNumber, insuranceCompany: a.policy.insuredName } }),
+    ...(a.asset !== undefined && { asset: a.asset }),
+  }
 }
 
 interface BackendInstallment {
@@ -109,7 +126,7 @@ function mapDocument(b: BackendDocument): AccountingDocument {
 }
 
 export interface AllocationInput {
-  policyId: string
+  policyAssetCoverageId: string
   allocatedAmount: number
   allocationPercentage: number
 }
@@ -187,7 +204,9 @@ export const documentsApi = {
       allocations: b.allocations.map((a) => ({
         id: a.id,
         accountingDocumentId: a.accountingDocumentId,
+        policyAssetCoverageId: a.policyAssetCoverageId,
         policyId: a.policyId,
+        assetId: a.assetId,
         allocatedAmount: a.allocatedAmount,
         allocationPercentage: a.allocationPercentage,
       })),
@@ -249,17 +268,17 @@ export const documentsApi = {
     return res.data.data
   },
 
-  async findAllocations(documentId: string): Promise<BackendAllocation[]> {
+  async findAllocations(documentId: string): Promise<DocumentPolicyAllocation[]> {
     const res = await apiClient.get<{ data: BackendAllocation[] }>(`/documents/${documentId}/allocations`)
-    return res.data.data
+    return res.data.data.map(mapAllocation)
   },
 
-  async findAllocationsBulk(documentIds: string[]): Promise<BackendAllocation[]> {
+  async findAllocationsBulk(documentIds: string[]): Promise<DocumentPolicyAllocation[]> {
     if (documentIds.length === 0) return []
     const res = await apiClient.get<{ data: BackendAllocation[] }>('/documents/bulk/allocations', {
       params: { ids: documentIds.join(',') },
     })
-    return res.data.data
+    return res.data.data.map(mapAllocation)
   },
 
   async replaceAllocations(documentId: string, allocations: AllocationInput[]): Promise<void> {

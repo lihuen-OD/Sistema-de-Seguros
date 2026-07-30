@@ -27,7 +27,7 @@ export const insuranceTypesService = {
         orderBy: { name: 'asc' },
         include: {
           coverages: { orderBy: { name: 'asc' } },
-          _count: { select: { policies: true } },
+          _count: { select: { policyAssetCoverages: true } },
         },
       }),
       prisma.insuranceType.count({ where }),
@@ -41,7 +41,7 @@ export const insuranceTypesService = {
       where: { id },
       include: {
         coverages: { orderBy: { name: 'asc' } },
-        _count: { select: { policies: true } },
+        _count: { select: { policyAssetCoverages: true } },
       },
     })
     if (!insuranceType) throw new AppError(404, 'Tipo de seguro no encontrado', 'NOT_FOUND')
@@ -88,8 +88,8 @@ export const insuranceTypesService = {
   async softDelete(id: string) {
     await insuranceTypesService.findById(id)
 
-    const linkedPolicies = await prisma.policy.count({
-      where: { insuranceTypeId: id, isActive: true },
+    const linkedPolicies = await prisma.policyAssetCoverage.count({
+      where: { insuranceTypeId: id, policy: { isActive: true } },
     })
     if (linkedPolicies > 0) {
       throw new AppError(

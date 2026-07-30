@@ -87,10 +87,19 @@ export function buildInsuranceDashboardScope(
     .filter((asset) => assetRatioById.has(asset.id))
     .map((asset) => scaleAssetValue(asset, assetRatioById.get(asset.id) ?? 0))
 
-  const scopedPolicies = policies.filter((policy) => {
-    if (policy.companyId) return selectedCompanyIds.has(policy.companyId)
-    return policy.assetIds.some((assetId) => assetRatioById.has(assetId))
-  })
+  // Una póliza puede tener varias líneas de cobertura: algunas "sin activo"
+  // (imputadas directamente a una empresa) y otras atadas a un activo (cuya
+  // empresa sale de las allocations de ESE activo). Entra en el alcance si
+  // CUALQUIERA de sus líneas cae dentro de las empresas seleccionadas —
+  // requiere que el caller haya pedido policyQueries.list con
+  // includeCoverages:true, si no `policy.coverages` viene vacío/undefined.
+  const scopedPolicies = policies.filter((policy) =>
+    (policy.coverages ?? []).some((coverage) =>
+      coverage.assetId
+        ? assetRatioById.has(coverage.assetId)
+        : coverage.companyId != null && selectedCompanyIds.has(coverage.companyId),
+    ),
+  )
   const scopedPolicyIds = new Set(scopedPolicies.map((policy) => policy.id))
   const policyById = new Map(policies.map((policy) => [policy.id, policy]))
 

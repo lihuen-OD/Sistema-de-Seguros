@@ -10,7 +10,6 @@ import {
   ADJUSTMENT_REASONS,
   ENDORSEMENT_TYPES,
   ECONOMIC_IMPACT_TYPES,
-  ENDORSEMENT_ALLOWED_LINKED_TYPES,
   getDocumentTypeDef,
   isValidAdjustmentReason,
   isValidEndorsementType,
@@ -46,22 +45,33 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
   NOT_APPLICABLE: 'No Aplica',
 }
 
-// Únicos 3 tipos que hoy afectan el "saldo" calculado de una factura vinculada
+// Tipos que hoy afectan el "saldo" calculado de una factura vinculada
 // (documents-balance.service.ts) — al aplicarlos, además, se reparte su monto
-// entre las cuotas no pagas de esa factura (ver apply()/cancel()).
-const INSTALLMENT_ADJUSTING_TYPES = ['CREDIT_NOTE', 'DEBIT_NOTE', 'ADJUSTMENT_ENTRY']
+// entre las cuotas no pagas de esa factura (ver apply()/cancel()). Ninguno de
+// estos tiene cuotas propias (ver hasInstallments en document-types.ts) —
+// solo la Factura las tiene.
+const INSTALLMENT_ADJUSTING_TYPES = ['CREDIT_NOTE', 'DEBIT_NOTE', 'ADJUSTMENT_ENTRY', 'ENDORSEMENT']
+
+// La asignación apunta a una línea de cobertura (policyAssetCoverageId), no
+// directo a la póliza — policyId/assetId de acá abajo son un espejo
+// denormalizado para no obligar a todos los consumidores (frontend incluido)
+// a resolver el join ellos mismos. Ver mapAllocation().
+const ALLOCATION_COVERAGE_SELECT = {
+  policyId: true,
+  assetId: true,
+  policy: { select: { id: true, policyNumber: true, insuredName: true } },
+  asset: { select: { id: true, name: true, code: true, fixedAssetCode: true } },
+}
 
 const DOCUMENT_LIST_INCLUDE = {
   _count: { select: { installments: true, allocations: true, attachments: true } },
-  allocations: { select: { policyId: true } },
+  allocations: { select: { policyAssetCoverage: { select: { policyId: true } } } },
 }
 
 const DOCUMENT_DETAIL_INCLUDE = {
   installments: { orderBy: { installmentNumber: 'asc' as const } },
   allocations: {
-    include: {
-      policy: { select: { id: true, policyNumber: true, insuredName: true } },
-    },
+    include: { policyAssetCoverage: { select: ALLOCATION_COVERAGE_SELECT } },
     orderBy: { allocationPercentage: 'desc' as const },
   },
   attachments: { orderBy: { uploadedAt: 'desc' as const } },
@@ -79,8 +89,9 @@ const DOCUMENT_FINANCIAL_INCLUDE = {
   },
   allocations: {
     select: {
-      id: true, accountingDocumentId: true, policyId: true,
+      id: true, accountingDocumentId: true, policyAssetCoverageId: true,
       allocatedAmount: true, allocationPercentage: true,
+      policyAssetCoverage: { select: { policyId: true, assetId: true } },
     },
   },
 }
@@ -101,6 +112,35 @@ function withTotalAmount<T extends { netAmount: number; vatAmount: number; other
   }
 }
 
+// Aplana policyAssetCoverage.{policyId,assetId,policy,asset} al nivel de la
+// asignación — así el frontend no tiene que resolver el join él mismo para
+// saber a qué póliza/activo corresponde cada fila. El constraint lista todos
+// los campos propios de la fila (no solo policyAssetCoverage) a propósito:
+// así ReturnType<typeof mapAllocation> (usado en mapDocumentDetail) refleja
+// la fila real completa, no solo lo mínimo que exige el constraint.
+function mapAllocation<T extends {
+  id: string
+  accountingDocumentId: string
+  policyAssetCoverageId: string
+  allocatedAmount: number
+  allocationPercentage: number
+  policyAssetCoverage: {
+    policyId: string
+    assetId: string | null
+    policy?: { id: string; policyNumber: string; insuredName: string }
+    asset?: { id: string; name: string; code: string | null; fixedAssetCode: string | null } | null
+  }
+}>(allocation: T) {
+  const { policyAssetCoverage, ...rest } = allocation
+  return {
+    ...rest,
+    policyId: policyAssetCoverage.policyId,
+    assetId: policyAssetCoverage.assetId,
+    ...(policyAssetCoverage.policy && { policy: policyAssetCoverage.policy }),
+    ...(policyAssetCoverage.asset !== undefined && { asset: policyAssetCoverage.asset }),
+  }
+}
+
 // Maps paymentDate → paidAt y normaliza fechas a YYYY-MM-DD
 function mapInstallment(inst: Record<string, unknown>) {
   const { paymentDate, dueDate, ...rest } = inst
@@ -108,6 +148,24 @@ function mapInstallment(inst: Record<string, unknown>) {
     ...rest,
     dueDate: toDateStr(dueDate as Date | string),
     paidAt: paymentDate ? toDateStr(paymentDate as Date | string) : null,
+  }
+}
+
+// Shape completo devuelto por find/create/update/apply/cancel (todos usan
+// DOCUMENT_DETAIL_INCLUDE) — total, cuotas e imputaciones ya mapeadas.
+function mapDocumentDetail<T extends {
+  netAmount: number; vatAmount: number; otherTaxesAmount: number
+  installments: Record<string, unknown>[]
+  allocations: Parameters<typeof mapAllocation>[0][]
+}>(doc: T): Omit<T, 'installments' | 'allocations'> & {
+  totalAmount: number
+  installments: ReturnType<typeof mapInstallment>[]
+  allocations: ReturnType<typeof mapAllocation>[]
+} {
+  return {
+    ...withTotalAmount(doc),
+    installments: doc.installments.map((i) => mapInstallment(i)),
+    allocations: doc.allocations.map((a) => mapAllocation(a)),
   }
 }
 
@@ -156,7 +214,14 @@ export const documentsService = {
       prisma.accountingDocument.count({ where }),
     ])
 
-    return buildPaginatedResponse(rawData.map(withTotalAmount), total, { page, limit })
+    return buildPaginatedResponse(
+      rawData.map((doc) => ({
+        ...withTotalAmount(doc),
+        allocations: doc.allocations.map((a) => ({ policyId: a.policyAssetCoverage.policyId })),
+      })),
+      total,
+      { page, limit },
+    )
   },
 
   async findAllForFinancial(params?: { from?: string; to?: string }) {
@@ -190,6 +255,15 @@ export const documentsService = {
     return docs.map((doc) => ({
       ...withTotalAmount(doc),
       installments: doc.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
+      allocations: doc.allocations.map((a) => ({
+        id: a.id,
+        accountingDocumentId: a.accountingDocumentId,
+        policyAssetCoverageId: a.policyAssetCoverageId,
+        policyId: a.policyAssetCoverage.policyId,
+        assetId: a.policyAssetCoverage.assetId,
+        allocatedAmount: a.allocatedAmount,
+        allocationPercentage: a.allocationPercentage,
+      })),
     }))
   },
 
@@ -200,25 +274,24 @@ export const documentsService = {
     })
     if (!doc) throw new AppError(404, 'Documento no encontrado', 'NOT_FOUND')
 
-    return {
-      ...withTotalAmount(doc),
-      installments: doc.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
-    }
+    return mapDocumentDetail(doc)
   },
 
   async create(data: CreateDocumentDTO, performedBy?: string) {
     const { installments, allocations, ...docData } = data
 
     if (allocations.length > 0) {
-      await this.validatePolicyRefs(allocations.map((a) => a.policyId))
+      await this.validateCoverageRefs(allocations.map((a) => a.policyAssetCoverageId))
     }
 
     const typeDef = getDocumentTypeDef(docData.documentType)
     if (!typeDef) throw new AppError(400, 'Tipo de documento inválido', 'BAD_REQUEST')
 
-    const inheritedPaymentMethod = await this.validateTypeConstraints(typeDef, docData)
+    const inherited = await this.validateTypeConstraints(typeDef, docData)
     const effectivePaymentMethod =
-      inheritedPaymentMethod ?? (docData.paymentMethod?.trim() || null)
+      inherited.paymentMethod ?? (docData.paymentMethod?.trim() || null)
+    const effectiveCurrency = (inherited.currency ?? docData.currency) as 'ARS' | 'USD'
+    const effectiveExchangeRate = inherited.exchangeRate ?? docData.exchangeRate
 
     // El duplicado real es la combinación tipo + compañía + número
     // (documentNumber es inmutable después del alta, así que este chequeo
@@ -252,8 +325,8 @@ export const documentsService = {
     // que suman por columna (Ars/Usd) en vez de reconvertir al mostrar.
     const { amountArs: totalAmountArs, amountUsd: totalAmountUsd } = computeDualAmounts(
       computeTotalAmount(docData),
-      docData.currency as 'ARS' | 'USD',
-      docData.exchangeRate,
+      effectiveCurrency,
+      effectiveExchangeRate,
     )
 
     let doc
@@ -262,6 +335,8 @@ export const documentsService = {
         const created = await tx.accountingDocument.create({
           data: {
             ...docData,
+            currency: effectiveCurrency,
+            exchangeRate: effectiveExchangeRate,
             paymentMethod: effectivePaymentMethod,
             documentStatus: 'ISSUED',
             relationType: typeDef.relationType ?? null,
@@ -283,7 +358,7 @@ export const documentsService = {
             ...(allocations.length > 0 && {
               allocations: {
                 create: allocations.map((alloc) => ({
-                  policyId: alloc.policyId,
+                  policyAssetCoverageId: alloc.policyAssetCoverageId,
                   allocatedAmount: alloc.allocatedAmount,
                   allocationPercentage: alloc.allocationPercentage,
                 })),
@@ -323,10 +398,7 @@ export const documentsService = {
       throw err
     }
 
-    return {
-      ...withTotalAmount(doc),
-      installments: doc.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
-    }
+    return mapDocumentDetail(doc)
   },
 
   async update(id: string, data: UpdateDocumentDTO, performedBy?: string) {
@@ -362,10 +434,10 @@ export const documentsService = {
     const effectiveVatAmount = docData.vatAmount !== undefined ? docData.vatAmount : existing.vatAmount
     const effectiveOtherTaxesAmount =
       docData.otherTaxesAmount !== undefined ? docData.otherTaxesAmount : existing.otherTaxesAmount
-    const effectiveCurrency = docData.currency ?? existing.currency
-    const effectiveExchangeRate = docData.exchangeRate ?? existing.exchangeRate
+    const requestedCurrency = docData.currency ?? existing.currency
+    const requestedExchangeRate = docData.exchangeRate ?? existing.exchangeRate
 
-    const inheritedPaymentMethod = await this.validateTypeConstraints(
+    const inherited = await this.validateTypeConstraints(
       typeDef,
       {
         linkedDocumentId: effectiveLinkedId,
@@ -377,14 +449,16 @@ export const documentsService = {
         netAmount: effectiveNetAmount,
         vatAmount: effectiveVatAmount,
         otherTaxesAmount: effectiveOtherTaxesAmount,
-        currency: effectiveCurrency,
+        currency: requestedCurrency,
       },
       id,
     )
-    const effectivePaymentMethod = inheritedPaymentMethod
+    const effectivePaymentMethod = inherited.paymentMethod
       ?? (docData.paymentMethod !== undefined
         ? docData.paymentMethod?.trim() || null
         : existing.paymentMethod)
+    const effectiveCurrency = (inherited.currency ?? requestedCurrency) as 'ARS' | 'USD'
+    const effectiveExchangeRate = inherited.exchangeRate ?? requestedExchangeRate
 
     // documentStatus nunca viene del cliente (ver documents.schemas.ts) — esto
     // solo revalida que el estado actual siga siendo válido para el tipo
@@ -399,7 +473,7 @@ export const documentsService = {
         vatAmount: effectiveVatAmount,
         otherTaxesAmount: effectiveOtherTaxesAmount,
       }),
-      effectiveCurrency as 'ARS' | 'USD',
+      effectiveCurrency,
       effectiveExchangeRate,
     )
 
@@ -408,6 +482,8 @@ export const documentsService = {
         where: { id },
         data: {
           ...docData,
+          currency: effectiveCurrency,
+          exchangeRate: effectiveExchangeRate,
           paymentMethod: effectivePaymentMethod,
           relationType: typeDef.relationType ?? null,
           ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
@@ -442,10 +518,7 @@ export const documentsService = {
       return doc
     })
 
-    return {
-      ...withTotalAmount(updated),
-      installments: updated.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
-    }
+    return mapDocumentDetail(updated)
   },
 
   async delete(id: string) {
@@ -527,25 +600,30 @@ export const documentsService = {
               throw new AppError(400, 'La Nota de Crédito supera el saldo disponible de la factura', 'BAD_REQUEST')
             }
 
-            // Genera asignaciones negativas proporcionales a la distribución
-            // de la factura vinculada, para que los reportes por póliza
-            // reflejen el neto. Si la factura no tiene asignaciones, se
-            // aplica igual sin crear ninguna (queda pendiente de
-            // distribución manual — limitación conocida de Fase 3).
-            const invoiceAllocations = await tx.documentPolicyAllocation.findMany({
-              where: { accountingDocumentId: doc.linkedDocumentId },
+            // Si el usuario ya distribuyó esta NC a mano (al crearla/editarla,
+            // igual que en Factura), se respeta tal cual — no se pisa. Solo
+            // si no tiene ninguna asignación propia todavía se genera
+            // automáticamente, proporcional a la distribución de la factura
+            // vinculada, para que los reportes por póliza reflejen el neto.
+            // Si la factura tampoco tiene asignaciones, se aplica igual sin
+            // crear ninguna (queda pendiente de distribución manual).
+            const ownAllocationsCount = await tx.documentPolicyAllocation.count({
+              where: { accountingDocumentId: id },
             })
-            const negativeAllocations = invoiceAllocations.map((a) => ({
-              policyId: a.policyId,
-              allocatedAmount: -(creditAmount * (a.allocationPercentage / 100)),
-              allocationPercentage: a.allocationPercentage,
-            }))
-
-            await tx.documentPolicyAllocation.deleteMany({ where: { accountingDocumentId: id } })
-            if (negativeAllocations.length > 0) {
-              await tx.documentPolicyAllocation.createMany({
-                data: negativeAllocations.map((a) => ({ ...a, accountingDocumentId: id })),
+            if (ownAllocationsCount === 0) {
+              const invoiceAllocations = await tx.documentPolicyAllocation.findMany({
+                where: { accountingDocumentId: doc.linkedDocumentId },
               })
+              const negativeAllocations = invoiceAllocations.map((a) => ({
+                policyAssetCoverageId: a.policyAssetCoverageId,
+                allocatedAmount: -(creditAmount * (a.allocationPercentage / 100)),
+                allocationPercentage: a.allocationPercentage,
+              }))
+              if (negativeAllocations.length > 0) {
+                await tx.documentPolicyAllocation.createMany({
+                  data: negativeAllocations.map((a) => ({ ...a, accountingDocumentId: id })),
+                })
+              }
             }
           }
 
@@ -592,10 +670,7 @@ export const documentsService = {
       throw err
     }
 
-    return {
-      ...withTotalAmount(updated),
-      installments: updated.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
-    }
+    return mapDocumentDetail(updated)
   },
 
   async cancel(id: string, performedBy?: string, reason?: string) {
@@ -634,10 +709,7 @@ export const documentsService = {
     // puede no alcanzar.
     }, { timeout: 20000 })
 
-    return {
-      ...withTotalAmount(updated),
-      installments: updated.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
-    }
+    return mapDocumentDetail(updated)
   },
 
   // ── Envío manual por email ────────────────────────────────────────────────────
@@ -646,64 +718,54 @@ export const documentsService = {
     const doc = await this.findById(id)
     const typeDef = getDocumentTypeDef(doc.documentType)
 
-    // Bien de uso + Centro de Costo de cada póliza asignada — se resuelven
+    // Bien de uso + Centro de Costo de cada activo asignado — se resuelven
     // acá (no vienen en DOCUMENT_DETAIL_INCLUDE) porque están asociados al
-    // Activo, no al documento. Se buscan en batch, no por póliza.
-    const policyIds = doc.allocations.map((a) => a.policyId)
-    const policies = policyIds.length > 0
-      ? await prisma.policy.findMany({ where: { id: { in: policyIds } }, select: { id: true, assetIds: true } })
-      : []
-    const assetIdsByPolicy = new Map(policies.map((p) => [p.id, p.assetIds]))
-
-    const allAssetIds = [...new Set(policies.flatMap((p) => p.assetIds))]
-    const assetsSummary = await assetsService.resolveAssetsSummary(allAssetIds)
+    // Activo, no al documento. El peso de cada fila es el real de su línea
+    // de cobertura (allocatedAmount/allocationPercentage) — cada asignación
+    // ya sabe a qué activo (o a ninguno, líneas "sin activo") corresponde,
+    // no hace falta repartir en partes iguales.
+    const assetIds = [...new Set(doc.allocations.map((a) => a.assetId).filter((assetId): assetId is string => !!assetId))]
+    const assetsSummary = await assetsService.resolveAssetsSummary(assetIds)
     const assetsById = new Map(assetsSummary.map((a) => [a.id, a]))
 
-    // Reparto plano por Bien de Uso y por Centro de Costo sobre el total del
-    // documento — sin agrupar por póliza (no interesa para este mail). Si una
-    // póliza cubre varios activos, su monto se reparte en partes iguales
-    // entre ellos (no hay un peso individual por activo en el modelo hoy).
     const assetBreakdown = new Map<string, { code: string | null; name: string; amount: number; percentage: number }>()
     const costCenterBreakdown = new Map<string, { code: string | null; name: string | null; amount: number; percentage: number }>()
 
     for (const alloc of doc.allocations) {
-      const policyAssets = (assetIdsByPolicy.get(alloc.policyId) ?? [])
-        .map((assetId) => assetsById.get(assetId))
-        .filter((asset): asset is NonNullable<typeof asset> => Boolean(asset))
-      if (policyAssets.length === 0) continue
+      const asset = alloc.assetId ? assetsById.get(alloc.assetId) : undefined
 
-      const perAssetAmount = alloc.allocatedAmount / policyAssets.length
-      const perAssetPercentage = alloc.allocationPercentage / policyAssets.length
+      const assetKey = asset ? asset.id : 'sin-activo'
+      const existingAsset = assetBreakdown.get(assetKey)
+      if (existingAsset) {
+        existingAsset.amount += alloc.allocatedAmount
+        existingAsset.percentage += alloc.allocationPercentage
+      } else {
+        assetBreakdown.set(assetKey, {
+          // Nombre del bien de uso del catálogo si está vinculado; si no,
+          // se cae al nombre del activo para no dejar la fila vacía.
+          code: asset?.fixedAssetCode ?? null,
+          name: asset ? (asset.fixedAssetName ?? asset.name) : 'Sin activo asociado',
+          amount: alloc.allocatedAmount,
+          percentage: alloc.allocationPercentage,
+        })
+      }
 
-      for (const asset of policyAssets) {
-        const existingAsset = assetBreakdown.get(asset.id)
-        if (existingAsset) {
-          existingAsset.amount += perAssetAmount
-          existingAsset.percentage += perAssetPercentage
-        } else {
-          assetBreakdown.set(asset.id, {
-            // Nombre del bien de uso del catálogo si está vinculado; si no,
-            // se cae al nombre del activo para no dejar la fila vacía.
-            code: asset.fixedAssetCode,
-            name: asset.fixedAssetName ?? asset.name,
-            amount: perAssetAmount,
-            percentage: perAssetPercentage,
-          })
-        }
+      // Sin activo no hay centro de costo del activo para repartir — esa
+      // línea solo entra en el desglose por bien de uso, no en el de CC.
+      if (!asset) continue
 
-        const ccKey = asset.costCenterCode ?? asset.costCenterName ?? `sin-cc-${asset.id}`
-        const existingCC = costCenterBreakdown.get(ccKey)
-        if (existingCC) {
-          existingCC.amount += perAssetAmount
-          existingCC.percentage += perAssetPercentage
-        } else {
-          costCenterBreakdown.set(ccKey, {
-            code: asset.costCenterCode,
-            name: asset.costCenterName,
-            amount: perAssetAmount,
-            percentage: perAssetPercentage,
-          })
-        }
+      const ccKey = asset.costCenterCode ?? asset.costCenterName ?? `sin-cc-${asset.id}`
+      const existingCC = costCenterBreakdown.get(ccKey)
+      if (existingCC) {
+        existingCC.amount += alloc.allocatedAmount
+        existingCC.percentage += alloc.allocationPercentage
+      } else {
+        costCenterBreakdown.set(ccKey, {
+          code: asset.costCenterCode,
+          name: asset.costCenterName,
+          amount: alloc.allocatedAmount,
+          percentage: alloc.allocationPercentage,
+        })
       }
     }
 
@@ -879,30 +941,28 @@ export const documentsService = {
 
   async findAllocations(documentId: string) {
     await this.assertDocumentExists(documentId)
-    return prisma.documentPolicyAllocation.findMany({
+    const allocations = await prisma.documentPolicyAllocation.findMany({
       where: { accountingDocumentId: documentId },
-      include: {
-        policy: { select: { id: true, policyNumber: true, insuredName: true } },
-      },
+      include: { policyAssetCoverage: { select: ALLOCATION_COVERAGE_SELECT } },
       orderBy: { allocationPercentage: 'desc' },
     })
+    return allocations.map((a) => mapAllocation(a))
   },
 
   async findAllocationsBulk(documentIds: string[]) {
-    return prisma.documentPolicyAllocation.findMany({
+    const allocations = await prisma.documentPolicyAllocation.findMany({
       where: { accountingDocumentId: { in: documentIds } },
-      include: {
-        policy: { select: { id: true, policyNumber: true, insuredName: true } },
-      },
+      include: { policyAssetCoverage: { select: ALLOCATION_COVERAGE_SELECT } },
       orderBy: { allocationPercentage: 'desc' },
     })
+    return allocations.map((a) => mapAllocation(a))
   },
 
   async replaceAllocations(documentId: string, data: ReplaceAllocationsDTO) {
     await this.assertDocumentExists(documentId)
 
     if (data.allocations.length > 0) {
-      await this.validatePolicyRefs(data.allocations.map((a) => a.policyId))
+      await this.validateCoverageRefs(data.allocations.map((a) => a.policyAssetCoverageId))
     }
 
     await prisma.$transaction([
@@ -912,7 +972,7 @@ export const documentsService = {
             prisma.documentPolicyAllocation.createMany({
               data: data.allocations.map((a) => ({
                 accountingDocumentId: documentId,
-                policyId: a.policyId,
+                policyAssetCoverageId: a.policyAssetCoverageId,
                 allocatedAmount: a.allocatedAmount,
                 allocationPercentage: a.allocationPercentage,
               })),
@@ -921,13 +981,12 @@ export const documentsService = {
         : []),
     ])
 
-    return prisma.documentPolicyAllocation.findMany({
+    const allocations = await prisma.documentPolicyAllocation.findMany({
       where: { accountingDocumentId: documentId },
-      include: {
-        policy: { select: { id: true, policyNumber: true, insuredName: true } },
-      },
+      include: { policyAssetCoverage: { select: ALLOCATION_COVERAGE_SELECT } },
       orderBy: { allocationPercentage: 'desc' },
     })
+    return allocations.map((a) => mapAllocation(a))
   },
 
   // ── Attachments ───────────────────────────────────────────────────────────────
@@ -1087,6 +1146,7 @@ export const documentsService = {
       vatAmount: number
       otherTaxesAmount: number
       adjustmentSign: string | null
+      economicImpactType: string | null
       linkedDocumentId: string | null
     },
     sourceDocumentId: string,
@@ -1108,6 +1168,7 @@ export const documentsService = {
     const signedAmount =
       doc.documentType === 'CREDIT_NOTE' ? -Math.abs(rawTotal) :
       doc.documentType === 'DEBIT_NOTE' ? Math.abs(rawTotal) :
+      doc.documentType === 'ENDORSEMENT' ? Math.abs(rawTotal) * (doc.economicImpactType === 'DECREASES_COST' ? -1 : 1) :
       Math.abs(rawTotal) * (doc.adjustmentSign === 'NEGATIVE' ? -1 : 1)
 
     const share = +(signedAmount / eligible.length).toFixed(2)
@@ -1199,8 +1260,10 @@ export const documentsService = {
       currency?: string
     },
     selfId?: string,
-  ): Promise<string | undefined> {
+  ): Promise<{ paymentMethod?: string; currency?: string; exchangeRate?: number }> {
     let inheritedPaymentMethod: string | undefined
+    let inheritedCurrency: string | undefined
+    let inheritedExchangeRate: number | undefined
 
     if (typeDef.requiresLinkedDocument && !input.linkedDocumentId) {
       throw new AppError(
@@ -1218,30 +1281,50 @@ export const documentsService = {
       if (linked.documentStatus === 'CANCELLED') {
         throw new AppError(400, 'El documento vinculado está anulado', 'BAD_REQUEST')
       }
-      // La moneda de un NC/ND/Refacturación/Ajuste siempre tiene que coincidir
-      // con la del documento que ajusta — de lo contrario el saldo y los
-      // totales combinados no tienen sentido (se estaría restando un monto en
-      // una moneda de un total en otra). El frontend ya lo bloquea, pero el
-      // backend es quien lo tiene que garantizar.
-      if (input.currency && input.currency !== linked.currency) {
-        throw new AppError(
-          400,
-          'La moneda debe coincidir con la del documento vinculado',
-          'BAD_REQUEST',
-        )
+      if (typeDef.hasOwnAmounts) {
+        // La moneda de un NC/ND/Refacturación/Ajuste siempre tiene que coincidir
+        // con la del documento que ajusta — de lo contrario el saldo y los
+        // totales combinados no tienen sentido (se estaría restando un monto en
+        // una moneda de un total en otra). El frontend ya lo bloquea, pero el
+        // backend es quien lo tiene que garantizar.
+        if (input.currency && input.currency !== linked.currency) {
+          throw new AppError(
+            400,
+            'La moneda debe coincidir con la del documento vinculado',
+            'BAD_REQUEST',
+          )
+        }
+      } else {
+        // Un Endoso no tiene importe propio, así que no hay nada que pueda
+        // "no coincidir" — en vez de exigirle al frontend elegir una moneda
+        // que nunca usa para calcular nada, se hereda directo la del
+        // documento vinculado (o queda en el default de moneda si no hay
+        // ninguno vinculado), para que la ficha del documento la muestre de
+        // forma consistente.
+        inheritedCurrency = linked.currency
+        inheritedExchangeRate = linked.exchangeRate
       }
       if (typeDef.linkedDocumentType && linked.documentType !== typeDef.linkedDocumentType) {
         const expectedLabel = DOCUMENT_TYPES[typeDef.linkedDocumentType]?.label ?? typeDef.linkedDocumentType
         throw new AppError(400, `El documento vinculado debe ser de tipo ${expectedLabel}`, 'BAD_REQUEST')
       }
-      // Excepción deliberada para Endoso: el tipo admitido del documento
-      // asociado depende del impacto económico elegido (aumenta → Factura/ND,
-      // reduce → NC), no de un linkedDocumentType fijo como el resto de tipos.
-      if (typeDef.key === 'ENDORSEMENT' && input.economicImpactType) {
-        const allowed = ENDORSEMENT_ALLOWED_LINKED_TYPES[input.economicImpactType]
-        if (allowed && !allowed.includes(linked.documentType)) {
-          const labels = allowed.map((t) => DOCUMENT_TYPES[t]?.label ?? t).join(' o ')
-          throw new AppError(400, `El documento asociado debe ser ${labels}`, 'BAD_REQUEST')
+      // El Endoso modifica una póliza propia (input.policyId) — la factura
+      // que respalda económicamente ese cambio tiene que ser una factura DE
+      // ESA póliza, no de otra cualquiera. Sin este chequeo se podría crear
+      // un Endoso que modifica la póliza A pero factura el aumento contra
+      // una póliza B sin relación.
+      if (typeDef.key === 'ENDORSEMENT' && input.policyId) {
+        const linkedAllocations = await prisma.documentPolicyAllocation.findMany({
+          where: { accountingDocumentId: linked.id },
+          select: { policyAssetCoverage: { select: { policyId: true } } },
+        })
+        const linkedPolicyIds = new Set(linkedAllocations.map((a) => a.policyAssetCoverage.policyId))
+        if (linkedPolicyIds.size > 0 && !linkedPolicyIds.has(input.policyId)) {
+          throw new AppError(
+            400,
+            'La factura vinculada debe pertenecer a la póliza que este Endoso modifica',
+            'BAD_REQUEST',
+          )
         }
       }
       inheritedPaymentMethod = linked.paymentMethod?.trim()
@@ -1277,6 +1360,34 @@ export const documentsService = {
       throw new AppError(400, 'El impacto económico es requerido y debe ser válido', 'BAD_REQUEST')
     }
 
+    // Solo cuando el impacto es real (aumenta/reduce costo) el Endoso
+    // necesita la factura que lo respalda y un importe propio — para
+    // NO_IMPACT/PENDING_DEFINITION sigue siendo un registro administrativo,
+    // sin vínculo ni importe. No se puede expresar con requiresLinkedDocument
+    // (fijo por tipo) porque depende del VALOR de economicImpactType.
+    if (
+      typeDef.key === 'ENDORSEMENT' &&
+      (input.economicImpactType === 'INCREASES_COST' || input.economicImpactType === 'DECREASES_COST')
+    ) {
+      if (!input.linkedDocumentId) {
+        throw new AppError(400, 'La factura asociada es requerida cuando el Endoso tiene impacto económico', 'BAD_REQUEST')
+      }
+      if (!input.netAmount || input.netAmount <= 0) {
+        throw new AppError(400, 'El importe es requerido cuando el Endoso tiene impacto económico', 'BAD_REQUEST')
+      }
+    }
+
+    // Simétrico al chequeo anterior: sin impacto económico real, tampoco
+    // tiene sentido cargarle un importe — evita un Endoso "NO_IMPACT" que en
+    // realidad sí mueve plata sin que nada lo refleje en el saldo de nadie.
+    if (
+      typeDef.key === 'ENDORSEMENT' &&
+      (input.economicImpactType === 'NO_IMPACT' || input.economicImpactType === 'PENDING_DEFINITION') &&
+      ((input.netAmount ?? 0) !== 0 || (input.vatAmount ?? 0) !== 0 || (input.otherTaxesAmount ?? 0) !== 0)
+    ) {
+      throw new AppError(400, 'Un Endoso sin impacto económico no puede tener importe propio', 'BAD_REQUEST')
+    }
+
     if (input.endorsementType && !isValidEndorsementType(input.endorsementType)) {
       throw new AppError(400, 'Tipo de endoso inválido', 'BAD_REQUEST')
     }
@@ -1300,7 +1411,7 @@ export const documentsService = {
       throw new AppError(400, 'Los importes no pueden ser negativos', 'BAD_REQUEST')
     }
 
-    return inheritedPaymentMethod
+    return { paymentMethod: inheritedPaymentMethod, currency: inheritedCurrency, exchangeRate: inheritedExchangeRate }
   },
 
   async checkDocumentNumber(documentNumber: string, documentType?: string, insuranceCompany?: string | null) {
@@ -1326,6 +1437,23 @@ export const documentsService = {
       throw new AppError(
         400,
         'Una o más pólizas referenciadas no existen o están inactivas',
+        'INVALID_REFERENCE',
+      )
+    }
+  },
+
+  // Para las asignaciones de un documento (ahora apuntan a una línea de
+  // cobertura, no directo a la póliza) — la línea tiene que existir y su
+  // póliza estar activa.
+  async validateCoverageRefs(coverageIds: string[]) {
+    const found = await prisma.policyAssetCoverage.findMany({
+      where: { id: { in: coverageIds }, policy: { isActive: true } },
+      select: { id: true },
+    })
+    if (found.length !== coverageIds.length) {
+      throw new AppError(
+        400,
+        'Una o más líneas de cobertura referenciadas no existen o no pertenecen a una póliza activa',
         'INVALID_REFERENCE',
       )
     }

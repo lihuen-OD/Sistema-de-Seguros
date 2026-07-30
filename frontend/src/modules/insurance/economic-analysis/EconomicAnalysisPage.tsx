@@ -77,36 +77,56 @@ function allocationInCurrency(doc: AccountingDocument, allocatedAmount: number, 
 
 // ─── Policy context builder ───────────────────────────────────────────────────
 
-function buildPolicyContext(policies: Policy[], assets: Asset[]) {
-  const map = new Map<string, {
-    companyId: string; costCenterId: string; primaryAssetId: string | null; insuranceCompany: string
-  }>()
-  policies.forEach((pol) => {
-    let companyId = pol.companyId ?? ''
-    let costCenterId = pol.costCenterId ?? ''
-    const primaryAssetId = pol.assetIds?.[0] ?? null
-    if (primaryAssetId) {
-      const asset = assets.find((a) => a.id === primaryAssetId)
-      if (asset) {
-        companyId = companyId || asset.companyId
-        costCenterId = costCenterId || asset.costCenterId
-      }
-    }
-    map.set(pol.id, { companyId, costCenterId, primaryAssetId, insuranceCompany: pol.insuranceCompany })
-  })
-  return map
-}
-
-// Mapea documento → póliza → allocatedAmount (en la moneda propia del
-// documento, con signo). Usar el monto asignado directamente en vez de
+// Cada allocation ya apunta a una línea de cobertura puntual (assetId directo
+// si tiene activo; empresa/centro de costo propios de la línea si es "sin
+// activo") — se resuelve por allocation, no por póliza, porque una póliza de
+// flota puede tener varias allocations del mismo documento repartidas entre
+// distintos activos (ver seed.ts: factura de flota 60/40 entre 2 camiones).
+// Usar el monto asignado (allocatedAmount) directamente en vez de
 // recalcularlo desde el porcentaje es lo que hace que las asignaciones
 // negativas de una Nota de Crédito aplicada compensen correctamente a las de
 // la factura vinculada.
-function buildDocumentAllocMap(allocations: DocumentPolicyAllocation[]): Map<string, Map<string, number>> {
-  const map = new Map<string, Map<string, number>>()
+interface AllocationContext {
+  policyId: string
+  companyId: string
+  costCenterId: string
+  assetId: string | null
+  insuranceCompany: string
+  allocatedAmount: number
+}
+
+function buildDocumentAllocationContexts(
+  allocations: DocumentPolicyAllocation[],
+  policies: Policy[],
+  assets: Asset[],
+): Map<string, AllocationContext[]> {
+  const policyById = new Map(policies.map((p) => [p.id, p]))
+  const assetById = new Map(assets.map((a) => [a.id, a]))
+  const map = new Map<string, AllocationContext[]>()
+
   allocations.forEach((alloc) => {
-    if (!map.has(alloc.accountingDocumentId)) map.set(alloc.accountingDocumentId, new Map())
-    map.get(alloc.accountingDocumentId)!.set(alloc.policyId, alloc.allocatedAmount)
+    const policy = policyById.get(alloc.policyId)
+    let companyId: string
+    let costCenterId: string
+    if (alloc.assetId) {
+      const asset = assetById.get(alloc.assetId)
+      companyId = asset?.companyId ?? ''
+      costCenterId = asset?.costCenterId ?? ''
+    } else {
+      const coverage = policy?.coverages?.find((c) => c.id === alloc.policyAssetCoverageId)
+      companyId = coverage?.companyId ?? ''
+      costCenterId = coverage?.costCenterId ?? ''
+    }
+    const existing = map.get(alloc.accountingDocumentId) ?? []
+    existing.push({
+      policyId: alloc.policyId,
+      companyId,
+      costCenterId,
+      assetId: alloc.assetId,
+      insuranceCompany: policy?.insuranceCompany ?? '',
+      allocatedAmount: alloc.allocatedAmount,
+    })
+    map.set(alloc.accountingDocumentId, existing)
   })
   return map
 }
@@ -135,7 +155,7 @@ function getRows(
     }
     case 'poliza':
       return policies.filter((p) => p.status !== 'vencida').map((p) => ({
-        id: p.id, label: p.policyNumber, sublabel: `${p.insuranceType} · ${p.insuranceCompany}`,
+        id: p.id, label: p.policyNumber, sublabel: `${(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'} · ${p.insuranceCompany}`,
       }))
     case 'activo':
       return assets.map((a) => ({
@@ -163,8 +183,7 @@ function buildEconomicMatrix(
   documents: AccountingDocument[],
   allocations: DocumentPolicyAllocation[],
 ): EconomicMatrixResult {
-  const policyCtx = buildPolicyContext(policies, assets)
-  const allocMap = buildDocumentAllocMap(allocations)
+  const allocationContexts = buildDocumentAllocationContexts(allocations, policies, assets)
   const documentsById = new Map(documents.map((doc) => [doc.id, doc]))
   const matrix: EconomicMatrixData = new Map()
   const paymentMethods: EconomicPaymentMethodMatrix = new Map()
@@ -173,22 +192,20 @@ function buildEconomicMatrix(
     const key = granularity === 'week'
       ? getISOWeekKey(doc.issueDate)
       : doc.issueDate.substring(0, 7)
-    const docAllocs = allocMap.get(doc.id)
-    if (!docAllocs || docAllocs.size === 0) return
+    const docContexts = allocationContexts.get(doc.id)
+    if (!docContexts || docContexts.length === 0) return
     const paymentMethod = resolveDocumentPaymentMethod(doc.id, documentsById)
 
-    docAllocs.forEach((allocatedAmount, policyId) => {
-      const policyAmount = allocationInCurrency(doc, allocatedAmount, displayCurrency)
-      const ctx = policyCtx.get(policyId)
-      if (!ctx) return
+    docContexts.forEach((ctx) => {
+      const policyAmount = allocationInCurrency(doc, ctx.allocatedAmount, displayCurrency)
 
       const rowIds: string[] = []
       switch (grouping) {
         case 'empresa':      if (ctx.companyId)    rowIds.push(ctx.companyId);    break
         case 'centro_costo': if (ctx.costCenterId) rowIds.push(ctx.costCenterId); break
-        case 'aseguradora':  rowIds.push(ctx.insuranceCompany); break
-        case 'poliza':       rowIds.push(policyId); break
-        case 'activo':       if (ctx.primaryAssetId) rowIds.push(ctx.primaryAssetId); break
+        case 'aseguradora':  if (ctx.insuranceCompany) rowIds.push(ctx.insuranceCompany); break
+        case 'poliza':       rowIds.push(ctx.policyId); break
+        case 'activo':       if (ctx.assetId) rowIds.push(ctx.assetId); break
       }
 
       rowIds.forEach((rowId) => {
@@ -269,7 +286,9 @@ export default function EconomicAnalysisPage() {
 
   // Una sola request que devuelve documentos + installments + allocations embebidos
   const { data: financialDocs = [], isError: isErrorDocs } = useQuery(documentQueries.financial())
-  const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list())
+  // includeCoverages:true — buildDocumentAllocationContexts necesita, para las
+  // asignaciones "sin activo", la empresa/centro de costo propios de esa línea.
+  const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list({ includeCoverages: true }))
   const { data: allAssets = [], isError: isErrorAssets } = useQuery(assetQueries.list())
   const { data: allCompanies = [], isError: isErrorCompanies } = useQuery(companyQueries.list())
   const { data: allCostCenters = [], isError: isErrorCostCenters } = useQuery(costCenterQueries.list())
@@ -403,20 +422,18 @@ export default function EconomicAnalysisPage() {
     let totalCost = 0
     const byInsurer = new Map<string, number>()
     const allocedPolicies = new Set<string>()
-    const policyCtx = buildPolicyContext(allPolicies, allAssets)
-    const allocMap = buildDocumentAllocMap(allAllocations)
+    const allocationContexts = buildDocumentAllocationContexts(allAllocations, allPolicies, allAssets)
 
     allDocuments.forEach((doc) => {
       const monthKey = doc.issueDate.substring(0, 7)
       if (monthKey < dateFrom || monthKey > dateTo) return
       totalCost += getDocumentEconomicEffect({ ...doc, totalAmount: pickDocTotal(doc, currency) })
-      const docAllocs = allocMap.get(doc.id)
-      if (!docAllocs) return
-      docAllocs.forEach((allocatedAmount, policyId) => {
-        allocedPolicies.add(policyId)
-        const ctx = policyCtx.get(policyId)
-        if (!ctx) return
-        const policyAmount = allocationInCurrency(doc, allocatedAmount, currency)
+      const docContexts = allocationContexts.get(doc.id)
+      if (!docContexts) return
+      docContexts.forEach((ctx) => {
+        allocedPolicies.add(ctx.policyId)
+        if (!ctx.insuranceCompany) return
+        const policyAmount = allocationInCurrency(doc, ctx.allocatedAmount, currency)
         byInsurer.set(ctx.insuranceCompany, (byInsurer.get(ctx.insuranceCompany) ?? 0) + policyAmount)
       })
     })

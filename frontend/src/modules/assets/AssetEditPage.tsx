@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save, X, MapPin, Hash, Info, Tag } from 'lucide-react'
+import { Save, X, MapPin, Hash, Tag } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -309,7 +309,9 @@ export default function AssetEditPage() {
   const isEdificio = assetCategory === 'edificio'
   const isEstablecimiento = assetCategory === 'establecimiento'
   const isInfraestructura = assetCategory === 'infraestructura'
-  const isCarga = assetCategory === 'carga'
+  // Solo la carga animal tiene especie/raza — la carga común no. Ambas sí
+  // admiten Bien de Uso asociado.
+  const isLivestock = assetCategory === 'carga_animal'
   const isEquipoMaq = ['equipo', 'maquinaria'].includes(assetCategory ?? '')
   const isSiloInfra = isInfraestructura && form.infraType === 'Silo'
 
@@ -567,23 +569,12 @@ export default function AssetEditPage() {
               <FormField label="Código de activo (sistema)">
                 <AutoCodeDisplay code={asset.internalCode} />
               </FormField>
-              {isCarga ? (
-                <FormField label="Bien de Uso" fullWidth>
-                  <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-lg border border-amber-200 bg-amber-50">
-                    <Info size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-amber-800">
-                      Este tipo de activo <strong>no requiere Bien de Uso asignado</strong>.
-                    </p>
-                  </div>
-                </FormField>
-              ) : (
-                <FormField label="Bien de Uso" fullWidth>
-                  <BienDeUsoField
-                    value={form.fixedAssetId}
-                    onChange={(id) => setForm((p) => ({ ...p, fixedAssetId: id }))}
-                  />
-                </FormField>
-              )}
+              <FormField label="Bien de Uso" fullWidth>
+                <BienDeUsoField
+                  value={form.fixedAssetId}
+                  onChange={(id) => setForm((p) => ({ ...p, fixedAssetId: id }))}
+                />
+              </FormField>
               <FormField label="Tipo de activo">
                 <AssetTypeBadge label={form.assetType} />
               </FormField>
@@ -836,7 +827,7 @@ export default function AssetEditPage() {
           )}
 
           {/* Carga animal */}
-          {isCarga && (
+          {isLivestock && (
             <SectionCard title="Datos de la Carga" subtitle="Especie, categoría y características de la hacienda o carga animal.">
               <FormSection title="">
                 <FormField label="Especie">

@@ -40,9 +40,8 @@ export interface DocumentBalance {
 }
 
 // Fase 2 — cálculo de saldo neto de un documento considerando las Notas de
-// Crédito/Débito y Asientos de Ajuste vinculados a él. Refacturación queda
-// excluida del cálculo numérico por ahora (ver plan de refactor), solo
-// aparece listada en relatedDocs.
+// Crédito/Débito, Asientos de Ajuste y Endosos (con impacto económico real)
+// vinculados a él.
 export const documentsBalanceService = {
   async getBalance(id: string, client: BalanceClient = prisma): Promise<DocumentBalance> {
     const base = await client.accountingDocument.findUnique({
@@ -91,6 +90,7 @@ export const documentsBalanceService = {
         otherTaxesAmount: true,
         currency: true,
         adjustmentSign: true,
+        economicImpactType: true,
       },
     })
 
@@ -101,9 +101,9 @@ export const documentsBalanceService = {
     // Dirigido por typeDef.affectsLinkedDirection en vez de comparar
     // documentType literal por literal — Nota de Débito ahora requiere
     // APPLIED igual que Nota de Crédito y Ajuste (antes contaba con solo
-    // no estar CANCELLED); Endoso queda afuera automáticamente porque
-    // affectsLinkedBalance es false; Refacturación ('replaces') todavía no
-    // tiene efecto numérico (Fase 2), solo aparece listada en relatedDocs.
+    // no estar CANCELLED); Endoso, cuando tiene impacto económico real, suma
+    // o resta según economicImpactType (mismo criterio que 'adjusts' con
+    // adjustmentSign).
     for (const doc of related) {
       const relatedTypeDef = getDocumentTypeDef(doc.documentType)
       if (!relatedTypeDef?.affectsLinkedBalance) continue
@@ -121,7 +121,8 @@ export const documentsBalanceService = {
         case 'adjusts':
           if (isApplied) appliedAdjustments += amount * (doc.adjustmentSign === 'NEGATIVE' ? -1 : 1)
           break
-        case 'replaces':
+        case 'economicImpact':
+          if (isApplied) appliedAdjustments += amount * (doc.economicImpactType === 'DECREASES_COST' ? -1 : 1)
           break
       }
     }

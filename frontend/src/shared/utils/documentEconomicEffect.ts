@@ -1,16 +1,17 @@
-import type { DocumentType, DocumentStatus, AdjustmentSign } from '../types'
+import type { DocumentType, DocumentStatus, AdjustmentSign, EconomicImpactType } from '../types'
 
 // Efecto económico neto de un documento contable, con signo, para reportes
 // que suman montos totales SIN pasar por DocumentPolicyAllocation (ej. KPI de
 // costo total, gráfico mensual). Factura y Nota de Débito suman; Nota de
 // Crédito resta solo si está aplicada; Asiento de Ajuste suma o resta según su
-// signo solo si está aplicado; Endoso y Refacturación no aportan; cualquier
-// documento anulado no aporta.
+// signo solo si está aplicado; Endoso suma o resta según su impacto económico
+// solo si está aplicado; cualquier documento anulado no aporta.
 export function getDocumentEconomicEffect(doc: {
   documentType: DocumentType
   documentStatus: DocumentStatus
   totalAmount: number
   adjustmentSign?: AdjustmentSign
+  economicImpactType?: EconomicImpactType | null
 }): number {
   if (doc.documentStatus === 'CANCELLED') return 0
 
@@ -25,7 +26,9 @@ export function getDocumentEconomicEffect(doc: {
         ? doc.totalAmount * (doc.adjustmentSign === 'NEGATIVE' ? -1 : 1)
         : 0
     case 'ENDORSEMENT':
-    case 'REBILLING':
+      return doc.documentStatus === 'APPLIED'
+        ? doc.totalAmount * (doc.economicImpactType === 'DECREASES_COST' ? -1 : 1)
+        : 0
     default:
       return 0
   }

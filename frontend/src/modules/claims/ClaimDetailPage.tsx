@@ -572,7 +572,10 @@ export default function ClaimDetailPage() {
                   <div>
                     <p className="text-sm font-mono font-semibold text-slate-800 mb-0.5">{policy.policyNumber}</p>
                     <p className="text-xs text-slate-500 mb-1">
-                      {policy.insuranceType} · {policy.coverageType}
+                      {(() => {
+                        const coverage = policy.coverages?.find((c) => (claim?.assetId ? c.assetId === claim.assetId : !c.assetId)) ?? policy.coverages?.[0]
+                        return coverage ? `${coverage.insuranceType} · ${(coverage.coverageNames ?? []).join(', ') || 'Sin coberturas'}` : 'Sin tipo'
+                      })()}
                     </p>
                     <p className="text-xs text-slate-400 mb-3">
                       {formatDate(policy.startDate)} — {formatDate(policy.endDate)}

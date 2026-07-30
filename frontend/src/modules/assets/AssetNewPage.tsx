@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Save, X, Plus, MapPin, Hash, Info,
+  Save, X, Plus, MapPin, Hash,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -39,7 +39,9 @@ const IS_WHEELED = (c: AssetCategory | '') =>
 const IS_AGRO = (c: AssetCategory | '') =>
   ['tractor', 'cosechadora', 'pulverizadora', 'implemento'].includes(c)
 const HAS_BRAND = (c: AssetCategory | '') => IS_WHEELED(c) || IS_AGRO(c)
-const IS_CARGA = (c: AssetCategory | '') => c === 'carga'
+// Solo la carga animal tiene especie/raza — la carga común (granos,
+// mercadería, insumos) no. Ambas sí admiten Bien de Uso asociado.
+const IS_LIVESTOCK = (c: AssetCategory | '') => c === 'carga_animal'
 const IS_IMMOVABLE = (c: AssetCategory | '') =>
   ['establecimiento', 'edificio', 'infraestructura'].includes(c as string)
 
@@ -431,7 +433,8 @@ export default function AssetNewPage() {
     IS_AGRO(category) ? 'Ej: John Deere 8R 340' :
     category === 'establecimiento' ? 'Ej: Establecimiento La Esperanza' :
     category === 'edificio' ? 'Ej: Galpón de almacenamiento Norte' :
-    IS_CARGA(category) ? 'Ej: Carga porcina — Lote Norte 2024' :
+    IS_LIVESTOCK(category) ? 'Ej: Carga porcina — Lote Norte 2024' :
+    category === 'carga_comun' ? 'Ej: Cereal a granel — Acopio Sur 2026' :
     'Ej: Nombre del activo'
 
   const isSiloInfra = category === 'infraestructura' && form.infraType === 'Silo'
@@ -466,23 +469,12 @@ export default function AssetNewPage() {
                 <FormField label="Código de activo (sistema)">
                   <AutoCodeDisplay code="Asignado al guardar" />
                 </FormField>
-                {IS_CARGA(category) ? (
-                  <FormField label="Bien de Uso" fullWidth>
-                    <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-lg border border-amber-200 bg-amber-50">
-                      <Info size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm text-amber-800">
-                        Este tipo de activo <strong>no requiere Bien de Uso asignado</strong>. La carga animal se contabiliza como inventario, no como bien de uso fijo.
-                      </p>
-                    </div>
-                  </FormField>
-                ) : (
-                  <FormField label="Bien de Uso" fullWidth>
-                    <BienDeUsoField
-                      value={form.bienDeUsoId}
-                      onChange={(id) => setForm((prev) => ({ ...prev, bienDeUsoId: id }))}
-                    />
-                  </FormField>
-                )}
+                <FormField label="Bien de Uso" fullWidth>
+                  <BienDeUsoField
+                    value={form.bienDeUsoId}
+                    onChange={(id) => setForm((prev) => ({ ...prev, bienDeUsoId: id }))}
+                  />
+                </FormField>
                 <FormField label="Nombre / Descripción" required error={errors.name}>
                   <FormInput placeholder={namePlaceholder} value={form.name} onChange={set('name')} />
                 </FormField>
@@ -760,7 +752,7 @@ export default function AssetNewPage() {
               </SectionCard>
             )}
 
-            {IS_CARGA(category) && (
+            {IS_LIVESTOCK(category) && (
               <SectionCard title="Datos de la Carga" subtitle="Especie, categoría y características de la hacienda o carga animal.">
                 <FormSection title="">
                   <FormField label="Especie">

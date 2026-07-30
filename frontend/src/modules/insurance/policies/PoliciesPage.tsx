@@ -22,9 +22,6 @@ import {
 } from '../../../shared/utils/format'
 import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
 import { producerQueries } from '../../../shared/api/producers.api'
-import { assetQueries } from '../../../shared/api/assets.api'
-import { companyQueries } from '../../../shared/api/companies.api'
-import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { POLICY_STATUS_LABELS } from '../../../shared/constants'
@@ -59,12 +56,9 @@ export default function PoliciesPage() {
 
   const { data: allPolicies = [], isLoading, isError } = useQuery(policyQueries.list())
   const { data: allProducers = [] } = useQuery(producerQueries.list())
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
-  const { data: allCompanies = [] } = useQuery(companyQueries.list())
-  const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
   async function handleDelete(id: string) {
-    await policiesApi.softDelete(id)
+    await policiesApi.hardDelete(id)
     queryClient.invalidateQueries({ queryKey: policyKeys.all })
     setDeleteId(null)
   }
@@ -75,45 +69,28 @@ export default function PoliciesPage() {
     setDeBajaId(null)
   }
 
-  const assetNameById = useMemo(() => {
-    const map = new Map<string, string>()
-    allAssets.forEach((a) => map.set(a.id, a.name))
-    return map
-  }, [allAssets])
-
-  const companyNameById = useMemo(() => {
-    const map = new Map<string, string>()
-    allCompanies.forEach((c) => map.set(c.id, c.name))
-    return map
-  }, [allCompanies])
-
-  const costCenterById = useMemo(() => {
-    const map = new Map<string, string>()
-    allCostCenters.forEach((cc) => map.set(cc.id, `${cc.code} — ${cc.name}`))
-    return map
-  }, [allCostCenters])
-
   const filtered = useMemo(() => {
     return allPolicies.filter((p) => {
       const q = search.toLowerCase()
-      const assetName = p.assetIds?.[0] ? (assetNameById.get(p.assetIds[0]) ?? '') : ''
+      const typeNames = p.insuranceTypeNames ?? []
+      const assetNames = p.assetNames ?? []
       const matchSearch =
         !search ||
         p.policyNumber.toLowerCase().includes(q) ||
-        p.insuranceType.toLowerCase().includes(q) ||
         p.insuranceCompany.toLowerCase().includes(q) ||
-        assetName.toLowerCase().includes(q)
+        typeNames.some((t) => t.toLowerCase().includes(q)) ||
+        assetNames.some((a) => a.toLowerCase().includes(q))
       const matchStatus = filterStatus.length === 0 || filterStatus.includes(p.status)
-      const matchType = filterType.length === 0 || filterType.includes(p.insuranceType)
+      const matchType = filterType.length === 0 || typeNames.some((t) => filterType.includes(t))
       const date = p.startDate ?? ''
       const matchDateFrom = !filterDateFrom || date.slice(0, 7) >= filterDateFrom
       const matchDateTo   = !filterDateTo   || date.slice(0, 7) <= filterDateTo
       return matchSearch && matchStatus && matchType && matchDateFrom && matchDateTo
     })
-  }, [allPolicies, assetNameById, search, filterStatus, filterType, filterDateFrom, filterDateTo])
+  }, [allPolicies, search, filterStatus, filterType, filterDateFrom, filterDateTo])
 
   const typeOptions = useMemo(
-    () => [...new Set(allPolicies.map((p) => p.insuranceType).filter(Boolean))].map((t) => ({ value: t, label: t })),
+    () => [...new Set(allPolicies.flatMap((p) => p.insuranceTypeNames ?? []))].map((t) => ({ value: t, label: t })),
     [allPolicies],
   )
 
@@ -131,11 +108,11 @@ export default function PoliciesPage() {
     [allPolicies],
   )
   const totalInsuredArs = useMemo(
-    () => activeInsuredPolicies.reduce((s, p) => s + p.insuredAmountArs, 0),
+    () => activeInsuredPolicies.reduce((s, p) => s + (p.totalInsuredAmountArs ?? 0), 0),
     [activeInsuredPolicies],
   )
   const totalInsuredUsd = useMemo(
-    () => activeInsuredPolicies.reduce((s, p) => s + p.insuredAmountUsd, 0),
+    () => activeInsuredPolicies.reduce((s, p) => s + (p.totalInsuredAmountUsd ?? 0), 0),
     [activeInsuredPolicies],
   )
 
@@ -174,33 +151,41 @@ export default function PoliciesPage() {
       },
     },
     {
-      id: 'insuranceType',
-      key: 'insuranceType',
-      label: 'Tipo',
+      id: 'insuranceTypeNames',
+      key: 'insuranceTypeNames',
+      label: 'Tipo(s) de Seguro',
       defaultVisible: true,
       sortable: true,
-      render: (v) => <span className="text-slate-600">{String(v)}</span>,
-    },
-    {
-      id: 'coverageType',
-      key: 'coverageType',
-      label: 'Cobertura',
-      defaultVisible: true,
-      sortable: true,
-      sortValue: (row) => {
-        const names = row.coverageNames?.length ? row.coverageNames : (row.coverageType ? [row.coverageType] : [])
-        return names.join(', ')
-      },
-      exportValue: (row) => {
-        const names = row.coverageNames?.length ? row.coverageNames : (row.coverageType ? [row.coverageType] : [])
-        return names.join(', ')
-      },
+      sortValue: (row) => (row.insuranceTypeNames ?? []).join(', '),
+      exportValue: (row) => (row.insuranceTypeNames ?? []).join(', '),
       render: (_v, row) => {
-        const names = row.coverageNames?.length ? row.coverageNames : (row.coverageType ? [row.coverageType] : [])
-        const label = names.join(', ') || null
+        const label = (row.insuranceTypeNames ?? []).join(', ') || null
         return (
           <div className="max-w-[180px]">
             <OverflowCell value={label} lines={1} className="text-xs text-slate-500" />
+          </div>
+        )
+      },
+    },
+    {
+      id: 'assetNames',
+      key: 'assetNames',
+      label: 'Activos Cubiertos',
+      defaultVisible: true,
+      sortable: true,
+      sortValue: (row) => (row.assetNames ?? []).join(', ') || (row.hasSinActivo ? 'Sin activo' : ''),
+      exportValue: (row) => (row.assetNames ?? []).join(', ') || (row.hasSinActivo ? 'Sin activo asociado' : ''),
+      render: (_v, row) => {
+        const names = row.assetNames ?? []
+        if (names.length === 0) {
+          return row.hasSinActivo
+            ? <span className="text-xs text-slate-500">Sin activo asociado</span>
+            : <span className="text-slate-400">—</span>
+        }
+        const label = row.hasSinActivo ? `${names.join(', ')} + sin activo` : names.join(', ')
+        return (
+          <div className="max-w-[200px]">
+            <OverflowCell value={label} lines={1} className="text-xs text-slate-700" />
           </div>
         )
       },
@@ -222,12 +207,12 @@ export default function PoliciesPage() {
       render: (v) => <span className="text-xs text-slate-500">{formatDate(v as string)}</span>,
     },
     {
-      id: 'insuredAmountArs',
-      key: 'insuredAmountArs',
+      id: 'totalInsuredAmountArs',
+      key: 'totalInsuredAmountArs',
       label: 'Suma aseg. ARS',
       defaultVisible: true,
       sortable: true,
-      exportValue: (row) => String(row.insuredAmountArs),
+      exportValue: (row) => String(row.totalInsuredAmountArs ?? 0),
       render: (v) => (
         <span className="font-semibold text-slate-800 tabular-nums">
           {(v as number) > 0 ? formatCurrencyFull(v as number, 'ARS') : <span className="text-slate-400">—</span>}
@@ -247,27 +232,12 @@ export default function PoliciesPage() {
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
     {
-      id: 'assetName',
-      key: 'assetIds',
-      label: 'Activo asociado',
-      defaultVisible: false,
-      sortable: true,
-      sortValue: (row) => row.assetIds?.[0] ? assetNameById.get(row.assetIds[0]) : undefined,
-      exportValue: (row) => row.assetIds?.[0] ? (assetNameById.get(row.assetIds[0]) ?? '') : '',
-      render: (_v, row) => {
-        const name = row.assetIds?.[0] ? assetNameById.get(row.assetIds[0]) : null
-        return name
-          ? <span className="text-sm text-slate-700">{name}</span>
-          : <span className="text-slate-400">—</span>
-      },
-    },
-    {
-      id: 'insuredAmountUsd',
-      key: 'insuredAmountUsd',
+      id: 'totalInsuredAmountUsd',
+      key: 'totalInsuredAmountUsd',
       label: 'Suma aseg. USD',
       defaultVisible: false,
       sortable: true,
-      exportValue: (row) => String(row.insuredAmountUsd),
+      exportValue: (row) => String(row.totalInsuredAmountUsd ?? 0),
       render: (v) => (
         <span className="tabular-nums text-slate-700">
           {(v as number) > 0 ? formatCurrencyFull(v as number, 'USD') : <span className="text-slate-400">—</span>}
@@ -277,67 +247,15 @@ export default function PoliciesPage() {
       headerClassName: 'text-right',
     },
     {
-      id: 'currency',
-      key: 'currency',
-      label: 'Moneda',
+      id: 'coverageCount',
+      key: 'coverageCount',
+      label: 'Líneas de cobertura',
       defaultVisible: false,
       sortable: true,
-      render: (v) => <span className="text-xs font-mono text-slate-600">{String(v ?? '—')}</span>,
-    },
-    {
-      id: 'exchangeRate',
-      key: 'exchangeRate',
-      label: 'Tipo de cambio',
-      defaultVisible: false,
-      sortable: true,
-      exportValue: (row) => String(row.exchangeRate),
-      render: (v) => (
-        <span className="tabular-nums text-slate-600 text-sm">
-          {(v as number) > 0 ? `$${(v as number).toLocaleString('es-AR')}` : <span className="text-slate-400">—</span>}
-        </span>
-      ),
-      className: 'text-right',
-      headerClassName: 'text-right',
-    },
-    {
-      id: 'companyId',
-      key: 'companyId',
-      label: 'Empresa',
-      defaultVisible: false,
-      sortable: true,
-      sortValue: (row) => row.companyId ? companyNameById.get(row.companyId) : undefined,
-      exportValue: (row) => row.companyId ? (companyNameById.get(row.companyId) ?? '') : '',
-      render: (v) => {
-        const name = v ? companyNameById.get(v as string) : null
-        return <span className="text-sm text-slate-700">{name ?? <span className="text-slate-400">—</span>}</span>
-      },
-    },
-    {
-      id: 'costCenterId',
-      key: 'costCenterId',
-      label: 'Centro de costo',
-      defaultVisible: false,
-      sortable: true,
-      sortValue: (row) => row.costCenterId ? costCenterById.get(row.costCenterId) : undefined,
-      exportValue: (row) => row.costCenterId ? (costCenterById.get(row.costCenterId) ?? '') : '',
-      render: (v) => {
-        const label = v ? costCenterById.get(v as string) : null
-        return label
-          ? <span className="text-xs text-slate-600">{label}</span>
-          : <span className="text-slate-400">—</span>
-      },
-    },
-    {
-      id: 'beneficiaryDescription',
-      key: 'beneficiaryDescription',
-      label: 'Beneficiario',
-      defaultVisible: false,
-      sortable: true,
-      render: (v) => (
-        <div className="max-w-[200px]">
-          <OverflowCell value={(v as string) || null} lines={1} className="text-xs text-slate-500" />
-        </div>
-      ),
+      exportValue: (row) => String(row.coverageCount ?? 0),
+      render: (v) => <span className="text-sm font-medium text-slate-700">{(v as number) ?? 0}</span>,
+      className: 'text-center',
+      headerClassName: 'text-center',
     },
     {
       id: 'description',
@@ -413,7 +331,7 @@ export default function PoliciesPage() {
       ),
       className: 'w-28',
     },
-  ], [allProducers, assetNameById, companyNameById, costCenterById, navigate])
+  ], [allProducers, navigate])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('policies', ALL_COLUMNS)
 
@@ -512,8 +430,8 @@ export default function PoliciesPage() {
       <ConfirmDialog
         open={deleteId !== null}
         title="Eliminar póliza"
-        description={`¿Eliminar la póliza "${allPolicies.find((p) => p.id === deleteId)?.policyNumber ?? ''}"? Esta acción no se puede deshacer.`}
-        confirmLabel="Eliminar"
+        description={`¿Eliminar la póliza "${allPolicies.find((p) => p.id === deleteId)?.policyNumber ?? ''}" de forma permanente? Esta acción no se puede deshacer. Se van a eliminar sus líneas de cobertura y adjuntos, y se va a desvincular (sin borrarlos) de los documentos contables, siniestros y tareas que la referencian — esos registros quedan, pero sin esta póliza asociada, y las Facturas/Notas/Endosos ya cargados pierden la distribución por activo que tenían contra ella.`}
+        confirmLabel="Eliminar definitivamente"
         onConfirm={() => deleteId && handleDelete(deleteId)}
         onCancel={() => setDeleteId(null)}
       />

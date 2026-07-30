@@ -5,13 +5,14 @@ import { PageContent } from '../../../../shared/components/page-header/PageConte
 import { PageHeader } from '../../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../../shared/components/cards/SectionCard'
 import { FormSection, FormField, FormInput, FormSelect, FormTextarea } from '../../../../shared/components/forms/FormSection'
+import { PolicySelector, createEmptyPolicyRow, type PolicyAllocationRow } from '../../../../shared/components/forms/PolicySelector'
 import { DocumentRelationSelector } from '../components/DocumentRelationSelector'
 import { DocumentImpactPreview } from '../components/DocumentImpactPreview'
-import { InstallmentsEditor, createInitialInstallmentRows, type InstallmentRowData } from '../components/InstallmentsEditor'
 import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
+import { useLinkedDocumentPolicies } from '../hooks/useLinkedDocumentPolicies'
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
@@ -36,7 +37,7 @@ interface FormState {
   description: string
 }
 
-type FormErrors = Partial<Record<keyof FormState, string>>
+type FormErrors = Partial<Record<keyof FormState | 'policies', string>>
 
 export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDebitoFormProps) {
   const isEdit = !!initialDoc
@@ -56,9 +57,8 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
     description: '',
   })
   const [errors, setErrors] = useState<FormErrors>({})
-  const [installmentCount, setInstallmentCount] = useState(1)
-  const [installmentRows, setInstallmentRows] = useState<InstallmentRowData[]>(createInitialInstallmentRows())
-  const [installmentsInitialized, setInstallmentsInitialized] = useState(!isEdit)
+  const [policyRows, setPolicyRows] = useState<PolicyAllocationRow[]>([createEmptyPolicyRow()])
+  const [allocationsInitialized, setAllocationsInitialized] = useState(!isEdit)
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
   const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'DEBIT_NOTE', form.insuranceCompany)
@@ -67,16 +67,18 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: paymentMethods = [] } = useQuery(catalogQueries.byCategory('document_payment_method'))
 
-  const { data: existingInstallments = [], isSuccess: installmentsLoaded } = useQuery({
-    ...documentQueries.installments(initialDoc?.id ?? ''),
+  const { data: existingAllocations = [], isSuccess: allocationsLoaded } = useQuery({
+    ...documentQueries.allocations(initialDoc?.id ?? ''),
     enabled: isEdit,
   })
-  if (installmentsLoaded && !installmentsInitialized) {
-    setInstallmentsInitialized(true)
-    if (existingInstallments.length > 0) {
-      const rows = existingInstallments.map((i) => ({ installmentNumber: i.installmentNumber, dueDate: i.dueDate, amount: String(i.amount) }))
-      setInstallmentRows(rows)
-      setInstallmentCount(rows.length)
+  if (allocationsLoaded && !allocationsInitialized) {
+    setAllocationsInitialized(true)
+    if (existingAllocations.length > 0) {
+      setPolicyRows(existingAllocations.map((a) => ({
+        id: crypto.randomUUID(),
+        policyAssetCoverageId: a.policyAssetCoverageId,
+        allocatedAmount: String(a.allocatedAmount),
+      })))
     }
   }
 
@@ -89,6 +91,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
   )
   const linkedInvoice = allDocuments.find((d) => d.id === form.linkedDocumentId) ?? null
   const effectivePaymentMethod = linkedInvoice?.paymentMethod ?? form.paymentMethod
+  const linkedPolicies = useLinkedDocumentPolicies(linkedInvoice)
 
   const parsedNet = parseFloat(form.netAmount) || 0
   const parsedVat = parseFloat(form.vatAmount) || 0
@@ -99,6 +102,10 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
   const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
   const equivalentAmount =
     form.currency === 'ARS' && tc > 0 ? computedTotal / tc : form.currency === 'USD' && tc > 0 ? computedTotal * tc : 0
+
+  const totalAllocated = policyRows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0)
+  const hasAnyAllocationRow = policyRows.some((r) => r.policyAssetCoverageId)
+  const allocationTotalMismatch = hasAnyAllocationRow && Math.abs(computedTotal - totalAllocated) > 0.01
 
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
@@ -115,14 +122,21 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
     if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0) next.exchangeRate = 'Requerido'
     if (!effectivePaymentMethod) next.paymentMethod = 'Requerido'
     if (!form.netAmount || isNaN(parseFloat(form.netAmount))) next.netAmount = 'Requerido'
+    if (allocationTotalMismatch) {
+      next.policies = `El total distribuido (${mainPrefix} ${totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) debe coincidir con el total del documento (${mainPrefix} ${computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+    }
     setErrors(next)
     notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 
-  const installmentsInput = installmentRows
-    .filter((r) => r.dueDate && parseFloat(r.amount) > 0)
-    .map((r) => ({ installmentNumber: r.installmentNumber, dueDate: r.dueDate, amount: parseFloat(r.amount) }))
+  const allocationsInput = policyRows
+    .filter((r) => r.policyAssetCoverageId && parseFloat(r.allocatedAmount) > 0)
+    .map((r) => ({
+      policyAssetCoverageId: r.policyAssetCoverageId,
+      allocatedAmount: parseFloat(r.allocatedAmount),
+      allocationPercentage: computedTotal > 0 ? (parseFloat(r.allocatedAmount) / computedTotal) * 100 : 0,
+    }))
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -139,8 +153,8 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
         paymentMethod: effectivePaymentMethod,
         description: form.description || undefined,
         linkedDocumentId: form.linkedDocumentId || undefined,
-        allocations: [],
-        installments: installmentsInput,
+        allocations: allocationsInput,
+        installments: [],
       }),
   })
 
@@ -158,7 +172,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
         description: form.description || undefined,
         linkedDocumentId: form.linkedDocumentId || undefined,
       })
-      await documentsApi.replaceInstallments(docId, installmentsInput)
+      await documentsApi.replaceAllocations(docId, allocationsInput)
     },
   })
 
@@ -236,6 +250,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
                     currency: linked?.currency ?? p.currency,
                     paymentMethod: linked?.paymentMethod ?? '',
                   }))
+                  setPolicyRows([createEmptyPolicyRow()])
                   markUnsaved()
                 }}
                 emptyMessage="No hay facturas disponibles para vincular."
@@ -325,15 +340,23 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
           </div>
         </SectionCard>
 
-        <SectionCard title="Cuotas" subtitle="Cantidad de cuotas, fechas e importes">
-          <InstallmentsEditor
-            count={installmentCount}
-            rows={installmentRows}
-            computedTotal={computedTotal}
-            currencyPrefix={mainPrefix}
-            onChange={(count, rows) => { setInstallmentCount(count); setInstallmentRows(rows); markUnsaved() }}
-          />
-        </SectionCard>
+        {form.linkedDocumentId && (
+          <SectionCard
+            title="Distribución por Activo"
+            subtitle="Opcional — elegí a qué activo(s) de la póliza facturada se le asigna este importe"
+          >
+            {errors.policies && <p className="text-xs text-red-500 mb-3">{errors.policies}</p>}
+            <PolicySelector
+              mode="multi"
+              policies={linkedPolicies}
+              rows={policyRows}
+              onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
+              currencyPrefix={mainPrefix}
+              documentTotal={computedTotal}
+              emptyMessage="La factura asociada no tiene pólizas con activos para distribuir."
+            />
+          </SectionCard>
+        )}
 
         <DocumentAttachmentsCard isSaved={isSaved} savedDocId={savedDocId} />
 

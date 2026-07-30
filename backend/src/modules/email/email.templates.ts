@@ -103,7 +103,8 @@ export function buildManualDocumentSendEmail(data: ManualDocumentEmailData): { s
       <table style="width:100%; border-collapse:collapse; margin-bottom:8px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px;">
         <tr>
           <td style="padding:10px 12px; font-size:13px; font-weight:600; color:#111827;">${label}</td>
-          <td style="padding:10px 16px 10px 24px; font-size:13px; color:#374151; text-align:right; white-space:nowrap; width:1%;">${item.percentage.toFixed(1)}%</td>
+          <td style="padding:10px 12px; font-size:13px; color:#374151; text-align:right; white-space:nowrap;">${formatAmount(item.amount, data.currency)}</td>
+          <td style="padding:10px 16px 10px 12px; font-size:13px; color:#6b7280; text-align:right; white-space:nowrap; width:1%;">${item.percentage.toFixed(1)}%</td>
         </tr>
       </table>`
   }

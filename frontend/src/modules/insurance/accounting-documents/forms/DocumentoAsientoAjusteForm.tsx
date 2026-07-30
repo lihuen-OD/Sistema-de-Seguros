@@ -5,18 +5,20 @@ import { PageContent } from '../../../../shared/components/page-header/PageConte
 import { PageHeader } from '../../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../../shared/components/cards/SectionCard'
 import { FormSection, FormField, FormInput, FormSelect, FormTextarea } from '../../../../shared/components/forms/FormSection'
+import { PolicySelector, createEmptyPolicyRow, type PolicyAllocationRow } from '../../../../shared/components/forms/PolicySelector'
 import { DocumentRelationSelector } from '../components/DocumentRelationSelector'
 import { DocumentImpactPreview } from '../components/DocumentImpactPreview'
 import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
+import { useLinkedDocumentPolicies } from '../hooks/useLinkedDocumentPolicies'
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import type { AccountingDocument, AdjustmentSign, DocumentType } from '../../../../shared/types'
 
-const ADJUSTABLE_TYPES: DocumentType[] = ['INVOICE', 'DEBIT_NOTE', 'CREDIT_NOTE', 'REBILLING']
+const ADJUSTABLE_TYPES: DocumentType[] = ['INVOICE', 'DEBIT_NOTE', 'CREDIT_NOTE', 'ENDORSEMENT']
 
 interface DocumentoAsientoAjusteFormProps {
   initialDoc?: AccountingDocument
@@ -33,7 +35,7 @@ interface FormState {
   description: string
 }
 
-type FormErrors = Partial<Record<keyof FormState, string>>
+type FormErrors = Partial<Record<keyof FormState | 'policies', string>>
 
 export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsientoAjusteFormProps) {
   const isEdit = !!initialDoc
@@ -50,6 +52,8 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
     description: initialDoc?.description ?? '',
   })
   const [errors, setErrors] = useState<FormErrors>({})
+  const [policyRows, setPolicyRows] = useState<PolicyAllocationRow[]>([createEmptyPolicyRow()])
+  const [allocationsInitialized, setAllocationsInitialized] = useState(!isEdit)
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
   const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'ADJUSTMENT_ENTRY', form.insuranceCompany)
@@ -63,12 +67,34 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
     (d) => ADJUSTABLE_TYPES.includes(d.documentType) && d.documentStatus !== 'CANCELLED' && (!isEdit || d.id !== initialDoc!.id),
   )
   const linkedDocument = allDocuments.find((d) => d.id === form.linkedDocumentId) ?? null
+  const linkedPolicies = useLinkedDocumentPolicies(linkedDocument)
+
+  const { data: existingAllocations = [], isSuccess: allocationsLoaded } = useQuery({
+    ...documentQueries.allocations(initialDoc?.id ?? ''),
+    enabled: isEdit,
+  })
+  if (allocationsLoaded && !allocationsInitialized) {
+    setAllocationsInitialized(true)
+    if (existingAllocations.length > 0) {
+      setPolicyRows(existingAllocations.map((a) => ({
+        id: crypto.randomUUID(),
+        policyAssetCoverageId: a.policyAssetCoverageId,
+        allocatedAmount: String(a.allocatedAmount),
+      })))
+    }
+  }
 
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }))
     markUnsaved()
   }
+
+  const amount = parseFloat(form.amount) || 0
+  const mainPrefix = linkedDocument?.currency === 'USD' ? 'US$' : 'AR$'
+  const totalAllocated = policyRows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0)
+  const hasAnyAllocationRow = policyRows.some((r) => r.policyAssetCoverageId)
+  const allocationTotalMismatch = hasAnyAllocationRow && Math.abs(amount - totalAllocated) > 0.01
 
   const validate = (): boolean => {
     const next: FormErrors = {}
@@ -83,12 +109,21 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
     if (!form.adjustmentSign) next.adjustmentSign = 'Requerido'
     if (!form.amount || isNaN(parseFloat(form.amount)) || parseFloat(form.amount) <= 0) next.amount = 'Requerido'
     if (!form.description.trim()) next.description = 'Requerido'
+    if (allocationTotalMismatch) {
+      next.policies = `El total distribuido (${mainPrefix} ${totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) debe coincidir con el importe del ajuste (${mainPrefix} ${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+    }
     setErrors(next)
     notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 
-  const amount = parseFloat(form.amount) || 0
+  const allocationsInput = policyRows
+    .filter((r) => r.policyAssetCoverageId && parseFloat(r.allocatedAmount) > 0)
+    .map((r) => ({
+      policyAssetCoverageId: r.policyAssetCoverageId,
+      allocatedAmount: parseFloat(r.allocatedAmount),
+      allocationPercentage: amount > 0 ? (parseFloat(r.allocatedAmount) / amount) * 100 : 0,
+    }))
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -99,27 +134,36 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
         netAmount: amount,
         vatAmount: 0,
         otherTaxesAmount: 0,
+        // El Ajuste siempre tiene un documento vinculado (requerido) y su
+        // importe está denominado en la MISMA moneda que ese documento — no
+        // tiene sentido propio elegir otra, así que se toma directo de ahí.
+        currency: linkedDocument?.currency,
+        exchangeRate: linkedDocument?.exchangeRate,
         insuranceCompany: form.insuranceCompany,
         description: form.description,
         linkedDocumentId: form.linkedDocumentId,
         adjustmentReason: form.adjustmentReason,
         adjustmentSign: form.adjustmentSign as AdjustmentSign,
-        allocations: [],
+        allocations: allocationsInput,
         installments: [],
       }),
   })
 
   const updateMutation = useMutation({
-    mutationFn: (docId: string) =>
-      documentsApi.update(docId, {
+    mutationFn: async (docId: string) => {
+      await documentsApi.update(docId, {
         issueDate: form.issueDate,
         netAmount: amount,
+        currency: linkedDocument?.currency,
+        exchangeRate: linkedDocument?.exchangeRate,
         insuranceCompany: form.insuranceCompany,
         description: form.description,
         linkedDocumentId: form.linkedDocumentId,
         adjustmentReason: form.adjustmentReason,
         adjustmentSign: form.adjustmentSign as AdjustmentSign,
-      }),
+      })
+      await documentsApi.replaceAllocations(docId, allocationsInput)
+    },
   })
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending
@@ -189,24 +233,37 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
               <DocumentRelationSelector
                 documents={linkableDocuments}
                 value={form.linkedDocumentId}
-                onChange={(id) => { setForm((p) => ({ ...p, linkedDocumentId: id })); markUnsaved() }}
+                onChange={(id) => { setForm((p) => ({ ...p, linkedDocumentId: id })); setPolicyRows([createEmptyPolicyRow()]); markUnsaved() }}
                 required
                 emptyMessage="No hay documentos disponibles para ajustar."
               />
             </FormField>
 
             {form.linkedDocumentId && (
-              <FormField label="Forma de Pago">
-                <FormInput
-                  value={linkedDocument?.paymentMethod ?? 'Sin especificar'}
-                  readOnly
-                  disabled
-                  className="bg-slate-50 text-slate-500 cursor-not-allowed"
-                />
-                <p className="text-xs text-slate-400 mt-1">
-                  Se hereda del documento que se está ajustando.
-                </p>
-              </FormField>
+              <>
+                <FormField label="Moneda">
+                  <FormInput
+                    value={linkedDocument?.currency ?? 'Sin especificar'}
+                    readOnly
+                    disabled
+                    className="bg-slate-50 text-slate-500 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Se hereda del documento que se está ajustando.
+                  </p>
+                </FormField>
+                <FormField label="Forma de Pago">
+                  <FormInput
+                    value={linkedDocument?.paymentMethod ?? 'Sin especificar'}
+                    readOnly
+                    disabled
+                    className="bg-slate-50 text-slate-500 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Se hereda del documento que se está ajustando.
+                  </p>
+                </FormField>
+              </>
             )}
           </FormSection>
         </SectionCard>
@@ -247,6 +304,24 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
             />
           </div>
         </SectionCard>
+
+        {form.linkedDocumentId && (
+          <SectionCard
+            title="Distribución por Activo"
+            subtitle="Opcional — elegí a qué activo(s) de la póliza del documento ajustado se le asigna este importe"
+          >
+            {errors.policies && <p className="text-xs text-red-500 mb-3">{errors.policies}</p>}
+            <PolicySelector
+              mode="multi"
+              policies={linkedPolicies}
+              rows={policyRows}
+              onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
+              currencyPrefix={mainPrefix}
+              documentTotal={amount}
+              emptyMessage="El documento ajustado no tiene pólizas con activos para distribuir."
+            />
+          </SectionCard>
+        )}
 
         <DocumentAttachmentsCard isSaved={isSaved} savedDocId={savedDocId} />
 

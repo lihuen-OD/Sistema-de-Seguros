@@ -37,9 +37,9 @@ export const dashboardService = {
         where: { isActive: true, ...buildPolicyStatusFilter('proxima_a_vencer') },
       }),
       prisma.policy.count({ where: { isActive: true, ...buildPolicyStatusFilter('vencida') } }),
-      prisma.policy.aggregate({
-        _sum: { premiumArs: true, premiumUsd: true },
-        where: { isActive: true, endDate: { gte: today } },
+      prisma.policyAssetCoverage.aggregate({
+        _sum: { insuredAmountArs: true, insuredAmountUsd: true },
+        where: { policy: { isActive: true, endDate: { gte: today } } },
       }),
       // totalAmountArs/Usd ya son el cierre de (netAmount+vatAmount+otherTaxesAmount) en
       // ambas monedas (ver computeDualAmounts) — no hace falta sumar los 3 componentes
@@ -85,8 +85,8 @@ export const dashboardService = {
         vigente: policiesVigente,
         proxima_a_vencer: policiesProxima,
         vencida: policiesVencida,
-        premiumVigenteArs: premiumAgg._sum.premiumArs ?? 0,
-        premiumVigenteUsd: premiumAgg._sum.premiumUsd ?? 0,
+        premiumVigenteArs: premiumAgg._sum.insuredAmountArs ?? 0,
+        premiumVigenteUsd: premiumAgg._sum.insuredAmountUsd ?? 0,
       },
       documents: {
         pendingCount: docPendingRaw._count.id,
@@ -127,20 +127,27 @@ export const dashboardService = {
       orderBy: { endDate: 'asc' },
       take: 50,
       include: {
-        company: { select: { id: true, name: true } },
-        insuranceType: { select: { id: true, name: true } },
+        coverages: {
+          select: {
+            insuredAmountArs: true,
+            insuredAmountUsd: true,
+            insuranceType: { select: { id: true, name: true } },
+          },
+        },
       },
     })
 
+    // El tipo de seguro y la suma asegurada ahora viven por línea de
+    // cobertura, no por póliza — se agregan acá (una póliza puede cubrir
+    // varios activos, cada uno con su propio tipo/monto).
     return policies.map((p) => ({
       id: p.id,
       policyNumber: p.policyNumber,
       insuredName: p.insuredName,
       endDate: toDateStr(p.endDate),
-      premium: p.premium,
-      currency: p.currency,
-      company: p.company,
-      insuranceType: p.insuranceType,
+      totalInsuredAmountArs: p.coverages.reduce((s, c) => s + (c.insuredAmountArs ?? 0), 0),
+      totalInsuredAmountUsd: p.coverages.reduce((s, c) => s + (c.insuredAmountUsd ?? 0), 0),
+      insuranceTypeNames: [...new Set(p.coverages.map((c) => c.insuranceType.name))],
     }))
   },
 
@@ -204,10 +211,21 @@ export const dashboardService = {
           where: { dueDate: { gte: yearStart, lte: yearEnd } },
           select: { dueDate: true, amountArs: true, amountUsd: true },
         }),
-        prisma.policy.groupBy({
-          by: ['companyId'],
-          _sum: { premiumArs: true, premiumUsd: true },
-          where: { isActive: true },
+        // La empresa ya no es un campo único de la póliza — se resuelve por
+        // línea: companyId directo en las líneas "sin activo", o la empresa
+        // principal (mayor %) del activo en las que sí tienen uno.
+        prisma.policyAssetCoverage.findMany({
+          where: { policy: { isActive: true } },
+          select: {
+            insuredAmountArs: true,
+            insuredAmountUsd: true,
+            companyId: true,
+            asset: {
+              select: {
+                allocations: { orderBy: { percentage: 'desc' }, take: 1, select: { companyId: true } },
+              },
+            },
+          },
         }),
         prisma.company.findMany({ select: { id: true, name: true } }),
         prisma.fireExtinguisher.count({ where: { isActive: true } }),
@@ -244,16 +262,23 @@ export const dashboardService = {
       }
     })
 
-    // Top 5 companies por prima total (via SQL groupBy — sin agregación en memoria).
-    // Se ordena por el total en ARS (siempre poblado, es el denominador común entre
+    // Top 5 companies por suma asegurada total — agregación en memoria (ya no
+    // es un simple groupBy por columna: la empresa de cada línea puede venir
+    // de su propio companyId o de la empresa principal del activo). Se ordena
+    // por el total en ARS (siempre poblado, es el denominador común entre
     // pólizas en distintas monedas) pero se muestran ambos montos por empresa.
     const companyNameMap = new Map(allCompanyNames.map((c) => [c.id, c.name]))
-    const premiumByCompany = premiumByCompanyRaw
-      .map((row) => ({
-        name: companyNameMap.get(row.companyId) ?? row.companyId,
-        totalArs: row._sum.premiumArs ?? 0,
-        totalUsd: row._sum.premiumUsd ?? 0,
-      }))
+    const premiumByCompanyMap = new Map<string, { totalArs: number; totalUsd: number }>()
+    for (const coverage of premiumByCompanyRaw) {
+      const companyId = coverage.companyId ?? coverage.asset?.allocations[0]?.companyId
+      if (!companyId) continue
+      const entry = premiumByCompanyMap.get(companyId) ?? { totalArs: 0, totalUsd: 0 }
+      entry.totalArs += coverage.insuredAmountArs ?? 0
+      entry.totalUsd += coverage.insuredAmountUsd ?? 0
+      premiumByCompanyMap.set(companyId, entry)
+    }
+    const premiumByCompany = [...premiumByCompanyMap.entries()]
+      .map(([companyId, totals]) => ({ name: companyNameMap.get(companyId) ?? companyId, ...totals }))
       .sort((a, b) => b.totalArs - a.totalArs)
       .slice(0, 5)
 

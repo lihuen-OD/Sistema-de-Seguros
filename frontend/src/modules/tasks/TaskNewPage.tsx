@@ -172,7 +172,7 @@ export default function TaskNewPage() {
                   <option value="">— Sin póliza</option>
                   {filteredPolicies.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.policyNumber} — {p.insuranceType}
+                      {p.policyNumber} — {(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}
                     </option>
                   ))}
                 </FormSelect>

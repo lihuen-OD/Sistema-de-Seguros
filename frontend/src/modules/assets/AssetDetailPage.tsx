@@ -15,7 +15,7 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatCurrencyCompact, formatPercent, formatDate } from '../../shared/utils/format'
-import { computePolicyInvoicedTotal, computePsaPercentage } from '../../shared/utils/policyInvoicedTotal'
+import { computeCoverageInvoicedTotal, computePsaPercentage } from '../../shared/utils/policyInvoicedTotal'
 import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
@@ -183,7 +183,7 @@ export default function AssetDetailPage() {
 
   const { data: documentTypesData } = useQuery(documentQueries.types())
   // Mismo mapa que PolicyDetailPage.tsx — necesario para calcular el % P/SA
-  // de cada póliza con computePolicyInvoicedTotal/computePsaPercentage.
+  // de cada línea de cobertura con computeCoverageInvoicedTotal/computePsaPercentage.
   const typeDefsByKey = useMemo(
     () => Object.fromEntries((documentTypesData?.types ?? []).map((t) => [t.key, t])),
     [documentTypesData],
@@ -337,10 +337,16 @@ export default function AssetDetailPage() {
   const displayNuevoArs = latestNuevo?.valueArs ?? asset.patrimonialValueNewArs ?? null
   const displayNuevoDate = latestNuevo?.date ?? asset.valuationDate
 
+  // policyQueries.list({ assetId: id }) trae, para cada póliza, la línea de
+  // cobertura específica de ESTE activo en `assetCoverage` — nunca el total
+  // agregado de la póliza (que podría incluir otros activos cubiertos).
   const vigentePolicies = policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer')
-  const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + p.insuredAmountUsd, 0)
-  // Solo cuenta como ARS puro si la póliza no tiene conversión (exchangeRate = 1)
-  const totalInsuredArs = vigentePolicies.reduce((s, p) => p.exchangeRate > 1 ? s : s + p.insuredAmountArs, 0)
+  const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + (p.assetCoverage?.insuredAmountUsd ?? 0), 0)
+  // Solo cuenta como ARS puro si la línea no tiene conversión (exchangeRate = 1)
+  const totalInsuredArs = vigentePolicies.reduce(
+    (s, p) => (p.assetCoverage?.exchangeRate ?? 1) > 1 ? s : s + (p.assetCoverage?.insuredAmountArs ?? 0),
+    0,
+  )
   const hasUsdCoverage = totalInsuredUsd > 0
   const hasArsCoverage = totalInsuredArs > 0
   const mixedCurrencies = hasUsdCoverage && hasArsCoverage
@@ -352,26 +358,49 @@ export default function AssetDetailPage() {
   const policyColumns: TableColumn<Policy>[] = [
     { key: 'policyNumber', label: 'N° Póliza', className: 'font-mono text-slate-600 text-xs', sortable: true },
     { key: 'insuranceCompany', label: 'Aseguradora', sortable: true },
-    { key: 'insuranceType', label: 'Tipo', sortable: true },
-    { key: 'coverageType', label: 'Cobertura', sortable: true, render: (v) => <span className="text-xs text-slate-500">{String(v)}</span> },
+    {
+      id: 'insuranceTypeName',
+      key: 'assetCoverage',
+      label: 'Tipo',
+      sortable: true,
+      sortValue: (row) => row.assetCoverage?.insuranceTypeName ?? '',
+      render: (_, row) => <span>{row.assetCoverage?.insuranceTypeName ?? '—'}</span>,
+    },
     { key: 'startDate', label: 'Inicio', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
     { key: 'endDate', label: 'Vence', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
-    { key: 'insuredAmountArs', label: 'Suma Aseg.', sortable: true, render: (v) => <span className="font-semibold">{formatCurrencyCompact(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
     {
-      // Total facturado (neto ajustado) de la póliza sobre su Suma Asegurada
-      // — mismo cálculo que el panel "Resumen" de PolicyDetailPage.tsx, para
-      // que los dos números siempre coincidan. Clave sintética: no es un
-      // campo propio de Policy, se calcula al vuelo por fila.
+      id: 'insuredAmountArs',
+      key: 'assetCoverage',
+      label: 'Suma Aseg.',
+      sortable: true,
+      sortValue: (row) => row.assetCoverage?.insuredAmountArs ?? 0,
+      render: (_, row) => (
+        <span className="font-semibold">
+          {row.assetCoverage ? formatCurrencyCompact(row.assetCoverage.insuredAmountArs ?? 0, 'ARS') : '—'}
+        </span>
+      ),
+      headerClassName: 'text-right',
+      className: 'text-right',
+    },
+    {
+      // Total facturado (neto ajustado, asignado específicamente a ESTE
+      // activo) sobre la Suma Asegurada de SU línea de cobertura — mismo
+      // criterio que el panel "Resumen" de PolicyDetailPage.tsx (ahí a nivel
+      // póliza completa, acá a nivel de la línea de este activo).
       key: 'psaPercentage',
       label: 'P/SA',
       sortable: true,
       headerClassName: 'text-right',
       className: 'text-right',
-      sortValue: (row) => computePsaPercentage(row, computePolicyInvoicedTotal(row.id, financialDocs, typeDefsByKey)),
+      sortValue: (row) => row.assetCoverage
+        ? computePsaPercentage(row.assetCoverage.insuredAmountUsd ?? 0, computeCoverageInvoicedTotal(row.assetCoverage.id, financialDocs, typeDefsByKey).totalUsd)
+        : null,
       render: (_, row) => {
-        const pct = computePsaPercentage(row, computePolicyInvoicedTotal(row.id, financialDocs, typeDefsByKey))
+        const pct = row.assetCoverage
+          ? computePsaPercentage(row.assetCoverage.insuredAmountUsd ?? 0, computeCoverageInvoicedTotal(row.assetCoverage.id, financialDocs, typeDefsByKey).totalUsd)
+          : null
         return pct != null
-          ? <span className="font-semibold">{formatPercent(pct)}</span>
+          ? <span className="font-semibold">{formatPercent(pct, 2)}</span>
           : <span className="text-slate-300">—</span>
       },
     },
@@ -383,9 +412,9 @@ export default function AssetDetailPage() {
       render: (v, row) => (
         <div className="flex items-center gap-2">
           <StatusPill status={v as string} size="sm" />
-          {row.circulationCardAttachment?.fileUrl && (
+          {row.assetCoverage?.circulationCardAttachment?.fileUrl && (
             <a
-              href={row.circulationCardAttachment.fileUrl}
+              href={row.assetCoverage.circulationCardAttachment.fileUrl}
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}

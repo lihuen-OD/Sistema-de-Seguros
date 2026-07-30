@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save, X, Settings, CheckSquare, Plus, Paperclip } from 'lucide-react'
+import { Save, X, Settings, CheckSquare, Plus, Paperclip, Trash2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -13,13 +13,13 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
+import { SearchableSelect } from '../../../shared/components/forms/SearchableSelect'
 import {
   AddAttachmentModal,
   FileTypeIcon,
   ExpirationCell,
 } from '../../../shared/components/file-upload/AttachmentListEditor'
-import { AssetSelector } from '../../../shared/components/forms/AssetSelector'
-import { policiesApi, policyKeys } from '../../../shared/api/policies.api'
+import { policiesApi, policyKeys, type PolicyCoverageInput } from '../../../shared/api/policies.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { producerQueries } from '../../../shared/api/producers.api'
@@ -30,51 +30,65 @@ import { exchangeRateQueries } from '../../../shared/api/exchange-rate.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { CURRENCY_OPTIONS } from '../../../shared/constants'
 import type { PolicyAttachment } from '../../../shared/types'
+import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
 
 type AssociationType = 'activo' | 'sin_activo'
-type PolicyAttachmentDraft = Omit<PolicyAttachment, 'id' | 'policyId'> & { pendingFile?: File }
+type PolicyAttachmentDraft = Omit<PolicyAttachment, 'id' | 'policyAssetCoverageId'> & { pendingFile?: File }
 
 interface PolicyForm {
   policyNumber: string
   insuranceCompany: string
   producerId: string
-  insuranceType: string
-  coverageTypes: string[]
   startDate: string
   endDate: string
   description: string
-  beneficiaryDescription: string
-  association: AssociationType
-  assetIds: string[]
-  companyId: string
-  costCenterId: string
-  currency: 'ARS' | 'USD'
-  insuredAmount: string
-  exchangeRate: string
 }
 
 const INITIAL: PolicyForm = {
   policyNumber: '',
   insuranceCompany: '',
   producerId: '',
-  insuranceType: '',
-  coverageTypes: [],
   startDate: '',
   endDate: '',
   description: '',
-  beneficiaryDescription: '',
-  association: 'activo',
-  assetIds: [],
-  companyId: '',
-  costCenterId: '',
-  currency: 'ARS',
-  insuredAmount: '',
-  exchangeRate: '',
 }
 
-// ── CoverageSelector ──────────────────────────────────────────────────────────
+// Una línea de cobertura del formulario — un activo (o ninguno) con su
+// tipo de seguro, coberturas y suma asegurada propios. La póliza puede tener
+// varias, cada una independiente del resto.
+interface CoverageLineForm {
+  id: string
+  association: AssociationType
+  assetId: string
+  insuranceType: string
+  coverageTypes: string[]
+  currency: 'ARS' | 'USD'
+  insuredAmount: string
+  exchangeRate: string
+  companyId: string
+  costCenterId: string
+  beneficiaryDescription: string
+}
 
-import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
+function createEmptyLine(defaultExchangeRate = ''): CoverageLineForm {
+  return {
+    id: crypto.randomUUID(),
+    association: 'activo',
+    assetId: '',
+    insuranceType: '',
+    coverageTypes: [],
+    currency: 'ARS',
+    insuredAmount: '',
+    exchangeRate: defaultExchangeRate,
+    companyId: '',
+    costCenterId: '',
+    beneficiaryDescription: '',
+  }
+}
+
+type LineErrors = Partial<Record<keyof CoverageLineForm, string>>
+
+// ── CoverageSelector ──────────────────────────────────────────────────────────
 
 function CoverageSelector({
   insuranceType,
@@ -126,7 +140,6 @@ function CoverageSelector({
 
   return (
     <div>
-      {/* Contador + acción rápida */}
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs text-slate-500">
           {selected.length === 0
@@ -185,22 +198,18 @@ export default function PolicyNewPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [form, setForm] = useState<PolicyForm>(INITIAL)
-  const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm | 'coverageTypes', string>>>({})
-  const [attachmentDrafts, setAttachmentDrafts] = useState<PolicyAttachmentDraft[]>([])
-  const [showAttachModal, setShowAttachModal] = useState(false)
+  const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm, string>>>({})
+  const [lines, setLines] = useState<CoverageLineForm[]>([createEmptyLine()])
+  const [lineErrors, setLineErrors] = useState<Record<string, LineErrors>>({})
+  const [attachmentDraftsByLine, setAttachmentDraftsByLine] = useState<Record<string, PolicyAttachmentDraft[]>>({})
+  const [attachModalLineId, setAttachModalLineId] = useState<string | null>(null)
 
   const { data: producers = [] } = useQuery(producerQueries.list())
-
   const { data: allAssets = [] } = useQuery(assetQueries.list())
-
   const { data: companies = [] } = useQuery(companyQueries.list())
-
   const { data: costCenters = [] } = useQuery(costCenterQueries.list())
-
   const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
-
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
-
   const { data: currentExchangeRate } = useQuery(exchangeRateQueries.current())
   const [exchangeRatePrefilled, setExchangeRatePrefilled] = useState(false)
 
@@ -208,15 +217,16 @@ export default function PolicyNewPage() {
     mutationFn: (input: Parameters<typeof policiesApi.create>[0]) => policiesApi.create(input),
   })
 
-  // Prefill de conveniencia: si hay un tipo de cambio global cargado, lo
-  // sugerimos como valor inicial — el usuario puede editarlo libremente
-  // después. Solo corre una vez y solo si el campo sigue vacío.
+  // Prefill de conveniencia para la primera línea — si hay un tipo de cambio
+  // global cargado, se sugiere como valor inicial (editable después).
   useEffect(() => {
-    if (currentExchangeRate?.rate && !exchangeRatePrefilled && !form.exchangeRate) {
-      setForm((prev) => ({ ...prev, exchangeRate: String(currentExchangeRate.rate) }))
+    if (currentExchangeRate?.rate && !exchangeRatePrefilled) {
+      setLines((prev) =>
+        prev.map((l) => (l.exchangeRate ? l : { ...l, exchangeRate: String(currentExchangeRate.rate) })),
+      )
       setExchangeRatePrefilled(true)
     }
-  }, [currentExchangeRate, exchangeRatePrefilled, form.exchangeRate])
+  }, [currentExchangeRate, exchangeRatePrefilled])
 
   const set =
     (key: keyof PolicyForm) =>
@@ -225,124 +235,109 @@ export default function PolicyNewPage() {
       if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }))
     }
 
-  const setInsuranceType = (value: string) => {
-    setForm((prev) => ({ ...prev, insuranceType: value, coverageTypes: [] }))
-    setErrors((prev) => ({ ...prev, insuranceType: undefined, coverageTypes: undefined }))
+  const activeAssets = useMemo(() => allAssets.filter((a) => a.status === 'activo'), [allAssets])
+  const activeCompanies = useMemo(() => companies.filter((c) => c.status === 'activo'), [companies])
+  const activeCostCenters = useMemo(() => costCenters.filter((cc) => cc.status === 'activo'), [costCenters])
+
+  const usedAssetIds = new Set(lines.map((l) => l.assetId).filter(Boolean))
+
+  function updateLine(lineId: string, patch: Partial<CoverageLineForm>) {
+    setLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, ...patch } : l)))
+    setLineErrors((prev) => {
+      if (!prev[lineId]) return prev
+      const next = { ...prev[lineId] }
+      for (const key of Object.keys(patch)) delete next[key as keyof CoverageLineForm]
+      return { ...prev, [lineId]: next }
+    })
   }
 
-  const setCurrency = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value as 'ARS' | 'USD'
-    setForm((prev) => ({ ...prev, currency: value }))
+  function addLine() {
+    setLines((prev) => [...prev, createEmptyLine(prev[0]?.exchangeRate)])
   }
 
-  const setAssociation = (value: AssociationType) => {
-    setForm((prev) => ({
-      ...prev,
-      association: value,
-      assetIds: [],
-      companyId: '',
-      costCenterId: '',
-      beneficiaryDescription: '',
-    }))
+  function removeLine(lineId: string) {
+    setLines((prev) => prev.filter((l) => l.id !== lineId))
+    setAttachmentDraftsByLine((prev) => {
+      const { [lineId]: _removed, ...rest } = prev
+      return rest
+    })
   }
 
-  const toggleAsset = (assetId: string) => {
-    setForm((prev) => ({
-      ...prev,
-      assetIds: prev.assetIds.includes(assetId)
-        ? prev.assetIds.filter((id) => id !== assetId)
-        : [...prev.assetIds, assetId],
-    }))
-    setErrors((prev) => ({ ...prev, assetIds: undefined }))
-  }
-
-  // Suma Asegurada — el usuario elige en qué moneda carga el importe y acá
-  // solo calculamos la vista previa del equivalente en la otra moneda (el
-  // backend es quien cierra y persiste ambos montos al guardar).
-  const equivalentCurrencyLabel = form.currency === 'ARS' ? 'USD' : 'ARS'
-  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
-  const equivalentAmount = useMemo(() => {
-    const amount = parseFloat(form.insuredAmount)
-    const rate = parseFloat(form.exchangeRate)
-    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
-    return form.currency === 'ARS' ? (amount / rate).toFixed(2) : (amount * rate).toFixed(2)
-  }, [form.insuredAmount, form.exchangeRate, form.currency])
-
-  const filteredCostCenters = useMemo(
-    () => costCenters.filter((cc) => cc.status === 'activo'),
-    [costCenters],
-  )
-
-  // "Accidentes Personales" sin activo → pide descripción del asegurado
-  const isAP = form.coverageTypes.includes('Accidentes Personales') || form.insuranceType === 'Personal'
-  const showBeneficiaryField = isAP && form.association === 'sin_activo'
-
-  const validate = (): boolean => {
-    const next: Partial<Record<keyof PolicyForm | 'coverageTypes', string>> = {}
-    if (!form.policyNumber.trim())   next.policyNumber    = 'Requerido'
-    if (!form.insuranceCompany)      next.insuranceCompany = 'Requerido'
-    if (!form.producerId)            next.producerId       = 'Requerido'
-    if (!form.insuranceType)         next.insuranceType    = 'Requerido'
-    if (form.coverageTypes.length === 0) next.coverageTypes = 'Seleccioná al menos una cobertura'
-    if (!form.startDate)             next.startDate        = 'Requerido'
-    if (!form.endDate)               next.endDate          = 'Requerido'
-    if (form.association === 'activo' && form.assetIds.length === 0) next.assetIds = 'Seleccioná al menos un activo'
-    if (form.association === 'sin_activo') {
-      if (!form.companyId)    next.companyId    = 'Requerido'
-      if (!form.costCenterId) next.costCenterId = 'Requerido'
-    }
-    if (showBeneficiaryField && !form.beneficiaryDescription.trim()) {
-      next.beneficiaryDescription = 'Describí a quién corresponde este seguro'
-    }
+  function validate(): boolean {
+    const next: Partial<Record<keyof PolicyForm, string>> = {}
+    if (!form.policyNumber.trim()) next.policyNumber = 'Requerido'
+    if (!form.insuranceCompany) next.insuranceCompany = 'Requerido'
+    if (!form.startDate) next.startDate = 'Requerido'
+    if (!form.endDate) next.endDate = 'Requerido'
     setErrors(next)
-    notifyValidationErrors(next)
-    return Object.keys(next).length === 0
+
+    const nextLineErrors: Record<string, LineErrors> = {}
+    for (const line of lines) {
+      const lineErr: LineErrors = {}
+      if (line.association === 'activo' && !line.assetId) lineErr.assetId = 'Seleccioná un activo'
+      if (!line.insuranceType) lineErr.insuranceType = 'Requerido'
+      if (line.coverageTypes.length === 0) lineErr.coverageTypes = 'Seleccioná al menos una cobertura'
+      if (line.association === 'sin_activo') {
+        if (!line.companyId) lineErr.companyId = 'Requerido'
+        if (!line.costCenterId) lineErr.costCenterId = 'Requerido'
+        const isAP = line.coverageTypes.length > 0 && line.insuranceType.toLowerCase().includes('personal')
+        if (isAP && !line.beneficiaryDescription.trim()) {
+          lineErr.beneficiaryDescription = 'Describí a quién corresponde este seguro'
+        }
+      }
+      if (Object.keys(lineErr).length > 0) nextLineErrors[line.id] = lineErr
+    }
+    setLineErrors(nextLineErrors)
+
+    const hasErrors = Object.keys(next).length > 0 || Object.keys(nextLineErrors).length > 0
+    if (hasErrors) {
+      notifyValidationErrors({ ...next, ...(Object.keys(nextLineErrors).length > 0 && { lines: 'Revisá las líneas de cobertura' }) })
+    }
+    return !hasErrors
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
 
-    const amount = parseFloat(form.insuredAmount) || 0
-    const rate = parseFloat(form.exchangeRate) || 1
-
-    const insuranceTypeObj = insuranceTypes.find((t) => t.label === form.insuranceType)
-    const insuranceTypeId = insuranceTypeObj?.id ?? ''
-
-    const firstAsset = form.association === 'activo' && form.assetIds.length > 0
-      ? allAssets.find((a) => a.id === form.assetIds[0])
-      : undefined
-    const companyId = form.association === 'sin_activo'
-      ? form.companyId
-      : (firstAsset?.companyId ?? '')
-    const costCenterId = form.association === 'sin_activo' ? form.costCenterId || null : null
+    const coverages: PolicyCoverageInput[] = lines.map((line) => {
+      const insuranceTypeObj = insuranceTypes.find((t) => t.label === line.insuranceType)
+      return {
+        assetId: line.association === 'activo' ? line.assetId : null,
+        insuranceTypeId: insuranceTypeObj?.id ?? '',
+        coverageIds: line.coverageTypes,
+        insuredAmount: parseFloat(line.insuredAmount) || 0,
+        currency: line.currency,
+        exchangeRate: parseFloat(line.exchangeRate) || 1,
+        companyId: line.association === 'sin_activo' ? line.companyId : null,
+        costCenterId: line.association === 'sin_activo' ? line.costCenterId || null : null,
+        beneficiaryDescription: line.association === 'sin_activo' ? line.beneficiaryDescription.trim() || null : null,
+      }
+    })
 
     try {
       const newPolicy = await createMutation.mutateAsync({
         policyNumber: form.policyNumber.trim(),
-        insuranceTypeId,
-        companyId,
-        costCenterId,
         producerId: form.producerId || undefined,
         insuredName: form.insuranceCompany,
-        assetIds: form.association === 'activo' ? form.assetIds : [],
-        beneficiaryDescription: form.beneficiaryDescription.trim() || null,
         startDate: form.startDate,
         endDate: form.endDate,
-        premium: amount,
-        currency: form.currency,
-        exchangeRate: rate,
         description: form.description.trim() || undefined,
-        coverageIds: form.coverageTypes,
+        coverages,
       })
 
-      // Upload pending attachments after policy is created
-      const pending = attachmentDrafts.filter((a) => a.pendingFile)
-      for (const att of pending) {
-        await policiesApi.addAttachment(newPolicy.id, att.pendingFile!, {
-          description: att.description || undefined,
-          isCirculationCard: att.isCirculationCard,
-        })
+      // Las líneas vuelven en el mismo orden en que se mandaron — se sube la
+      // documentación pendiente de cada una a su línea real recién creada.
+      for (let i = 0; i < lines.length; i++) {
+        const createdCoverage = newPolicy.coverages?.[i]
+        if (!createdCoverage) continue
+        const pending = (attachmentDraftsByLine[lines[i].id] ?? []).filter((a) => a.pendingFile)
+        for (const att of pending) {
+          await policiesApi.addAttachment(newPolicy.id, createdCoverage.id, att.pendingFile!, {
+            description: att.description || undefined,
+            isCirculationCard: att.isCirculationCard,
+          })
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: policyKeys.all })
@@ -365,81 +360,26 @@ export default function PolicyNewPage() {
       <form onSubmit={handleSubmit} className="max-w-5xl space-y-5">
 
         {/* 1. Datos de la Póliza */}
-        <SectionCard
-          title="Datos de la Póliza"
-          subtitle="Identificación, tipo de seguro y coberturas"
-        >
-          <div className="space-y-5">
-            <FormSection title="">
-              <FormField label="N° de Póliza" required error={errors.policyNumber}>
-                <FormInput
-                  placeholder="Ej: AUT-2026-001234"
-                  value={form.policyNumber}
-                  onChange={set('policyNumber')}
-                  required
-                />
-              </FormField>
-              <FormField label="Compañía Aseguradora" required error={errors.insuranceCompany}>
-                <FormSelect value={form.insuranceCompany} onChange={set('insuranceCompany')} required>
-                  <option value="">Seleccionar aseguradora…</option>
-                  {insuranceCompanies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
-                </FormSelect>
-              </FormField>
-              <FormField label="Productor Asesor" required error={errors.producerId}>
-                <FormSelect value={form.producerId} onChange={set('producerId')} required>
-                  <option value="">Seleccionar productor…</option>
-                  {producers.filter((p) => p.status === 'activo').map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </FormSelect>
-              </FormField>
-              <FormField label="Tipo de Seguro" required error={errors.insuranceType}>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <FormSelect
-                      value={form.insuranceType}
-                      onChange={(e) => setInsuranceType(e.target.value)}
-                      required
-                    >
-                      <option value="">Seleccionar tipo…</option>
-                      {insuranceTypes.map((t) => (
-                        <option key={t.id} value={t.label}>{t.label}</option>
-                      ))}
-                    </FormSelect>
-                  </div>
-                  <Link
-                    to="/settings/insurance-types"
-                    title="Configurar tipos de seguro"
-                    className="flex-shrink-0 p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
-                  >
-                    <Settings size={15} />
-                  </Link>
-                </div>
-              </FormField>
-            </FormSection>
-
-            {/* Coberturas — multi-select dinámico */}
-            <div className="border-t border-slate-100 pt-5">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">Coberturas</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Seleccioná las coberturas incluidas en esta póliza
-                  </p>
-                </div>
-              </div>
-              <CoverageSelector
-                insuranceType={form.insuranceType}
-                insuranceTypes={insuranceTypes}
-                selected={form.coverageTypes}
-                onChange={(v) => {
-                  setForm((prev) => ({ ...prev, coverageTypes: v }))
-                  setErrors((prev) => ({ ...prev, coverageTypes: undefined }))
-                }}
-                error={errors.coverageTypes}
-              />
-            </div>
-          </div>
+        <SectionCard title="Datos de la Póliza" subtitle="Identificación única de la póliza">
+          <FormSection title="">
+            <FormField label="N° de Póliza" required error={errors.policyNumber}>
+              <FormInput placeholder="Ej: AUT-2026-001234" value={form.policyNumber} onChange={set('policyNumber')} required />
+            </FormField>
+            <FormField label="Compañía Aseguradora" required error={errors.insuranceCompany}>
+              <FormSelect value={form.insuranceCompany} onChange={set('insuranceCompany')} required>
+                <option value="">Seleccionar aseguradora…</option>
+                {insuranceCompanies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
+              </FormSelect>
+            </FormField>
+            <FormField label="Productor Asesor">
+              <FormSelect value={form.producerId} onChange={set('producerId')}>
+                <option value="">Seleccionar productor…</option>
+                {producers.filter((p) => p.status === 'activo').map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </FormSelect>
+            </FormField>
+          </FormSection>
         </SectionCard>
 
         {/* 2. Vigencia */}
@@ -449,17 +389,11 @@ export default function PolicyNewPage() {
               <FormInput type="date" value={form.startDate} onChange={set('startDate')} required />
             </FormField>
             <FormField label="Fecha de Vencimiento" required error={errors.endDate}>
-              <FormInput
-                type="date"
-                value={form.endDate}
-                onChange={set('endDate')}
-                min={form.startDate}
-                required
-              />
+              <FormInput type="date" value={form.endDate} onChange={set('endDate')} min={form.startDate} required />
             </FormField>
             <FormField label="Observaciones" fullWidth>
               <FormTextarea
-                placeholder="Detalle adicional sobre la cobertura, bienes incluidos, notas…"
+                placeholder="Detalle adicional sobre la póliza, notas para el equipo…"
                 value={form.description}
                 onChange={set('description')}
                 rows={3}
@@ -468,219 +402,288 @@ export default function PolicyNewPage() {
           </FormSection>
         </SectionCard>
 
-        {/* 3. Asociación */}
-        <SectionCard
-          title="Asociación"
-          subtitle="Vinculá la póliza a un activo o indicá empresa y centro de costo"
-        >
-          <div className="flex items-center gap-1 mb-5 bg-slate-100 rounded-lg p-1 w-fit">
-            {(['activo', 'sin_activo'] as AssociationType[]).map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => setAssociation(opt)}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  form.association === opt
-                    ? 'bg-white text-brand-600 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {opt === 'activo' ? 'Con activo' : 'Sin activo'}
-              </button>
-            ))}
+        {/* 3. Líneas de cobertura — una por activo (o "sin activo") */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Activos cubiertos</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Cada línea es un activo (o "sin activo") con su propio tipo de seguro, coberturas, suma asegurada y documentación.
+              </p>
+            </div>
           </div>
 
-          {form.association === 'activo' ? (
-            <FormField label="Activos Asegurados" required error={errors.assetIds} fullWidth>
-              <AssetSelector
-                assets={allAssets.filter((a) => a.status === 'activo')}
-                selected={form.assetIds}
-                onToggle={toggleAsset}
-                error={errors.assetIds}
-              />
-            </FormField>
-          ) : (
-            <div className="space-y-4">
-              <FormSection title="">
-                <FormField label="Empresa" required error={errors.companyId}>
-                  <FormSelect value={form.companyId} onChange={set('companyId')} required>
-                    <option value="">Seleccionar empresa…</option>
-                    {companies.filter((c) => c.status === 'activo').map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </FormSelect>
-                </FormField>
-                <FormField label="Centro de Costo" required error={errors.costCenterId}>
-                  <FormSelect
-                    value={form.costCenterId}
-                    onChange={set('costCenterId')}
-                    disabled={!form.companyId}
-                    required
-                  >
-                    <option value="">{form.companyId ? 'Seleccionar centro…' : 'Primero empresa'}</option>
-                    {filteredCostCenters.map((cc) => (
-                      <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>
-                    ))}
-                  </FormSelect>
-                </FormField>
-              </FormSection>
+          {lines.map((line, idx) => {
+            const err = lineErrors[line.id] ?? {}
+            const equivalentCurrencyLabel = line.currency === 'ARS' ? 'USD' : 'ARS'
+            const equivalentPrefix = line.currency === 'ARS' ? 'US$' : 'AR$'
+            const amount = parseFloat(line.insuredAmount)
+            const rate = parseFloat(line.exchangeRate)
+            const equivalentAmount =
+              !isNaN(amount) && !isNaN(rate) && rate > 0
+                ? (line.currency === 'ARS' ? amount / rate : amount * rate)
+                : null
+            const isAP = line.coverageTypes.length > 0 && line.insuranceType.toLowerCase().includes('personal')
+            const showBeneficiaryField = isAP && line.association === 'sin_activo'
+            const drafts = attachmentDraftsByLine[line.id] ?? []
+            const selectedAsset = activeAssets.find((a) => a.id === line.assetId)
 
-              {/* Campo beneficiario — solo Accidentes Personales sin activo */}
-              {showBeneficiaryField && (
-                <div className="border-t border-slate-100 pt-4">
-                  <FormField
-                    label="¿A quién corresponde este seguro?"
-                    required
-                    error={errors.beneficiaryDescription}
-                    fullWidth
-                  >
-                    <FormTextarea
-                      placeholder="Ej: Empleados del establecimiento Las Vertientes — Personal en relación de dependencia"
-                      value={form.beneficiaryDescription}
-                      onChange={set('beneficiaryDescription')}
-                      rows={2}
-                    />
-                  </FormField>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Requerido cuando la cobertura de Accidentes Personales no está vinculada a un activo específico.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </SectionCard>
-
-        {/* 4. Importes */}
-        <SectionCard title="Importes" subtitle="Suma asegurada y tipo de cambio al momento del alta">
-          <FormSection title="">
-            <FormField label="Moneda">
-              <FormSelect value={form.currency} onChange={setCurrency}>
-                {CURRENCY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </FormSelect>
-            </FormField>
-            <FormField label={`Suma Asegurada (${form.currency})`} error={errors.insuredAmount}>
-              <FormInput
-                type="number"
-                placeholder="Ej: 30000000"
-                value={form.insuredAmount}
-                onChange={set('insuredAmount')}
-                min="0"
-                step="1"
-              />
-            </FormField>
-            <FormField label="Tipo de Cambio (ARS/USD)" error={errors.exchangeRate}>
-              <FormInput
-                type="number"
-                placeholder="Ej: 970"
-                value={form.exchangeRate}
-                onChange={set('exchangeRate')}
-                min="0"
-                step="0.01"
-              />
-            </FormField>
-            <FormField label={`Suma Asegurada (${equivalentCurrencyLabel})`}>
-              <FormInput
-                value={
-                  equivalentAmount
-                    ? `${equivalentPrefix} ${parseFloat(equivalentAmount).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                    : ''
+            return (
+              <SectionCard
+                key={line.id}
+                title={`Línea ${idx + 1}${selectedAsset ? ` — ${selectedAsset.name}` : ''}`}
+                subtitle={line.association === 'sin_activo' ? 'Sin activo asociado' : undefined}
+                actions={
+                  lines.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => removeLine(line.id)}
+                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Quitar esta línea"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  ) : undefined
                 }
-                readOnly
-                disabled
-                placeholder="Se calcula automáticamente"
-              />
-            </FormField>
-          </FormSection>
-        </SectionCard>
-
-        {/* 5. Documentación */}
-        <SectionCard
-          title="Documentación de la Póliza"
-          subtitle="Adjuntá la póliza, certificados y documentación adicional"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-slate-500">
-              {attachmentDrafts.length === 0
-                ? 'Sin archivos adjuntos'
-                : `${attachmentDrafts.length} archivo${attachmentDrafts.length !== 1 ? 's' : ''} adjunto${attachmentDrafts.length !== 1 ? 's' : ''}`}
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowAttachModal(true)}
-              className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
-            >
-              <Plus size={12} />
-              Adjuntar archivo
-            </button>
-          </div>
-
-          {attachmentDrafts.length === 0 ? (
-            <div
-              onClick={() => setShowAttachModal(true)}
-              className="border-2 border-dashed border-slate-200 rounded-xl py-6 text-center cursor-pointer hover:border-brand-300 hover:bg-brand-50/20 transition-colors"
-            >
-              <Paperclip size={18} className="mx-auto text-slate-300 mb-1.5" />
-              <p className="text-sm text-slate-500">Adjuntá la póliza, certificados u otros documentos</p>
-              <p className="text-xs text-slate-400 mt-0.5">PDF, Excel o imágenes — vencen junto con la póliza</p>
-            </div>
-          ) : (
-            <ul className="space-y-2">
-              {attachmentDrafts.map((att, idx) => (
-                <li key={idx} className="flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-xl group">
-                  <FileTypeIcon fileType={att.fileType} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5">
-                      {att.name}
-                      {att.isCirculationCard && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-brand-50 text-brand-700 border border-brand-200 flex-shrink-0">
-                          Tarjeta de circulación
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {att.description ? <>{att.description} · {att.fileSize}</> : att.fileSize}
-                    </p>
-                  </div>
-                  {form.endDate && (
-                    <div className="flex-shrink-0">
-                      <ExpirationCell date={form.endDate} />
+              >
+                <div className="space-y-5">
+                  {/* Asociación */}
+                  <div>
+                    <div className="flex items-center gap-1 mb-3 bg-slate-100 rounded-lg p-1 w-fit">
+                      {(['activo', 'sin_activo'] as AssociationType[]).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => updateLine(line.id, {
+                            association: opt, assetId: '', companyId: '', costCenterId: '', beneficiaryDescription: '',
+                          })}
+                          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                            line.association === opt ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                        >
+                          {opt === 'activo' ? 'Con activo' : 'Sin activo'}
+                        </button>
+                      ))}
                     </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setAttachmentDrafts((prev) => prev.filter((_, i) => i !== idx))}
-                    className="p-1 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                  >
-                    <X size={14} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
 
-          {showAttachModal && (
-            <AddAttachmentModal
-              onClose={() => setShowAttachModal(false)}
-              isPolicyAttachment
-              onAdd={(partial) => {
-                setAttachmentDrafts((prev) => [...prev, {
-                  name: partial.name,
-                  description: partial.description,
-                  fileType: partial.fileType,
-                  fileSize: partial.fileSize,
-                  isCirculationCard: partial.isCirculationCard ?? false,
-                  uploadedAt: partial.uploadedAt,
-                  uploadedBy: partial.uploadedBy,
-                  pendingFile: partial.pendingFile,
-                }])
-                setShowAttachModal(false)
-              }}
-            />
-          )}
-        </SectionCard>
+                    {line.association === 'activo' ? (
+                      <FormField label="Activo Asegurado" required error={err.assetId}>
+                        <SearchableSelect
+                          options={activeAssets
+                            .filter((a) => a.id === line.assetId || !usedAssetIds.has(a.id))
+                            .map((a) => ({ value: a.id, label: a.name, sublabel: a.internalCode }))}
+                          value={line.assetId}
+                          onChange={(v) => updateLine(line.id, { assetId: v })}
+                          placeholder="Seleccionar activo…"
+                          searchPlaceholder="Buscar por nombre o código…"
+                        />
+                      </FormField>
+                    ) : (
+                      <div className="space-y-4">
+                        <FormSection title="">
+                          <FormField label="Empresa" required error={err.companyId}>
+                            <FormSelect value={line.companyId} onChange={(e) => updateLine(line.id, { companyId: e.target.value })} required>
+                              <option value="">Seleccionar empresa…</option>
+                              {activeCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </FormSelect>
+                          </FormField>
+                          <FormField label="Centro de Costo" required error={err.costCenterId}>
+                            <FormSelect
+                              value={line.costCenterId}
+                              onChange={(e) => updateLine(line.id, { costCenterId: e.target.value })}
+                              disabled={!line.companyId}
+                              required
+                            >
+                              <option value="">{line.companyId ? 'Seleccionar centro…' : 'Primero empresa'}</option>
+                              {activeCostCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>)}
+                            </FormSelect>
+                          </FormField>
+                        </FormSection>
+
+                        {showBeneficiaryField && (
+                          <FormField label="¿A quién corresponde este seguro?" required error={err.beneficiaryDescription} fullWidth>
+                            <FormTextarea
+                              placeholder="Ej: Empleados del establecimiento Las Vertientes — Personal en relación de dependencia"
+                              value={line.beneficiaryDescription}
+                              onChange={(e) => updateLine(line.id, { beneficiaryDescription: e.target.value })}
+                              rows={2}
+                            />
+                            <p className="text-xs text-slate-400 mt-1">
+                              Requerido cuando Accidentes Personales no está vinculado a un activo específico.
+                            </p>
+                          </FormField>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tipo de seguro + coberturas */}
+                  <div className="border-t border-slate-100 pt-5">
+                    <FormField label="Tipo de Seguro" required error={err.insuranceType}>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <FormSelect
+                            value={line.insuranceType}
+                            onChange={(e) => updateLine(line.id, { insuranceType: e.target.value, coverageTypes: [] })}
+                            required
+                          >
+                            <option value="">Seleccionar tipo…</option>
+                            {insuranceTypes.map((t) => <option key={t.id} value={t.label}>{t.label}</option>)}
+                          </FormSelect>
+                        </div>
+                        <Link
+                          to="/settings/insurance-types"
+                          title="Configurar tipos de seguro"
+                          className="flex-shrink-0 p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                        >
+                          <Settings size={15} />
+                        </Link>
+                      </div>
+                    </FormField>
+
+                    <div className="mt-4">
+                      <p className="text-sm font-semibold text-slate-800 mb-2">Coberturas</p>
+                      <CoverageSelector
+                        insuranceType={line.insuranceType}
+                        insuranceTypes={insuranceTypes}
+                        selected={line.coverageTypes}
+                        onChange={(v) => updateLine(line.id, { coverageTypes: v })}
+                        error={err.coverageTypes}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Importes */}
+                  <div className="border-t border-slate-100 pt-5">
+                    <p className="text-sm font-semibold text-slate-800 mb-3">Suma Asegurada</p>
+                    <FormSection title="">
+                      <FormField label="Moneda">
+                        <FormSelect value={line.currency} onChange={(e) => updateLine(line.id, { currency: e.target.value as 'ARS' | 'USD' })}>
+                          {CURRENCY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </FormSelect>
+                      </FormField>
+                      <FormField label={`Suma Asegurada (${line.currency})`}>
+                        <FormInput
+                          type="number" placeholder="Ej: 30000000" min="0" step="1"
+                          value={line.insuredAmount}
+                          onChange={(e) => updateLine(line.id, { insuredAmount: e.target.value })}
+                        />
+                      </FormField>
+                      <FormField label="Tipo de Cambio (ARS/USD)">
+                        <FormInput
+                          type="number" placeholder="Ej: 970" min="0" step="0.01"
+                          value={line.exchangeRate}
+                          onChange={(e) => updateLine(line.id, { exchangeRate: e.target.value })}
+                        />
+                      </FormField>
+                      <FormField label={`Suma Asegurada (${equivalentCurrencyLabel})`}>
+                        <FormInput
+                          value={equivalentAmount != null
+                            ? `${equivalentPrefix} ${equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : ''}
+                          readOnly disabled placeholder="Se calcula automáticamente"
+                        />
+                      </FormField>
+                    </FormSection>
+                  </div>
+
+                  {/* Documentación */}
+                  <div className="border-t border-slate-100 pt-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-slate-800">Documentación</p>
+                      <button
+                        type="button"
+                        onClick={() => setAttachModalLineId(line.id)}
+                        className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
+                      >
+                        <Plus size={12} />
+                        Adjuntar archivo
+                      </button>
+                    </div>
+
+                    {drafts.length === 0 ? (
+                      <div
+                        onClick={() => setAttachModalLineId(line.id)}
+                        className="border-2 border-dashed border-slate-200 rounded-xl py-5 text-center cursor-pointer hover:border-brand-300 hover:bg-brand-50/20 transition-colors"
+                      >
+                        <Paperclip size={16} className="mx-auto text-slate-300 mb-1" />
+                        <p className="text-xs text-slate-500">Adjuntá la póliza, certificados u otros documentos</p>
+                      </div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {drafts.map((att, attIdx) => (
+                          <li key={attIdx} className="flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-xl group">
+                            <FileTypeIcon fileType={att.fileType} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5">
+                                {att.name}
+                                {att.isCirculationCard && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-brand-50 text-brand-700 border border-brand-200 flex-shrink-0">
+                                    Tarjeta de circulación
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-xs text-slate-400">
+                                {att.description ? <>{att.description} · {att.fileSize}</> : att.fileSize}
+                              </p>
+                            </div>
+                            {form.endDate && (
+                              <div className="flex-shrink-0">
+                                <ExpirationCell date={form.endDate} />
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setAttachmentDraftsByLine((prev) => ({
+                                ...prev,
+                                [line.id]: (prev[line.id] ?? []).filter((_, i) => i !== attIdx),
+                              }))}
+                              className="p-1 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                            >
+                              <X size={14} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {attachModalLineId === line.id && (
+                      <AddAttachmentModal
+                        onClose={() => setAttachModalLineId(null)}
+                        isPolicyAttachment
+                        onAdd={(partial) => {
+                          setAttachmentDraftsByLine((prev) => ({
+                            ...prev,
+                            [line.id]: [...(prev[line.id] ?? []), {
+                              name: partial.name,
+                              description: partial.description,
+                              fileType: partial.fileType,
+                              fileSize: partial.fileSize,
+                              isCirculationCard: partial.isCirculationCard ?? false,
+                              uploadedAt: partial.uploadedAt,
+                              uploadedBy: partial.uploadedBy,
+                              pendingFile: partial.pendingFile,
+                            }],
+                          }))
+                          setAttachModalLineId(null)
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+              </SectionCard>
+            )
+          })}
+
+          <button
+            type="button"
+            onClick={addLine}
+            className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors px-1"
+          >
+            <Plus size={14} />
+            Agregar línea de cobertura
+          </button>
+        </div>
 
         {/* Footer */}
         <div className="flex items-center gap-3 pt-2 pb-6">
