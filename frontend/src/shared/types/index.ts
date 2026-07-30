@@ -71,7 +71,6 @@ export type DocumentType =
   | 'CREDIT_NOTE'
   | 'DEBIT_NOTE'
   | 'ENDORSEMENT'
-  | 'REBILLING'
   | 'ADJUSTMENT_ENTRY'
 
 export type DocumentStatus = 'ISSUED' | 'APPLIED' | 'CANCELLED' | 'OBSERVED'
@@ -96,12 +95,14 @@ export interface DocumentTypeDef {
   hasInstallments: boolean
   hasPaymentStatus: boolean
   affectsLinkedBalance: boolean
-  affectsLinkedDirection?: 'credit' | 'debit' | 'adjusts' | 'replaces'
+  // 'economicImpact': el signo lo resuelve economicImpactType del propio
+  // documento, no un valor fijo por tipo — hoy solo lo usa Endoso.
+  affectsLinkedDirection?: 'credit' | 'debit' | 'adjusts' | 'economicImpact'
   relationType?: RelationType
   requiresAdjustmentReason: boolean
   requiresAdjustmentSign: boolean
-  // Endoso: se asocia a una póliza propia y no tiene importes propios — ver
-  // document-types.ts (backend) para el detalle de esta excepción deliberada.
+  // Endoso: además de su propio importe, se asocia a una póliza propia — la
+  // que modifica — distinta de la póliza de la factura vinculada.
   requiresPolicy: boolean
   hasOwnAmounts: boolean
   requiresEconomicImpactType: boolean
@@ -165,7 +166,7 @@ export type AssetCategory =
   | 'tractor' | 'cosechadora' | 'pulverizadora' | 'implemento'
   | 'edificio' | 'establecimiento'
   | 'equipo' | 'maquinaria' | 'infraestructura'
-  | 'carga'
+  | 'carga_animal' | 'carga_comun'
 
 export type Currency = 'ARS' | 'USD'
 
@@ -298,7 +299,7 @@ export interface AccountingDocumentAttachment {
 
 export interface PolicyAttachment {
   id: string
-  policyId: string
+  policyAssetCoverageId: string
   name: string
   description: string
   fileType: 'pdf' | 'image' | 'excel' | 'other'
@@ -320,30 +321,70 @@ export interface PolicyAsset {
   costCenterCode?: string | null
 }
 
+// Línea de cobertura dentro de una póliza — un activo (o ninguno, "sin
+// activo") con su propio tipo de seguro, coberturas, suma asegurada/tipo de
+// cambio y documentación. companyName/costCenterName solo aplican cuando no
+// hay activo (con activo, la imputación vive en Asset.allocations).
+export interface PolicyCoverage {
+  id: string
+  policyId: string
+  assetId: string | null
+  asset?: PolicyAsset | null
+  insuranceTypeId: string
+  insuranceType: string
+  coverageIds: string[]
+  coverageNames?: string[]
+  insuredAmount: number
+  currency: 'ARS' | 'USD'
+  exchangeRate: number
+  insuredAmountArs: number
+  insuredAmountUsd: number
+  companyId?: string | null
+  companyName?: string | null
+  costCenterId?: string | null
+  costCenterName?: string | null
+  costCenterCode?: string | null
+  beneficiaryDescription?: string | null
+  attachmentsCount?: number
+  circulationCardAttachment?: { id: string; fileUrl?: string; name: string } | null
+}
+
 export interface Policy {
   id: string
   policyNumber: string
   insuranceCompany: string
   producerId: string
-  insuranceType: string
-  coverageType: string
-  coverageTypes?: string[]
-  coverageNames?: string[]
-  beneficiaryDescription?: string
   startDate: string
   endDate: string
-  assetIds: string[]
-  selectedAssets?: PolicyAsset[]
-  companyId: string | null
-  costCenterId: string | null
-  insuredAmountArs: number
-  exchangeRate: number
-  insuredAmountUsd: number
-  currency: 'ARS' | 'USD'
   description: string
   status: PolicyStatus
-  attachmentsCount?: number
+  isActive?: boolean
+  deactivatedAt?: string | null
+  // Detalle completo — presente en findById/create/update.
+  coverages?: PolicyCoverage[]
+  // Agregados del listado (una póliza puede tener varias líneas, cada una
+  // con su propio tipo de seguro/activo/suma asegurada).
+  coverageCount?: number
+  assetCount?: number
+  hasSinActivo?: boolean
+  assetNames?: string[]
+  insuranceTypeNames?: string[]
+  totalInsuredAmountArs?: number
+  totalInsuredAmountUsd?: number
   circulationCardAttachment?: { id: string; fileUrl?: string; name: string } | null
+  // Solo viene cuando se filtra la lista por assetId — la línea de ESE activo.
+  assetCoverage?: {
+    id: string
+    insuranceTypeId: string
+    insuranceTypeName: string
+    insuredAmount: number
+    currency: 'ARS' | 'USD'
+    exchangeRate: number
+    insuredAmountArs: number | null
+    insuredAmountUsd: number | null
+    circulationCardAttachment?: { id: string; fileUrl?: string; name: string } | null
+  } | null
+  attachmentsCount?: number
   createdAt: string
   updatedAt: string
 }
@@ -383,10 +424,18 @@ export interface AccountingDocument {
   updatedAt: string
 }
 
+// El nombre quedó de cuando apuntaba directo a una póliza — hoy apunta a una
+// línea de cobertura (policyAssetCoverageId), que ya sabe a qué póliza y a
+// qué activo (o ninguno) corresponde. policyId/assetId son el espejo
+// denormalizado que ya manda el backend, para no tener que resolver el join.
 export interface DocumentPolicyAllocation {
   id: string
   accountingDocumentId: string
+  policyAssetCoverageId: string
   policyId: string
+  assetId: string | null
+  policy?: { id: string; policyNumber: string; insuranceCompany: string }
+  asset?: { id: string; name: string; code: string | null; fixedAssetCode: string | null } | null
   allocatedAmount: number
   allocationPercentage: number
 }

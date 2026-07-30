@@ -61,8 +61,21 @@ export const companiesService = {
   async softDelete(id: string) {
     await companiesService.findById(id) // 404 si no existe
 
+    // companyId ya no vive en Policy — se resuelve vía sus líneas de
+    // cobertura "sin activo" (companyId directo) o los activos cubiertos
+    // (Asset.allocations.companyId).
     const linkedPolicies = await prisma.policy.count({
-      where: { companyId: id, isActive: true },
+      where: {
+        isActive: true,
+        coverages: {
+          some: {
+            OR: [
+              { companyId: id },
+              { asset: { allocations: { some: { companyId: id } } } },
+            ],
+          },
+        },
+      },
     })
     if (linkedPolicies > 0) {
       throw new AppError(

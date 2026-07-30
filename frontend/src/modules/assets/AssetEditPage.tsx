@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save, X, MapPin, Hash, Info, Tag } from 'lucide-react'
+import { Save, X, MapPin, Hash, Tag } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -187,6 +187,13 @@ export default function AssetEditPage() {
     () => computeEquivalent(patrimonialValueNew),
     [patrimonialValueNew, exchangeRate, currency],
   )
+  // Los campos de valor de acá arriba solo sirven para cargar la PRIMERA
+  // valuación de cada tipo (si el activo todavía no tiene ninguna) — una vez
+  // que ya existe al menos un registro, las actualizaciones siguientes se
+  // hacen con el "+" de la pestaña Valuaciones del detalle del activo, no
+  // reeditando este formulario.
+  const hasRealHistory = valueHistory.some((e) => e.type === 'real')
+  const hasNuevoHistory = valueHistory.some((e) => e.type === 'nuevo')
   function formatEquivalent(value: string): string {
     return value
       ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -257,7 +264,12 @@ export default function AssetEditPage() {
       area: asset.area ?? '',
       observations: asset.observations,
     })
-    setPatrimonialValueUsd(asset.patrimonialValueUsd != null ? String(asset.patrimonialValueUsd) : '')
+    // Este input muestra/edita el valor en la moneda elegida (currency), no
+    // necesariamente en USD pese al nombre del state — asset.patrimonialValueUsd
+    // ya viene forzado a USD (ver mapAsset), así que acá se toma el cierre en la
+    // moneda nativa del activo para no mostrar pesos convertidos a dólares.
+    const rawCurrentValue = asset.currency === 'ARS' ? asset.currentValueArs : asset.currentValueUsd
+    setPatrimonialValueUsd(rawCurrentValue != null ? String(rawCurrentValue) : '')
     setPatrimonialValueNew(asset.patrimonialValueNew != null ? String(asset.patrimonialValueNew) : '')
     setCurrency(asset.currency ?? 'USD')
     setExchangeRate(asset.exchangeRate != null ? String(asset.exchangeRate) : '1')
@@ -297,7 +309,9 @@ export default function AssetEditPage() {
   const isEdificio = assetCategory === 'edificio'
   const isEstablecimiento = assetCategory === 'establecimiento'
   const isInfraestructura = assetCategory === 'infraestructura'
-  const isCarga = assetCategory === 'carga'
+  // Solo la carga animal tiene especie/raza — la carga común no. Ambas sí
+  // admiten Bien de Uso asociado.
+  const isLivestock = assetCategory === 'carga_animal'
   const isEquipoMaq = ['equipo', 'maquinaria'].includes(assetCategory ?? '')
   const isSiloInfra = isInfraestructura && form.infraType === 'Silo'
 
@@ -331,11 +345,11 @@ export default function AssetEditPage() {
   function validate(): boolean {
     const e: FormErrors = {}
     if (!form.name.trim()) e.name = 'El nombre del activo es obligatorio.'
-    if (patrimonialValueUsd && parseFloat(patrimonialValueUsd) < 0)
+    if (!hasRealHistory && patrimonialValueUsd && parseFloat(patrimonialValueUsd) < 0)
       e.patrimonialValueUsd = 'El valor patrimonial no puede ser negativo.'
     if (!exchangeRate || parseFloat(exchangeRate) <= 0)
       e.exchangeRate = 'El tipo de cambio debe ser mayor a 0.'
-    if (patrimonialValueUsd && !valuationDate)
+    if (((!hasRealHistory && patrimonialValueUsd) || (!hasNuevoHistory && patrimonialValueNew)) && !valuationDate)
       e.valuationDate = 'Indicá la fecha de valuación.'
     setErrors(e)
     notifyValidationErrors(e)
@@ -474,7 +488,10 @@ export default function AssetEditPage() {
 
       // Update asset + allocations + delete attachments — all in parallel.
       // El historial de valuación se registra solo, en el backend, a partir
-      // de currentValue/patrimonialValueNew + purchaseDate de este mismo PUT.
+      // de currentValue/patrimonialValueNew + purchaseDate de este mismo PUT —
+      // pero solo se envían acá la primera vez (sin historial todavía). Con
+      // historial ya cargado, las actualizaciones siguientes van por el "+" de
+      // la pestaña Valuaciones, no reenviando estos campos desde este form.
       await Promise.all([
         assetsApi.update(asset.id, {
           name: form.name.trim(),
@@ -485,12 +502,12 @@ export default function AssetEditPage() {
           model: form.model.trim() || undefined,
           year: form.year ? parseInt(form.year, 10) : undefined,
           serialNumber: form.serialNumber.trim() || undefined,
-          purchaseDate: valuationDate || undefined,
+          purchaseDate: (!hasRealHistory || !hasNuevoHistory) ? (valuationDate || undefined) : undefined,
           dischargeDate: dischargeDate || null,
           saleDate: saleDate || null,
           reactivationDate: reactivationDate || null,
-          currentValue: patrimonialValueUsd ? parseFloat(patrimonialValueUsd) : undefined,
-          patrimonialValueNew: patrimonialValueNew ? parseFloat(patrimonialValueNew) : undefined,
+          currentValue: (!hasRealHistory && patrimonialValueUsd) ? parseFloat(patrimonialValueUsd) : undefined,
+          patrimonialValueNew: (!hasNuevoHistory && patrimonialValueNew) ? parseFloat(patrimonialValueNew) : undefined,
           currency,
           exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
           mapsUrl: form.mapsUrl.trim() || undefined,
@@ -552,23 +569,12 @@ export default function AssetEditPage() {
               <FormField label="Código de activo (sistema)">
                 <AutoCodeDisplay code={asset.internalCode} />
               </FormField>
-              {isCarga ? (
-                <FormField label="Bien de Uso" fullWidth>
-                  <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-lg border border-amber-200 bg-amber-50">
-                    <Info size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-amber-800">
-                      Este tipo de activo <strong>no requiere Bien de Uso asignado</strong>.
-                    </p>
-                  </div>
-                </FormField>
-              ) : (
-                <FormField label="Bien de Uso" fullWidth>
-                  <BienDeUsoField
-                    value={form.fixedAssetId}
-                    onChange={(id) => setForm((p) => ({ ...p, fixedAssetId: id }))}
-                  />
-                </FormField>
-              )}
+              <FormField label="Bien de Uso" fullWidth>
+                <BienDeUsoField
+                  value={form.fixedAssetId}
+                  onChange={(id) => setForm((p) => ({ ...p, fixedAssetId: id }))}
+                />
+              </FormField>
               <FormField label="Tipo de activo">
                 <AssetTypeBadge label={form.assetType} />
               </FormField>
@@ -821,7 +827,7 @@ export default function AssetEditPage() {
           )}
 
           {/* Carga animal */}
-          {isCarga && (
+          {isLivestock && (
             <SectionCard title="Datos de la Carga" subtitle="Especie, categoría y características de la hacienda o carga animal.">
               <FormSection title="">
                 <FormField label="Especie">
@@ -856,52 +862,82 @@ export default function AssetEditPage() {
                     onChange={(e) => { setExchangeRate(e.target.value); setErrors((p) => ({ ...p, exchangeRate: undefined })) }}
                   />
                 </FormField>
-                <FormField label={`Valor Patrimonial Real (${currency})`} error={errors.patrimonialValueUsd as string | undefined}>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
+                {hasRealHistory ? (
+                  <FormField label={`Valor Patrimonial Real (${currency})`} fullWidth>
+                    <p className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+                      Ya tiene valuaciones registradas — para actualizarlo, usá el{' '}
+                      <span className="font-medium text-slate-700">+</span> de la pestaña{' '}
+                      <span className="font-medium text-slate-700">Valuaciones</span> en el detalle del activo.
+                    </p>
+                  </FormField>
+                ) : (
+                  <>
+                    <FormField label={`Valor Patrimonial Real (${currency})`} error={errors.patrimonialValueUsd as string | undefined}>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
+                        <FormInput
+                          type="number" min={0} step="0.01" placeholder="Ej: 32000"
+                          className="pl-7"
+                          value={patrimonialValueUsd}
+                          onChange={(e) => { setPatrimonialValueUsd(e.target.value); setErrors((p) => ({ ...p, patrimonialValueUsd: undefined })) }}
+                        />
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">Dejalo en blanco si todavía no conocés el valor real.</p>
+                    </FormField>
+                    <FormField label={`Valor Patrimonial Real (${equivalentCurrencyLabel})`}>
+                      <FormInput
+                        value={formatEquivalent(equivalentReal)}
+                        readOnly
+                        disabled
+                        placeholder="Se calcula automáticamente"
+                      />
+                    </FormField>
+                  </>
+                )}
+                {hasNuevoHistory ? (
+                  <FormField label={`Valor Patrimonial a Nuevo (${currency})`} fullWidth>
+                    <p className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+                      Ya tiene valuaciones registradas — para actualizarlo, usá el{' '}
+                      <span className="font-medium text-slate-700">+</span> de la pestaña{' '}
+                      <span className="font-medium text-slate-700">Valuaciones</span> en el detalle del activo.
+                    </p>
+                  </FormField>
+                ) : (
+                  <>
+                    <FormField label={`Valor Patrimonial a Nuevo (${currency})`}>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
+                        <FormInput
+                          type="number" min={0} step="0.01" placeholder="Ej: 45000"
+                          className="pl-7"
+                          value={patrimonialValueNew}
+                          onChange={(e) => setPatrimonialValueNew(e.target.value)}
+                        />
+                      </div>
+                    </FormField>
+                    <FormField label={`Valor Patrimonial a Nuevo (${equivalentCurrencyLabel})`}>
+                      <FormInput
+                        value={formatEquivalent(equivalentNew)}
+                        readOnly
+                        disabled
+                        placeholder="Se calcula automáticamente"
+                      />
+                    </FormField>
+                  </>
+                )}
+                {(!hasRealHistory || !hasNuevoHistory) && (
+                  <FormField
+                    label="Fecha de valuación"
+                    required={(!hasRealHistory && !!patrimonialValueUsd) || (!hasNuevoHistory && !!patrimonialValueNew)}
+                    error={errors.valuationDate as string | undefined}
+                  >
                     <FormInput
-                      type="number" min={0} step="0.01" placeholder="Ej: 32000"
-                      className="pl-7"
-                      value={patrimonialValueUsd}
-                      onChange={(e) => { setPatrimonialValueUsd(e.target.value); setErrors((p) => ({ ...p, patrimonialValueUsd: undefined })) }}
+                      type="date"
+                      value={valuationDate}
+                      onChange={(e) => { setValuationDate(e.target.value); setErrors((p) => ({ ...p, valuationDate: undefined })) }}
                     />
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">Dejalo en blanco si todavía no conocés el valor real.</p>
-                </FormField>
-                <FormField label={`Valor Patrimonial Real (${equivalentCurrencyLabel})`}>
-                  <FormInput
-                    value={formatEquivalent(equivalentReal)}
-                    readOnly
-                    disabled
-                    placeholder="Se calcula automáticamente"
-                  />
-                </FormField>
-                <FormField label={`Valor Patrimonial a Nuevo (${currency})`}>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">$</span>
-                    <FormInput
-                      type="number" min={0} step="0.01" placeholder="Ej: 45000"
-                      className="pl-7"
-                      value={patrimonialValueNew}
-                      onChange={(e) => setPatrimonialValueNew(e.target.value)}
-                    />
-                  </div>
-                </FormField>
-                <FormField label={`Valor Patrimonial a Nuevo (${equivalentCurrencyLabel})`}>
-                  <FormInput
-                    value={formatEquivalent(equivalentNew)}
-                    readOnly
-                    disabled
-                    placeholder="Se calcula automáticamente"
-                  />
-                </FormField>
-                <FormField label="Fecha de valuación" required={!!patrimonialValueUsd} error={errors.valuationDate as string | undefined}>
-                  <FormInput
-                    type="date"
-                    value={valuationDate}
-                    onChange={(e) => { setValuationDate(e.target.value); setErrors((p) => ({ ...p, valuationDate: undefined })) }}
-                  />
-                </FormField>
+                  </FormField>
+                )}
               </FormSection>
               <div className="border-t border-slate-100 pt-4">
                 <ValueHistorySection

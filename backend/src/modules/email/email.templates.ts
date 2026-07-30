@@ -44,13 +44,24 @@ function wrapEmailShell(title: string, subtitle: string, bodyHtml: string): stri
     </body></html>`
 }
 
-// Un ítem de reparto (centro de costo o bien de uso) sobre el total del
-// documento — flat, sin agrupar por póliza.
+// Un Bien de Uso (con su importe/participación) dentro de un Centro de
+// Costo. code/name en null cuando la línea no tiene Bien de Uso asociado —
+// ahí no se inventa una etiqueta, el renglón se muestra en blanco.
 export interface ManualDocumentBreakdownItem {
   code: string | null
   name: string | null
   amount: number
   percentage: number
+}
+
+// Un Centro de Costo con sus Bienes de Uso agrupados — un Centro de Costo
+// puede tener uno, varios, o ninguno (un único ítem en blanco). El % del
+// grupo (mostrado una sola vez, en la celda fusionada) es la suma de los
+// ítems, así el total entre todos los Centros de Costo sigue dando 100%.
+export interface ManualDocumentCostCenterGroup {
+  code: string | null
+  name: string | null
+  items: ManualDocumentBreakdownItem[]
 }
 
 export interface ManualDocumentEmailAttachment {
@@ -66,8 +77,7 @@ export interface ManualDocumentEmailData {
   paymentMethod: string | null
   currency: string
   totalAmount: number
-  costCenters: ManualDocumentBreakdownItem[]
-  assets: ManualDocumentBreakdownItem[]
+  costCenters: ManualDocumentCostCenterGroup[]
   attachments: ManualDocumentEmailAttachment[]
   message?: string
 }
@@ -95,28 +105,58 @@ export function buildManualDocumentSendEmail(data: ManualDocumentEmailData): { s
     `<tr><td style="padding:4px 0; color:#6b7280;">Total</td><td style="padding:4px 0; text-align:right; font-weight:600;">${formatAmount(data.totalAmount, data.currency)}</td></tr>`,
   )
 
-  // Tabla en vez de flexbox — muchos clientes de mail (Outlook, algunos
-  // webmails) ignoran display:flex y renderizan todo pegado en una línea.
-  function breakdownRow(item: ManualDocumentBreakdownItem): string {
-    const label = [item.code, item.name].filter(Boolean).map((s) => escapeHtml(s as string)).join(' — ') || '—'
+  // Tabla real (con <thead>/rowspan) en vez de flexbox — muchos clientes de
+  // mail (Outlook, algunos webmails) ignoran display:flex, pero rowspan
+  // sobre <table> es HTML de tabla básico y sí se respeta. La celda de
+  // Centro de Costo se fusiona verticalmente cuando tiene más de un Bien de
+  // Uso (o un único renglón en blanco cuando no tiene ninguno).
+  function costCenterGroupsHtml(): string {
+    if (data.costCenters.length === 0) {
+      return '<p style="color:#9ca3af; font-size:13px; font-style:italic;">Sin centros de costo asociados.</p>'
+    }
+    const cellStyle = 'padding:10px 12px; font-size:13px; border:1px solid #e5e7eb;'
+    const rowsHtml = data.costCenters
+      .map((group) => {
+        const ccLabel = [group.code, group.name].filter(Boolean).map((s) => escapeHtml(s as string)).join(' — ') || '—'
+        const ccPercentage = group.items.reduce((sum, item) => sum + item.percentage, 0)
+        return group.items
+          .map((item, i) => {
+            const buLabel = item.code || item.name
+              ? [item.code, item.name].filter(Boolean).map((s) => escapeHtml(s as string)).join(' — ')
+              : ''
+            const ccCell = i === 0
+              ? `<td rowspan="${group.items.length}" style="${cellStyle} font-weight:600; color:#111827; vertical-align:top; background:#f9fafb;">
+                  ${ccLabel}<br/><span style="font-weight:400; color:#6b7280;">${ccPercentage.toFixed(1)}%</span>
+                </td>`
+              : ''
+            return `
+              <tr>
+                ${ccCell}
+                <td style="${cellStyle} color:#374151;">${buLabel || '<span style="color:#9ca3af;">—</span>'}</td>
+                <td style="${cellStyle} color:#374151; text-align:right; white-space:nowrap;">${formatAmount(item.amount, data.currency)}</td>
+                <td style="${cellStyle} color:#6b7280; text-align:right; white-space:nowrap;">${item.percentage.toFixed(1)}%</td>
+              </tr>`
+          })
+          .join('')
+      })
+      .join('')
+
+    const headerStyle = 'padding:8px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; text-align:left; border:1px solid #e5e7eb; background:#f3f4f6;'
     return `
-      <table style="width:100%; border-collapse:collapse; margin-bottom:8px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px;">
-        <tr>
-          <td style="padding:10px 12px; font-size:13px; font-weight:600; color:#111827;">${label}</td>
-          <td style="padding:10px 16px 10px 24px; font-size:13px; color:#374151; text-align:right; white-space:nowrap; width:1%;">${item.percentage.toFixed(1)}%</td>
-        </tr>
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="${headerStyle}">Centro de Costo</th>
+            <th style="${headerStyle}">Bien de Uso</th>
+            <th style="${headerStyle} text-align:right;">Importe</th>
+            <th style="${headerStyle} text-align:right;">%</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
       </table>`
   }
 
-  const costCentersHtml =
-    data.costCenters.length === 0
-      ? '<p style="color:#9ca3af; font-size:13px; font-style:italic;">Sin centros de costo asociados.</p>'
-      : data.costCenters.map(breakdownRow).join('')
-
-  const assetsHtml =
-    data.assets.length === 0
-      ? '<p style="color:#9ca3af; font-size:13px; font-style:italic;">Sin bienes de uso asociados.</p>'
-      : data.assets.map(breakdownRow).join('')
+  const costCentersHtml = costCenterGroupsHtml()
 
   const attachmentsHtml =
     data.attachments.length === 0
@@ -144,10 +184,8 @@ export function buildManualDocumentSendEmail(data: ManualDocumentEmailData): { s
 
   const bodyHtml = `
     <table style="width:100%; border-collapse:collapse; margin-bottom:16px;">${rows.join('')}</table>
-    <p style="font-size:13px; font-weight:600; color:#374151; margin:16px 0 4px;">Centros de Costo</p>
+    <p style="font-size:13px; font-weight:600; color:#374151; margin:16px 0 8px;">Centros de Costo y Bienes de Uso</p>
     ${costCentersHtml}
-    <p style="font-size:13px; font-weight:600; color:#374151; margin:16px 0 4px;">Bienes de Uso</p>
-    ${assetsHtml}
     <p style="font-size:13px; font-weight:600; color:#374151; margin:16px 0 4px;">Adjuntos (${data.attachments.length})</p>
     ${attachmentsHtml}
     ${messageHtml}`

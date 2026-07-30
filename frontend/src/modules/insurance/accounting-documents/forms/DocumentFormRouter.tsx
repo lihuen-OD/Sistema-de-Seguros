@@ -3,7 +3,6 @@ import DocumentoNotaCreditoForm from './DocumentoNotaCreditoForm'
 import DocumentoNotaDebitoForm from './DocumentoNotaDebitoForm'
 import DocumentoEndosoForm from './DocumentoEndosoForm'
 import DocumentoAsientoAjusteForm from './DocumentoAsientoAjusteForm'
-import DocumentoRefacturacionForm from './DocumentoRefacturacionForm'
 import type { AccountingDocument, DocumentType } from '../../../../shared/types'
 
 interface DocumentFormRouterProps {
@@ -27,8 +26,6 @@ export function DocumentFormRouter({ documentType, initialDoc, sourcePolicyId }:
       return <DocumentoEndosoForm initialDoc={initialDoc} />
     case 'ADJUSTMENT_ENTRY':
       return <DocumentoAsientoAjusteForm initialDoc={initialDoc} />
-    case 'REBILLING':
-      return <DocumentoRefacturacionForm initialDoc={initialDoc} />
     default:
       return null
   }

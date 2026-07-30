@@ -325,6 +325,10 @@ describe('Assets API', () => {
           assetStatusHistory: { create: jest.fn().mockResolvedValue({}) },
           assetValueHistory: {
             findFirst: jest.fn().mockResolvedValue(null),
+            // findMany resuelve "¿esta fecha es la más reciente del historial?"
+            // (syncAssetCurrentValueIfLatest) — vacío por default = nunca lo es,
+            // así los tests que no la mockean explícitamente no tocan asset.update.
+            findMany: jest.fn().mockResolvedValue([]),
             create: jest.fn().mockResolvedValue({}),
             update: jest.fn().mockResolvedValue({}),
           },
@@ -381,11 +385,17 @@ describe('Assets API', () => {
       expect(findFirst).not.toHaveBeenCalled()
     })
 
-    it('creates a new value-history entry when currentValue is saved on a valuation date with no existing entry', async () => {
+    it('creates a new value-history entry when currentValue is saved on a valuation date with no existing entry, and syncs it as the asset current value since it is the latest', async () => {
+      const valuationDate = new Date('2026-07-29T00:00:00.000Z')
       db.asset.findUnique.mockResolvedValue({ ...fakeAsset, purchaseDate: new Date('2026-01-01T00:00:00.000Z') })
       const findFirst = jest.fn().mockResolvedValue(null)
-      const historyCreate = jest.fn().mockResolvedValue({})
-      mockUpdateTransaction({ assetValueHistory: { findFirst, create: historyCreate, update: jest.fn() } })
+      const historyCreate = jest.fn().mockResolvedValue({ id: 'vh-new-1', date: valuationDate })
+      const findMany = jest.fn().mockResolvedValue([{ id: 'vh-new-1', date: valuationDate }])
+      const assetUpdate = jest.fn().mockResolvedValue({ id: ASSET_ID })
+      mockUpdateTransaction({
+        asset: { update: assetUpdate },
+        assetValueHistory: { findFirst, findMany, create: historyCreate, update: jest.fn() },
+      })
 
       const res = await request(app)
         .put(`/api/v1/assets/${ASSET_ID}`)
@@ -402,15 +412,22 @@ describe('Assets API', () => {
       expect(data.valueUsd).toBe(45000)
       expect(data.valueArs).toBe(67500000)
       expect(data.type).toBe('real')
+
+      // Es la entrada más reciente del historial → se refleja como valor actual del activo.
+      expect(assetUpdate).toHaveBeenCalledWith({
+        where: { id: ASSET_ID },
+        data: { currentValue: 45000, currentValueArs: 67500000, currentValueUsd: 45000 },
+      })
     })
 
     it('updates the existing value-history entry instead of creating a new one when the valuation date is unchanged', async () => {
       const sameDate = new Date('2026-07-29T00:00:00.000Z')
       db.asset.findUnique.mockResolvedValue({ ...fakeAsset, purchaseDate: sameDate })
       const findFirst = jest.fn().mockResolvedValue({ id: 'vh-existing-1' })
-      const historyUpdate = jest.fn().mockResolvedValue({})
+      const historyUpdate = jest.fn().mockResolvedValue({ id: 'vh-existing-1', date: sameDate })
       const historyCreate = jest.fn()
-      mockUpdateTransaction({ assetValueHistory: { findFirst, create: historyCreate, update: historyUpdate } })
+      const findMany = jest.fn().mockResolvedValue([{ id: 'vh-existing-1', date: sameDate }])
+      mockUpdateTransaction({ assetValueHistory: { findFirst, findMany, create: historyCreate, update: historyUpdate } })
 
       const res = await request(app)
         .put(`/api/v1/assets/${ASSET_ID}`)
@@ -425,11 +442,44 @@ describe('Assets API', () => {
       })
     })
 
-    it('syncs the patrimonialValueNew entry independently under type "nuevo"', async () => {
-      db.asset.findUnique.mockResolvedValue({ ...fakeAsset, purchaseDate: new Date('2026-07-29T00:00:00.000Z') })
+    it('does not overwrite the asset current value when the saved valuation date is not the most recent in the history', async () => {
+      const oldDate = new Date('2026-01-15T00:00:00.000Z')
+      const newerDate = new Date('2026-07-20T00:00:00.000Z')
+      db.asset.findUnique.mockResolvedValue({ ...fakeAsset, purchaseDate: oldDate })
       const findFirst = jest.fn().mockResolvedValue(null)
-      const historyCreate = jest.fn().mockResolvedValue({})
-      mockUpdateTransaction({ assetValueHistory: { findFirst, create: historyCreate, update: jest.fn() } })
+      const historyCreate = jest.fn().mockResolvedValue({ id: 'vh-old-1', date: oldDate })
+      // Ya existe una entrada más nueva (cargada desde el "+" de Valuaciones) — no debe pisarse.
+      const findMany = jest.fn().mockResolvedValue([{ id: 'vh-newer-1', date: newerDate }])
+      const assetUpdate = jest.fn().mockResolvedValue({ id: ASSET_ID })
+      mockUpdateTransaction({
+        asset: { update: assetUpdate },
+        assetValueHistory: { findFirst, findMany, create: historyCreate, update: jest.fn() },
+      })
+
+      const res = await request(app)
+        .put(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ currentValue: 40000, currency: 'USD', exchangeRate: 1500, purchaseDate: '2026-01-15' })
+
+      expect(res.status).toBe(200)
+      expect(historyCreate).toHaveBeenCalledTimes(1)
+      // El historial sí registra la carga (fecha vieja) y el update general de
+      // campos sí corre, pero ninguno de los dos toca currentValue/currentValueArs/Usd —
+      // esos solo se pisan cuando la fecha guardada es la más reciente.
+      for (const call of assetUpdate.mock.calls) {
+        expect(call[0].data).not.toHaveProperty('currentValue')
+        expect(call[0].data).not.toHaveProperty('currentValueArs')
+        expect(call[0].data).not.toHaveProperty('currentValueUsd')
+      }
+    })
+
+    it('syncs the patrimonialValueNew entry independently under type "nuevo"', async () => {
+      const valuationDate = new Date('2026-07-29T00:00:00.000Z')
+      db.asset.findUnique.mockResolvedValue({ ...fakeAsset, purchaseDate: valuationDate })
+      const findFirst = jest.fn().mockResolvedValue(null)
+      const historyCreate = jest.fn().mockResolvedValue({ id: 'vh-new-2', date: valuationDate })
+      const findMany = jest.fn().mockResolvedValue([{ id: 'vh-new-2', date: valuationDate }])
+      mockUpdateTransaction({ assetValueHistory: { findFirst, findMany, create: historyCreate, update: jest.fn() } })
 
       const res = await request(app)
         .put(`/api/v1/assets/${ASSET_ID}`)
@@ -528,9 +578,28 @@ describe('Assets API', () => {
   // ── POST /api/v1/assets/:id/value-history ───────────────────────────────────
 
   describe('POST /api/v1/assets/:id/value-history', () => {
+    // addValueHistory ahora corre en $transaction (mismo criterio de upsert-por-
+    // fecha y sync del valor actual del activo que update()) — se mockea con el
+    // mismo patrón que mockUpdateTransaction.
+    function mockValueHistoryTransaction(tx: Record<string, unknown> = {}) {
+      db.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          asset: { update: jest.fn().mockResolvedValue({ id: ASSET_ID }) },
+          assetValueHistory: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            findMany: jest.fn().mockResolvedValue([]),
+            create: jest.fn().mockResolvedValue({}),
+            update: jest.fn().mockResolvedValue({}),
+          },
+          ...tx,
+        }),
+      )
+    }
+
     it('closes valueArs/valueUsd from value + exchangeRate (value is always USD)', async () => {
-      db.asset.findUnique.mockResolvedValue(fakeAsset) // assertAssetExists
-      db.assetValueHistory.create.mockResolvedValue({})
+      db.asset.findUnique.mockResolvedValue(fakeAsset) // currency lookup
+      const historyCreate = jest.fn().mockResolvedValue({ id: 'vh-1', date: new Date('2026-07-14T00:00:00.000Z') })
+      mockValueHistoryTransaction({ assetValueHistory: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]), create: historyCreate, update: jest.fn() } })
 
       const res = await request(app)
         .post(`/api/v1/assets/${ASSET_ID}/value-history`)
@@ -538,12 +607,102 @@ describe('Assets API', () => {
         .send({ value: 1000, exchangeRate: 1200, date: '2026-07-14', type: 'real' })
 
       expect(res.status).toBe(201)
-      const createCall = db.assetValueHistory.create.mock.calls[0][0]
+      const createCall = historyCreate.mock.calls[0][0]
       expect(createCall.data.value).toBe(1000)
       expect(createCall.data.valueUsd).toBe(1000)
       expect(createCall.data.valueArs).toBe(1200000)
       // exchangeRate es solo para calcular — nunca se persiste como columna propia.
       expect(createCall.data.exchangeRate).toBeUndefined()
+    })
+
+    it('closes valueArs/valueUsd correctly when the entry is loaded in ARS instead of USD', async () => {
+      db.asset.findUnique.mockResolvedValue(fakeAsset)
+      const historyCreate = jest.fn().mockResolvedValue({ id: 'vh-ars-1', date: new Date('2026-07-14T00:00:00.000Z') })
+      mockValueHistoryTransaction({ assetValueHistory: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]), create: historyCreate, update: jest.fn() } })
+
+      const res = await request(app)
+        .post(`/api/v1/assets/${ASSET_ID}/value-history`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ value: 120000, currency: 'ARS', exchangeRate: 1200, date: '2026-07-14', type: 'real' })
+
+      expect(res.status).toBe(201)
+      const createCall = historyCreate.mock.calls[0][0]
+      // El valor cargado (120000) queda tal cual en la moneda elegida (ARS) —
+      // nunca se lo trata como si ya fuera USD.
+      expect(createCall.data.value).toBe(120000)
+      expect(createCall.data.valueArs).toBe(120000)
+      expect(createCall.data.valueUsd).toBe(100)
+    })
+
+    it('updates the existing entry in place instead of duplicating it when an entry already exists for that date', async () => {
+      db.asset.findUnique.mockResolvedValue(fakeAsset)
+      const findFirst = jest.fn().mockResolvedValue({ id: 'vh-existing-9' })
+      const historyCreate = jest.fn()
+      const historyUpdate = jest.fn().mockResolvedValue({ id: 'vh-existing-9', date: new Date('2026-07-14T00:00:00.000Z') })
+      mockValueHistoryTransaction({ assetValueHistory: { findFirst, findMany: jest.fn().mockResolvedValue([]), create: historyCreate, update: historyUpdate } })
+
+      const res = await request(app)
+        .post(`/api/v1/assets/${ASSET_ID}/value-history`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ value: 1000, exchangeRate: 1200, date: '2026-07-14', type: 'real' })
+
+      expect(res.status).toBe(201)
+      expect(historyCreate).not.toHaveBeenCalled()
+      expect(historyUpdate).toHaveBeenCalledWith({
+        where: { id: 'vh-existing-9' },
+        data: expect.objectContaining({ value: 1000, valueUsd: 1000, valueArs: 1200000 }),
+      })
+    })
+
+    it('syncs the asset current value when the added entry is the most recent for that type', async () => {
+      const date = new Date('2026-07-14T00:00:00.000Z')
+      db.asset.findUnique.mockResolvedValue(fakeAsset)
+      const historyCreate = jest.fn().mockResolvedValue({ id: 'vh-1', date })
+      const assetUpdate = jest.fn().mockResolvedValue({ id: ASSET_ID })
+      mockValueHistoryTransaction({
+        asset: { update: assetUpdate },
+        assetValueHistory: {
+          findFirst: jest.fn().mockResolvedValue(null),
+          findMany: jest.fn().mockResolvedValue([{ id: 'vh-1', date }]),
+          create: historyCreate,
+          update: jest.fn(),
+        },
+      })
+
+      const res = await request(app)
+        .post(`/api/v1/assets/${ASSET_ID}/value-history`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ value: 1000, exchangeRate: 1200, date: '2026-07-14', type: 'real' })
+
+      expect(res.status).toBe(201)
+      expect(assetUpdate).toHaveBeenCalledWith({
+        where: { id: ASSET_ID },
+        data: { currentValue: 1000, currentValueArs: 1200000, currentValueUsd: 1000 },
+      })
+    })
+
+    it('does not touch the asset current value when a newer entry already exists for that type', async () => {
+      const date = new Date('2026-01-01T00:00:00.000Z')
+      const newerDate = new Date('2026-07-14T00:00:00.000Z')
+      db.asset.findUnique.mockResolvedValue(fakeAsset)
+      const assetUpdate = jest.fn()
+      mockValueHistoryTransaction({
+        asset: { update: assetUpdate },
+        assetValueHistory: {
+          findFirst: jest.fn().mockResolvedValue(null),
+          findMany: jest.fn().mockResolvedValue([{ id: 'vh-newer', date: newerDate }]),
+          create: jest.fn().mockResolvedValue({ id: 'vh-1', date }),
+          update: jest.fn(),
+        },
+      })
+
+      const res = await request(app)
+        .post(`/api/v1/assets/${ASSET_ID}/value-history`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ value: 800, exchangeRate: 1200, date: '2026-01-01', type: 'real' })
+
+      expect(res.status).toBe(201)
+      expect(assetUpdate).not.toHaveBeenCalled()
     })
 
     it('rejects a new value-history entry without exchangeRate', async () => {

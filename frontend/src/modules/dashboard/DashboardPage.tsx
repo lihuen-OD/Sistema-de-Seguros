@@ -55,7 +55,11 @@ export default function DashboardPage() {
 
   // ── Data queries ──────────────────────────────────────────────────
   const { data: allAssets = [], isError: assetsError } = useQuery(assetQueries.list())
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  // includeCoverages:true — el filtro de alcance (empresa/centro de costo/
+  // tipo de activo) más abajo necesita, por póliza, sus líneas de cobertura
+  // reales (cada una con su propio activo o su propia imputación empresa/
+  // centro de costo cuando es "sin activo").
+  const { data: allPolicies = [] } = useQuery(policyQueries.list({ includeCoverages: true }))
   const { data: allFireExtinguishers = [] } = useQuery(fireExtinguisherQueries.list())
   const { data: allDocuments = [] } = useQuery(documentQueries.list())
   const { data: financialDocs = [] } = useQuery(documentQueries.financial())
@@ -155,36 +159,41 @@ export default function DashboardPage() {
       allPolicies.filter((policy) => {
         if (!hasScopeFilters) return true
 
-        const policyAssets = policy.assetIds
-          .map((assetId) => assetById.get(assetId))
-          .filter((asset) => asset !== undefined)
+        // Cada línea de cobertura es o bien un activo (cuya empresa/centro de
+        // costo salen de las allocations de ESE activo) o bien "sin activo"
+        // (imputada directamente vía coverage.companyId/costCenterId).
+        const coverages = policy.coverages ?? []
+        const policyAssets = coverages
+          .map((c) => (c.assetId ? assetById.get(c.assetId) : undefined))
+          .filter((asset): asset is NonNullable<typeof asset> => asset !== undefined)
+
+        const allocationsOf = (asset: NonNullable<typeof policyAssets[number]>) =>
+          asset.allocations?.length ? asset.allocations : [{
+            companyId: asset.companyId,
+            costCenterId: asset.costCenterId,
+            percentage: 100,
+          }]
 
         if (filterCompanies.length > 0) {
-          const companyMatches = policy.companyId
-            ? selectedCompanyIds.has(policy.companyId)
-            : policyAssets.some((asset) =>
-                (asset.allocations?.length ? asset.allocations : [{
-                  companyId: asset.companyId,
-                  costCenterId: asset.costCenterId,
-                  percentage: 100,
-                }]).some((allocation) => selectedCompanyIds.has(allocation.companyId)),
-              )
+          const companyMatches = coverages.some((coverage) => {
+            if (!coverage.assetId) {
+              return coverage.companyId != null && selectedCompanyIds.has(coverage.companyId)
+            }
+            const asset = assetById.get(coverage.assetId)
+            return asset != null && allocationsOf(asset).some((allocation) => selectedCompanyIds.has(allocation.companyId))
+          })
           if (!companyMatches) return false
         }
 
         if (filterCostCenter) {
-          const costCenterMatches =
-            policy.costCenterId === filterCostCenter ||
-            policyAssets.some((asset) =>
-              (asset.allocations?.length ? asset.allocations : [{
-                companyId: asset.companyId,
-                costCenterId: asset.costCenterId,
-                percentage: 100,
-              }]).some((allocation) =>
-                allocation.costCenterId === filterCostCenter &&
-                (filterCompanies.length === 0 || selectedCompanyIds.has(allocation.companyId)),
-              ),
+          const costCenterMatches = coverages.some((coverage) => {
+            if (!coverage.assetId) return coverage.costCenterId === filterCostCenter
+            const asset = assetById.get(coverage.assetId)
+            return asset != null && allocationsOf(asset).some((allocation) =>
+              allocation.costCenterId === filterCostCenter &&
+              (filterCompanies.length === 0 || selectedCompanyIds.has(allocation.companyId)),
             )
+          })
           if (!costCenterMatches) return false
         }
 
@@ -242,8 +251,8 @@ export default function DashboardPage() {
   const vigentePolicies = filteredPolicies.filter((p) => p.status === 'vigente')
   const expiredPolicies = filteredPolicies.filter((p) => p.status === 'vencida')
   const expiringSoon = filteredPolicies.filter((p) => p.status === 'proximo_vencer')
-  const totalInsuredArs = vigentePolicies.reduce((s, p) => s + p.insuredAmountArs, 0)
-  const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + p.insuredAmountUsd, 0)
+  const totalInsuredArs = vigentePolicies.reduce((s, p) => s + (p.totalInsuredAmountArs ?? 0), 0)
+  const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + (p.totalInsuredAmountUsd ?? 0), 0)
 
   // Los documentos pueden distribuirse entre pólizas de distintas empresas.
   // El ratio evita atribuir el documento completo a cada empresa seleccionada.
@@ -355,7 +364,7 @@ export default function DashboardPage() {
   // ── Chart data ────────────────────────────────────────────────────
   const activePolicies = filteredPolicies.filter((p) => p.status !== 'vencida')
   const costByInsurer = activePolicies.reduce<Record<string, number>>((acc, p) => {
-    acc[p.insuranceCompany] = (acc[p.insuranceCompany] || 0) + p.insuredAmountArs
+    acc[p.insuranceCompany] = (acc[p.insuranceCompany] || 0) + (p.totalInsuredAmountArs ?? 0)
     return acc
   }, {})
   const insurerChartData = Object.entries(costByInsurer)
@@ -706,7 +715,7 @@ export default function DashboardPage() {
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${days <= 30 ? 'bg-red-400' : 'bg-amber-400'}`} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-slate-800 truncate">{p.policyNumber}</p>
-                      <p className="text-xs text-slate-500 truncate">{p.insuranceCompany} · {p.insuranceType}</p>
+                      <p className="text-xs text-slate-500 truncate">{p.insuranceCompany} · {(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-xs font-semibold text-slate-700">{formatDate(p.endDate)}</p>

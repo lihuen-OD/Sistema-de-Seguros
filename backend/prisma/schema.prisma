@@ -23,8 +23,8 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  policies         Policy[]
-  assetAllocations AssetAllocation[]
+  assetAllocations     AssetAllocation[]
+  policyAssetCoverages PolicyAssetCoverage[]
 
   @@index([isActive])
   @@map("companies")
@@ -39,8 +39,8 @@ model CostCenter {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  assetAllocations AssetAllocation[]
-  policies         Policy[]
+  assetAllocations     AssetAllocation[]
+  policyAssetCoverages PolicyAssetCoverage[]
 
   @@map("cost_centers")
 }
@@ -67,8 +67,8 @@ model InsuranceType {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  coverages InsuranceCoverage[]
-  policies  Policy[]
+  coverages            InsuranceCoverage[]
+  policyAssetCoverages PolicyAssetCoverage[]
 
   @@map("insurance_types")
 }
@@ -89,17 +89,17 @@ model InsuranceCoverage {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Asset {
-  id            String    @id @default(uuid())
-  code           String?  @unique
-  name           String
-  assetType      String
-  status         String   @default("activo")
-  fixedAssetCode String?
-  fixedAssetId   String?
-  brand          String?
-  model          String?
-  year           Int?
-  serialNumber   String?
+  id                     String    @id @default(uuid())
+  code                   String?   @unique
+  name                   String
+  assetType              String
+  status                 String    @default("activo")
+  fixedAssetCode         String?
+  fixedAssetId           String?
+  brand                  String?
+  model                  String?
+  year                   Int?
+  serialNumber           String?
   purchaseDate           DateTime? @db.Date
   dischargeDate          DateTime? @db.Date
   saleDate               DateTime? @db.Date
@@ -109,21 +109,21 @@ model Asset {
   // Moneda en la que se cargan currentValue/patrimonialValueNew y su cierre en
   // ambas monedas — default USD porque los activos casi siempre se valúan en
   // dólares. exchangeRate es el tipo de cambio usado al cerrar este activo.
-  currency                String  @default("USD")
-  exchangeRate            Float   @default(1)
-  currentValueArs         Float?
-  currentValueUsd         Float?
-  patrimonialValueNewArs  Float?
-  patrimonialValueNewUsd  Float?
-  location       String?
-  mapsUrl        String?
-  productiveUnit String?
-  area           String?
-  description    String?
-  metadata       Json?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  currency               String    @default("USD")
+  exchangeRate           Float     @default(1)
+  currentValueArs        Float?
+  currentValueUsd        Float?
+  patrimonialValueNewArs Float?
+  patrimonialValueNewUsd Float?
+  location               String?
+  mapsUrl                String?
+  productiveUnit         String?
+  area                   String?
+  description            String?
+  metadata               Json?
+  isActive               Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   allocations       AssetAllocation[]
   valueHistory      AssetValueHistory[]
@@ -131,7 +131,8 @@ model Asset {
   attachments       AssetAttachment[]
   fireExtinguishers FireExtinguisher[]
   claims            Claim[]
-  fixedAsset        FixedAsset?          @relation(fields: [fixedAssetId], references: [id])
+  policyCoverages   PolicyAssetCoverage[]
+  fixedAsset        FixedAsset?           @relation(fields: [fixedAssetId], references: [id])
 
   @@index([isActive, status])
   @@index([isActive, assetType])
@@ -172,35 +173,35 @@ model AssetAllocation {
 }
 
 model AssetValueHistory {
-  id      String   @id @default(uuid())
-  assetId String
-  value   Float
+  id       String   @id @default(uuid())
+  assetId  String
+  value    Float
   // Cierre en ambas monedas de `value` al momento de este registro histórico
   // (mismo criterio que Asset.currentValueArs/Usd).
   valueArs Float?
   valueUsd Float?
-  date    DateTime @db.Date
-  type    String   @default("real")
-  note    String?
-  asset   Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  date     DateTime @db.Date
+  type     String   @default("real")
+  note     String?
+  asset    Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@index([assetId])
   @@map("asset_value_history")
 }
 
 model AssetAttachment {
-  id                  String    @id @default(uuid())
-  assetId             String
-  name                String
-  description         String?
-  fileType            String
-  fileSize            String
-  fileUrl             String
-  cloudinaryPublicId  String?
-  expirationDate      DateTime? @db.Date
-  uploadedAt          DateTime  @default(now())
-  uploadedBy          String
-  asset               Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  id                 String    @id @default(uuid())
+  assetId            String
+  name               String
+  description        String?
+  fileType           String
+  fileSize           String
+  fileUrl            String
+  cloudinaryPublicId String?
+  expirationDate     DateTime? @db.Date
+  uploadedAt         DateTime  @default(now())
+  uploadedBy         String
+  asset              Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@index([assetId])
   @@index([expirationDate])
@@ -254,70 +255,99 @@ model ProducerTask {
 // Fase 5 — Pólizas
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Una póliza guarda solo lo que es único de la póliza en sí — el resto
+// (tipo de seguro, coberturas, suma asegurada/tipo de cambio, documentación)
+// vive por línea en PolicyAssetCoverage, ya que una póliza puede cubrir
+// varios activos y cada uno tiene sus propios datos.
 model Policy {
-  id                     String   @id @default(uuid())
-  policyNumber           String   @unique
-  insuranceTypeId        String
-  companyId              String
-  costCenterId           String?
-  producerId             String?
-  insuredName            String
-  assetIds               String[]
-  beneficiaryDescription String?
-  startDate              DateTime @db.Date
-  endDate                DateTime @db.Date
-  premium                Float
-  currency               String   @default("ARS")
-  exchangeRate           Float    @default(1)
-  // Cierre de `premium` en ambas monedas al momento de guardar (ver
-  // shared/utils/currency.ts#computeDualAmounts) — usado por Dashboard y
-  // Análisis Financiero/Económico para no mezclar ARS y USD.
-  premiumArs             Float?
-  premiumUsd             Float?
-  description            String?
-  coverageIds            String[]
-  isActive               Boolean  @default(true)
+  id            String    @id @default(uuid())
+  policyNumber  String    @unique
+  producerId    String?
+  insuredName   String
+  startDate     DateTime  @db.Date
+  endDate       DateTime  @db.Date
+  description   String?
+  isActive      Boolean   @default(true)
   // Solo el admin la setea (acción manual "Dar de baja") — nunca se calcula
   // automáticamente a partir de las fechas, a diferencia de vigente/próxima
   // a vencer/vencida (ver computePolicyStatus). Independiente de `isActive`,
   // que sigue usándose para el soft-delete de pólizas cargadas por error.
-  deactivatedAt          DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  deactivatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  insuranceType InsuranceType              @relation(fields: [insuranceTypeId], references: [id])
-  company       Company                    @relation(fields: [companyId], references: [id])
-  costCenter    CostCenter?                @relation(fields: [costCenterId], references: [id])
-  producer      Producer?                  @relation(fields: [producerId], references: [id])
-  attachments   PolicyAttachment[]
-  allocations   DocumentPolicyAllocation[]
-  endorsements  AccountingDocument[]
-  claims        Claim[]
+  producer     Producer?             @relation(fields: [producerId], references: [id])
+  coverages    PolicyAssetCoverage[]
+  endorsements AccountingDocument[]
+  claims       Claim[]
 
   @@index([isActive, endDate])
-  @@index([companyId, isActive])
-  @@index([insuranceTypeId, isActive])
-  @@index([companyId])
-  @@index([insuranceTypeId])
   @@index([producerId])
   @@map("policies")
 }
 
-model PolicyAttachment {
-  id                  String    @id @default(uuid())
-  policyId            String
-  name                String
-  description         String?
-  fileType            String
-  fileSize            String
-  fileUrl             String
-  cloudinaryPublicId  String?
-  isCirculationCard   Boolean   @default(false)
-  uploadedAt          DateTime  @default(now())
-  uploadedBy          String
-  policy              Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
+// Línea de cobertura dentro de una póliza — una póliza puede tener varias
+// (una por activo cubierto, o una o más "sin activo" para casos como
+// Accidentes Personales). Cada línea tiene su propio tipo de seguro,
+// coberturas, suma asegurada/tipo de cambio y documentación.
+// companyId/costCenterId/beneficiaryDescription solo se usan cuando assetId
+// es null — con activo, la imputación empresa/centro de costo ya vive en
+// Asset.allocations.
+model PolicyAssetCoverage {
+  id                     String   @id @default(uuid())
+  policyId               String
+  assetId                String?
+  insuranceTypeId        String
+  coverageIds            String[]
+  insuredAmount          Float    @default(0)
+  currency               String   @default("ARS")
+  exchangeRate           Float    @default(1)
+  // Cierre de `insuredAmount` en ambas monedas al momento de guardar (ver
+  // shared/utils/currency.ts#computeDualAmounts).
+  insuredAmountArs       Float?
+  insuredAmountUsd       Float?
+  companyId              String?
+  costCenterId           String?
+  beneficiaryDescription String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
+  policy        Policy                     @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  asset         Asset?                     @relation(fields: [assetId], references: [id])
+  insuranceType InsuranceType              @relation(fields: [insuranceTypeId], references: [id])
+  company       Company?                   @relation(fields: [companyId], references: [id])
+  costCenter    CostCenter?                @relation(fields: [costCenterId], references: [id])
+  attachments   PolicyAttachment[]
+  allocations   DocumentPolicyAllocation[]
+
+  // Evita que el mismo activo aparezca dos veces en la misma póliza. No
+  // bloquea varias líneas "sin activo": Postgres trata cada NULL como
+  // distinto en un unique constraint, así que (policyId, NULL) puede
+  // repetirse todas las veces que haga falta.
+  @@unique([policyId, assetId])
   @@index([policyId])
+  @@index([assetId])
+  @@index([insuranceTypeId])
+  @@index([companyId])
+  @@index([costCenterId])
+  @@map("policy_asset_coverages")
+}
+
+model PolicyAttachment {
+  id                    String              @id @default(uuid())
+  policyAssetCoverageId String
+  name                  String
+  description           String?
+  fileType              String
+  fileSize              String
+  fileUrl               String
+  cloudinaryPublicId    String?
+  isCirculationCard     Boolean             @default(false)
+  uploadedAt            DateTime            @default(now())
+  uploadedBy            String
+  policyAssetCoverage   PolicyAssetCoverage @relation(fields: [policyAssetCoverageId], references: [id], onDelete: Cascade)
+
+  @@index([policyAssetCoverageId])
   @@map("policy_attachments")
 }
 
@@ -358,32 +388,32 @@ model AccountingDocument {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  installments DocumentInstallment[]
-  allocations  DocumentPolicyAllocation[]
-  attachments  DocumentAttachment[]
-  auditLogs    DocumentAuditLog[]
-  policy       Policy?                    @relation(fields: [policyId], references: [id])
+  installments           DocumentInstallment[]
+  allocations            DocumentPolicyAllocation[]
+  attachments            DocumentAttachment[]
+  auditLogs              DocumentAuditLog[]
+  policy                 Policy?                            @relation(fields: [policyId], references: [id])
   // Cuotas de OTRA factura que este documento (NC/ND/Ajuste) repartió al
   // aplicarse — ver InstallmentAdjustmentApplication.
   installmentAdjustments InstallmentAdjustmentApplication[] @relation("InstallmentAdjustmentSource")
 
-  @@index([paymentStatus])
-  @@index([issueDate])
-  @@index([documentType])
-  @@index([documentStatus])
-  @@index([policyId])
-  @@index([linkedDocumentId])
   // El duplicado real es tipo + compañía + número (no el número solo — ver
   // documents.service.ts#create). Confirmado sin datos duplicados existentes
   // antes de agregar esta constraint. Nota: Postgres no exige unicidad entre
   // filas con insuranceCompany NULL (NULL != NULL), igual que ya asume el
   // chequeo previo a nivel de aplicación.
   @@unique([documentType, insuranceCompany, documentNumber])
+  @@index([paymentStatus])
+  @@index([issueDate])
+  @@index([documentType])
+  @@index([documentStatus])
+  @@index([policyId])
+  @@index([linkedDocumentId])
   @@map("accounting_documents")
 }
 
 model DocumentAuditLog {
-  id                   String   @id @default(uuid())
+  id                   String             @id @default(uuid())
   accountingDocumentId String
   action               String // CREATE | UPDATE | APPLY | CANCEL | PAYMENT_CHANGE
   description          String
@@ -391,7 +421,7 @@ model DocumentAuditLog {
   newData              Json?
   performedBy          String?
   reason               String?
-  createdAt            DateTime @default(now())
+  createdAt            DateTime           @default(now())
   document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
 
   @@index([accountingDocumentId])
@@ -399,22 +429,22 @@ model DocumentAuditLog {
 }
 
 model DocumentInstallment {
-  id                   String             @id @default(uuid())
-  accountingDocumentId String
-  installmentNumber    Int
-  dueDate              DateTime @db.Date
-  amount               Float
-  currency             String   @default("ARS")
+  id                     String                             @id @default(uuid())
+  accountingDocumentId   String
+  installmentNumber      Int
+  dueDate                DateTime                           @db.Date
+  amount                 Float
+  currency               String                             @default("ARS")
   // Cierre de `amount` en ambas monedas — se calcula al crear la cuota con el
   // tipo de cambio del documento padre, y se recalcula con un tipo de cambio
   // propio (pedido al usuario) al momento de marcarla como pagada.
-  amountArs             Float?
-  amountUsd             Float?
-  paymentStatus        String   @default("PENDING")
-  paymentDate          DateTime? @db.Date
-  paymentMethod        String?
-  notes                String?
-  document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
+  amountArs              Float?
+  amountUsd              Float?
+  paymentStatus          String                             @default("PENDING")
+  paymentDate            DateTime?                          @db.Date
+  paymentMethod          String?
+  notes                  String?
+  document               AccountingDocument                 @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
   adjustmentApplications InstallmentAdjustmentApplication[]
 
   @@index([accountingDocumentId])
@@ -444,17 +474,20 @@ model InstallmentAdjustmentApplication {
   @@map("installment_adjustment_applications")
 }
 
+// El nombre del modelo quedó de cuando apuntaba directo a Policy — hoy
+// apunta a una línea (PolicyAssetCoverage), que ya sabe a qué póliza y a qué
+// activo (o ninguno) pertenece. Ver policyAssetCoverageId.
 model DocumentPolicyAllocation {
-  id                   String             @id @default(uuid())
-  accountingDocumentId String
-  policyId             String
-  allocatedAmount      Float
-  allocationPercentage Float
-  document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
-  policy               Policy             @relation(fields: [policyId], references: [id])
+  id                    String              @id @default(uuid())
+  accountingDocumentId  String
+  policyAssetCoverageId String
+  allocatedAmount       Float
+  allocationPercentage  Float
+  document              AccountingDocument  @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
+  policyAssetCoverage   PolicyAssetCoverage @relation(fields: [policyAssetCoverageId], references: [id])
 
   @@index([accountingDocumentId])
-  @@index([policyId])
+  @@index([policyAssetCoverageId])
   @@map("document_policy_allocations")
 }
 
@@ -480,28 +513,28 @@ model DocumentAttachment {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model FireExtinguisher {
-  id                String    @id @default(uuid())
-  code              String    @unique
-  assetId           String?
-  locationType      String
-  location          String?
-  establishment     String?
-  type              String
-  capacity          String
-  brand             String?
-  cylinderNumber    String?
-  iramCertificateNumber String?
-  manufacturingYear Int?
-  expirationDate    DateTime? @db.Date
-  lastRechargeDate  DateTime? @db.Date
+  id                          String    @id @default(uuid())
+  code                        String    @unique
+  assetId                     String?
+  locationType                String
+  location                    String?
+  establishment               String?
+  type                        String
+  capacity                    String
+  brand                       String?
+  cylinderNumber              String?
+  iramCertificateNumber       String?
+  manufacturingYear           Int?
+  expirationDate              DateTime? @db.Date
+  lastRechargeDate            DateTime? @db.Date
   hydraulicTestExpirationDate DateTime? @db.Date
-  observations      String?
-  isActive          Boolean   @default(true)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  observations                String?
+  isActive                    Boolean   @default(true)
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
-  asset   Asset?                   @relation(fields: [assetId], references: [id])
-  history FireExtinguisherHistory[]
+  asset           Asset?                                @relation(fields: [assetId], references: [id])
+  history         FireExtinguisherHistory[]
   audits          FireExtinguisherAudit[]
   proposedChanges FireExtinguisherAuditProposedChange[]
   attachments     FireExtinguisherAttachment[]
@@ -547,7 +580,7 @@ model FireExtinguisherAudit {
   fireExtinguisherId String
   status             String   @default("SUBMITTED") // DRAFT | SUBMITTED | APPROVED | REJECTED | NEEDS_CORRECTION
   auditDate          DateTime @db.Date // derivado en el server ("hoy"), nunca confiado del cliente
-  auditPeriod        String              // "YYYY-MM", derivado en el server
+  auditPeriod        String // "YYYY-MM", derivado en el server
   auditedBy          String
 
   // Paso 2 — Validación de ubicación
@@ -687,18 +720,18 @@ model Claim {
 }
 
 model ClaimExpense {
-  id               String   @id @default(uuid())
+  id               String                   @id @default(uuid())
   claimId          String
-  date             DateTime @db.Date
+  date             DateTime                 @db.Date
   provider         String
   receiptNumber    String?
   netAmount        Float
-  vatAmount        Float    @default(0)
-  otherTaxesAmount Float    @default(0)
+  vatAmount        Float                    @default(0)
+  otherTaxesAmount Float                    @default(0)
   comment          String?
-  createdAt        DateTime @default(now())
+  createdAt        DateTime                 @default(now())
   createdBy        String?
-  claim            Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  claim            Claim                    @relation(fields: [claimId], references: [id], onDelete: Cascade)
   attachments      ClaimExpenseAttachment[]
 
   @@index([claimId])
@@ -723,17 +756,17 @@ model ClaimExpenseAttachment {
 }
 
 model ClaimAttachment {
-  id                 String    @id @default(uuid())
+  id                 String   @id @default(uuid())
   claimId            String
   name               String
   description        String?
   fileType           String
-  fileSize            String
+  fileSize           String
   fileUrl            String
   cloudinaryPublicId String?
-  uploadedAt         DateTime  @default(now())
+  uploadedAt         DateTime @default(now())
   uploadedBy         String
-  claim              Claim     @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  claim              Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
 
   @@index([claimId])
   @@map("claim_attachments")

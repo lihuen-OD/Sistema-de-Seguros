@@ -3,8 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
-  FileDown, Edit2, ShieldCheck, FileText, Building2, User, Tag, Calendar, Hash, Link2,
+  FileDown, Edit2, ShieldCheck, FileText, Building2, User, Calendar, Hash, Link2,
   Receipt, TrendingUp, TrendingDown, CheckCircle2, Plus, ChevronDown, ChevronUp, ArrowUpRight, FileEdit, Archive,
+  Paperclip, IdCard,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -29,8 +30,6 @@ import {
 } from '../../../shared/utils/policyInvoicedTotal'
 import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
 import { producerQueries } from '../../../shared/api/producers.api'
-import { companyQueries } from '../../../shared/api/companies.api'
-import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
 import { DOCUMENT_TYPE_LABELS, ECONOMIC_IMPACT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
@@ -53,10 +52,6 @@ export default function PolicyDetailPage() {
   const { data: policy, isLoading: loadingPolicy } = useQuery(policyQueries.detail(id!))
 
   const { data: producers = [] } = useQuery(producerQueries.list())
-
-  const { data: companies = [] } = useQuery(companyQueries.list())
-
-  const { data: costCenters = [] } = useQuery(costCenterQueries.list())
 
   const { data: allDocuments = [] } = useQuery(documentQueries.list())
 
@@ -134,15 +129,15 @@ export default function PolicyDetailPage() {
   }
 
   const producer = producers.find((p) => p.id === policy.producerId) ?? null
-  const company = policy.companyId ? companies.find((c) => c.id === policy.companyId) ?? null : null
-  const costCenter = policy.costCenterId ? costCenters.find((cc) => cc.id === policy.costCenterId) ?? null : null
-  const linkedAssets = policy.selectedAssets ?? []
+  const coverages = policy.coverages ?? []
 
   const documents = allDocuments.filter((d) => d.policyIds.includes(id!))
 
   // % contra la Suma Asegurada (P/SA) — invoicedTotal ya se calculó más
-  // arriba, junto con el resto de los hooks.
-  const psaPercentage = computePsaPercentage(policy, invoicedTotal)
+  // arriba, junto con el resto de los hooks. Siempre en USD: una póliza puede
+  // tener varias líneas de cobertura en monedas distintas, así que ya no hay
+  // una "moneda nativa de la póliza" única para comparar.
+  const psaPercentage = computePsaPercentage(policy.totalInsuredAmountUsd ?? 0, invoicedTotal.totalUsd)
 
   // Build server installments map from useQueries results
   const serverInstallments = new Map<string, Installment[]>()
@@ -196,19 +191,23 @@ export default function PolicyDetailPage() {
     }
   }
 
-  // Facturas, modificaciones financieras (NC/ND/Ajuste/Refacturación, se
-  // muestran anidadas bajo la factura que afectan) y Endosos (se asocian a
-  // la póliza directamente, sin importe/cuotas — se muestran en su propio
-  // bloque, no mezclados con las modificaciones financieras).
+  // Facturas, modificaciones financieras (NC/ND/Ajuste, se muestran anidadas
+  // bajo la factura que afectan) y Endosos. Un Endoso con impacto económico
+  // real (INCREASES_COST/DECREASES_COST) ya tiene importe propio y afecta el
+  // saldo de la factura vinculada igual que una ND — se muestra anidado como
+  // una modificación financiera más. Un Endoso sin impacto (NO_IMPACT /
+  // PENDING_DEFINITION) sigue sin importe/saldo, así que se muestra aparte.
   const facturas = documents.filter((d) => d.documentType === 'INVOICE')
+  const hasEconomicImpact = (d: AccountingDocument) =>
+    d.economicImpactType === 'INCREASES_COST' || d.economicImpactType === 'DECREASES_COST'
   const docModifications = documents.filter(
     (d) =>
       d.documentType === 'CREDIT_NOTE' ||
       d.documentType === 'DEBIT_NOTE' ||
       d.documentType === 'ADJUSTMENT_ENTRY' ||
-      d.documentType === 'REBILLING',
+      (d.documentType === 'ENDORSEMENT' && hasEconomicImpact(d)),
   )
-  const endorsements = documents.filter((d) => d.documentType === 'ENDORSEMENT')
+  const endorsements = documents.filter((d) => d.documentType === 'ENDORSEMENT' && !hasEconomicImpact(d))
 
   const daysLeft = daysUntil(policy.endDate)
   const isExpired = daysLeft < 0
@@ -252,7 +251,7 @@ export default function PolicyDetailPage() {
     <PageContent>
       <PageHeader
         title={policy.policyNumber}
-        subtitle={`${policy.insuranceCompany} · ${policy.insuranceType} · ${formatDate(policy.startDate)} — ${formatDate(policy.endDate)}${!isExpired ? ` · ${daysLeft === 0 ? 'Vence hoy' : `${daysLeft} días restantes`}` : ''}`}
+        subtitle={`${policy.insuranceCompany} · ${(policy.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'} · ${formatDate(policy.startDate)} — ${formatDate(policy.endDate)}${!isExpired ? ` · ${daysLeft === 0 ? 'Vence hoy' : `${daysLeft} días restantes`}` : ''}`}
         category="Póliza"
         backTo="/insurance/policies"
         backLabel="Volver a pólizas"
@@ -312,29 +311,8 @@ export default function PolicyDetailPage() {
                 icon={User}
                 link={producer ? `/producers/${producer.id}` : undefined}
               />
-              <InfoRow label="Tipo de Seguro" value={policy.insuranceType} icon={Tag} />
               <InfoRow label="Estado" value={policy.status} isStatus />
             </div>
-            {/* Coberturas — can span full width */}
-            {(policy.coverageNames?.length || policy.coverageTypes?.length || policy.coverageType) && (
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Coberturas</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {(policy.coverageNames?.length
-                    ? policy.coverageNames
-                    : policy.coverageType ? [policy.coverageType] : []
-                  ).map((cov) => (
-                    <span
-                      key={cov}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-brand-50 border border-brand-100 text-brand-700"
-                    >
-                      <Tag size={10} className="text-brand-400" />
-                      {cov}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
           </SectionCard>
 
           {/* Vigencia */}
@@ -357,57 +335,68 @@ export default function PolicyDetailPage() {
             )}
           </SectionCard>
 
-          {/* Association: assets or company+costCenter */}
-          <SectionCard title="Asociación">
-            {linkedAssets.length > 0 ? (
+          {/* Líneas de cobertura — cada una es un activo (o "sin activo") con su
+              propio tipo de seguro, coberturas y suma asegurada. */}
+          <SectionCard
+            title="Activos Cubiertos"
+            subtitle={`${coverages.length} línea${coverages.length !== 1 ? 's' : ''} de cobertura`}
+          >
+            {coverages.length === 0 ? (
+              <p className="text-sm text-slate-400">Esta póliza no tiene líneas de cobertura.</p>
+            ) : (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">
-                  Activo{linkedAssets.length !== 1 ? 's' : ''} Asegurado{linkedAssets.length !== 1 ? 's' : ''} ({linkedAssets.length})
-                </p>
-                {linkedAssets.map((asset) => (
-                  <div key={asset.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                {coverages.map((coverage) => (
+                  <div key={coverage.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
                     <div className="w-8 h-8 bg-brand-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
                       <ShieldCheck size={16} className="text-brand-600" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-slate-800">{asset.name}</p>
-                      <p className="text-xs text-slate-500">{asset.internalCode} — {asset.assetType}</p>
-                      {asset.fixedAssetCode && (
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          Bien de uso: <span className="font-mono">{asset.fixedAssetCode}</span>{asset.fixedAssetName ? ` — ${asset.fixedAssetName}` : ''}
-                        </p>
-                      )}
-                      {asset.costCenterCode && (
-                        <p className="text-xs text-slate-400">
-                          CC: {asset.costCenterCode}{asset.costCenterName ? ` — ${asset.costCenterName}` : ''}
-                        </p>
+                      <p className="text-sm font-semibold text-slate-800">
+                        {coverage.asset ? coverage.asset.name : 'Sin activo asociado'}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {coverage.asset
+                          ? `${coverage.asset.internalCode} — ${coverage.asset.assetType}`
+                          : [coverage.companyName, coverage.costCenterName].filter(Boolean).join(' · ') || 'Sin empresa/centro de costo'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {coverage.insuranceType}
+                        {coverage.coverageNames && coverage.coverageNames.length > 0 && ` · ${coverage.coverageNames.join(', ')}`}
+                      </p>
+                      {coverage.beneficiaryDescription && (
+                        <p className="text-xs text-slate-400 mt-0.5 italic">{coverage.beneficiaryDescription}</p>
                       )}
                     </div>
-                    <button
-                      onClick={() => navigate(`/assets/${asset.id}`)}
-                      className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium flex-shrink-0"
-                    >
-                      <Link2 size={12} />
-                      Ver
-                    </button>
+                    <div className="flex-shrink-0 text-right">
+                      <p className="text-sm font-bold text-slate-900 tabular-nums">
+                        {formatCurrencyCompact(coverage.insuredAmountUsd, 'USD')}
+                      </p>
+                      <p className="text-xs text-slate-400 tabular-nums">
+                        {formatCurrencyCompact(coverage.insuredAmountArs, 'ARS')}
+                      </p>
+                      {coverage.circulationCardAttachment?.fileUrl && (
+                        <a
+                          href={coverage.circulationCardAttachment.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline mt-1"
+                        >
+                          <IdCard size={11} />
+                          Tarjeta
+                        </a>
+                      )}
+                      {coverage.asset && (
+                        <button
+                          onClick={() => navigate(`/assets/${coverage.asset!.id}`)}
+                          className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium mt-1"
+                        >
+                          <Link2 size={12} />
+                          Ver activo
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-4">
-                <InfoRow
-                  label="Empresa"
-                  value={company?.name ?? '—'}
-                  icon={Building2}
-                />
-                <InfoRow
-                  label="Centro de Costo"
-                  value={costCenter ? `${costCenter.code} — ${costCenter.name}` : '—'}
-                />
-                <InfoRow
-                  label="Descripción"
-                  value={costCenter?.description ?? '—'}
-                />
               </div>
             )}
           </SectionCard>
@@ -416,22 +405,16 @@ export default function PolicyDetailPage() {
         {/* Right: Financial KPIs */}
         <div className="space-y-4">
           <KpiCard
-            label="Suma Asegurada ARS"
-            value={formatCurrencyCompact(policy.insuredAmountArs, 'ARS')}
-            description={formatCurrencyFull(policy.insuredAmountArs, 'ARS')}
-            variant="info"
-          />
-          <KpiCard
-            label="Tipo de Cambio"
-            value={`$ ${policy.exchangeRate.toLocaleString('es-AR')}`}
-            description="ARS / USD al momento de alta"
-            variant="default"
-          />
-          <KpiCard
             label="Suma Asegurada USD"
-            value={formatCurrencyCompact(policy.insuredAmountUsd, 'USD')}
-            description={formatCurrencyFull(policy.insuredAmountUsd, 'USD')}
+            value={formatCurrencyCompact(policy.totalInsuredAmountUsd ?? 0, 'USD')}
+            description={formatCurrencyFull(policy.totalInsuredAmountUsd ?? 0, 'USD')}
             variant="success"
+          />
+          <KpiCard
+            label="Suma Asegurada ARS"
+            value={formatCurrencyCompact(policy.totalInsuredAmountArs ?? 0, 'ARS')}
+            description={formatCurrencyFull(policy.totalInsuredAmountArs ?? 0, 'ARS')}
+            variant="info"
           />
 
           {/* Summary panel */}
@@ -445,15 +428,12 @@ export default function PolicyDetailPage() {
                 color={tasks.some((t) => t.status === 'vencida') ? 'text-red-600' : 'text-slate-800'}
               />
               <SummaryRow
-                label="Total facturado"
-                value={formatCurrencyCompact(
-                  policy.currency === 'USD' ? invoicedTotal.totalUsd : invoicedTotal.totalArs,
-                  policy.currency,
-                )}
+                label="Total facturado (USD)"
+                value={formatCurrencyCompact(invoicedTotal.totalUsd, 'USD')}
               />
               <SummaryRow
                 label="P/SA"
-                value={psaPercentage != null ? formatPercent(psaPercentage) : '—'}
+                value={psaPercentage != null ? formatPercent(psaPercentage, 2) : '—'}
               />
             </div>
           </SectionCard>
@@ -592,11 +572,29 @@ export default function PolicyDetailPage() {
           )
         )}
 
-        {/* Adjuntos tab */}
+        {/* Adjuntos tab — la documentación cuelga de cada línea de cobertura,
+            no de la póliza entera, así que se muestra un bloque por línea. */}
         {activeDocTab === 'adjuntos' && (
-          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-            <PolicyAttachmentsSection policyId={policy.id} policyEndDate={policy.endDate} />
-          </div>
+          coverages.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed border-slate-200 py-12 text-center">
+              <Paperclip size={24} className="mx-auto text-slate-300 mb-3" />
+              <p className="text-sm text-slate-400">Esta póliza no tiene líneas de cobertura.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {coverages.map((coverage) => (
+                <div key={coverage.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                  <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60">
+                    <p className="text-sm font-semibold text-slate-800">
+                      {coverage.asset ? coverage.asset.name : 'Sin activo asociado'}
+                    </p>
+                    <p className="text-xs text-slate-400">{coverage.insuranceType}</p>
+                  </div>
+                  <PolicyAttachmentsSection policyId={policy.id} coverageId={coverage.id} policyEndDate={policy.endDate} />
+                </div>
+              ))}
+            </div>
+          )
         )}
       </div>
     </PageContent>
@@ -747,9 +745,8 @@ function FacturaCard({
           </div>
 
           {linkedMods.map((mod) => {
-            // signo -1 resta (NC, o Ajuste negativo), +1 suma (ND, o Ajuste
-            // positivo), 0 sin efecto numérico (Refacturación) — se muestra
-            // neutro, ni + ni −.
+            // signo -1 resta (NC, Ajuste negativo, o Endoso que reduce costo),
+            // +1 suma (ND, Ajuste positivo, o Endoso que aumenta costo).
             const sign = getDirectionSign(mod, typeDefsByKey)
             const isCredit = sign < 0
             const isNeutral = sign === 0

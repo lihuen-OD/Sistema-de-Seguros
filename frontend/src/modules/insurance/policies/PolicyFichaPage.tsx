@@ -9,8 +9,6 @@ import { formatCurrencyFull, formatDate } from '../../../shared/utils/format'
 import { downloadAsPdf } from '../../../shared/utils/downloadAsPdf'
 import { policyQueries } from '../../../shared/api/policies.api'
 import { producerQueries } from '../../../shared/api/producers.api'
-import { companyQueries } from '../../../shared/api/companies.api'
-import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { documentQueries } from '../../../shared/api/documents.api'
 import { POLICY_STATUS_LABELS, PAYMENT_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 
@@ -24,8 +22,6 @@ export default function PolicyFichaPage() {
 
   const { data: policy } = useQuery(policyQueries.detail(id!))
   const { data: producers = [] } = useQuery(producerQueries.list())
-  const { data: companies = [] } = useQuery(companyQueries.list())
-  const { data: costCenters = [] } = useQuery(costCenterQueries.list())
   const { data: allDocuments = [] } = useQuery(documentQueries.list())
 
   if (!policy) {
@@ -37,9 +33,7 @@ export default function PolicyFichaPage() {
   }
 
   const producer = producers.find(p => p.id === policy.producerId)
-  const linkedAssets = policy.selectedAssets ?? []
-  const company = policy.companyId ? companies.find(c => c.id === policy.companyId) : null
-  const costCenter = policy.costCenterId ? costCenters.find(cc => cc.id === policy.costCenterId) : null
+  const coverages = policy.coverages ?? []
   const documents = allDocuments.filter(d => d.policyIds?.includes(policy.id))
 
   async function handleDownload() {
@@ -101,15 +95,15 @@ export default function PolicyFichaPage() {
               <StatusPill status={policy.status} />
             </div>
             <h1 className="text-2xl font-bold text-slate-900 leading-tight">{policy.insuranceCompany}</h1>
-            <p className="text-sm text-slate-500 mt-1">{policy.insuranceType} · {policy.coverageType}</p>
+            <p className="text-sm text-slate-500 mt-1">{(policy.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}</p>
           </div>
           <div className="flex-shrink-0 text-right">
             <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Suma asegurada</p>
             <p className="text-xl font-bold text-brand-700 tabular-nums">
-              {formatCurrencyFull(policy.insuredAmountUsd, 'USD')}
+              {formatCurrencyFull(policy.totalInsuredAmountUsd ?? 0, 'USD')}
             </p>
             <p className="text-xs text-slate-400 mt-0.5">
-              {formatCurrencyFull(policy.insuredAmountArs, 'ARS')}
+              {formatCurrencyFull(policy.totalInsuredAmountArs ?? 0, 'ARS')}
             </p>
           </div>
         </div>
@@ -124,8 +118,6 @@ export default function PolicyFichaPage() {
               <div className="space-y-2.5">
                 <FichaRow label="N° de Póliza" value={policy.policyNumber} mono />
                 <FichaRow label="Compañía aseguradora" value={policy.insuranceCompany} />
-                <FichaRow label="Tipo de seguro" value={policy.insuranceType} />
-                <FichaRow label="Tipo de cobertura" value={policy.coverageType} />
                 {producer && <FichaRow label="Productor asesor" value={producer.name} />}
                 <FichaRow label="Estado" value={statusLabel} />
               </div>
@@ -150,47 +142,42 @@ export default function PolicyFichaPage() {
           <div className="p-8 space-y-6">
             <div>
               <SectionHeading>
-                {linkedAssets.length > 0
-                  ? `Activo${linkedAssets.length !== 1 ? 's' : ''} Asegurado${linkedAssets.length !== 1 ? 's' : ''}`
-                  : 'Imputación Contable'}
+                Activos Cubiertos
+                <span className="ml-1.5 text-xs font-normal text-slate-400">({coverages.length})</span>
               </SectionHeading>
-              {linkedAssets.length > 0 ? (
+              {coverages.length === 0 ? (
+                <p className="text-sm text-slate-400">Sin líneas de cobertura.</p>
+              ) : (
                 <div className="space-y-2">
-                  {linkedAssets.map((a) => (
-                    <div key={a.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 space-y-1.5">
-                      <FichaRow label="Código interno" value={a.internalCode} mono />
-                      <FichaRow label="Nombre" value={a.name} />
-                      <FichaRow label="Tipo" value={a.assetType} />
-                      {a.fixedAssetCode && (
-                        <FichaRow
-                          label="Bien de uso"
-                          value={a.fixedAssetName ? `${a.fixedAssetCode} — ${a.fixedAssetName}` : a.fixedAssetCode}
-                        />
+                  {coverages.map((c) => (
+                    <div key={c.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 space-y-1.5">
+                      {c.asset ? (
+                        <>
+                          <FichaRow label="Código interno" value={c.asset.internalCode} mono />
+                          <FichaRow label="Nombre" value={c.asset.name} />
+                          <FichaRow label="Tipo" value={c.asset.assetType} />
+                        </>
+                      ) : (
+                        <>
+                          <FichaRow label="Activo" value="Sin activo asociado" />
+                          {c.companyName && <FichaRow label="Empresa" value={c.companyName} />}
+                          {c.costCenterName && (
+                            <FichaRow label="Centro de costo" value={c.costCenterCode ? `${c.costCenterCode} — ${c.costCenterName}` : c.costCenterName} />
+                          )}
+                          {c.beneficiaryDescription && <FichaRow label="Beneficiario" value={c.beneficiaryDescription} />}
+                        </>
                       )}
-                      {a.costCenterCode && (
-                        <FichaRow
-                          label="Centro de costo"
-                          value={a.costCenterName ? `${a.costCenterCode} — ${a.costCenterName}` : a.costCenterCode}
-                        />
+                      <FichaRow label="Tipo de seguro" value={c.insuranceType} />
+                      {c.coverageNames && c.coverageNames.length > 0 && (
+                        <FichaRow label="Coberturas" value={c.coverageNames.join(', ')} />
                       )}
+                      <FichaRow label="Suma asegurada (USD)" value={formatCurrencyFull(c.insuredAmountUsd, 'USD')} highlight />
+                      <FichaRow label="Suma asegurada (ARS)" value={formatCurrencyFull(c.insuredAmountArs, 'ARS')} />
+                      <FichaRow label="Tipo de cambio ARS/USD" value={`$ ${c.exchangeRate.toLocaleString('es-AR')}`} />
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {company && <FichaRow label="Empresa" value={company.name} />}
-                  {costCenter && <FichaRow label="Centro de costo" value={`${costCenter.code} — ${costCenter.name}`} />}
-                </div>
               )}
-            </div>
-
-            <div>
-              <SectionHeading>Importes</SectionHeading>
-              <div className="space-y-2.5">
-                <FichaRow label="Suma asegurada (ARS)" value={formatCurrencyFull(policy.insuredAmountArs, 'ARS')} highlight />
-                <FichaRow label="Tipo de cambio ARS/USD" value={`$ ${policy.exchangeRate.toLocaleString('es-AR')}`} />
-                <FichaRow label="Suma asegurada (USD)" value={formatCurrencyFull(policy.insuredAmountUsd, 'USD')} highlight />
-              </div>
             </div>
           </div>
         </div>

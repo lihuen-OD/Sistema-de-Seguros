@@ -74,7 +74,25 @@ export const notificationsService = {
       await Promise.all([
         prisma.policy.findMany({
           where: { isActive: true, endDate: { gte: today, lte: in30Days } },
-          include: { company: { select: { name: true } } },
+          // La empresa ya no es un campo único de la póliza — se resuelve por
+          // línea (companyId directo en las "sin activo", o la empresa
+          // principal del activo en las que sí tienen uno).
+          include: {
+            coverages: {
+              select: {
+                company: { select: { name: true } },
+                asset: {
+                  select: {
+                    allocations: {
+                      orderBy: { percentage: 'desc' },
+                      take: 1,
+                      select: { company: { select: { name: true } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
           orderBy: { endDate: 'asc' },
           take: ITEM_CAP,
         }),
@@ -111,17 +129,24 @@ export const notificationsService = {
     const isReviewed = (id: string, dueDate: string) => dismissedKeys.has(`${id}:${dueDate}`)
 
     const items: NotificationItem[] = [
-      ...policies.map((p): NotificationItem => ({
-        id: `policy:${p.id}`,
-        category: 'policy',
-        severity: computePolicyStatus(p.endDate) === 'vencida' ? 'vencido' : 'proximo_vencer',
-        title: `${p.policyNumber} — ${p.insuredName}`,
-        subtitle: p.company.name,
-        dueDate: toDateStr(p.endDate),
-        entityType: 'Policy',
-        entityId: p.id,
-        reviewed: isReviewed(`policy:${p.id}`, toDateStr(p.endDate)),
-      })),
+      ...policies.map((p): NotificationItem => {
+        const companyNames = [...new Set(
+          p.coverages
+            .map((c) => c.company?.name ?? c.asset?.allocations[0]?.company?.name)
+            .filter((name): name is string => !!name),
+        )]
+        return {
+          id: `policy:${p.id}`,
+          category: 'policy',
+          severity: computePolicyStatus(p.endDate) === 'vencida' ? 'vencido' : 'proximo_vencer',
+          title: `${p.policyNumber} — ${p.insuredName}`,
+          subtitle: companyNames.join(', '),
+          dueDate: toDateStr(p.endDate),
+          entityType: 'Policy',
+          entityId: p.id,
+          reviewed: isReviewed(`policy:${p.id}`, toDateStr(p.endDate)),
+        }
+      }),
       ...extinguishers.map((e): NotificationItem => ({
         id: `fire_extinguisher:${e.id}`,
         category: 'fire_extinguisher',

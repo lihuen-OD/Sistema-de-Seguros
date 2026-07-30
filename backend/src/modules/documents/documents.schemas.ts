@@ -15,7 +15,9 @@ const InstallmentInputSchema = z.object({
 })
 
 const AllocationInputSchema = z.object({
-  policyId: z.string().uuid('ID de póliza inválido'),
+  // Apunta a una línea de cobertura (póliza + activo, o póliza "sin activo")
+  // — no a la póliza directamente, así el reparto puede ser real por activo.
+  policyAssetCoverageId: z.string().uuid('ID de línea de cobertura inválido'),
   // Puede ser negativo: las Notas de Crédito aplicadas generan asignaciones
   // negativas proporcionales a la distribución de la factura vinculada.
   allocatedAmount: z.number().refine((v) => v !== 0, { message: 'El monto asignado no puede ser cero' }),

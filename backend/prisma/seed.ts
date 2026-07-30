@@ -44,6 +44,7 @@ async function main() {
   await prisma.documentInstallment.deleteMany()
   await prisma.accountingDocument.deleteMany()
   await prisma.policyAttachment.deleteMany()
+  await prisma.policyAssetCoverage.deleteMany()
   await prisma.policy.deleteMany()
   await prisma.producerTask.deleteMany()
   await prisma.producer.deleteMany()
@@ -488,7 +489,8 @@ async function main() {
   console.log('  OK Historial de valores (11 entradas)')
 
   // ─────────────────────────────────────────────────────────────────────────
-  // PASO 6 — Pólizas (con coverageIds reales y assetIds array)
+  // PASO 6 — Pólizas (solo datos únicos de la póliza — el resto vive por
+  // línea de cobertura, ver PASO 6b)
   // ─────────────────────────────────────────────────────────────────────────
 
   const [polIncendio, polAuto, polRC, polAP, polMultiRiesgo, polTransporte] = await Promise.all([
@@ -496,113 +498,175 @@ async function main() {
     prisma.policy.create({
       data: {
         policyNumber: 'LS-INC-2025-001234',
-        insuranceTypeId: tipoIncendio.id,
-        companyId: compOdwyerSA.id,
-        costCenterId: ccAdmin.id,
         producerId: prodJuan.id,
         insuredName: 'La Segunda',
-        assetIds: [actEdificio.id],
         startDate: d('2025-07-01'),
         endDate: d('2026-06-30'),
-        premium: 280000,
-        currency: 'ARS',
         description: 'Cobertura integral edificio y contenido. Planta Córdoba.',
-        coverageIds: [covIncendio.id, covRayo.id, covExplosion.id, covRoboContenido.id],
       },
     }),
     // Vigente — 2 activos en la misma poliza
     prisma.policy.create({
       data: {
         policyNumber: 'FP-AUT-2026-005678',
-        insuranceTypeId: tipoAuto.id,
-        companyId: compLogisticaOD.id,
-        costCenterId: ccLogistica.id,
         producerId: prodMaria.id,
         insuredName: 'Federación Patronal',
-        assetIds: [actCamion.id, actPickup.id],
         startDate: d('2026-01-01'),
         endDate: d('2026-12-31'),
-        premium: 320000,
-        currency: 'ARS',
         description: 'Póliza todo riesgo flota. Scania R450 + Toyota Hilux GR-S.',
-        coverageIds: [covAutoRC.id, covAutoDanios.id, covAutoRobo.id, covAutoGranizo.id, covAutoIncendio.id],
       },
     }),
     // Próxima a vencer — vence en 15 días
     prisma.policy.create({
       data: {
         policyNumber: 'ZA-RC-2025-009012',
-        insuranceTypeId: tipoRC.id,
-        companyId: compOdwyerSA.id,
-        costCenterId: ccAdmin.id,
         producerId: prodJuan.id,
         insuredName: 'Zurich Argentina',
-        assetIds: [],
         startDate: d('2025-07-15'),
         endDate: d('2026-07-14'),
-        premium: 95000,
-        currency: 'ARS',
         description: 'RC General para actividades industriales y logísticas.',
-        coverageIds: [covRCGeneral.id, covRCProductos.id, covRCEmpleadores.id],
       },
     }),
     // Vencida hace 4 meses
     prisma.policy.create({
       data: {
         policyNumber: 'LS-AP-2024-003456',
-        insuranceTypeId: tipoAP.id,
-        companyId: compCampoNorte.id,
-        costCenterId: ccOps.id,
         producerId: prodMaria.id,
         insuredName: 'La Segunda',
-        assetIds: [],
-        beneficiaryDescription: '12 empleados del área operativa',
         startDate: d('2024-03-01'),
         endDate: d('2025-02-28'),
-        premium: 68000,
-        currency: 'ARS',
         description: 'AP para 12 empleados. Póliza vencida, pendiente de renovación urgente.',
-        coverageIds: [covAPMuerte.id, covAPITP.id, covAPGastosMedicos.id, covAPSepelio.id],
       },
     }),
     // Vigente — 2 activos agrícolas
     prisma.policy.create({
       data: {
         policyNumber: 'SB-MAG-2026-007890',
-        insuranceTypeId: tipoMultiRiesgo.id,
-        companyId: compCampoNorte.id,
-        costCenterId: ccOps.id,
         producerId: prodCarlos.id,
         insuredName: 'Sancor Seguros',
-        assetIds: [actCosechadora.id, actSembradora.id],
         startDate: d('2026-06-01'),
         endDate: d('2027-05-31'),
-        premium: 520000,
-        currency: 'ARS',
         description: 'Multirriesgo agropecuario. Cosechadora y sembradora, campaña 2026/27.',
-        coverageIds: [covGranizoCosecha.id, covRoturaMaquinaria.id, covViento.id],
       },
     }),
     // Vigente — transporte granos
     prisma.policy.create({
       data: {
         policyNumber: 'LS-TRA-2026-011000',
-        insuranceTypeId: tipoTransporte.id,
-        companyId: compLogisticaOD.id,
-        costCenterId: ccLogistica.id,
         producerId: prodJuan.id,
         insuredName: 'La Segunda',
-        assetIds: [actCamion.id],
         startDate: d('2026-01-01'),
         endDate: d('2026-12-31'),
-        premium: 180000,
-        currency: 'ARS',
         description: 'Transporte de mercancías. Granos a granel zona Córdoba-Buenos Aires.',
-        coverageIds: [covTransTodoRiesgo.id, covTransRobo.id, covTransVuelco.id],
       },
     }),
   ])
-  console.log('  OK Pólizas (6): vigente x4, próxima x1, vencida x1 | coverageIds reales')
+  console.log('  OK Pólizas (6): vigente x4, próxima x1, vencida x1')
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PASO 6b — Líneas de cobertura: una por cada activo cubierto (o "sin
+  // activo" para RC/AP) — acá viven tipo de seguro, coberturas, suma
+  // asegurada y, para las líneas sin activo, la imputación empresa/centro
+  // de costo. FP-AUT y SB-MAG reparten la suma asegurada de la póliza entre
+  // sus dos activos (60/40) para poder demostrar una distribución real por
+  // activo, no una división pareja ficticia.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const [
+    covIncendioEdificio,
+    covAutoCamion,
+    covAutoPickup,
+    covRCSinActivo,
+    covAPSinActivo,
+    covMultiCosechadora,
+    covMultiSembradora,
+    covTransporteCamion,
+  ] = await Promise.all([
+    prisma.policyAssetCoverage.create({
+      data: {
+        policyId: polIncendio.id,
+        assetId: actEdificio.id,
+        insuranceTypeId: tipoIncendio.id,
+        coverageIds: [covIncendio.id, covRayo.id, covExplosion.id, covRoboContenido.id],
+        insuredAmount: 280000,
+        currency: 'ARS',
+      },
+    }),
+    prisma.policyAssetCoverage.create({
+      data: {
+        policyId: polAuto.id,
+        assetId: actCamion.id,
+        insuranceTypeId: tipoAuto.id,
+        coverageIds: [covAutoRC.id, covAutoDanios.id, covAutoRobo.id, covAutoGranizo.id, covAutoIncendio.id],
+        insuredAmount: 192000, // 60% de los 320.000 originales de la póliza
+        currency: 'ARS',
+      },
+    }),
+    prisma.policyAssetCoverage.create({
+      data: {
+        policyId: polAuto.id,
+        assetId: actPickup.id,
+        insuranceTypeId: tipoAuto.id,
+        coverageIds: [covAutoRC.id, covAutoDanios.id, covAutoRobo.id, covAutoGranizo.id, covAutoIncendio.id],
+        insuredAmount: 128000, // 40% de los 320.000 originales de la póliza
+        currency: 'ARS',
+      },
+    }),
+    prisma.policyAssetCoverage.create({
+      data: {
+        policyId: polRC.id,
+        insuranceTypeId: tipoRC.id,
+        coverageIds: [covRCGeneral.id, covRCProductos.id, covRCEmpleadores.id],
+        insuredAmount: 95000,
+        currency: 'ARS',
+        companyId: compOdwyerSA.id,
+        costCenterId: ccAdmin.id,
+      },
+    }),
+    prisma.policyAssetCoverage.create({
+      data: {
+        policyId: polAP.id,
+        insuranceTypeId: tipoAP.id,
+        coverageIds: [covAPMuerte.id, covAPITP.id, covAPGastosMedicos.id, covAPSepelio.id],
+        insuredAmount: 68000,
+        currency: 'ARS',
+        companyId: compCampoNorte.id,
+        costCenterId: ccOps.id,
+        beneficiaryDescription: '12 empleados del área operativa',
+      },
+    }),
+    prisma.policyAssetCoverage.create({
+      data: {
+        policyId: polMultiRiesgo.id,
+        assetId: actCosechadora.id,
+        insuranceTypeId: tipoMultiRiesgo.id,
+        coverageIds: [covGranizoCosecha.id, covRoturaMaquinaria.id, covViento.id],
+        insuredAmount: 312000, // 60% de los 520.000 originales de la póliza
+        currency: 'ARS',
+      },
+    }),
+    prisma.policyAssetCoverage.create({
+      data: {
+        policyId: polMultiRiesgo.id,
+        assetId: actSembradora.id,
+        insuranceTypeId: tipoMultiRiesgo.id,
+        coverageIds: [covGranizoCosecha.id, covRoturaMaquinaria.id, covViento.id],
+        insuredAmount: 208000, // 40% de los 520.000 originales de la póliza
+        currency: 'ARS',
+      },
+    }),
+    prisma.policyAssetCoverage.create({
+      data: {
+        policyId: polTransporte.id,
+        assetId: actCamion.id,
+        insuranceTypeId: tipoTransporte.id,
+        coverageIds: [covTransTodoRiesgo.id, covTransRobo.id, covTransVuelco.id],
+        insuredAmount: 180000,
+        currency: 'ARS',
+      },
+    }),
+  ])
+  console.log('  OK Líneas de cobertura (8): 1 edificio, 2 autos, 1 RC sin activo, 1 AP sin activo, 2 agrícola, 1 transporte')
 
   // ─────────────────────────────────────────────────────────────────────────
   // PASO 7 — Tareas de Productores
@@ -723,7 +787,7 @@ async function main() {
   // PASO 8 — Documentos Contables
   // ─────────────────────────────────────────────────────────────────────────
 
-  const [facturaIncendio, facturaAuto, notaDebitoRC, facturaMultiRiesgo, facturaTransporte] = await Promise.all([
+  const [facturaIncendio, facturaAuto, notaDebitoRC, facturaMultiRiesgo, _facturaTransporte] = await Promise.all([
     prisma.accountingDocument.create({
       data: {
         documentNumber: '0001-00001234',
@@ -748,7 +812,7 @@ async function main() {
           },
         },
         allocations: {
-          create: { policyId: polIncendio.id, allocatedAmount: 338800, allocationPercentage: 100 },
+          create: { policyAssetCoverageId: covIncendioEdificio.id, allocatedAmount: 338800, allocationPercentage: 100 },
         },
       },
     }),
@@ -774,8 +838,13 @@ async function main() {
             ],
           },
         },
+        // Reparto real 60/40 entre los dos activos de la póliza (mismo
+        // criterio que sus líneas de cobertura), no una división pareja.
         allocations: {
-          create: { policyId: polAuto.id, allocatedAmount: 387200, allocationPercentage: 100 },
+          create: [
+            { policyAssetCoverageId: covAutoCamion.id, allocatedAmount: 232320, allocationPercentage: 60 },
+            { policyAssetCoverageId: covAutoPickup.id, allocatedAmount: 154880, allocationPercentage: 40 },
+          ],
         },
       },
     }),
@@ -801,7 +870,7 @@ async function main() {
           },
         },
         allocations: {
-          create: { policyId: polRC.id, allocatedAmount: 117800, allocationPercentage: 100 },
+          create: { policyAssetCoverageId: covRCSinActivo.id, allocatedAmount: 117800, allocationPercentage: 100 },
         },
       },
     }),
@@ -827,8 +896,12 @@ async function main() {
             ],
           },
         },
+        // Reparto real 60/40 entre los dos activos agrícolas de la póliza.
         allocations: {
-          create: { policyId: polMultiRiesgo.id, allocatedAmount: 629200, allocationPercentage: 100 },
+          create: [
+            { policyAssetCoverageId: covMultiCosechadora.id, allocatedAmount: 377520, allocationPercentage: 60 },
+            { policyAssetCoverageId: covMultiSembradora.id, allocatedAmount: 251680, allocationPercentage: 40 },
+          ],
         },
       },
     }),
@@ -855,7 +928,7 @@ async function main() {
           },
         },
         allocations: {
-          create: { policyId: polTransporte.id, allocatedAmount: 217800, allocationPercentage: 100 },
+          create: { policyAssetCoverageId: covTransporteCamion.id, allocatedAmount: 217800, allocationPercentage: 100 },
         },
       },
     }),
@@ -887,8 +960,8 @@ async function main() {
   })
 
   // Nota de Crédito de ejemplo, aplicada — reduce el saldo de facturaAuto.
-  // Se seedea ya APPLIED con su asignación negativa proporcional (100% a
-  // polAuto, la misma distribución que tiene la factura original), tal como
+  // Se seedea ya APPLIED con su asignación negativa proporcional (60/40,
+  // la misma distribución que tiene la factura original), tal como
   // quedaría si se hubiera aplicado vía POST /documents/:id/apply.
   await prisma.accountingDocument.create({
     data: {
@@ -907,40 +980,17 @@ async function main() {
       relationType: 'CREDITS',
       linkedDocumentId: facturaAuto.id,
       allocations: {
-        create: { policyId: polAuto.id, allocatedAmount: -60500, allocationPercentage: 100 },
+        create: [
+          { policyAssetCoverageId: covAutoCamion.id, allocatedAmount: -36300, allocationPercentage: 60 },
+          { policyAssetCoverageId: covAutoPickup.id, allocatedAmount: -24200, allocationPercentage: 40 },
+        ],
       },
     },
   })
 
-  // Refacturación de ejemplo — corrige la factura de la póliza de transporte.
-  await prisma.accountingDocument.create({
-    data: {
-      documentNumber: '0001-00015000-RF1',
-      documentType: 'REBILLING',
-      documentStatus: 'ISSUED',
-      issueDate: d('2026-07-02'),
-      netAmount: 180000,
-      vatAmount: 37800,
-      otherTaxesAmount: 0,
-      currency: 'ARS',
-      exchangeRate: 1,
-      description: 'Refacturación por corrección de importe de la factura original',
-      insuranceCompany: 'La Segunda',
-      paymentStatus: 'PENDING',
-      relationType: 'REPLACES',
-      linkedDocumentId: facturaTransporte.id,
-      installments: {
-        createMany: {
-          data: [
-            { installmentNumber: 1, dueDate: d('2026-08-02'), amount: 217800, paymentStatus: 'PENDING' },
-          ],
-        },
-      },
-    },
-  })
-
-  // Endosos de ejemplo — se asocian principalmente a una póliza, no a una
-  // factura (ver document-types.ts: ENDORSEMENT.requiresPolicy).
+  // Endosos de ejemplo — se asocian a una póliza propia (la que modifican) y,
+  // cuando tienen impacto económico real, también a la factura que lo
+  // respalda (ver document-types.ts: ENDORSEMENT.requiresPolicy/hasOwnAmounts).
   await prisma.accountingDocument.create({
     data: {
       documentNumber: 'END-2026-000001',
@@ -969,12 +1019,12 @@ async function main() {
       documentType: 'ENDORSEMENT',
       documentStatus: 'ISSUED',
       issueDate: d('2025-07-20'),
-      netAmount: 0,
-      vatAmount: 0,
+      netAmount: 15000,
+      vatAmount: 3150,
       otherTaxesAmount: 0,
       currency: 'ARS',
       exchangeRate: 1,
-      description: 'Aumento de suma asegurada — respaldado por la nota de débito emitida',
+      description: 'Aumento de suma asegurada — factura la prima adicional contra la factura de la póliza',
       insuranceCompany: 'Zurich Argentina',
       paymentStatus: 'NOT_APPLICABLE',
       relationType: 'ENDORSES',
@@ -983,6 +1033,9 @@ async function main() {
       economicImpactType: 'INCREASES_COST',
       linkedDocumentId: notaDebitoRC.id,
       endorsementEffectiveDate: d('2025-07-20'),
+      allocations: {
+        create: { policyAssetCoverageId: covRCSinActivo.id, allocatedAmount: 18150, allocationPercentage: 100 },
+      },
     },
   })
 

@@ -25,7 +25,15 @@ function daysFromNow(n: number): Date {
 }
 
 function fakePolicy(id: string, endDate = daysFromNow(20)) {
-  return { id, policyNumber: `POL-${id}`, insuredName: 'Cliente Test', endDate, company: { name: 'La Segunda' } }
+  return {
+    id,
+    policyNumber: `POL-${id}`,
+    insuredName: 'Cliente Test',
+    endDate,
+    // La empresa ya no vive en la póliza — se resuelve por línea de
+    // cobertura (companyId directo, o vía el activo cubierto).
+    coverages: [{ company: { name: 'La Segunda' }, asset: null }],
+  }
 }
 
 function fakeExtinguisher(id: string, expirationDate = daysFromNow(-5)) {
@@ -163,7 +171,7 @@ describe('Notifications API', () => {
           policyNumber: 'POL-001',
           insuredName: 'Cliente Test',
           endDate: daysFromNow(20),
-          company: { name: 'La Segunda' },
+          coverages: [{ company: { name: 'La Segunda' }, asset: null }],
         },
       ])
       db.fireExtinguisher.findMany.mockResolvedValue([

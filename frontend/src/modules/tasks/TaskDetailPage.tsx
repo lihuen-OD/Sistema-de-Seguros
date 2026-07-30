@@ -169,7 +169,7 @@ export default function TaskDetailPage() {
                   >
                     {policy.policyNumber}
                   </button>
-                  <span className="text-xs text-slate-400 ml-2">· {policy.insuranceType}</span>
+                  <span className="text-xs text-slate-400 ml-2">· {(policy.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}</span>
                 </DetailRow>
               )}
               {asset && (

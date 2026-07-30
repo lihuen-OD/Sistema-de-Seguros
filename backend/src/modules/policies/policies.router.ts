@@ -6,6 +6,7 @@ import { upload } from '../../middleware/upload.middleware'
 import {
   CreatePolicySchema,
   UpdatePolicySchema,
+  ReplaceCoveragesSchema,
   AddPolicyAttachmentSchema,
   ListPoliciesQuerySchema,
 } from './policies.schemas'
@@ -36,18 +37,32 @@ policiesRouter.post('/:id/de-baja', requireModule('policies'), policiesControlle
 // Tasks
 policiesRouter.get('/:id/tasks', requireModule('policies'), policiesController.getTasks)
 
-// Attachments
-policiesRouter.get('/:id/attachments', requireModule('policies'), policiesController.getAttachments)
+// Líneas de cobertura (una por activo cubierto, o "sin activo")
+policiesRouter.get('/:id/coverages', requireModule('policies'), policiesController.getCoverages)
+policiesRouter.put(
+  '/:id/coverages',
+  requireModule('policies'),
+  validate(ReplaceCoveragesSchema),
+  policiesController.replaceCoverages,
+)
+
+// Attachments — por línea de cobertura, no por póliza (una póliza de flota
+// tiene una tarjeta de circulación distinta por vehículo).
+policiesRouter.get('/:id/coverages/:coverageId/attachments', requireModule('policies'), policiesController.getAttachments)
 policiesRouter.post(
-  '/:id/attachments',
+  '/:id/coverages/:coverageId/attachments',
   requireModule('policies'),
   upload.single('file'),
   validate(AddPolicyAttachmentSchema),
   policiesController.addAttachment,
 )
 policiesRouter.delete(
-  '/:id/attachments/:attachmentId',
+  '/:id/coverages/:coverageId/attachments/:attachmentId',
   requireModule('policies'),
   policiesController.deleteAttachment,
 )
-policiesRouter.get('/:id/attachments/:attachmentId/download', requireModule('policies'), policiesController.downloadAttachment)
+policiesRouter.get(
+  '/:id/coverages/:coverageId/attachments/:attachmentId/download',
+  requireModule('policies'),
+  policiesController.downloadAttachment,
+)

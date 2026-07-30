@@ -5,6 +5,7 @@ import { PageContent } from '../../../../shared/components/page-header/PageConte
 import { PageHeader } from '../../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../../shared/components/cards/SectionCard'
 import { FormSection, FormField, FormInput, FormSelect, FormTextarea } from '../../../../shared/components/forms/FormSection'
+import { PolicySelector, createEmptyPolicyRow, type PolicyAllocationRow } from '../../../../shared/components/forms/PolicySelector'
 import { DocumentRelationSelector } from '../components/DocumentRelationSelector'
 import { DocumentImpactPreview } from '../components/DocumentImpactPreview'
 import { DocumentBalanceSummary } from '../components/DocumentBalanceSummary'
@@ -12,6 +13,7 @@ import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
+import { useLinkedDocumentPolicies } from '../hooks/useLinkedDocumentPolicies'
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
@@ -35,7 +37,7 @@ interface FormState {
   description: string
 }
 
-type FormErrors = Partial<Record<keyof FormState, string>>
+type FormErrors = Partial<Record<keyof FormState | 'policies', string>>
 
 export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCreditoFormProps) {
   const isEdit = !!initialDoc
@@ -54,6 +56,8 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
     description: '',
   })
   const [errors, setErrors] = useState<FormErrors>({})
+  const [policyRows, setPolicyRows] = useState<PolicyAllocationRow[]>([createEmptyPolicyRow()])
+  const [allocationsInitialized, setAllocationsInitialized] = useState(!isEdit)
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
   const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'CREDIT_NOTE', form.insuranceCompany)
@@ -80,6 +84,22 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
 
   const linkedInvoice = allDocuments.find((d) => d.id === form.linkedDocumentId) ?? null
   const { data: linkedBalance } = useQuery(documentQueries.balance(form.linkedDocumentId))
+  const linkedPolicies = useLinkedDocumentPolicies(linkedInvoice)
+
+  const { data: existingAllocations = [], isSuccess: allocationsLoaded } = useQuery({
+    ...documentQueries.allocations(initialDoc?.id ?? ''),
+    enabled: isEdit,
+  })
+  if (allocationsLoaded && !allocationsInitialized) {
+    setAllocationsInitialized(true)
+    if (existingAllocations.length > 0) {
+      setPolicyRows(existingAllocations.map((a) => ({
+        id: crypto.randomUUID(),
+        policyAssetCoverageId: a.policyAssetCoverageId,
+        allocatedAmount: String(a.allocatedAmount),
+      })))
+    }
+  }
 
   const parsedNet = parseFloat(form.netAmount) || 0
   const parsedVat = parseFloat(form.vatAmount) || 0
@@ -91,6 +111,10 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
   const equivalentAmount =
     form.currency === 'ARS' && tc > 0 ? computedTotal / tc : form.currency === 'USD' && tc > 0 ? computedTotal * tc : 0
 
+  const totalAllocated = policyRows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0)
+  const hasAnyAllocationRow = policyRows.some((r) => r.policyAssetCoverageId)
+  const allocationTotalMismatch = hasAnyAllocationRow && Math.abs(computedTotal - totalAllocated) > 0.01
+
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
     if (errors[key as keyof FormErrors]) setErrors((prev) => ({ ...prev, [key]: undefined }))
@@ -99,6 +123,7 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
 
   const handleInsuranceCompanyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setForm((prev) => ({ ...prev, insuranceCompany: e.target.value, linkedDocumentId: '' }))
+    setPolicyRows([createEmptyPolicyRow()])
     markUnsaved()
   }
 
@@ -114,10 +139,21 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
     if (!form.currency) next.currency = 'Requerido'
     if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0) next.exchangeRate = 'Requerido'
     if (!form.netAmount || isNaN(parseFloat(form.netAmount)) || parsedNet <= 0) next.netAmount = 'Requerido'
+    if (allocationTotalMismatch) {
+      next.policies = `El total distribuido (${mainPrefix} ${totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) debe coincidir con el total de la Nota de Crédito (${mainPrefix} ${computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+    }
     setErrors(next)
     notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
+
+  const allocationsInput = policyRows
+    .filter((r) => r.policyAssetCoverageId && parseFloat(r.allocatedAmount) > 0)
+    .map((r) => ({
+      policyAssetCoverageId: r.policyAssetCoverageId,
+      allocatedAmount: parseFloat(r.allocatedAmount),
+      allocationPercentage: computedTotal > 0 ? (parseFloat(r.allocatedAmount) / computedTotal) * 100 : 0,
+    }))
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -133,16 +169,16 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
         insuranceCompany: form.insuranceCompany,
         description: form.description || undefined,
         linkedDocumentId: form.linkedDocumentId,
-        // La NC no admite pólizas/cuotas manuales — el backend genera sus
-        // propias asignaciones (negativas) al aplicarla.
-        allocations: [],
+        // Si no se distribuye manualmente, se manda vacío y el backend genera
+        // la asignación automática (proporcional a la factura) al aplicarla.
+        allocations: allocationsInput,
         installments: [],
       }),
   })
 
   const updateMutation = useMutation({
-    mutationFn: (docId: string) =>
-      documentsApi.update(docId, {
+    mutationFn: async (docId: string) => {
+      await documentsApi.update(docId, {
         issueDate: form.issueDate,
         currency: form.currency,
         exchangeRate: tc,
@@ -152,7 +188,9 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
         insuranceCompany: form.insuranceCompany,
         description: form.description || undefined,
         linkedDocumentId: form.linkedDocumentId,
-      }),
+      })
+      await documentsApi.replaceAllocations(docId, allocationsInput)
+    },
   })
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending
@@ -229,6 +267,7 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
                   // monto en una moneda de un total en otra).
                   const linked = allDocuments.find((d) => d.id === id)
                   setForm((p) => ({ ...p, linkedDocumentId: id, currency: linked?.currency ?? p.currency }))
+                  setPolicyRows([createEmptyPolicyRow()])
                   markUnsaved()
                 }}
                 required
@@ -306,14 +345,6 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
             </div>
           )}
 
-          <div className="mt-4 flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5">
-            <Info size={14} className="text-brand-500 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-brand-800 leading-snug">
-              La distribución por póliza de esta Nota de Crédito se calcula automáticamente, proporcional a la de
-              la factura de referencia, en el momento en que se aplique.
-            </p>
-          </div>
-
           <div className="mt-3">
             <DocumentImpactPreview
               documentType="CREDIT_NOTE"
@@ -323,6 +354,32 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
             />
           </div>
         </SectionCard>
+
+        {form.linkedDocumentId && (
+          <SectionCard
+            title="Distribución por Activo"
+            subtitle="Opcional — si no se distribuye acá, se calcula automáticamente al aplicarse"
+          >
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5">
+              <Info size={14} className="text-brand-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-brand-800 leading-snug">
+                Si dejás esta sección vacía, la distribución por activo se calcula automáticamente,
+                proporcional a la de la factura de referencia, en el momento en que se aplique. Si
+                distribuís manualmente acá, esa distribución se guarda tal cual y ya no se recalcula al aplicar.
+              </p>
+            </div>
+            {errors.policies && <p className="text-xs text-red-500 mb-3">{errors.policies}</p>}
+            <PolicySelector
+              mode="multi"
+              policies={linkedPolicies}
+              rows={policyRows}
+              onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
+              currencyPrefix={mainPrefix}
+              documentTotal={computedTotal}
+              emptyMessage="La factura asociada no tiene pólizas con activos para distribuir."
+            />
+          </SectionCard>
+        )}
 
         {linkedInvoice && linkedBalance && (
           <SectionCard title="Saldo actual de la factura seleccionada" subtitle={linkedInvoice.documentNumber}>

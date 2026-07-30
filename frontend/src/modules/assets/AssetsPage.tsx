@@ -252,11 +252,20 @@ export default function AssetsPage() {
       label: 'Valor a Nuevo (USD)',
       defaultVisible: false,
       sortable: true,
-      exportValue: (row) => row.patrimonialValueNew != null ? String(row.patrimonialValueNew) : '',
-      render: (v) =>
-        v != null && (v as number) > 0
-          ? <span className="font-semibold tabular-nums text-slate-700">{formatCurrencyFull(v as number, 'USD')}</span>
-          : <span className="text-slate-400">—</span>,
+      // patrimonialValueNew es el valor crudo en la moneda del activo (puede
+      // ser ARS) — para esta columna, que se anuncia en USD, prioriza el
+      // cierre en dólares (ver mismo criterio en assets.api.ts#mapAsset).
+      sortValue: (row) => row.patrimonialValueNewUsd ?? row.patrimonialValueNew ?? null,
+      exportValue: (row) => {
+        const v = row.patrimonialValueNewUsd ?? row.patrimonialValueNew
+        return v != null ? String(v) : ''
+      },
+      render: (_, row) => {
+        const v = row.patrimonialValueNewUsd ?? row.patrimonialValueNew
+        return v != null && v > 0
+          ? <span className="font-semibold tabular-nums text-slate-700">{formatCurrencyFull(v, 'USD')}</span>
+          : <span className="text-slate-400">—</span>
+      },
       className: 'text-right',
       headerClassName: 'text-right',
     },

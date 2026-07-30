@@ -67,29 +67,42 @@ function pickAmount(inst: Installment, displayCurrency: Currency): number {
   return displayCurrency === 'ARS' ? (inst.amountArs ?? 0) : (inst.amountUsd ?? 0)
 }
 
-function buildPolicyContext(policies: Policy[], assets: Asset[]) {
-  const map = new Map<string, { companyId: string; costCenterId: string; primaryAssetId: string | null }>()
-  policies.forEach((pol) => {
-    let companyId = pol.companyId ?? ''
-    let costCenterId = pol.costCenterId ?? ''
-    const primaryAssetId = pol.assetIds?.[0] ?? null
-    if (primaryAssetId) {
-      const asset = assets.find((a) => a.id === primaryAssetId)
-      if (asset) {
-        companyId = companyId || asset.companyId
-        costCenterId = costCenterId || asset.costCenterId
-      }
-    }
-    map.set(pol.id, { companyId, costCenterId, primaryAssetId })
-  })
-  return map
+// Cada allocation ya apunta a una línea de cobertura puntual (assetId directo
+// si tiene activo; empresa/centro de costo propios de la línea si es "sin
+// activo") — se resuelve por allocation, no por póliza, porque una póliza de
+// flota puede tener varias allocations del mismo documento repartidas entre
+// distintos activos (ver seed.ts: factura de flota 60/40 entre 2 camiones).
+interface AllocationContext {
+  policyId: string
+  companyId: string
+  costCenterId: string
+  assetId: string | null
+  allocationPercentage: number
 }
 
-function buildDocumentPolicies(allocations: DocumentPolicyAllocation[]) {
-  const map = new Map<string, string[]>()
+function buildDocumentAllocationContexts(
+  allocations: DocumentPolicyAllocation[],
+  policies: Policy[],
+  assets: Asset[],
+): Map<string, AllocationContext[]> {
+  const policyById = new Map(policies.map((p) => [p.id, p]))
+  const assetById = new Map(assets.map((a) => [a.id, a]))
+  const map = new Map<string, AllocationContext[]>()
+
   allocations.forEach((alloc) => {
+    let companyId: string
+    let costCenterId: string
+    if (alloc.assetId) {
+      const asset = assetById.get(alloc.assetId)
+      companyId = asset?.companyId ?? ''
+      costCenterId = asset?.costCenterId ?? ''
+    } else {
+      const coverage = policyById.get(alloc.policyId)?.coverages?.find((c) => c.id === alloc.policyAssetCoverageId)
+      companyId = coverage?.companyId ?? ''
+      costCenterId = coverage?.costCenterId ?? ''
+    }
     const existing = map.get(alloc.accountingDocumentId) ?? []
-    existing.push(alloc.policyId)
+    existing.push({ policyId: alloc.policyId, companyId, costCenterId, assetId: alloc.assetId, allocationPercentage: alloc.allocationPercentage })
     map.set(alloc.accountingDocumentId, existing)
   })
   return map
@@ -117,7 +130,7 @@ function getRows(
       return assets.map((a) => ({ id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}` }))
     case 'poliza':
       return policies.filter((p) => p.status !== 'vencida').map((p) => ({
-        id: p.id, label: p.policyNumber, sublabel: `${p.insuranceType} · ${p.insuranceCompany}`,
+        id: p.id, label: p.policyNumber, sublabel: `${(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'} · ${p.insuranceCompany}`,
       }))
   }
 }
@@ -147,8 +160,7 @@ function buildMatrixData(
   installments: Installment[],
   allocations: DocumentPolicyAllocation[],
 ): FinancialMatrixResult {
-  const policyContext = buildPolicyContext(policies, assets)
-  const documentPolicies = buildDocumentPolicies(allocations)
+  const allocationContexts = buildDocumentAllocationContexts(allocations, policies, assets)
   const documentsById = new Map(documents.map((doc) => [doc.id, doc]))
   const documentPaymentMethods = new Map(
     documents.map((doc) => [doc.id, resolveDocumentPaymentMethod(doc.id, documentsById)]),
@@ -170,22 +182,21 @@ function buildMatrixData(
           || 'Sin especificar'
         )
       : 'Pendiente'
-    const policyIds = documentPolicies.get(inst.accountingDocumentId) ?? []
-    const splitAmount = policyIds.length > 1 ? amount / policyIds.length : amount
+    const contexts = allocationContexts.get(inst.accountingDocumentId) ?? []
 
-    // Se acumula una vez POR PÓLIZA (no por fila deduplicada) — si dos
-    // pólizas del mismo documento caen en la misma empresa/centro de
-    // costo/activo, esa fila debe recibir la porción de cada una, para que
-    // el total de la matriz coincida con la suma real de cuotas del período.
-    policyIds.forEach((policyId) => {
-      const ctx = policyContext.get(policyId)
-      if (!ctx) return
+    // Se acumula una vez POR LÍNEA DE ASIGNACIÓN (no por fila deduplicada) —
+    // si una póliza de flota reparte el mismo documento entre varios activos,
+    // cada línea aporta su porción REAL (allocationPercentage), no un
+    // promedio parejo, para que el total de la matriz coincida con la suma
+    // real de cuotas del período.
+    contexts.forEach((ctx) => {
+      const splitAmount = amount * (ctx.allocationPercentage / 100)
       let rowId: string | null = null
       switch (grouping) {
         case 'empresa':      rowId = ctx.companyId || null; break
         case 'centro_costo': rowId = ctx.costCenterId || null; break
-        case 'activo':       rowId = ctx.primaryAssetId; break
-        case 'poliza':       rowId = policyId; break
+        case 'activo':       rowId = ctx.assetId; break
+        case 'poliza':       rowId = ctx.policyId; break
       }
       if (!rowId) return
 
@@ -250,7 +261,9 @@ export default function FinancialAnalysisPage() {
 
   // Filtra en el backend por el rango seleccionado — evita cargar todos los documentos en memoria
   const { data: financialDocs = [], isError: isErrorDocs } = useQuery(documentQueries.financial({ from: dateFrom, to: dateTo }))
-  const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list())
+  // includeCoverages:true — buildDocumentAllocationContexts necesita, para las
+  // asignaciones "sin activo", la empresa/centro de costo propios de esa línea.
+  const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list({ includeCoverages: true }))
   const { data: allAssets = [], isError: isErrorAssets } = useQuery(assetQueries.list())
   const { data: allCompanies = [], isError: isErrorCompanies } = useQuery(companyQueries.list())
   const { data: allCostCenters = [], isError: isErrorCostCenters } = useQuery(costCenterQueries.list())

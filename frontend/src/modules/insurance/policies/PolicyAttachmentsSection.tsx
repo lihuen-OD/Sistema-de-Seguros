@@ -87,11 +87,12 @@ function Checkbox({ checked, onToggle }: { checked: boolean; onToggle: () => voi
 
 interface AddModalProps {
   policyId: string
+  coverageId: string
   onClose: () => void
   onSuccess: () => void
 }
 
-function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
+function AddAttachmentModal({ policyId, coverageId, onClose, onSuccess }: AddModalProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -121,7 +122,7 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
     setUploading(true)
     setUploadError(null)
     try {
-      await policiesApi.addAttachment(policyId, selectedFile, {
+      await policiesApi.addAttachment(policyId, coverageId, selectedFile, {
         description: description.trim() || undefined,
         isCirculationCard,
       })
@@ -259,23 +260,24 @@ function AddAttachmentModal({ policyId, onClose, onSuccess }: AddModalProps) {
 
 interface PolicyAttachmentsSectionProps {
   policyId: string
+  coverageId: string
   /** Los adjuntos no tienen vencimiento propio — siempre vencen junto con la póliza. */
   policyEndDate: string
 }
 
-export function PolicyAttachmentsSection({ policyId, policyEndDate }: PolicyAttachmentsSectionProps) {
+export function PolicyAttachmentsSection({ policyId, coverageId, policyEndDate }: PolicyAttachmentsSectionProps) {
   const queryClient = useQueryClient()
 
-  const { data: attachments = [] } = useQuery(policyQueries.attachments(policyId))
+  const { data: attachments = [] } = useQuery(policyQueries.attachments(policyId, coverageId))
 
   const [showModal, setShowModal] = useState(false)
 
   const deleteMutation = useMutation({
-    mutationFn: (attachmentId: string) => policiesApi.deleteAttachment(policyId, attachmentId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: policyKeys.attachments(policyId) }),
+    mutationFn: (attachmentId: string) => policiesApi.deleteAttachment(policyId, coverageId, attachmentId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: policyKeys.attachments(policyId, coverageId) }),
   })
 
-  const handleSuccess = () => queryClient.invalidateQueries({ queryKey: policyKeys.attachments(policyId) })
+  const handleSuccess = () => queryClient.invalidateQueries({ queryKey: policyKeys.attachments(policyId, coverageId) })
   const handleRemove = (id: string) => deleteMutation.mutate(id)
 
   return (
@@ -369,7 +371,7 @@ export function PolicyAttachmentsSection({ policyId, policyEndDate }: PolicyAtta
                       <button
                         type="button"
                         title="Descargar"
-                        onClick={() => policiesApi.downloadAttachment(policyId, att.id, att.name)}
+                        onClick={() => policiesApi.downloadAttachment(policyId, coverageId, att.id, att.name)}
                         className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
                       >
                         <Download size={14} />
@@ -395,6 +397,7 @@ export function PolicyAttachmentsSection({ policyId, policyEndDate }: PolicyAtta
       {showModal && (
         <AddAttachmentModal
           policyId={policyId}
+          coverageId={coverageId}
           onClose={() => setShowModal(false)}
           onSuccess={handleSuccess}
         />

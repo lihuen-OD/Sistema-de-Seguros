@@ -1,4 +1,4 @@
-import { FileText, TrendingDown, TrendingUp, FileEdit, Scale, Repeat } from 'lucide-react'
+import { FileText, TrendingDown, TrendingUp, FileEdit, Scale } from 'lucide-react'
 import { PageContent } from '../../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../../shared/components/page-header/PageHeader'
 import type { DocumentType, DocumentTypeDef } from '../../../../shared/types'
@@ -9,20 +9,18 @@ const TYPE_ICONS: Record<DocumentType, React.ElementType> = {
   DEBIT_NOTE: TrendingUp,
   ENDORSEMENT: FileEdit,
   ADJUSTMENT_ENTRY: Scale,
-  REBILLING: Repeat,
 }
 
 const TYPE_DESCRIPTIONS: Record<DocumentType, string> = {
   INVOICE: 'Genera deuda o costo. Se asocia a una o varias pólizas.',
   CREDIT_NOTE: 'Reduce el saldo de una factura existente.',
   DEBIT_NOTE: 'Aumenta el saldo de una factura, o funciona como documento propio.',
-  ENDORSEMENT: 'Modifica una póliza — cobertura, vigencia o datos. No mueve saldo por sí mismo.',
+  ENDORSEMENT: 'Modifica una póliza y puede aumentar o reducir el costo de una factura asociada.',
   ADJUSTMENT_ENTRY: 'Corrige o netea el saldo de otro documento. Uso interno.',
-  REBILLING: 'Reemplaza o corrige una factura original.',
 }
 
 // Orden de presentación pensado para el flujo más frecuente primero.
-const TYPE_ORDER: DocumentType[] = ['INVOICE', 'CREDIT_NOTE', 'DEBIT_NOTE', 'ENDORSEMENT', 'ADJUSTMENT_ENTRY', 'REBILLING']
+const TYPE_ORDER: DocumentType[] = ['INVOICE', 'CREDIT_NOTE', 'DEBIT_NOTE', 'ENDORSEMENT', 'ADJUSTMENT_ENTRY']
 
 interface DocumentTypePickerProps {
   documentTypes: DocumentTypeDef[]

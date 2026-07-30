@@ -28,7 +28,7 @@ function Box({ tone, children }: { tone: 'info' | 'warning'; children: React.Rea
 
 // Adelanto de qué va a pasar cuando se guarde/aplique el documento, antes de
 // confirmarlo — mensajes tomados literalmente de la especificación de cada
-// tipo (Nota de Crédito/Débito/Endoso/Ajuste/Refacturación).
+// tipo (Nota de Crédito/Débito/Endoso/Ajuste).
 export function DocumentImpactPreview({
   documentType,
   linkedDocument,
@@ -70,33 +70,13 @@ export function DocumentImpactPreview({
     if (economicImpactType === 'NO_IMPACT') {
       return <Box tone="info">Este Endoso modificará la póliza sin impacto económico.</Box>
     }
-    if (economicImpactType === 'INCREASES_COST') {
+    if (economicImpactType === 'INCREASES_COST' || economicImpactType === 'DECREASES_COST') {
+      if (!linkedDocument) return null
+      const verb = economicImpactType === 'INCREASES_COST' ? 'aumentará' : 'reducirá'
       return (
         <Box tone="info">
-          Este Endoso aumentará el costo de la póliza. El impacto económico debe estar respaldado por
-          Factura o Nota de Débito
-          {linkedDocument ? (
-            <>
-              {' '}— <strong>{linkedDocument.documentNumber}</strong>.
-            </>
-          ) : (
-            '. Podés vincularlo ahora o dejarlo pendiente para cargar después.'
-          )}
-        </Box>
-      )
-    }
-    if (economicImpactType === 'DECREASES_COST') {
-      return (
-        <Box tone="info">
-          Este Endoso reducirá el costo de la póliza. El impacto económico debe estar respaldado por
-          Nota de Crédito
-          {linkedDocument ? (
-            <>
-              {' '}— <strong>{linkedDocument.documentNumber}</strong>.
-            </>
-          ) : (
-            '. Podés vincularla ahora o dejarla pendiente para cargar después.'
-          )}
+          Este Endoso {verb} el saldo de la Factura <strong>{linkedDocument.documentNumber}</strong> en{' '}
+          {formattedAmount} cuando sea aplicado.
         </Box>
       )
     }
@@ -117,19 +97,6 @@ export function DocumentImpactPreview({
       <Box tone="info">
         Este Asiento de Ajuste {verb} {formattedAmount} al saldo del documento{' '}
         <strong>{linkedDocument.documentNumber}</strong> cuando sea aplicado.
-      </Box>
-    )
-  }
-
-  if (documentType === 'REBILLING') {
-    return (
-      <Box tone="warning">
-        Esta Refacturación {linkedDocument ? (
-          <>reemplazará/corregirá la Factura original <strong>{linkedDocument.documentNumber}</strong></>
-        ) : (
-          'reemplazará/corregirá la factura original'
-        )}. Verificá cancelar o compensar la factura original para evitar duplicar el costo en los
-        reportes.
       </Box>
     )
   }
