@@ -15,7 +15,7 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatCurrencyCompact, formatPercent, formatDate } from '../../shared/utils/format'
-import { computePolicyInvoicedTotal, computePsaPercentage } from '../../shared/utils/policyInvoicedTotal'
+import { computeCoverageInvoicedTotal, computePsaPercentage } from '../../shared/utils/policyInvoicedTotal'
 import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
@@ -28,6 +28,7 @@ import type { Policy, FireExtinguisher, TableColumn, AssetValueEntry, Accounting
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
 import { AssociateFireExtinguisherModal } from './AssociateFireExtinguisherModal'
+import { AddValuationModal } from './AddValuationModal'
 
 const TABS = ['Pólizas', 'Doc. Contables', 'Matafuegos', 'Siniestros', 'Valuaciones', 'Adjuntos'] as const
 type Tab = (typeof TABS)[number]
@@ -82,7 +83,7 @@ function ValuacionesEntryList({ entries, accent }: { entries: AssetValueEntry[];
   )
 }
 
-function ValuacionesTab({ history }: { history: AssetValueEntry[] }) {
+function ValuacionesTab({ history, onAdd }: { history: AssetValueEntry[]; onAdd: (type: 'real' | 'nuevo') => void }) {
   const byDate = (a: AssetValueEntry, b: AssetValueEntry) => b.date.localeCompare(a.date)
   const realEntries = [...history].filter((e) => e.type === 'real').sort(byDate)
   const nuevoEntries = [...history].filter((e) => e.type === 'nuevo').sort(byDate)
@@ -90,11 +91,31 @@ function ValuacionesTab({ history }: { history: AssetValueEntry[] }) {
     <div className="p-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <p className="text-xs font-semibold text-brand-700 uppercase tracking-wide mb-2">Valor Patrimonial Real</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-brand-700 uppercase tracking-wide">Valor Patrimonial Real</p>
+            <button
+              type="button"
+              onClick={() => onAdd('real')}
+              title="Agregar valuación"
+              className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors"
+            >
+              <Plus size={12} strokeWidth={2.5} />
+            </button>
+          </div>
           <ValuacionesEntryList entries={realEntries} accent="blue" />
         </div>
         <div>
-          <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-2">Valor Patrimonial a Nuevo</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide">Valor Patrimonial a Nuevo</p>
+            <button
+              type="button"
+              onClick={() => onAdd('nuevo')}
+              title="Agregar valuación"
+              className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-purple-600 bg-purple-50 hover:bg-purple-100 transition-colors"
+            >
+              <Plus size={12} strokeWidth={2.5} />
+            </button>
+          </div>
           <ValuacionesEntryList entries={nuevoEntries} accent="purple" />
         </div>
       </div>
@@ -113,6 +134,7 @@ export default function AssetDetailPage() {
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0)
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
   const [uploadingPhotos, setUploadingPhotos] = useState(false)
+  const [addValuationType, setAddValuationType] = useState<'real' | 'nuevo' | null>(null)
   const [showAssociateModal, setShowAssociateModal] = useState(false)
   const queryClient = useQueryClient()
   const attachmentsKey = assetKeys.attachments(id!)
@@ -161,7 +183,7 @@ export default function AssetDetailPage() {
 
   const { data: documentTypesData } = useQuery(documentQueries.types())
   // Mismo mapa que PolicyDetailPage.tsx — necesario para calcular el % P/SA
-  // de cada póliza con computePolicyInvoicedTotal/computePsaPercentage.
+  // de cada línea de cobertura con computeCoverageInvoicedTotal/computePsaPercentage.
   const typeDefsByKey = useMemo(
     () => Object.fromEntries((documentTypesData?.types ?? []).map((t) => [t.key, t])),
     [documentTypesData],
@@ -315,10 +337,16 @@ export default function AssetDetailPage() {
   const displayNuevoArs = latestNuevo?.valueArs ?? asset.patrimonialValueNewArs ?? null
   const displayNuevoDate = latestNuevo?.date ?? asset.valuationDate
 
+  // policyQueries.list({ assetId: id }) trae, para cada póliza, la línea de
+  // cobertura específica de ESTE activo en `assetCoverage` — nunca el total
+  // agregado de la póliza (que podría incluir otros activos cubiertos).
   const vigentePolicies = policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer')
-  const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + p.insuredAmountUsd, 0)
-  // Solo cuenta como ARS puro si la póliza no tiene conversión (exchangeRate = 1)
-  const totalInsuredArs = vigentePolicies.reduce((s, p) => p.exchangeRate > 1 ? s : s + p.insuredAmountArs, 0)
+  const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + (p.assetCoverage?.insuredAmountUsd ?? 0), 0)
+  // Solo cuenta como ARS puro si la línea no tiene conversión (exchangeRate = 1)
+  const totalInsuredArs = vigentePolicies.reduce(
+    (s, p) => (p.assetCoverage?.exchangeRate ?? 1) > 1 ? s : s + (p.assetCoverage?.insuredAmountArs ?? 0),
+    0,
+  )
   const hasUsdCoverage = totalInsuredUsd > 0
   const hasArsCoverage = totalInsuredArs > 0
   const mixedCurrencies = hasUsdCoverage && hasArsCoverage
@@ -330,26 +358,49 @@ export default function AssetDetailPage() {
   const policyColumns: TableColumn<Policy>[] = [
     { key: 'policyNumber', label: 'N° Póliza', className: 'font-mono text-slate-600 text-xs', sortable: true },
     { key: 'insuranceCompany', label: 'Aseguradora', sortable: true },
-    { key: 'insuranceType', label: 'Tipo', sortable: true },
-    { key: 'coverageType', label: 'Cobertura', sortable: true, render: (v) => <span className="text-xs text-slate-500">{String(v)}</span> },
+    {
+      id: 'insuranceTypeName',
+      key: 'assetCoverage',
+      label: 'Tipo',
+      sortable: true,
+      sortValue: (row) => row.assetCoverage?.insuranceTypeName ?? '',
+      render: (_, row) => <span>{row.assetCoverage?.insuranceTypeName ?? '—'}</span>,
+    },
     { key: 'startDate', label: 'Inicio', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
     { key: 'endDate', label: 'Vence', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
-    { key: 'insuredAmountArs', label: 'Suma Aseg.', sortable: true, render: (v) => <span className="font-semibold">{formatCurrencyCompact(v as number, 'ARS')}</span>, headerClassName: 'text-right', className: 'text-right' },
     {
-      // Total facturado (neto ajustado) de la póliza sobre su Suma Asegurada
-      // — mismo cálculo que el panel "Resumen" de PolicyDetailPage.tsx, para
-      // que los dos números siempre coincidan. Clave sintética: no es un
-      // campo propio de Policy, se calcula al vuelo por fila.
+      id: 'insuredAmountArs',
+      key: 'assetCoverage',
+      label: 'Suma Aseg.',
+      sortable: true,
+      sortValue: (row) => row.assetCoverage?.insuredAmountArs ?? 0,
+      render: (_, row) => (
+        <span className="font-semibold">
+          {row.assetCoverage ? formatCurrencyCompact(row.assetCoverage.insuredAmountArs ?? 0, 'ARS') : '—'}
+        </span>
+      ),
+      headerClassName: 'text-right',
+      className: 'text-right',
+    },
+    {
+      // Total facturado (neto ajustado, asignado específicamente a ESTE
+      // activo) sobre la Suma Asegurada de SU línea de cobertura — mismo
+      // criterio que el panel "Resumen" de PolicyDetailPage.tsx (ahí a nivel
+      // póliza completa, acá a nivel de la línea de este activo).
       key: 'psaPercentage',
       label: 'P/SA',
       sortable: true,
       headerClassName: 'text-right',
       className: 'text-right',
-      sortValue: (row) => computePsaPercentage(row, computePolicyInvoicedTotal(row.id, financialDocs, typeDefsByKey)),
+      sortValue: (row) => row.assetCoverage
+        ? computePsaPercentage(row.assetCoverage.insuredAmountUsd ?? 0, computeCoverageInvoicedTotal(row.assetCoverage.id, financialDocs, typeDefsByKey).totalUsd)
+        : null,
       render: (_, row) => {
-        const pct = computePsaPercentage(row, computePolicyInvoicedTotal(row.id, financialDocs, typeDefsByKey))
+        const pct = row.assetCoverage
+          ? computePsaPercentage(row.assetCoverage.insuredAmountUsd ?? 0, computeCoverageInvoicedTotal(row.assetCoverage.id, financialDocs, typeDefsByKey).totalUsd)
+          : null
         return pct != null
-          ? <span className="font-semibold">{formatPercent(pct)}</span>
+          ? <span className="font-semibold">{formatPercent(pct, 2)}</span>
           : <span className="text-slate-300">—</span>
       },
     },
@@ -361,9 +412,9 @@ export default function AssetDetailPage() {
       render: (v, row) => (
         <div className="flex items-center gap-2">
           <StatusPill status={v as string} size="sm" />
-          {row.circulationCardAttachment?.fileUrl && (
+          {row.assetCoverage?.circulationCardAttachment?.fileUrl && (
             <a
-              href={row.circulationCardAttachment.fileUrl}
+              href={row.assetCoverage.circulationCardAttachment.fileUrl}
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
@@ -464,13 +515,13 @@ export default function AssetDetailPage() {
           <div className="flex-1 min-w-0 px-5 py-4">
             <p className="text-xs text-slate-500 mb-1">Valor Patrimonial Real</p>
             <p className="text-sm font-semibold text-slate-800 tabular-nums">
-              {asset.patrimonialValueUsd != null ? formatCurrencyFull(asset.patrimonialValueUsd, 'USD') : <span className="text-slate-400 font-normal">Sin valuar</span>}
+              {displayRealUsd != null ? formatCurrencyFull(displayRealUsd, 'USD') : <span className="text-slate-400 font-normal">Sin valuar</span>}
             </p>
           </div>
-          {asset.patrimonialValueNew != null && (
+          {displayNuevoUsd != null && (
             <div className="flex-1 min-w-0 px-5 py-4">
               <p className="text-xs text-slate-500 mb-1">Valor Patrimonial a Nuevo</p>
-              <p className="text-sm font-semibold text-slate-800 tabular-nums">{formatCurrencyFull(asset.patrimonialValueNew, 'USD')}</p>
+              <p className="text-sm font-semibold text-slate-800 tabular-nums">{formatCurrencyFull(displayNuevoUsd, 'USD')}</p>
             </div>
           )}
           <div className="flex-1 min-w-0 px-5 py-4">
@@ -937,7 +988,7 @@ export default function AssetDetailPage() {
             <AssetClaimsTab assetId={asset.id} policies={policies} claims={claims} />
           )}
           {activeTab === 'Valuaciones' && (
-            <ValuacionesTab history={asset.valueHistory ?? []} />
+            <ValuacionesTab history={asset.valueHistory ?? []} onAdd={setAddValuationType} />
           )}
           {activeTab === 'Adjuntos' && (
             <AssetAttachmentsTab assetId={asset.id} />
@@ -950,6 +1001,16 @@ export default function AssetDetailPage() {
           assetId={asset.id}
           assetName={asset.name}
           onClose={() => setShowAssociateModal(false)}
+        />
+      )}
+
+      {addValuationType && (
+        <AddValuationModal
+          assetId={asset.id}
+          type={addValuationType}
+          defaultCurrency={asset.currency ?? 'USD'}
+          defaultExchangeRate={asset.exchangeRate ?? 1}
+          onClose={() => setAddValuationType(null)}
         />
       )}
     </PageContent>

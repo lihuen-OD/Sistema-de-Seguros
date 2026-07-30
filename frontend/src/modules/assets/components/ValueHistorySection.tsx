@@ -69,7 +69,7 @@ export function ValueHistorySection({ history, currentValue }: ValueHistorySecti
       <div className="mb-3">
         <p className="text-sm font-semibold text-slate-800">Historial de valuaciones USD</p>
         <p className="text-xs text-slate-500 mt-0.5">
-          Se registra solo al guardar cambios en el valor patrimonial de arriba.
+          Para agregar nuevas valuaciones, usá el + de la pestaña Valuaciones en el detalle del activo.
         </p>
       </div>
 

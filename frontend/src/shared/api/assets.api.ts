@@ -14,6 +14,7 @@ interface BackendAllocation {
 interface BackendValueHistory {
   id: string; assetId: string; date: string; value: number
   valueArs: number | null
+  valueUsd: number | null
   type: string; note: string | null
 }
 interface BackendFixedAssetRef { id: string; code: string; name: string }
@@ -67,7 +68,11 @@ function mapAsset(b: BackendAsset): Asset {
     engineNumber: (meta.engineNumber as string) || undefined,
     plate: (meta.plate as string) || undefined,
     status: (b.status ?? (b.isActive ? 'activo' : 'baja')) as AssetStatus,
-    patrimonialValueUsd: b.currentValue ?? b.purchaseValue ?? null,
+    // Prioriza el cierre en USD (computeDualAmounts, servidor) sobre el valor
+    // crudo — currentValue está en la moneda que el activo tenga elegida
+    // (asset.currency), así que tomarlo directo acá mostraría pesos como si
+    // fueran dólares en cualquier activo cargado en ARS.
+    patrimonialValueUsd: b.currentValueUsd ?? b.currentValue ?? b.purchaseValue ?? null,
     patrimonialValueNew: b.patrimonialValueNew ?? null,
     valuationDate: b.purchaseDate ? b.purchaseDate.slice(0, 10) : '',
     currency: b.currency as Currency,
@@ -92,7 +97,10 @@ function mapAsset(b: BackendAsset): Asset {
     area: b.area ?? '',
     photos: [],
     valueHistory: b.valueHistory
-      ? b.valueHistory.map((v) => ({ id: v.id, date: v.date.slice(0, 10), valueUsd: v.value, valueArs: v.valueArs ?? null, type: (v.type ?? 'real') as 'real' | 'nuevo', notes: v.note ?? undefined }))
+      // valueUsd viene del cierre en ambas monedas del backend (computeDualAmounts) —
+      // v.value es el monto crudo tal como se cargó (puede ser ARS si esa entrada
+      // se cargó en pesos), nunca se debe mostrar como si fuera USD directo.
+      ? b.valueHistory.map((v) => ({ id: v.id, date: v.date.slice(0, 10), valueUsd: v.valueUsd ?? v.value, valueArs: v.valueArs ?? null, type: (v.type ?? 'real') as 'real' | 'nuevo', notes: v.note ?? undefined }))
       : undefined,
     silos: (() => {
       const metaSilos = meta.silos as Array<{ capacityTons: number; content: string }> | undefined
@@ -132,6 +140,15 @@ export interface AddAttachmentInput {
 export interface UpdateAttachmentInput {
   description?: string | null
   expirationDate?: string | null
+}
+
+export interface AddValueHistoryInput {
+  value: number
+  currency: Currency
+  exchangeRate: number
+  date: string
+  type: 'real' | 'nuevo'
+  note?: string
 }
 
 export interface AssetCreateInput {
@@ -225,6 +242,10 @@ export const assetsApi = {
   async findStatusHistory(assetId: string): Promise<AssetStatusHistory[]> {
     const res = await apiClient.get<{ data: AssetStatusHistory[] }>(`/assets/${assetId}/status-history`)
     return res.data.data.map((h) => ({ ...h, date: h.date.slice(0, 10) }))
+  },
+
+  async addValueHistory(assetId: string, input: AddValueHistoryInput): Promise<void> {
+    await apiClient.post(`/assets/${assetId}/value-history`, input)
   },
 }
 

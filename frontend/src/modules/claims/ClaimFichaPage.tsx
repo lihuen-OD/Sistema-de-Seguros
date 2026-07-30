@@ -179,7 +179,13 @@ export default function ClaimFichaPage() {
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 space-y-2">
                   <FichaRow label="N° de póliza" value={policy.policyNumber} mono />
                   <FichaRow label="Compañía" value={policy.insuranceCompany} />
-                  <FichaRow label="Tipo" value={policy.insuranceType} />
+                  <FichaRow
+                    label="Tipo"
+                    value={
+                      (policy.coverages?.find((c) => (claim.assetId ? c.assetId === claim.assetId : !c.assetId)) ?? policy.coverages?.[0])?.insuranceType
+                      ?? 'Sin tipo'
+                    }
+                  />
                   <FichaRow label="Vencimiento" value={formatDate(policy.endDate)} />
                 </div>
               </div>

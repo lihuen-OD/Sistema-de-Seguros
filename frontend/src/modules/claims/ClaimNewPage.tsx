@@ -134,8 +134,25 @@ export default function ClaimNewPage() {
 
   // Derived
   const selectedAsset = assetId ? (allAssets.find((a) => a.id === assetId) ?? null) : null
-  const availablePolicies = assetId ? allPolicies.filter((p) => p.assetIds?.includes(assetId)) : allPolicies
+  // "Pólizas del activo" ahora requiere el filtro server-side (assetId ya no
+  // es un array plano en Policy — se resuelve vía sus líneas de cobertura).
+  const { data: policiesForAsset = [] } = useQuery({
+    ...policyQueries.list({ assetId: assetId || undefined }),
+    enabled: !!assetId,
+  })
+  const availablePolicies = assetId ? policiesForAsset : allPolicies
   const selectedPolicy = policyId ? availablePolicies.find((p) => p.id === policyId) ?? null : null
+  // Tipo de seguro/coberturas ya no viven en la póliza sino por línea — se
+  // busca el detalle completo de la póliza elegida y se toma la línea de
+  // este activo (o la primera "sin activo" si el siniestro no tiene uno).
+  const { data: selectedPolicyDetail } = useQuery({
+    ...policyQueries.detail(policyId),
+    enabled: !!policyId,
+  })
+  const selectedCoverage =
+    selectedPolicyDetail?.coverages?.find((c) => (assetId ? c.assetId === assetId : !c.assetId))
+    ?? selectedPolicyDetail?.coverages?.[0]
+    ?? null
 
   // El backend cierra ambas monedas (ARS/USD) a partir del monto crudo +
   // currency + exchangeRate — acá solo se decide el prefijo de moneda para
@@ -326,13 +343,13 @@ export default function ClaimNewPage() {
                       <option value="">Sin póliza asociada</option>
                       {availablePolicies.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.policyNumber} — {p.insuranceType}
+                          {p.policyNumber} — {(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}
                         </option>
                       ))}
                     </FormSelect>
                     {selectedPolicy && (
                       <p className="text-xs text-slate-500 mt-1">
-                        {selectedPolicy.coverageType} · Vigencia: {selectedPolicy.endDate}
+                        {selectedCoverage?.insuranceType ?? 'Sin tipo'} · Vigencia: {selectedPolicy.endDate}
                       </p>
                     )}
                   </>
@@ -347,14 +364,14 @@ export default function ClaimNewPage() {
               </FormField>
             </FormSection>
 
-            {/* Coverage chips — actual coverage names from the selected policy */}
-            {selectedPolicy && (selectedPolicy.coverageNames?.length ?? 0) > 0 && (
+            {/* Coverage chips — actual coverage names from the selected coverage line */}
+            {selectedCoverage && (selectedCoverage.coverageNames?.length ?? 0) > 0 && (
               <div className="mt-4 pt-4 border-t border-slate-100">
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">
                   Coberturas incluidas en esta póliza
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {selectedPolicy.coverageNames!.map((name) => (
+                  {selectedCoverage.coverageNames!.map((name) => (
                     <span key={name} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-700">
                       <CheckCircle2 size={9} />
                       {name}
@@ -629,7 +646,7 @@ export default function ClaimNewPage() {
           </SectionCard>
 
           {/* Coberturas de la póliza seleccionada — solo informativo */}
-          {selectedPolicy && (selectedPolicy.coverageNames?.length ?? 0) > 0 && (
+          {selectedCoverage && (selectedCoverage.coverageNames?.length ?? 0) > 0 && (
             <div className="flex items-start gap-3 px-4 py-3.5 rounded-xl border bg-slate-50 border-slate-200">
               <ShieldAlert size={14} className="text-slate-400 mt-0.5 flex-shrink-0" />
               <div>
@@ -637,7 +654,7 @@ export default function ClaimNewPage() {
                   Coberturas de la póliza
                 </p>
                 <div className="flex flex-wrap gap-1">
-                  {selectedPolicy.coverageNames!.map((name) => (
+                  {selectedCoverage.coverageNames!.map((name) => (
                     <span key={name} className="text-[10px] text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">
                       {name}
                     </span>

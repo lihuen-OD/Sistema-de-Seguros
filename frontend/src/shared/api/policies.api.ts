@@ -1,33 +1,54 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { triggerBlobDownload } from '../utils/downloadFile'
-import type { Policy, PolicyStatus, PolicyAsset, PolicyAttachment, ProducerTask, TaskPriority } from '../types'
+import type { Policy, PolicyStatus, PolicyCoverage, PolicyAsset, PolicyAttachment, ProducerTask, TaskPriority, Currency } from '../types'
 
-interface BackendInsuranceType { id: string; name: string }
-interface BackendCompany { id: string; name: string; cuit: string | null }
+interface BackendInsuranceType { id: string; name: string; coverages?: { id: string; name: string; description: string | null }[] }
+interface BackendCompany { id: string; name: string }
+interface BackendCostCenter { id: string; name: string; code: string | null }
 interface BackendProducer { id: string; name: string }
 interface BackendCoverage { id: string; name: string; description: string | null }
 interface BackendPolicyAsset {
   id: string; code: string | null; name: string; assetType: string
-  fixedAssetCode: string | null; fixedAssetName: string | null
-  costCenterName: string | null; costCenterCode: string | null
+  fixedAssetCode: string | null
+}
+interface BackendCirculationCard { id: string; fileUrl: string; name: string }
+interface BackendPolicyCoverage {
+  id: string; policyId: string; assetId: string | null
+  insuranceTypeId: string; coverageIds: string[]
+  insuredAmount: number; currency: string; exchangeRate: number
+  insuredAmountArs: number | null; insuredAmountUsd: number | null
+  companyId: string | null; costCenterId: string | null; beneficiaryDescription: string | null
+  insuranceType: BackendInsuranceType
+  selectedCoverages?: BackendCoverage[]
+  company?: BackendCompany | null
+  costCenter?: BackendCostCenter | null
+  asset?: BackendPolicyAsset | null
+  attachments?: BackendCirculationCard[]
+  _count?: { attachments: number }
+}
+interface BackendAssetCoverageSummary {
+  id: string; insuranceTypeId: string; insuranceTypeName: string
+  insuredAmount: number; currency: string; exchangeRate: number
+  insuredAmountArs: number | null; insuredAmountUsd: number | null
+  circulationCardAttachment?: BackendCirculationCard | null
 }
 interface BackendPolicy {
-  id: string; policyNumber: string; insuranceTypeId: string; companyId: string
-  costCenterId: string | null; producerId: string | null
-  insuredName: string; assetIds: string[]; beneficiaryDescription: string | null
-  startDate: string; endDate: string
-  premium: number; currency: string; exchangeRate: number
-  premiumArs: number | null; premiumUsd: number | null
-  description: string | null; coverageIds: string[]
-  isActive: boolean; status: string; createdAt: string; updatedAt: string
-  insuranceType?: BackendInsuranceType
-  company?: BackendCompany
-  producer?: BackendProducer
-  selectedCoverages?: BackendCoverage[]
-  selectedAssets?: BackendPolicyAsset[]
-  _count?: { attachments: number; allocations: number }
-  circulationCardAttachment?: { id: string; fileUrl: string; name: string } | null
+  id: string; policyNumber: string; producerId: string | null
+  insuredName: string; startDate: string; endDate: string
+  description: string | null
+  isActive: boolean; status: string; deactivatedAt: string | null
+  createdAt: string; updatedAt: string
+  producer?: BackendProducer | null
+  coverages?: BackendPolicyCoverage[]
+  // Agregados del listado
+  coverageCount?: number; assetCount?: number; hasSinActivo?: boolean
+  assetNames?: string[]
+  insuranceTypeNames?: string[]
+  totalInsuredAmountArs?: number; totalInsuredAmountUsd?: number
+  circulationCardAttachment?: BackendCirculationCard | null
+  assetCoverage?: BackendAssetCoverageSummary | null
+  attachmentsCount?: number
 }
 interface BackendTask {
   id: string; producerId: string; title: string; description: string | null
@@ -73,9 +94,32 @@ function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
     name: a.name,
     assetType: a.assetType,
     fixedAssetCode: a.fixedAssetCode,
-    fixedAssetName: a.fixedAssetName,
-    costCenterName: a.costCenterName,
-    costCenterCode: a.costCenterCode,
+  }
+}
+
+function mapCoverage(c: BackendPolicyCoverage): PolicyCoverage {
+  return {
+    id: c.id,
+    policyId: c.policyId,
+    assetId: c.assetId,
+    asset: c.asset ? mapPolicyAsset(c.asset) : c.asset === null ? null : undefined,
+    insuranceTypeId: c.insuranceTypeId,
+    insuranceType: c.insuranceType?.name ?? '',
+    coverageIds: c.coverageIds,
+    coverageNames: c.selectedCoverages?.map((cov) => cov.name) ?? [],
+    insuredAmount: c.insuredAmount,
+    currency: (c.currency === 'USD' ? 'USD' : 'ARS') as Currency,
+    exchangeRate: c.exchangeRate,
+    insuredAmountArs: c.insuredAmountArs ?? 0,
+    insuredAmountUsd: c.insuredAmountUsd ?? 0,
+    companyId: c.companyId,
+    companyName: c.company?.name ?? null,
+    costCenterId: c.costCenterId,
+    costCenterName: c.costCenter?.name ?? null,
+    costCenterCode: c.costCenter?.code ?? null,
+    beneficiaryDescription: c.beneficiaryDescription,
+    attachmentsCount: c._count?.attachments ?? 0,
+    circulationCardAttachment: c.attachments?.[0] ?? null,
   }
 }
 
@@ -85,39 +129,67 @@ function mapPolicy(b: BackendPolicy): Policy {
     policyNumber: b.policyNumber,
     insuranceCompany: b.insuredName,
     producerId: b.producerId ?? '',
-    insuranceType: b.insuranceType?.name ?? '',
-    coverageType: b.selectedCoverages?.[0]?.name ?? b.coverageIds[0] ?? '',
-    coverageTypes: b.coverageIds,
-    coverageNames: b.selectedCoverages?.map((c) => c.name) ?? [],
-    beneficiaryDescription: b.beneficiaryDescription ?? '',
     startDate: b.startDate?.slice(0, 10) ?? '',
     endDate: b.endDate?.slice(0, 10) ?? '',
-    assetIds: b.assetIds ?? [],
-    selectedAssets: b.selectedAssets ? b.selectedAssets.map(mapPolicyAsset) : undefined,
-    companyId: b.companyId,
-    costCenterId: b.costCenterId ?? null,
-    currency: (b.currency === 'USD' ? 'USD' : 'ARS') as 'ARS' | 'USD',
-    exchangeRate: b.exchangeRate ?? 1,
-    insuredAmountArs: b.premiumArs ?? 0,
-    insuredAmountUsd: b.premiumUsd ?? 0,
     description: b.description ?? '',
     status: mapStatus(b.status),
-    attachmentsCount: b._count?.attachments ?? 0,
+    isActive: b.isActive,
+    deactivatedAt: b.deactivatedAt,
+    coverages: b.coverages ? b.coverages.map(mapCoverage) : undefined,
+    coverageCount: b.coverageCount,
+    assetCount: b.assetCount,
+    hasSinActivo: b.hasSinActivo,
+    assetNames: b.assetNames,
+    insuranceTypeNames: b.insuranceTypeNames,
+    totalInsuredAmountArs: b.totalInsuredAmountArs,
+    totalInsuredAmountUsd: b.totalInsuredAmountUsd,
     circulationCardAttachment: b.circulationCardAttachment ?? null,
+    assetCoverage: b.assetCoverage
+      ? {
+          id: b.assetCoverage.id,
+          insuranceTypeId: b.assetCoverage.insuranceTypeId,
+          insuranceTypeName: b.assetCoverage.insuranceTypeName,
+          insuredAmount: b.assetCoverage.insuredAmount,
+          currency: (b.assetCoverage.currency === 'USD' ? 'USD' : 'ARS') as Currency,
+          exchangeRate: b.assetCoverage.exchangeRate,
+          insuredAmountArs: b.assetCoverage.insuredAmountArs,
+          insuredAmountUsd: b.assetCoverage.insuredAmountUsd,
+          circulationCardAttachment: b.assetCoverage.circulationCardAttachment ?? null,
+        }
+      : b.assetCoverage === null ? null : undefined,
+    attachmentsCount: b.attachmentsCount ?? 0,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   }
 }
 
-export interface PolicyCreateInput {
-  policyNumber: string; insuranceTypeId: string; companyId: string; costCenterId?: string | null
-  producerId?: string; insuredName: string; startDate: string; endDate: string; premium: number
-  currency?: string; exchangeRate?: number; description?: string; coverageIds?: string[]
-  assetIds?: string[]; beneficiaryDescription?: string | null
+export interface PolicyCoverageInput {
+  id?: string
+  assetId?: string | null
+  insuranceTypeId: string
+  coverageIds?: string[]
+  insuredAmount?: number
+  currency?: Currency
+  exchangeRate?: number
+  companyId?: string | null
+  costCenterId?: string | null
+  beneficiaryDescription?: string | null
 }
 
+export interface PolicyCreateInput {
+  policyNumber: string
+  producerId?: string | null
+  insuredName: string
+  startDate: string
+  endDate: string
+  description?: string
+  coverages: PolicyCoverageInput[]
+}
+
+export type PolicyUpdateInput = Partial<Omit<PolicyCreateInput, 'policyNumber' | 'coverages'>>
+
 export const policiesApi = {
-  async findAll(filters?: { assetId?: string; companyId?: string; producerId?: string; limit?: number }): Promise<Policy[]> {
+  async findAll(filters?: { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }): Promise<Policy[]> {
     const res = await apiClient.get<Paginated<BackendPolicy>>('/policies', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapPolicy)
   },
@@ -132,12 +204,15 @@ export const policiesApi = {
     return mapPolicy(res.data.data)
   },
 
-  async update(id: string, input: Partial<Omit<PolicyCreateInput, 'policyNumber'>>): Promise<Policy> {
+  async update(id: string, input: PolicyUpdateInput): Promise<Policy> {
     const res = await apiClient.put<{ data: BackendPolicy }>(`/policies/${id}`, input)
     return mapPolicy(res.data.data)
   },
 
-  async softDelete(id: string): Promise<void> {
+  // Eliminación total y permanente — no es soft-delete. Borra las líneas de
+  // cobertura y sus adjuntos, y desvincula (sin borrarlos) los documentos
+  // contables, siniestros y tareas que referenciaban esta póliza.
+  async hardDelete(id: string): Promise<void> {
     await apiClient.delete(`/policies/${id}`)
   },
 
@@ -146,13 +221,24 @@ export const policiesApi = {
     return mapPolicy(res.data.data)
   },
 
-  async findAttachments(policyId: string): Promise<PolicyAttachment[]> {
-    const res = await apiClient.get<{ data: PolicyAttachment[] }>(`/policies/${policyId}/attachments`)
+  async findCoverages(policyId: string): Promise<PolicyCoverage[]> {
+    const res = await apiClient.get<{ data: BackendPolicyCoverage[] }>(`/policies/${policyId}/coverages`)
+    return res.data.data.map(mapCoverage)
+  },
+
+  async replaceCoverages(policyId: string, coverages: PolicyCoverageInput[]): Promise<PolicyCoverage[]> {
+    const res = await apiClient.put<{ data: BackendPolicyCoverage[] }>(`/policies/${policyId}/coverages`, { coverages })
+    return res.data.data.map(mapCoverage)
+  },
+
+  async findAttachments(policyId: string, coverageId: string): Promise<PolicyAttachment[]> {
+    const res = await apiClient.get<{ data: PolicyAttachment[] }>(`/policies/${policyId}/coverages/${coverageId}/attachments`)
     return res.data.data
   },
 
   async addAttachment(
     policyId: string,
+    coverageId: string,
     file: File,
     meta: { description?: string; isCirculationCard?: boolean },
   ): Promise<PolicyAttachment> {
@@ -161,19 +247,19 @@ export const policiesApi = {
     if (meta.description) form.append('description', meta.description)
     if (meta.isCirculationCard) form.append('isCirculationCard', 'true')
     const res = await apiClient.post<{ data: PolicyAttachment }>(
-      `/policies/${policyId}/attachments`,
+      `/policies/${policyId}/coverages/${coverageId}/attachments`,
       form,
       { headers: { 'Content-Type': 'multipart/form-data' } },
     )
     return res.data.data
   },
 
-  async deleteAttachment(policyId: string, attachmentId: string): Promise<void> {
-    await apiClient.delete(`/policies/${policyId}/attachments/${attachmentId}`)
+  async deleteAttachment(policyId: string, coverageId: string, attachmentId: string): Promise<void> {
+    await apiClient.delete(`/policies/${policyId}/coverages/${coverageId}/attachments/${attachmentId}`)
   },
 
-  async downloadAttachment(policyId: string, attachmentId: string, filename: string): Promise<void> {
-    const res = await apiClient.get(`/policies/${policyId}/attachments/${attachmentId}/download`, { responseType: 'blob' })
+  async downloadAttachment(policyId: string, coverageId: string, attachmentId: string, filename: string): Promise<void> {
+    const res = await apiClient.get(`/policies/${policyId}/coverages/${coverageId}/attachments/${attachmentId}/download`, { responseType: 'blob' })
     triggerBlobDownload(res.data, filename)
   },
 
@@ -188,13 +274,14 @@ export const policiesApi = {
 // es la convención que ya domina en el código (PolicyDetailPage/Edit/Ficha) — se
 // mantiene así a propósito para no fragmentar cache con lo ya existente.
 
-type PolicyFilters = { assetId?: string; companyId?: string; producerId?: string; limit?: number }
+type PolicyFilters = { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }
 
 export const policyKeys = {
   all: ['policies'] as const,
   list: (filters?: PolicyFilters) => (filters ? ([...policyKeys.all, filters] as const) : policyKeys.all),
   detail: (id: string) => ['policy', id] as const,
-  attachments: (id: string) => [...policyKeys.all, id, 'attachments'] as const,
+  coverages: (id: string) => [...policyKeys.all, id, 'coverages'] as const,
+  attachments: (id: string, coverageId: string) => [...policyKeys.all, id, 'coverages', coverageId, 'attachments'] as const,
   tasks: (id: string) => [...policyKeys.all, id, 'tasks'] as const,
 }
 
@@ -212,12 +299,19 @@ export const policyQueries = {
       staleTime: 2 * 60 * 1000,
       enabled: !!id,
     }),
-  attachments: (id: string) =>
+  coverages: (id: string) =>
     queryOptions({
-      queryKey: policyKeys.attachments(id),
-      queryFn: () => policiesApi.findAttachments(id),
+      queryKey: policyKeys.coverages(id),
+      queryFn: () => policiesApi.findCoverages(id),
       staleTime: 2 * 60 * 1000,
       enabled: !!id,
+    }),
+  attachments: (id: string, coverageId: string) =>
+    queryOptions({
+      queryKey: policyKeys.attachments(id, coverageId),
+      queryFn: () => policiesApi.findAttachments(id, coverageId),
+      staleTime: 2 * 60 * 1000,
+      enabled: !!id && !!coverageId,
     }),
   tasks: (id: string) =>
     queryOptions({

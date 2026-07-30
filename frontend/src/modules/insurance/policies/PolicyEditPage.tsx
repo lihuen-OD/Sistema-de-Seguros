@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save, X, Settings, CheckSquare } from 'lucide-react'
+import { Save, X, Settings, CheckSquare, Plus, Trash2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -14,9 +14,9 @@ import {
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
+import { SearchableSelect } from '../../../shared/components/forms/SearchableSelect'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
-import { AssetSelector } from '../../../shared/components/forms/AssetSelector'
-import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
+import { policiesApi, policyKeys, policyQueries, type PolicyCoverageInput } from '../../../shared/api/policies.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { producerQueries } from '../../../shared/api/producers.api'
@@ -25,7 +25,7 @@ import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { CURRENCY_OPTIONS } from '../../../shared/constants'
-import type { Policy } from '../../../shared/types'
+import type { Policy, PolicyCoverage } from '../../../shared/types'
 import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
 
 type AssociationType = 'activo' | 'sin_activo'
@@ -34,44 +34,63 @@ interface PolicyForm {
   policyNumber: string
   insuranceCompany: string
   producerId: string
-  insuranceType: string
-  coverageTypes: string[]
   startDate: string
   endDate: string
   description: string
-  beneficiaryDescription: string
+}
+
+// Línea de cobertura en edición — conserva el `coverageId` real (línea
+// existente en el backend) cuando corresponde, para que replaceCoverages
+// pueda actualizarla en lugar de recrearla.
+interface CoverageLineForm {
+  formId: string
+  coverageId?: string
   association: AssociationType
-  assetIds: string[]
-  companyId: string
-  costCenterId: string
+  assetId: string
+  insuranceType: string
+  coverageTypes: string[]
   currency: 'ARS' | 'USD'
   insuredAmount: string
   exchangeRate: string
+  companyId: string
+  costCenterId: string
+  beneficiaryDescription: string
 }
 
-function policyToForm(p: Policy): PolicyForm {
+function coverageToLine(c: PolicyCoverage): CoverageLineForm {
   return {
-    policyNumber: p.policyNumber,
-    insuranceCompany: p.insuranceCompany,
-    producerId: p.producerId,
-    insuranceType: p.insuranceType,
-    coverageTypes: p.coverageTypes ?? (p.coverageType ? [p.coverageType] : []),
-    startDate: p.startDate,
-    endDate: p.endDate,
-    description: p.description,
-    beneficiaryDescription: p.beneficiaryDescription ?? '',
-    association: (p.assetIds?.length ?? 0) > 0 ? 'activo' : 'sin_activo',
-    assetIds: p.assetIds ?? [],
-    companyId: p.companyId ?? '',
-    costCenterId: p.costCenterId ?? '',
-    currency: p.currency,
-    // El importe mostrado siempre corresponde a la moneda histórica de la
-    // póliza — se toma directo del cierre en ambas monedas que ya calculó
-    // el backend, sin heurísticas en el cliente.
-    insuredAmount: String(p.currency === 'USD' ? p.insuredAmountUsd : p.insuredAmountArs),
-    exchangeRate: String(p.exchangeRate),
+    formId: crypto.randomUUID(),
+    coverageId: c.id,
+    association: c.assetId ? 'activo' : 'sin_activo',
+    assetId: c.assetId ?? '',
+    insuranceType: c.insuranceType,
+    coverageTypes: c.coverageIds ?? [],
+    currency: c.currency,
+    insuredAmount: String(c.currency === 'USD' ? c.insuredAmountUsd : c.insuredAmountArs),
+    exchangeRate: String(c.exchangeRate),
+    companyId: c.companyId ?? '',
+    costCenterId: c.costCenterId ?? '',
+    beneficiaryDescription: c.beneficiaryDescription ?? '',
   }
 }
+
+function createEmptyLine(defaultExchangeRate = ''): CoverageLineForm {
+  return {
+    formId: crypto.randomUUID(),
+    association: 'activo',
+    assetId: '',
+    insuranceType: '',
+    coverageTypes: [],
+    currency: 'ARS',
+    insuredAmount: '',
+    exchangeRate: defaultExchangeRate,
+    companyId: '',
+    costCenterId: '',
+    beneficiaryDescription: '',
+  }
+}
+
+type LineErrors = Partial<Record<keyof CoverageLineForm, string>>
 
 // ── CoverageSelector ──────────────────────────────────────────────────────────
 
@@ -125,7 +144,6 @@ function CoverageSelector({
 
   return (
     <div>
-      {/* Contador + acción rápida */}
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs text-slate-500">
           {selected.length === 0
@@ -186,67 +204,73 @@ export default function PolicyEditPage() {
   const queryClient = useQueryClient()
 
   const { data: policy, isLoading: loadingPolicy } = useQuery(policyQueries.detail(id!))
-
   const { data: producers = [] } = useQuery(producerQueries.list())
-
   const { data: allAssets = [] } = useQuery(assetQueries.list())
-
   const { data: companies = [] } = useQuery(companyQueries.list())
-
   const { data: costCenters = [] } = useQuery(costCenterQueries.list())
-
   const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
-
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
 
   const [form, setForm] = useState<PolicyForm>({
-    policyNumber: '', insuranceCompany: '', producerId: '', insuranceType: '',
-    coverageTypes: [], startDate: '', endDate: '', description: '',
-    beneficiaryDescription: '', association: 'activo', assetIds: [],
-    companyId: '', costCenterId: '', currency: 'ARS', insuredAmount: '', exchangeRate: '',
+    policyNumber: '', insuranceCompany: '', producerId: '', startDate: '', endDate: '', description: '',
   })
-  const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm | 'coverageTypes', string>>>({})
+  const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm, string>>>({})
+  const [lines, setLines] = useState<CoverageLineForm[]>([])
+  const [lineErrors, setLineErrors] = useState<Record<string, LineErrors>>({})
   const [formInitialized, setFormInitialized] = useState(false)
 
-  // Populate form once policy data arrives
   useEffect(() => {
     if (policy && !formInitialized) {
-      setForm(policyToForm(policy))
+      setForm({
+        policyNumber: policy.policyNumber,
+        insuranceCompany: policy.insuranceCompany,
+        producerId: policy.producerId,
+        startDate: policy.startDate,
+        endDate: policy.endDate,
+        description: policy.description,
+      })
+      setLines((policy.coverages ?? []).map(coverageToLine))
       setFormInitialized(true)
     }
   }, [policy, formInitialized])
 
-  const updateMutation = useMutation({
+  const updatePolicyMutation = useMutation({
     mutationFn: (input: Parameters<typeof policiesApi.update>[1]) => policiesApi.update(id!, input),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: policyKeys.all })
-      queryClient.invalidateQueries({ queryKey: policyKeys.detail(id!) })
-      toast.success('Póliza actualizada correctamente')
-      navigate(`/insurance/policies/${id}`)
-    },
+  })
+  const replaceCoveragesMutation = useMutation({
+    mutationFn: (coverages: PolicyCoverageInput[]) => policiesApi.replaceCoverages(id!, coverages),
   })
 
-  // Los hooks deben llamarse siempre en el mismo orden en cada render — si
-  // estos useMemo quedaran después de los early return de abajo, el
-  // componente pasaría de llamar N hooks (mientras loadingPolicy/!policy)
-  // a llamar N+2 (una vez que la póliza carga), lo cual rompe las reglas de
-  // hooks de React para la misma instancia montada.
-  // Suma Asegurada — el usuario elige en qué moneda carga el importe y acá
-  // solo calculamos la vista previa del equivalente en la otra moneda (el
-  // backend es quien cierra y persiste ambos montos al guardar).
-  const equivalentCurrencyLabel = form.currency === 'ARS' ? 'USD' : 'ARS'
-  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
-  const equivalentAmount = useMemo(() => {
-    const amount = parseFloat(form.insuredAmount)
-    const rate = parseFloat(form.exchangeRate)
-    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
-    return form.currency === 'ARS' ? (amount / rate).toFixed(2) : (amount * rate).toFixed(2)
-  }, [form.insuredAmount, form.exchangeRate, form.currency])
+  const activeAssets = useMemo(() => allAssets.filter((a) => a.status === 'activo'), [allAssets])
+  const activeCompanies = useMemo(() => companies.filter((c) => c.status === 'activo'), [companies])
+  const activeCostCenters = useMemo(() => costCenters.filter((cc) => cc.status === 'activo'), [costCenters])
 
-  const filteredCostCenters = useMemo(
-    () => costCenters.filter((cc) => cc.status === 'activo'),
-    [costCenters],
-  )
+  const usedAssetIds = new Set(lines.map((l) => l.assetId).filter(Boolean))
+
+  const set =
+    (key: keyof PolicyForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+      setForm((prev) => ({ ...prev, [key]: e.target.value }))
+      if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }))
+    }
+
+  function updateLine(formId: string, patch: Partial<CoverageLineForm>) {
+    setLines((prev) => prev.map((l) => (l.formId === formId ? { ...l, ...patch } : l)))
+    setLineErrors((prev) => {
+      if (!prev[formId]) return prev
+      const next = { ...prev[formId] }
+      for (const key of Object.keys(patch)) delete next[key as keyof CoverageLineForm]
+      return { ...prev, [formId]: next }
+    })
+  }
+
+  function addLine() {
+    setLines((prev) => [...prev, createEmptyLine(prev[0]?.exchangeRate)])
+  }
+
+  function removeLine(formId: string) {
+    setLines((prev) => prev.filter((l) => l.formId !== formId))
+  }
 
   if (loadingPolicy) {
     return (
@@ -266,105 +290,80 @@ export default function PolicyEditPage() {
     )
   }
 
-  const set =
-    (key: keyof PolicyForm) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-      setForm((prev) => ({ ...prev, [key]: e.target.value }))
-      if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }))
-    }
-
-  const setInsuranceType = (value: string) => {
-    setForm((prev) => ({ ...prev, insuranceType: value, coverageTypes: [] }))
-    setErrors((prev) => ({ ...prev, insuranceType: undefined, coverageTypes: undefined }))
-  }
-
-  const setCurrency = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value as 'ARS' | 'USD'
-    setForm((prev) => ({ ...prev, currency: value }))
-  }
-
-  const setAssociation = (value: AssociationType) => {
-    setForm((prev) => ({
-      ...prev,
-      association: value,
-      assetIds: [],
-      companyId: '',
-      costCenterId: '',
-      beneficiaryDescription: '',
-    }))
-  }
-
-  const toggleAsset = (assetId: string) => {
-    setForm((prev) => ({
-      ...prev,
-      assetIds: prev.assetIds.includes(assetId)
-        ? prev.assetIds.filter((id) => id !== assetId)
-        : [...prev.assetIds, assetId],
-    }))
-    setErrors((prev) => ({ ...prev, assetIds: undefined }))
-  }
-
-  const isAP = form.coverageTypes.includes('Accidentes Personales') || form.insuranceType === 'Personal'
-  const showBeneficiaryField = isAP && form.association === 'sin_activo'
-
-  const validate = (): boolean => {
-    const next: Partial<Record<keyof PolicyForm | 'coverageTypes', string>> = {}
-    if (!form.policyNumber.trim())       next.policyNumber    = 'Requerido'
-    if (!form.insuranceCompany)          next.insuranceCompany = 'Requerido'
-    if (!form.producerId)                next.producerId       = 'Requerido'
-    if (!form.insuranceType)             next.insuranceType    = 'Requerido'
-    if (form.coverageTypes.length === 0) next.coverageTypes   = 'Seleccioná al menos una cobertura'
-    if (!form.startDate)                 next.startDate        = 'Requerido'
-    if (!form.endDate)                   next.endDate          = 'Requerido'
-    if (form.association === 'activo' && form.assetIds.length === 0) next.assetIds = 'Seleccioná al menos un activo'
-    if (form.association === 'sin_activo') {
-      if (!form.companyId)    next.companyId    = 'Requerido'
-      if (!form.costCenterId) next.costCenterId = 'Requerido'
-    }
-    if (showBeneficiaryField && !form.beneficiaryDescription.trim()) {
-      next.beneficiaryDescription = 'Describí a quién corresponde este seguro'
-    }
+  function validate(): boolean {
+    const next: Partial<Record<keyof PolicyForm, string>> = {}
+    if (!form.policyNumber.trim()) next.policyNumber = 'Requerido'
+    if (!form.insuranceCompany) next.insuranceCompany = 'Requerido'
+    if (!form.startDate) next.startDate = 'Requerido'
+    if (!form.endDate) next.endDate = 'Requerido'
     setErrors(next)
-    notifyValidationErrors(next)
-    return Object.keys(next).length === 0
+
+    const nextLineErrors: Record<string, LineErrors> = {}
+    for (const line of lines) {
+      const lineErr: LineErrors = {}
+      if (line.association === 'activo' && !line.assetId) lineErr.assetId = 'Seleccioná un activo'
+      if (!line.insuranceType) lineErr.insuranceType = 'Requerido'
+      if (line.coverageTypes.length === 0) lineErr.coverageTypes = 'Seleccioná al menos una cobertura'
+      if (line.association === 'sin_activo') {
+        if (!line.companyId) lineErr.companyId = 'Requerido'
+        if (!line.costCenterId) lineErr.costCenterId = 'Requerido'
+        const isAP = line.coverageTypes.length > 0 && line.insuranceType.toLowerCase().includes('personal')
+        if (isAP && !line.beneficiaryDescription.trim()) {
+          lineErr.beneficiaryDescription = 'Describí a quién corresponde este seguro'
+        }
+      }
+      if (Object.keys(lineErr).length > 0) nextLineErrors[line.formId] = lineErr
+    }
+    setLineErrors(nextLineErrors)
+
+    const hasErrors = Object.keys(next).length > 0 || Object.keys(nextLineErrors).length > 0
+    if (hasErrors) {
+      notifyValidationErrors({ ...next, ...(Object.keys(nextLineErrors).length > 0 && { lines: 'Revisá las líneas de cobertura' }) })
+    }
+    return !hasErrors
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
 
-    const amount = parseFloat(form.insuredAmount) || 0
-    const rate = parseFloat(form.exchangeRate) || 1
-
-    // Resolve insuranceTypeId from the loaded list
-    const insuranceTypeObj = insuranceTypes.find((t) => t.label === form.insuranceType)
-    const insuranceTypeId = insuranceTypeObj?.id ?? ''
-
-    const firstAsset = form.association === 'activo' && form.assetIds.length > 0
-      ? allAssets.find((a) => a.id === form.assetIds[0])
-      : undefined
-    const companyId = form.association === 'sin_activo'
-      ? form.companyId
-      : (firstAsset?.companyId ?? '')
-    const costCenterId = form.association === 'sin_activo' ? form.costCenterId || null : null
-
-    updateMutation.mutate({
-      insuranceTypeId,
-      companyId,
-      costCenterId,
-      producerId: form.producerId || undefined,
-      insuredName: form.insuranceCompany,
-      assetIds: form.association === 'activo' ? form.assetIds : [],
-      beneficiaryDescription: form.beneficiaryDescription.trim() || null,
-      startDate: form.startDate,
-      endDate: form.endDate,
-      premium: amount,
-      currency: form.currency,
-      exchangeRate: rate,
-      description: form.description.trim() || undefined,
-      coverageIds: form.coverageTypes,
+    const coverages: PolicyCoverageInput[] = lines.map((line) => {
+      const insuranceTypeObj = insuranceTypes.find((t) => t.label === line.insuranceType)
+      return {
+        id: line.coverageId,
+        assetId: line.association === 'activo' ? line.assetId : null,
+        insuranceTypeId: insuranceTypeObj?.id ?? '',
+        coverageIds: line.coverageTypes,
+        insuredAmount: parseFloat(line.insuredAmount) || 0,
+        currency: line.currency,
+        exchangeRate: parseFloat(line.exchangeRate) || 1,
+        companyId: line.association === 'sin_activo' ? line.companyId : null,
+        costCenterId: line.association === 'sin_activo' ? line.costCenterId || null : null,
+        beneficiaryDescription: line.association === 'sin_activo' ? line.beneficiaryDescription.trim() || null : null,
+      }
     })
+
+    try {
+      await updatePolicyMutation.mutateAsync({
+        producerId: form.producerId || undefined,
+        insuredName: form.insuranceCompany,
+        startDate: form.startDate,
+        endDate: form.endDate,
+        description: form.description.trim() || undefined,
+      })
+      await replaceCoveragesMutation.mutateAsync(coverages)
+
+      queryClient.invalidateQueries({ queryKey: policyKeys.all })
+      queryClient.invalidateQueries({ queryKey: policyKeys.detail(id!) })
+      queryClient.invalidateQueries({ queryKey: policyKeys.coverages(id!) })
+      toast.success('Póliza actualizada correctamente')
+      navigate(`/insurance/policies/${id}`)
+    } catch {
+      // errors are shown via the global axios interceptor toast
+    }
   }
+
+  const isSaving = updatePolicyMutation.isPending || replaceCoveragesMutation.isPending
 
   return (
     <PageContent>
@@ -378,80 +377,26 @@ export default function PolicyEditPage() {
       <form onSubmit={handleSubmit} className="max-w-5xl space-y-5">
 
         {/* 1. Datos de la Póliza */}
-        <SectionCard
-          title="Datos de la Póliza"
-          subtitle="Identificación, tipo de seguro y coberturas"
-        >
-          <div className="space-y-5">
-            <FormSection title="">
-              <FormField label="N° de Póliza" required error={errors.policyNumber}>
-                <FormInput
-                  placeholder="Ej: AUT-2026-001234"
-                  value={form.policyNumber}
-                  onChange={set('policyNumber')}
-                  required
-                />
-              </FormField>
-              <FormField label="Compañía Aseguradora" required error={errors.insuranceCompany}>
-                <FormSelect value={form.insuranceCompany} onChange={set('insuranceCompany')} required>
-                  <option value="">Seleccionar aseguradora…</option>
-                  {insuranceCompanies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
-                </FormSelect>
-              </FormField>
-              <FormField label="Productor Asesor" required error={errors.producerId}>
-                <FormSelect value={form.producerId} onChange={set('producerId')} required>
-                  <option value="">Seleccionar productor…</option>
-                  {producers.filter((p) => p.status === 'activo').map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </FormSelect>
-              </FormField>
-              <FormField label="Tipo de Seguro" required error={errors.insuranceType}>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <FormSelect
-                      value={form.insuranceType}
-                      onChange={(e) => setInsuranceType(e.target.value)}
-                      required
-                    >
-                      <option value="">Seleccionar tipo…</option>
-                      {insuranceTypes.map((t) => (
-                        <option key={t.id} value={t.label}>{t.label}</option>
-                      ))}
-                    </FormSelect>
-                  </div>
-                  <Link
-                    to="/settings/insurance-types"
-                    title="Configurar tipos de seguro"
-                    className="flex-shrink-0 p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
-                  >
-                    <Settings size={15} />
-                  </Link>
-                </div>
-              </FormField>
-            </FormSection>
-
-            <div className="border-t border-slate-100 pt-5">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">Coberturas</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Seleccioná las coberturas incluidas en esta póliza
-                  </p>
-                </div>
-              </div>
-              <CoverageSelector
-                insuranceType={form.insuranceType}
-                insuranceTypes={insuranceTypes}
-                selected={form.coverageTypes}
-                onChange={(v) => {
-                  setForm((prev) => ({ ...prev, coverageTypes: v }))
-                  setErrors((prev) => ({ ...prev, coverageTypes: undefined }))
-                }}
-                error={errors.coverageTypes}
-              />
-            </div>
-          </div>
+        <SectionCard title="Datos de la Póliza" subtitle="Identificación única de la póliza">
+          <FormSection title="">
+            <FormField label="N° de Póliza" required error={errors.policyNumber}>
+              <FormInput placeholder="Ej: AUT-2026-001234" value={form.policyNumber} onChange={set('policyNumber')} required />
+            </FormField>
+            <FormField label="Compañía Aseguradora" required error={errors.insuranceCompany}>
+              <FormSelect value={form.insuranceCompany} onChange={set('insuranceCompany')} required>
+                <option value="">Seleccionar aseguradora…</option>
+                {insuranceCompanies.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
+              </FormSelect>
+            </FormField>
+            <FormField label="Productor Asesor">
+              <FormSelect value={form.producerId} onChange={set('producerId')}>
+                <option value="">Seleccionar productor…</option>
+                {producers.filter((p) => p.status === 'activo').map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </FormSelect>
+            </FormField>
+          </FormSection>
         </SectionCard>
 
         {/* 2. Vigencia */}
@@ -461,17 +406,11 @@ export default function PolicyEditPage() {
               <FormInput type="date" value={form.startDate} onChange={set('startDate')} required />
             </FormField>
             <FormField label="Fecha de Vencimiento" required error={errors.endDate}>
-              <FormInput
-                type="date"
-                value={form.endDate}
-                onChange={set('endDate')}
-                min={form.startDate}
-                required
-              />
+              <FormInput type="date" value={form.endDate} onChange={set('endDate')} min={form.startDate} required />
             </FormField>
             <FormField label="Observaciones" fullWidth>
               <FormTextarea
-                placeholder="Detalle adicional sobre la cobertura, bienes incluidos, notas…"
+                placeholder="Detalle adicional sobre la póliza, notas para el equipo…"
                 value={form.description}
                 onChange={set('description')}
                 rows={3}
@@ -480,150 +419,226 @@ export default function PolicyEditPage() {
           </FormSection>
         </SectionCard>
 
-        {/* 3. Asociación */}
-        <SectionCard
-          title="Asociación"
-          subtitle="Vinculá la póliza a un activo o indicá empresa y centro de costo"
-        >
-          <div className="flex items-center gap-1 mb-5 bg-slate-100 rounded-lg p-1 w-fit">
-            {(['activo', 'sin_activo'] as AssociationType[]).map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => setAssociation(opt)}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  form.association === opt
-                    ? 'bg-white text-brand-600 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {opt === 'activo' ? 'Con activo' : 'Sin activo'}
-              </button>
-            ))}
+        {/* 3. Líneas de cobertura */}
+        <div className="space-y-4">
+          <div className="px-1">
+            <h2 className="text-sm font-semibold text-slate-800">Activos cubiertos</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Cada línea es un activo (o "sin activo") con su propio tipo de seguro, coberturas, suma asegurada y documentación.
+            </p>
           </div>
 
-          {form.association === 'activo' ? (
-            <FormField label="Activos Asegurados" required error={errors.assetIds} fullWidth>
-              <AssetSelector
-                assets={allAssets.filter((a) => a.status === 'activo')}
-                selected={form.assetIds}
-                onToggle={toggleAsset}
-                error={errors.assetIds}
-              />
-            </FormField>
-          ) : (
-            <div className="space-y-4">
-              <FormSection title="">
-                <FormField label="Empresa" required error={errors.companyId}>
-                  <FormSelect value={form.companyId} onChange={set('companyId')} required>
-                    <option value="">Seleccionar empresa…</option>
-                    {companies.filter((c) => c.status === 'activo').map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </FormSelect>
-                </FormField>
-                <FormField label="Centro de Costo" required error={errors.costCenterId}>
-                  <FormSelect
-                    value={form.costCenterId}
-                    onChange={set('costCenterId')}
-                    disabled={!form.companyId}
-                    required
-                  >
-                    <option value="">{form.companyId ? 'Seleccionar centro…' : 'Primero empresa'}</option>
-                    {filteredCostCenters.map((cc) => (
-                      <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>
-                    ))}
-                  </FormSelect>
-                </FormField>
-              </FormSection>
+          {lines.map((line, idx) => {
+            const err = lineErrors[line.formId] ?? {}
+            const equivalentCurrencyLabel = line.currency === 'ARS' ? 'USD' : 'ARS'
+            const equivalentPrefix = line.currency === 'ARS' ? 'US$' : 'AR$'
+            const amount = parseFloat(line.insuredAmount)
+            const rate = parseFloat(line.exchangeRate)
+            const equivalentAmount =
+              !isNaN(amount) && !isNaN(rate) && rate > 0
+                ? (line.currency === 'ARS' ? amount / rate : amount * rate)
+                : null
+            const isAP = line.coverageTypes.length > 0 && line.insuranceType.toLowerCase().includes('personal')
+            const showBeneficiaryField = isAP && line.association === 'sin_activo'
+            const selectedAsset = activeAssets.find((a) => a.id === line.assetId)
 
-              {showBeneficiaryField && (
-                <div className="border-t border-slate-100 pt-4">
-                  <FormField
-                    label="¿A quién corresponde este seguro?"
-                    required
-                    error={errors.beneficiaryDescription}
-                    fullWidth
-                  >
-                    <FormTextarea
-                      placeholder="Ej: Empleados del establecimiento Las Vertientes — Personal en relación de dependencia"
-                      value={form.beneficiaryDescription}
-                      onChange={set('beneficiaryDescription')}
-                      rows={2}
-                    />
-                  </FormField>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Requerido cuando la cobertura de Accidentes Personales no está vinculada a un activo específico.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </SectionCard>
-
-        {/* 4. Importes */}
-        <SectionCard title="Importes" subtitle="Suma asegurada y tipo de cambio">
-          <FormSection title="">
-            <FormField label="Moneda">
-              <FormSelect value={form.currency} onChange={setCurrency}>
-                {CURRENCY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </FormSelect>
-            </FormField>
-            <FormField label={`Suma Asegurada (${form.currency})`} error={errors.insuredAmount}>
-              <FormInput
-                type="number"
-                placeholder="Ej: 30000000"
-                value={form.insuredAmount}
-                onChange={set('insuredAmount')}
-                min="0"
-                step="1"
-              />
-            </FormField>
-            <FormField label="Tipo de Cambio (ARS/USD)" error={errors.exchangeRate}>
-              <FormInput
-                type="number"
-                placeholder="Ej: 970"
-                value={form.exchangeRate}
-                onChange={set('exchangeRate')}
-                min="0"
-                step="0.01"
-              />
-            </FormField>
-            <FormField label={`Suma Asegurada (${equivalentCurrencyLabel})`}>
-              <FormInput
-                value={
-                  equivalentAmount
-                    ? `${equivalentPrefix} ${parseFloat(equivalentAmount).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                    : ''
+            return (
+              <SectionCard
+                key={line.formId}
+                title={`Línea ${idx + 1}${selectedAsset ? ` — ${selectedAsset.name}` : ''}`}
+                subtitle={line.association === 'sin_activo' ? 'Sin activo asociado' : undefined}
+                actions={
+                  lines.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => removeLine(line.formId)}
+                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Quitar esta línea"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  ) : undefined
                 }
-                readOnly
-                disabled
-                placeholder="Se calcula automáticamente"
-              />
-            </FormField>
-          </FormSection>
-        </SectionCard>
+              >
+                <div className="space-y-5">
+                  {/* Asociación */}
+                  <div>
+                    <div className="flex items-center gap-1 mb-3 bg-slate-100 rounded-lg p-1 w-fit">
+                      {(['activo', 'sin_activo'] as AssociationType[]).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => updateLine(line.formId, {
+                            association: opt, assetId: '', companyId: '', costCenterId: '', beneficiaryDescription: '',
+                          })}
+                          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                            line.association === opt ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                        >
+                          {opt === 'activo' ? 'Con activo' : 'Sin activo'}
+                        </button>
+                      ))}
+                    </div>
 
-        {/* 5. Documentación */}
-        <SectionCard
-          title="Documentación de la Póliza"
-          subtitle="Adjuntá la póliza, certificados y documentación adicional"
-          noPadding
-        >
-          <PolicyAttachmentsSection policyId={policy.id} policyEndDate={policy.endDate} />
-        </SectionCard>
+                    {line.association === 'activo' ? (
+                      <FormField label="Activo Asegurado" required error={err.assetId}>
+                        <SearchableSelect
+                          options={activeAssets
+                            .filter((a) => a.id === line.assetId || !usedAssetIds.has(a.id))
+                            .map((a) => ({ value: a.id, label: a.name, sublabel: a.internalCode }))}
+                          value={line.assetId}
+                          onChange={(v) => updateLine(line.formId, { assetId: v })}
+                          placeholder="Seleccionar activo…"
+                          searchPlaceholder="Buscar por nombre o código…"
+                        />
+                      </FormField>
+                    ) : (
+                      <div className="space-y-4">
+                        <FormSection title="">
+                          <FormField label="Empresa" required error={err.companyId}>
+                            <FormSelect value={line.companyId} onChange={(e) => updateLine(line.formId, { companyId: e.target.value })} required>
+                              <option value="">Seleccionar empresa…</option>
+                              {activeCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </FormSelect>
+                          </FormField>
+                          <FormField label="Centro de Costo" required error={err.costCenterId}>
+                            <FormSelect
+                              value={line.costCenterId}
+                              onChange={(e) => updateLine(line.formId, { costCenterId: e.target.value })}
+                              disabled={!line.companyId}
+                              required
+                            >
+                              <option value="">{line.companyId ? 'Seleccionar centro…' : 'Primero empresa'}</option>
+                              {activeCostCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>)}
+                            </FormSelect>
+                          </FormField>
+                        </FormSection>
+
+                        {showBeneficiaryField && (
+                          <FormField label="¿A quién corresponde este seguro?" required error={err.beneficiaryDescription} fullWidth>
+                            <FormTextarea
+                              placeholder="Ej: Empleados del establecimiento Las Vertientes — Personal en relación de dependencia"
+                              value={line.beneficiaryDescription}
+                              onChange={(e) => updateLine(line.formId, { beneficiaryDescription: e.target.value })}
+                              rows={2}
+                            />
+                            <p className="text-xs text-slate-400 mt-1">
+                              Requerido cuando Accidentes Personales no está vinculado a un activo específico.
+                            </p>
+                          </FormField>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tipo de seguro + coberturas */}
+                  <div className="border-t border-slate-100 pt-5">
+                    <FormField label="Tipo de Seguro" required error={err.insuranceType}>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <FormSelect
+                            value={line.insuranceType}
+                            onChange={(e) => updateLine(line.formId, { insuranceType: e.target.value, coverageTypes: [] })}
+                            required
+                          >
+                            <option value="">Seleccionar tipo…</option>
+                            {insuranceTypes.map((t) => <option key={t.id} value={t.label}>{t.label}</option>)}
+                          </FormSelect>
+                        </div>
+                        <Link
+                          to="/settings/insurance-types"
+                          title="Configurar tipos de seguro"
+                          className="flex-shrink-0 p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                        >
+                          <Settings size={15} />
+                        </Link>
+                      </div>
+                    </FormField>
+
+                    <div className="mt-4">
+                      <p className="text-sm font-semibold text-slate-800 mb-2">Coberturas</p>
+                      <CoverageSelector
+                        insuranceType={line.insuranceType}
+                        insuranceTypes={insuranceTypes}
+                        selected={line.coverageTypes}
+                        onChange={(v) => updateLine(line.formId, { coverageTypes: v })}
+                        error={err.coverageTypes}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Importes */}
+                  <div className="border-t border-slate-100 pt-5">
+                    <p className="text-sm font-semibold text-slate-800 mb-3">Suma Asegurada</p>
+                    <FormSection title="">
+                      <FormField label="Moneda">
+                        <FormSelect value={line.currency} onChange={(e) => updateLine(line.formId, { currency: e.target.value as 'ARS' | 'USD' })}>
+                          {CURRENCY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </FormSelect>
+                      </FormField>
+                      <FormField label={`Suma Asegurada (${line.currency})`}>
+                        <FormInput
+                          type="number" placeholder="Ej: 30000000" min="0" step="1"
+                          value={line.insuredAmount}
+                          onChange={(e) => updateLine(line.formId, { insuredAmount: e.target.value })}
+                        />
+                      </FormField>
+                      <FormField label="Tipo de Cambio (ARS/USD)">
+                        <FormInput
+                          type="number" placeholder="Ej: 970" min="0" step="0.01"
+                          value={line.exchangeRate}
+                          onChange={(e) => updateLine(line.formId, { exchangeRate: e.target.value })}
+                        />
+                      </FormField>
+                      <FormField label={`Suma Asegurada (${equivalentCurrencyLabel})`}>
+                        <FormInput
+                          value={equivalentAmount != null
+                            ? `${equivalentPrefix} ${equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : ''}
+                          readOnly disabled placeholder="Se calcula automáticamente"
+                        />
+                      </FormField>
+                    </FormSection>
+                  </div>
+
+                  {/* Documentación — sólo disponible una vez que la línea existe en el backend */}
+                  {line.coverageId ? (
+                    <div className="border-t border-slate-100 pt-5">
+                      <p className="text-sm font-semibold text-slate-800 mb-3">Documentación</p>
+                      <PolicyAttachmentsSection policyId={policy.id} coverageId={line.coverageId} policyEndDate={form.endDate} />
+                    </div>
+                  ) : (
+                    <div className="border-t border-slate-100 pt-5">
+                      <p className="text-sm font-semibold text-slate-800 mb-2">Documentación</p>
+                      <p className="text-xs text-slate-400">
+                        Vas a poder adjuntar documentación una vez que guardes esta línea por primera vez.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </SectionCard>
+            )
+          })}
+
+          <button
+            type="button"
+            onClick={addLine}
+            className="flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 transition-colors px-1"
+          >
+            <Plus size={14} />
+            Agregar línea de cobertura
+          </button>
+        </div>
 
         {/* Footer */}
         <div className="flex items-center gap-3 pt-2 pb-6">
           <button
             type="submit"
-            disabled={updateMutation.isPending}
+            disabled={isSaving}
             className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
           >
             <Save size={16} />
-            {updateMutation.isPending ? 'Guardando…' : 'Guardar Cambios'}
+            {isSaving ? 'Guardando…' : 'Guardar Cambios'}
           </button>
           <button
             type="button"

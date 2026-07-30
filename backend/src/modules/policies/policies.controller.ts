@@ -6,7 +6,8 @@ import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
 import type { ListPoliciesQueryDTO } from './policies.schemas'
 
 type IdParam = { id: string }
-type AttachmentParam = { id: string; attachmentId: string }
+type CoverageParam = { id: string; coverageId: string }
+type AttachmentParam = { id: string; coverageId: string; attachmentId: string }
 
 export const policiesController = {
   list: asyncHandler(async (req: Request, res: Response) => {
@@ -30,8 +31,8 @@ export const policiesController = {
   }),
 
   remove: asyncHandler(async (req: Request<IdParam>, res: Response) => {
-    await policiesService.softDelete(req.params.id)
-    res.json({ data: { message: 'Póliza desactivada correctamente' } })
+    await policiesService.hardDelete(req.params.id)
+    res.json({ data: { message: 'Póliza eliminada correctamente' } })
   }),
 
   markAsDeBaja: asyncHandler(async (req: Request<IdParam>, res: Response) => {
@@ -45,16 +46,28 @@ export const policiesController = {
     res.json({ data: tasks })
   }),
 
-  // Attachments
-  getAttachments: asyncHandler(async (req: Request<IdParam>, res: Response) => {
-    const attachments = await policiesService.findAttachments(req.params.id)
+  // Coverage lines
+  getCoverages: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const coverages = await policiesService.findCoverages(req.params.id)
+    res.json({ data: coverages })
+  }),
+
+  replaceCoverages: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const coverages = await policiesService.replaceCoverages(req.params.id, req.body)
+    res.json({ data: coverages })
+  }),
+
+  // Attachments (por línea de cobertura)
+  getAttachments: asyncHandler(async (req: Request<CoverageParam>, res: Response) => {
+    const attachments = await policiesService.findAttachments(req.params.id, req.params.coverageId)
     res.json({ data: attachments })
   }),
 
-  addAttachment: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+  addAttachment: asyncHandler(async (req: Request<CoverageParam>, res: Response) => {
     if (!req.file) throw new AppError(400, 'Se requiere un archivo adjunto', 'BAD_REQUEST')
     const attachment = await policiesService.addAttachment(
       req.params.id,
+      req.params.coverageId,
       req.file,
       req.body,
       req.user?.email ?? 'sistema',
@@ -63,12 +76,12 @@ export const policiesController = {
   }),
 
   deleteAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
-    await policiesService.deleteAttachment(req.params.id, req.params.attachmentId)
+    await policiesService.deleteAttachment(req.params.id, req.params.coverageId, req.params.attachmentId)
     res.json({ data: { message: 'Adjunto eliminado correctamente' } })
   }),
 
   downloadAttachment: asyncHandler(async (req: Request<AttachmentParam>, res: Response) => {
-    const attachment = await policiesService.getAttachmentForDownload(req.params.id, req.params.attachmentId)
+    const attachment = await policiesService.getAttachmentForDownload(req.params.id, req.params.coverageId, req.params.attachmentId)
     await sendAttachmentDownload(res, attachment)
   }),
 }

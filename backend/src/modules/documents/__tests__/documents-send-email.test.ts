@@ -6,8 +6,8 @@ jest.mock('../../../config/database', () => ({
   prisma: {
     user: { findUnique: jest.fn() },
     accountingDocument: { findUnique: jest.fn() },
-    policy: { findMany: jest.fn() },
     asset: { findMany: jest.fn() },
+    policyAssetCoverage: { findMany: jest.fn() },
   },
 }))
 
@@ -50,22 +50,28 @@ const fakeDocument = {
   createdAt: BASE_DATE,
   updatedAt: BASE_DATE,
   installments: [],
+  // Cada asignación ya apunta a una línea de cobertura (póliza + activo) — el
+  // peso (allocatedAmount/allocationPercentage) es el real de esa línea, no
+  // un reparto parejo entre los activos de la póliza.
   allocations: [
     {
       id: 'alloc-1',
       accountingDocumentId: DOC_ID,
-      policyId: 'policy-1',
+      policyAssetCoverageId: 'coverage-1',
       allocatedAmount: 100000,
       allocationPercentage: 100,
-      policy: { id: 'policy-1', policyNumber: 'POL-001', insuredName: 'Cliente Test' },
+      policyAssetCoverage: {
+        policyId: 'policy-1',
+        assetId: 'asset-1',
+        policy: { id: 'policy-1', policyNumber: 'POL-001', insuredName: 'Cliente Test' },
+        asset: { id: 'asset-1', name: 'Camión Scania R450', code: 'VEH-001', fixedAssetCode: 'BU-000002' },
+      },
     },
   ],
   attachments: [
     { id: 'att-1', name: 'ficha-activo.pdf', fileUrl: 'local://ficha-activo.pdf' },
   ],
 }
-
-const fakePolicyAssetIds = [{ id: 'policy-1', assetIds: ['asset-1'] }]
 
 const fakeAssetWithCostCenter = [
   {
@@ -82,8 +88,8 @@ describe('POST /api/v1/documents/:id/send-email', () => {
   beforeEach(() => {
     db.user.findUnique.mockResolvedValue(mockDbUser())
     db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
-    db.policy.findMany.mockResolvedValue(fakePolicyAssetIds)
     db.asset.findMany.mockResolvedValue(fakeAssetWithCostCenter)
+    db.policyAssetCoverage.findMany.mockResolvedValue([])
     mockedEmailService.sendManualEntityEmail.mockResolvedValue({
       sent: true,
       status: 'SENT',
@@ -112,20 +118,18 @@ describe('POST /api/v1/documents/:id/send-email', () => {
           documentNumber: 'A-0001-00012345',
           insuranceCompany: 'La Segunda',
           paymentMethod: 'Transferencia bancaria',
-          assets: [
-            expect.objectContaining({
-              code: 'BU-000002',
-              name: 'Camión Scania R450',
-              amount: 100000,
-              percentage: 100,
-            }),
-          ],
           costCenters: [
             expect.objectContaining({
               code: 'LOG-001',
               name: 'Logística y Transporte',
-              amount: 100000,
-              percentage: 100,
+              items: [
+                expect.objectContaining({
+                  code: 'BU-000002',
+                  name: 'Camión Scania R450',
+                  amount: 100000,
+                  percentage: 100,
+                }),
+              ],
             }),
           ],
           // El adjunto usa fileUrl 'local://...' (sin Cloudinary configurado) —
@@ -135,12 +139,164 @@ describe('POST /api/v1/documents/:id/send-email', () => {
       }),
     )
 
-    expect(db.policy.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: { in: ['policy-1'] } } }),
-    )
     expect(db.asset.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: { in: ['asset-1'] } } }),
     )
+  })
+
+  it('reparte el importe real de cada línea — no en partes iguales — cuando una póliza cubre varios activos', async () => {
+    const multiAssetDoc = {
+      ...fakeDocument,
+      allocations: [
+        {
+          id: 'alloc-1',
+          accountingDocumentId: DOC_ID,
+          policyAssetCoverageId: 'coverage-1',
+          allocatedAmount: 60000,
+          allocationPercentage: 60,
+          policyAssetCoverage: {
+            policyId: 'policy-1',
+            assetId: 'asset-1',
+            policy: { id: 'policy-1', policyNumber: 'POL-001', insuredName: 'Cliente Test' },
+            asset: { id: 'asset-1', name: 'Camión Scania R450', code: 'VEH-001', fixedAssetCode: 'BU-000002' },
+          },
+        },
+        {
+          id: 'alloc-2',
+          accountingDocumentId: DOC_ID,
+          policyAssetCoverageId: 'coverage-2',
+          allocatedAmount: 40000,
+          allocationPercentage: 40,
+          policyAssetCoverage: {
+            policyId: 'policy-1',
+            assetId: 'asset-2',
+            policy: { id: 'policy-1', policyNumber: 'POL-001', insuredName: 'Cliente Test' },
+            asset: { id: 'asset-2', name: 'Toyota Hilux', code: 'VEH-002', fixedAssetCode: 'BU-000003' },
+          },
+        },
+      ],
+    }
+    db.accountingDocument.findUnique.mockResolvedValue(multiAssetDoc)
+    db.asset.findMany.mockResolvedValue([
+      ...fakeAssetWithCostCenter,
+      {
+        id: 'asset-2',
+        code: 'VEH-002',
+        name: 'Toyota Hilux',
+        assetType: 'vehiculo',
+        fixedAssetCode: 'BU-000003',
+        allocations: [{ costCenter: { id: 'cc-1', name: 'Logística y Transporte', code: 'LOG-001' } }],
+      },
+    ])
+
+    const res = await request(app)
+      .post(`/api/v1/documents/${DOC_ID}/send-email`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ to: ['destinatario@empresa.com'] })
+
+    expect(res.status).toBe(200)
+    const { templateData } = mockedEmailService.sendManualEntityEmail.mock.calls[0][0] as any
+    // Ambos activos comparten Centro de Costo — un solo grupo, con sus dos
+    // Bienes de Uso como renglones separados (celda de CC fusionada).
+    expect(templateData.costCenters).toEqual([
+      expect.objectContaining({
+        code: 'LOG-001',
+        items: expect.arrayContaining([
+          expect.objectContaining({ code: 'BU-000002', amount: 60000, percentage: 60 }),
+          expect.objectContaining({ code: 'BU-000003', amount: 40000, percentage: 40 }),
+        ]),
+      }),
+    ])
+  })
+
+  it('deja el renglón de Bien de Uso en blanco cuando el activo no tiene uno asignado (no repite el nombre del activo)', async () => {
+    const docWithBareAsset = {
+      ...fakeDocument,
+      allocations: [
+        {
+          id: 'alloc-1',
+          accountingDocumentId: DOC_ID,
+          policyAssetCoverageId: 'coverage-1',
+          allocatedAmount: 100000,
+          allocationPercentage: 100,
+          policyAssetCoverage: {
+            policyId: 'policy-1',
+            assetId: 'asset-3',
+            policy: { id: 'policy-1', policyNumber: 'POL-001', insuredName: 'Cliente Test' },
+            asset: { id: 'asset-3', name: 'Camión sin bien de uso', code: 'VEH-003', fixedAssetCode: null },
+          },
+        },
+      ],
+    }
+    db.accountingDocument.findUnique.mockResolvedValue(docWithBareAsset)
+    db.asset.findMany.mockResolvedValue([
+      {
+        id: 'asset-3',
+        code: 'VEH-003',
+        name: 'Camión sin bien de uso',
+        assetType: 'vehiculo',
+        fixedAssetCode: null,
+        allocations: [{ costCenter: { id: 'cc-2', name: 'Logística y Transporte', code: 'LOG-001' } }],
+      },
+    ])
+
+    const res = await request(app)
+      .post(`/api/v1/documents/${DOC_ID}/send-email`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ to: ['destinatario@empresa.com'] })
+
+    expect(res.status).toBe(200)
+    const { templateData } = mockedEmailService.sendManualEntityEmail.mock.calls[0][0] as any
+    expect(templateData.costCenters).toEqual([
+      expect.objectContaining({
+        code: 'LOG-001',
+        items: [{ code: null, name: null, amount: 100000, percentage: 100 }],
+      }),
+    ])
+  })
+
+  it('resuelve el Centro de Costo directo de la línea de cobertura cuando no hay activo asociado', async () => {
+    const docWithoutAsset = {
+      ...fakeDocument,
+      allocations: [
+        {
+          id: 'alloc-1',
+          accountingDocumentId: DOC_ID,
+          policyAssetCoverageId: 'coverage-sin-activo',
+          allocatedAmount: 100000,
+          allocationPercentage: 100,
+          policyAssetCoverage: {
+            policyId: 'policy-1',
+            assetId: null,
+            policy: { id: 'policy-1', policyNumber: 'POL-001', insuredName: 'Cliente Test' },
+            asset: null,
+          },
+        },
+      ],
+    }
+    db.accountingDocument.findUnique.mockResolvedValue(docWithoutAsset)
+    db.asset.findMany.mockResolvedValue([])
+    db.policyAssetCoverage.findMany.mockResolvedValue([
+      { id: 'coverage-sin-activo', costCenter: { name: 'Administración Central', code: 'ADM-001' } },
+    ])
+
+    const res = await request(app)
+      .post(`/api/v1/documents/${DOC_ID}/send-email`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ to: ['destinatario@empresa.com'] })
+
+    expect(res.status).toBe(200)
+    expect(db.policyAssetCoverage.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['coverage-sin-activo'] } } }),
+    )
+    const { templateData } = mockedEmailService.sendManualEntityEmail.mock.calls[0][0] as any
+    expect(templateData.costCenters).toEqual([
+      expect.objectContaining({
+        code: 'ADM-001',
+        name: 'Administración Central',
+        items: [{ code: null, name: null, amount: 100000, percentage: 100 }],
+      }),
+    ])
   })
 
   it('rechaza destinatarios inválidos con 422 y no llega a llamar a emailService', async () => {

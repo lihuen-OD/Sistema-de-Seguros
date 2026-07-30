@@ -68,9 +68,13 @@ export const costCentersService = {
   async remove(id: string) {
     await costCentersService.findById(id)
 
+    // linkedAllocations ya cubre "algún activo usa este centro de costo" sin
+    // importar si ese activo está en una póliza — costCenterId en
+    // policyAssetCoverage solo importa para las líneas "sin activo", que no
+    // tienen ningún Asset detrás para que linkedAllocations las detecte.
     const [linkedAllocations, linkedPolicies] = await Promise.all([
       prisma.assetAllocation.count({ where: { costCenterId: id } }),
-      prisma.policy.count({ where: { costCenterId: id } }),
+      prisma.policyAssetCoverage.count({ where: { costCenterId: id } }),
     ])
     if (linkedAllocations > 0) {
       throw new AppError(

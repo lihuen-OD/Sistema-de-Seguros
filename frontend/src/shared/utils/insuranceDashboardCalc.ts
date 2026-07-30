@@ -1,4 +1,4 @@
-import type { Asset, Policy, Claim, ClaimEvent } from '../types'
+import type { Asset, Policy, PolicyCoverage, Claim, ClaimEvent } from '../types'
 import type { DocumentForFinancial } from '../api/documents.api'
 import { computePolicyInvoicedTotal, computePsaPercentage, getDirectionSign, type TypeDirectionMap } from './policyInvoicedTotal'
 import { CATEGORY_GROUPS, LABEL_TO_CATEGORY } from '../constants/asset-categories'
@@ -48,7 +48,7 @@ export function groupForAssetType(assetTypeLabel: string): string {
 // pólizas/activos cargados en monedas distintas sin tener que reconvertir
 // nada acá.
 
-const ADJUSTING_TYPES = ['CREDIT_NOTE', 'DEBIT_NOTE', 'ADJUSTMENT_ENTRY']
+const ADJUSTING_TYPES = ['CREDIT_NOTE', 'DEBIT_NOTE', 'ADJUSTMENT_ENTRY', 'ENDORSEMENT']
 const ACTIVE_POLICY_STATUSES: Policy['status'][] = ['vigente', 'proximo_vencer']
 const DASHBOARD_POLICY_STATUSES: Policy['status'][] = ['vigente', 'proximo_vencer', 'vencida']
 
@@ -140,13 +140,20 @@ function last12MonthKeys(): string[] {
 
 // Recorre facturas + notas/ajustes APLICADOS ya vinculados (mismo criterio que
 // computePolicyInvoicedTotal en policyInvoicedTotal.ts) pero: (a) sumado sobre
-// un CONJUNTO de pólizas en vez de una sola, y (b) bucketizado por mes según
-// la fecha de emisión de cada documento contribuyente — así una NC/ND emitida
+// un CONJUNTO de LÍNEAS DE COBERTURA (no de pólizas — cada allocation ya
+// apunta a una línea puntual vía policyAssetCoverageId, la unidad de
+// atribución más precisa que existe), y (b) bucketizado por mes según la
+// fecha de emisión de cada documento contribuyente — así una NC/ND emitida
 // meses después de la factura original impacta el mes en que realmente se
 // devengó, no el de la factura madre (mismo criterio "económico" que ya usa
 // EconomicAnalysisPage).
-function buildInvoicedBuckets(
-  policyIds: Set<string>,
+//
+// Agrupar por línea de cobertura (en vez de por póliza entera) evita duplicar
+// gasto cuando una póliza cubre varios activos o mezcla tipos de seguro entre
+// sus líneas — antes, una póliza compartida entre 2 activos hacía que AMBOS
+// activos vieran el 100% del gasto de esa póliza.
+function buildInvoicedBucketsByCoverages(
+  coverageIds: Set<string>,
   documents: DocumentForFinancial[],
   typeDefsByKey: TypeDirectionMap,
 ): Map<string, number> {
@@ -159,7 +166,7 @@ function buildInvoicedBuckets(
   const facturas = documents.filter((d) => d.documentType === 'INVOICE')
   for (const factura of facturas) {
     for (const alloc of factura.allocations) {
-      if (!policyIds.has(alloc.policyId)) continue
+      if (!coverageIds.has(alloc.policyAssetCoverageId)) continue
       const share = alloc.allocationPercentage / 100
       add(factura.issueDate.slice(0, 7), (factura.totalAmountUsd ?? 0) * share)
     }
@@ -169,7 +176,7 @@ function buildInvoicedBuckets(
     )
     for (const mod of mods) {
       for (const modAlloc of mod.allocations) {
-        if (!policyIds.has(modAlloc.policyId)) continue
+        if (!coverageIds.has(modAlloc.policyAssetCoverageId)) continue
         const modShare = modAlloc.allocationPercentage / 100
         const sign = getDirectionSign(mod, typeDefsByKey)
         add(mod.issueDate.slice(0, 7), Math.abs(mod.totalAmountUsd ?? 0) * modShare * sign)
@@ -177,6 +184,18 @@ function buildInvoicedBuckets(
     }
   }
   return buckets
+}
+
+function sumBucketsInRange(buckets: Map<string, number>, monthKeys: Set<string>): number {
+  return [...buckets.entries()].reduce((total, [key, usd]) => (monthKeys.has(key) ? total + usd : total), 0)
+}
+
+function sumBuckets(buckets: Map<string, number>): number {
+  return [...buckets.values()].reduce((total, usd) => total + usd, 0)
+}
+
+function coveragesOf(policy: Policy): PolicyCoverage[] {
+  return policy.coverages ?? []
 }
 
 export function computeFleetSummaries(
@@ -187,25 +206,38 @@ export function computeFleetSummaries(
   typeDefsByKey: TypeDirectionMap,
 ): AssetInsuranceSummary[] {
   const monthKeys = last12MonthKeys()
+  const monthKeySet = new Set(monthKeys)
   const dashboardPolicies = policies.filter(isPolicyIncludedInInsuranceDashboard)
 
+  // Una línea de cobertura por activo (o ninguna) — requiere que `policies`
+  // haya sido pedido con includeCoverages:true (ver InsuranceDashboardPage).
+  const linesByAssetId = new Map<string, { coverage: PolicyCoverage; policy: Policy }[]>()
+  for (const policy of dashboardPolicies) {
+    for (const coverage of coveragesOf(policy)) {
+      if (!coverage.assetId) continue
+      const arr = linesByAssetId.get(coverage.assetId) ?? []
+      arr.push({ coverage, policy })
+      linesByAssetId.set(coverage.assetId, arr)
+    }
+  }
+
   return assets.map((asset) => {
-    const assetPolicies = dashboardPolicies.filter((p) => p.assetIds.includes(asset.id))
-    const active = assetPolicies.filter((p) => ACTIVE_POLICY_STATUSES.includes(p.status))
+    const assetLines = linesByAssetId.get(asset.id) ?? []
+    const active = assetLines.filter((l) => ACTIVE_POLICY_STATUSES.includes(l.policy.status))
     const assetClaims = claims.filter((c) => c.assetId === asset.id)
 
-    const policyIds = new Set(assetPolicies.map((p) => p.id))
-    const assetBuckets = buildInvoicedBuckets(policyIds, financialDocs, typeDefsByKey)
+    const coverageIds = new Set(assetLines.map((l) => l.coverage.id))
+    const assetBuckets = buildInvoicedBucketsByCoverages(coverageIds, financialDocs, typeDefsByKey)
 
     const monthlySeries: MonthBucket[] = monthKeys.map((key) => ({
       monthKey: key,
       label: monthLabel(key),
       totalUsd: assetBuckets.get(key) ?? 0,
     }))
-    const facturado12mUsd = monthlySeries.reduce((s, b) => s + b.totalUsd, 0)
-    const facturadoTotalUsd = [...assetBuckets.values()].reduce((s, v) => s + v, 0)
+    const facturado12mUsd = sumBucketsInRange(assetBuckets, monthKeySet)
+    const facturadoTotalUsd = sumBuckets(assetBuckets)
 
-    const sumaAseguradaUsd = active.reduce((s, p) => s + (p.insuredAmountUsd || 0), 0)
+    const sumaAseguradaUsd = active.reduce((s, l) => s + (l.coverage.insuredAmountUsd || 0), 0)
     const valorRealUsd = asset.currentValueUsd ?? asset.patrimonialValueUsd
     const valorNuevoUsd = asset.patrimonialValueNewUsd ?? asset.patrimonialValueNew
 
@@ -219,36 +251,33 @@ export function computeFleetSummaries(
     )
     const lossRatioPct = sumaAseguradaUsd > 0 ? (claimsCostUsd / sumaAseguradaUsd) * 100 : null
 
-    // Reusa exactamente computePolicyInvoicedTotal/computePsaPercentage (las
-    // mismas funciones que ya muestran PolicyDetailPage/AssetDetailPage) para
-    // que el número de cada póliza en este dashboard nunca diverja del que ya
-    // ve el usuario en la ficha de esa póliza.
-    const toRow = (p: Policy): PolicySummaryRow => {
-      const totals = computePolicyInvoicedTotal(p.id, financialDocs, typeDefsByKey)
-      const invoicedTotalUsd = totals.totalUsd
-      const psaPercentage = computePsaPercentage(
-        { currency: p.currency, insuredAmountArs: p.insuredAmountArs, insuredAmountUsd: p.insuredAmountUsd },
-        totals,
-      )
+    // El total facturado se calcula por LÍNEA de cobertura (policyAssetCoverageId
+    // exacto), no por póliza entera — así una póliza que cubre varios activos
+    // nunca duplica su gasto entre ellos (antes cada activo veía el 100% del
+    // gasto total de la póliza compartida).
+    const toRow = (l: { coverage: PolicyCoverage; policy: Policy }): PolicySummaryRow => {
+      const invoicedTotalUsd = sumBuckets(buildInvoicedBucketsByCoverages(new Set([l.coverage.id]), financialDocs, typeDefsByKey))
+      const psaPercentage = computePsaPercentage(l.coverage.insuredAmountUsd, invoicedTotalUsd)
+      const distinctAssetIds = new Set(coveragesOf(l.policy).map((c) => c.assetId).filter((id): id is string => !!id))
       return {
-        id: p.id,
-        policyNumber: p.policyNumber,
-        insuranceCompany: p.insuranceCompany,
-        status: p.status,
-        endDate: p.endDate,
-        insuredAmountUsd: p.insuredAmountUsd,
+        id: l.policy.id,
+        policyNumber: l.policy.policyNumber,
+        insuranceCompany: l.policy.insuranceCompany,
+        status: l.policy.status,
+        endDate: l.policy.endDate,
+        insuredAmountUsd: l.coverage.insuredAmountUsd,
         invoicedTotalUsd,
         psaPercentage,
-        isShared: p.assetIds.length > 1,
+        isShared: distinctAssetIds.size > 1,
       }
     }
 
-    const allPolicyRows = assetPolicies.map(toRow)
+    const allPolicyRows = assetLines.map(toRow)
     const activePolicyRows = allPolicyRows.filter((r) => ACTIVE_POLICY_STATUSES.includes(r.status))
-    const hasSharedPolicy = assetPolicies.some((p) => p.assetIds.length > 1)
+    const hasSharedPolicy = assetLines.some((l) => new Set(coveragesOf(l.policy).map((c) => c.assetId).filter(Boolean)).size > 1)
 
     const upcoming = active
-      .map((p) => ({ policy: p, days: daysUntil(p.endDate) }))
+      .map((l) => ({ policy: l.policy, days: daysUntil(l.policy.endDate) }))
       .sort((a, b) => a.days - b.days)[0]
     const nextExpiration = upcoming
       ? {
@@ -349,8 +378,8 @@ export function computeProductiveUnitSummaries(
   const insuredAssetIds = new Set(
     dashboardPolicies
       .filter((policy) => ACTIVE_POLICY_STATUSES.includes(policy.status))
-      .flatMap((policy) => policy.assetIds)
-      .filter((assetId) => assetById.has(assetId)),
+      .flatMap((policy) => coveragesOf(policy).map((c) => c.assetId))
+      .filter((assetId): assetId is string => !!assetId && assetById.has(assetId)),
   )
   const buckets = new Map<string, MutableProductiveUnitSummary>()
 
@@ -382,7 +411,9 @@ export function computeProductiveUnitSummaries(
   }
 
   for (const policy of dashboardPolicies) {
-    const linkedAssets = policy.assetIds
+    const coverages = coveragesOf(policy)
+    const linkedAssetIds = new Set(coverages.map((c) => c.assetId).filter((id): id is string => !!id))
+    const linkedAssets = [...linkedAssetIds]
       .map((assetId) => assetById.get(assetId))
       .filter((asset): asset is Asset => asset != null)
     if (linkedAssets.length === 0) continue
@@ -402,8 +433,8 @@ export function computeProductiveUnitSummaries(
     bucket.policyIds.add(policy.id)
     linkedAssets.forEach((asset) => bucket.assetIds.add(asset.id))
 
-    const policyBuckets = buildInvoicedBuckets(
-      new Set([policy.id]),
+    const policyBuckets = buildInvoicedBucketsByCoverages(
+      new Set(coverages.map((c) => c.id)),
       financialDocs,
       typeDefsByKey,
     )
@@ -462,10 +493,14 @@ export interface InsuranceTypeSummary {
 }
 
 /**
- * Cada póliza pertenece a un único tipo de seguro, por lo que esta agrupación
- * reconcilia el gasto sin prorrateos ni duplicaciones. Los siniestros solo se
- * atribuyen cuando conservan `policyId`; inferir el tipo desde el texto libre
- * de `claimType` sería mezclar dos catálogos diferentes.
+ * El tipo de seguro ahora vive en cada LÍNEA de cobertura, no en la póliza
+ * entera — una póliza puede mezclar tipos entre sus líneas (poco común, pero
+ * posible). Por eso esta agrupación trabaja sobre líneas aplanadas, no sobre
+ * pólizas: así el gasto de una póliza que combina tipos nunca se duplica
+ * entre ellos (cada allocation se atribuye a su línea exacta vía
+ * policyAssetCoverageId). Los siniestros solo se atribuyen cuando conservan
+ * `policyId`; inferir el tipo desde el texto libre de `claimType` sería
+ * mezclar dos catálogos diferentes.
  */
 export function computeInsuranceTypeSummaries(
   policies: Policy[],
@@ -476,40 +511,50 @@ export function computeInsuranceTypeSummaries(
   const monthKeys = new Set(last12MonthKeys())
   const dashboardPolicies = policies.filter(isPolicyIncludedInInsuranceDashboard)
   const policyById = new Map(dashboardPolicies.map((policy) => [policy.id, policy]))
-  const insuranceTypes = new Set(
-    dashboardPolicies.map((policy) => policy.insuranceType.trim() || UNASSIGNED_INSURANCE_TYPE_LABEL),
+
+  const typeNameOf = (coverage: PolicyCoverage) => coverage.insuranceType.trim() || UNASSIGNED_INSURANCE_TYPE_LABEL
+  const allLines = dashboardPolicies.flatMap((policy) =>
+    coveragesOf(policy).map((coverage) => ({ coverage, policy, typeName: typeNameOf(coverage) })),
   )
+  const insuranceTypes = new Set(allLines.map((l) => l.typeName))
 
   const summaries = [...insuranceTypes].map((insuranceType): InsuranceTypeSummary => {
-    const typePolicies = dashboardPolicies.filter(
-      (policy) => (policy.insuranceType.trim() || UNASSIGNED_INSURANCE_TYPE_LABEL) === insuranceType,
-    )
-    const activePolicies = typePolicies.filter((policy) => ACTIVE_POLICY_STATUSES.includes(policy.status))
-    const policyIds = new Set(typePolicies.map((policy) => policy.id))
-    const invoicedBuckets = buildInvoicedBuckets(policyIds, financialDocs, typeDefsByKey)
-    const facturado12mUsd = [...invoicedBuckets.entries()].reduce(
-      (total, [monthKey, amountUsd]) => monthKeys.has(monthKey) ? total + amountUsd : total,
-      0,
-    )
+    const typeLines = allLines.filter((l) => l.typeName === insuranceType)
+    const activeLines = typeLines.filter((l) => ACTIVE_POLICY_STATUSES.includes(l.policy.status))
+    const coverageIds = new Set(typeLines.map((l) => l.coverage.id))
+    const invoicedBuckets = buildInvoicedBucketsByCoverages(coverageIds, financialDocs, typeDefsByKey)
+    const facturado12mUsd = sumBucketsInRange(invoicedBuckets, monthKeys)
+
+    const totalPolicyIds = new Set(typeLines.map((l) => l.policy.id))
+    const activePoliciesById = new Map(activeLines.map((l) => [l.policy.id, l.policy]))
+
+    const activeLinesByPolicy = new Map<string, typeof activeLines>()
+    for (const line of activeLines) {
+      const arr = activeLinesByPolicy.get(line.policy.id) ?? []
+      arr.push(line)
+      activeLinesByPolicy.set(line.policy.id, arr)
+    }
+    const policiesWithoutAssetsCount = [...activeLinesByPolicy.values()]
+      .filter((lines) => lines.every((l) => !l.coverage.assetId)).length
+
     const typeClaims12m = claims.filter((claim) => {
       if (!claim.policyId || !monthKeys.has(claim.occurrenceDate.slice(0, 7))) return false
       const linkedPolicy = policyById.get(claim.policyId)
-      return linkedPolicy != null &&
-        (linkedPolicy.insuranceType.trim() || UNASSIGNED_INSURANCE_TYPE_LABEL) === insuranceType
+      return linkedPolicy != null && coveragesOf(linkedPolicy).some((c) => typeNameOf(c) === insuranceType)
     })
 
     return {
       id: normalizeKey(insuranceType).replace(/\s+/g, '-'),
       insuranceType,
-      totalPolicyCount: typePolicies.length,
-      activePolicyCount: activePolicies.length,
-      assetsCoveredCount: new Set(activePolicies.flatMap((policy) => policy.assetIds)).size,
-      policiesWithoutAssetsCount: activePolicies.filter((policy) => policy.assetIds.length === 0).length,
-      activePremiumUsd: activePolicies.reduce((total, policy) => total + (policy.insuredAmountUsd || 0), 0),
+      totalPolicyCount: totalPolicyIds.size,
+      activePolicyCount: activePoliciesById.size,
+      assetsCoveredCount: new Set(activeLines.map((l) => l.coverage.assetId).filter((id): id is string => !!id)).size,
+      policiesWithoutAssetsCount,
+      activePremiumUsd: activeLines.reduce((total, l) => total + (l.coverage.insuredAmountUsd || 0), 0),
       facturado12mUsd,
       sharePct: 0,
-      averageSpendPerPolicyUsd: typePolicies.length > 0 ? facturado12mUsd / typePolicies.length : 0,
-      upcomingExpirations30d: activePolicies.filter((policy) => {
+      averageSpendPerPolicyUsd: totalPolicyIds.size > 0 ? facturado12mUsd / totalPolicyIds.size : 0,
+      upcomingExpirations30d: [...activePoliciesById.values()].filter((policy) => {
         const remainingDays = daysUntil(policy.endDate)
         return remainingDays >= 0 && remainingDays <= EXPIRATION_SOON_DAYS
       }).length,
@@ -595,8 +640,10 @@ export function computeInsurerSummaries(
       const activePolicies = dashboardPolicies.filter(
         (p) => p.insuranceCompany === name && ACTIVE_POLICY_STATUSES.includes(p.status),
       )
-      const primaVigenteUsd = activePolicies.reduce((s, p) => s + (p.insuredAmountUsd || 0), 0)
-      const assetsCoveredCount = new Set(activePolicies.flatMap((p) => p.assetIds)).size
+      const primaVigenteUsd = activePolicies.reduce((s, p) => s + (p.totalInsuredAmountUsd ?? 0), 0)
+      const assetsCoveredCount = new Set(
+        activePolicies.flatMap((p) => coveragesOf(p).map((c) => c.assetId)).filter((id): id is string => !!id),
+      ).size
       const facturadoVigenteUsd = activePolicies.reduce(
         (s, p) => s + computePolicyInvoicedTotal(p.id, financialDocs, typeDefsByKey).totalUsd,
         0,

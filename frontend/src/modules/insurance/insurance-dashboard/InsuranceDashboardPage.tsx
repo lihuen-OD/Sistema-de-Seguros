@@ -53,11 +53,15 @@ export default function InsuranceDashboardPage() {
     isError: isErrorAssets,
     isLoading: isLoadingAssets,
   } = useQuery(assetQueries.list({ isActive: true, limit: 500 }))
+  // includeCoverages:true — este dashboard agrega por activo/tipo de seguro
+  // sobre TODAS las pólizas a la vez, y esa granularidad ahora vive en cada
+  // línea de cobertura, no en la póliza (ver insuranceDashboardCalc.ts).
+  // Pedirlo acá evita un N+1 de GET /coverages por póliza.
   const {
     data: allPolicies = [],
     isError: isErrorPolicies,
     isLoading: isLoadingPolicies,
-  } = useQuery(policyQueries.list({ limit: 500 }))
+  } = useQuery(policyQueries.list({ limit: 500, includeCoverages: true }))
   const {
     data: allClaims = [],
     isError: isErrorClaims,

@@ -69,4 +69,57 @@ describe('resolveEmailAttachments', () => {
     expect(summaries.filter((s) => s.attached)).toHaveLength(1)
     expect(summaries.filter((s) => !s.attached)).toHaveLength(2)
   })
+
+  it('no cuelga el envío si la descarga nunca responde — corta por timeout y deja el archivo solo como link', async () => {
+    jest.useFakeTimers()
+    global.fetch = jest.fn((_url: unknown, opts?: { signal?: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        opts?.signal?.addEventListener('abort', () => reject(new Error('AbortError')))
+      }),
+    ) as unknown as typeof fetch
+
+    const pending = resolveEmailAttachments([
+      { name: 'colgado.pdf', fileUrl: 'https://cdn.example.com/colgado.pdf' },
+    ])
+
+    await jest.advanceTimersByTimeAsync(10_000)
+    const { attachments, summaries } = await pending
+
+    expect(attachments).toHaveLength(0)
+    expect(summaries).toEqual([
+      { name: 'colgado.pdf', fileUrl: 'https://cdn.example.com/colgado.pdf', attached: false },
+    ])
+
+    jest.useRealTimers()
+  })
+
+  it('descarga los adjuntos en paralelo, no uno por uno', async () => {
+    // Ninguno de los dos "fetch" resuelve solo — si el código esperara al
+    // primero antes de arrancar el segundo (en serie), el segundo jamás se
+    // dispararía y este test quedaría colgado.
+    const pendingResolvers: Record<string, (v: unknown) => void> = {}
+    global.fetch = jest.fn((url: unknown) => new Promise((resolve) => {
+      pendingResolvers[String(url)] = resolve
+    })) as unknown as typeof fetch
+
+    const pending = resolveEmailAttachments([
+      { name: 'a.pdf', fileUrl: 'https://cdn.example.com/a.pdf' },
+      { name: 'b.pdf', fileUrl: 'https://cdn.example.com/b.pdf' },
+    ])
+
+    // Deja correr los microtasks pendientes sin resolver ningún fetch todavía.
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(Object.keys(pendingResolvers).sort()).toEqual([
+      'https://cdn.example.com/a.pdf',
+      'https://cdn.example.com/b.pdf',
+    ])
+
+    const okResponse = (text: string) => ({ ok: true, arrayBuffer: async () => new TextEncoder().encode(text).buffer })
+    pendingResolvers['https://cdn.example.com/a.pdf'](okResponse('x'))
+    pendingResolvers['https://cdn.example.com/b.pdf'](okResponse('y'))
+
+    const { attachments } = await pending
+    expect(attachments).toHaveLength(2)
+  })
 })

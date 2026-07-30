@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Mail, CheckCircle2, ArrowLeftRight, X, Info } from 'lucide-react'
 import { PageContent } from '../../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../../shared/components/page-header/PageHeader'
@@ -85,17 +85,31 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     ...documentQueries.installments(initialDoc?.id ?? ''),
     enabled: isEdit,
   })
+  // Reusa la misma query que DocumentAttachmentsSection (misma key, sin costo
+  // extra de red) — solo para saber cuántos adjuntos tiene el documento y
+  // mostrar un resumen real en el preview de "Enviar por mail" en vez de un
+  // texto fijo que no reflejaba si había o no archivos cargados.
+  const { data: docAttachments = [] } = useQuery(documentQueries.attachments(savedDocId ?? ''))
 
   useEffect(() => {
     if (!sourcePolicy) return
+    // La moneda/TC ya no son un campo único de la póliza (viven por línea de
+    // cobertura) — se toma la primera línea como referencia razonable.
+    const firstCoverage = sourcePolicy.coverages?.[0]
     setForm((prev) => ({
       ...prev,
       insuranceCompany: sourcePolicy.insuranceCompany,
-      currency: sourcePolicy.currency,
-      exchangeRate: sourcePolicy.exchangeRate > 1 ? sourcePolicy.exchangeRate.toString() : prev.exchangeRate,
+      currency: firstCoverage?.currency ?? prev.currency,
+      exchangeRate: firstCoverage && firstCoverage.exchangeRate > 1 ? firstCoverage.exchangeRate.toString() : prev.exchangeRate,
       documentNumber: sourcePolicy.policyNumber,
     }))
-    setPolicyRows([{ id: crypto.randomUUID(), policyId: sourcePolicy.id, allocatedAmount: '' }])
+    // Una fila por cada línea de cobertura de la póliza — si cubre varios
+    // activos, quedan todas listas para completar el importe de cada una.
+    setPolicyRows(
+      sourcePolicy.coverages && sourcePolicy.coverages.length > 0
+        ? sourcePolicy.coverages.map((c) => ({ id: crypto.randomUUID(), policyAssetCoverageId: c.id, allocatedAmount: '' }))
+        : [createEmptyPolicyRow()],
+    )
   }, [sourcePolicy])
 
   if (allocationsLoaded && !allocationsInitialized) {
@@ -103,7 +117,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     if (existingAllocations.length > 0) {
       setPolicyRows(existingAllocations.map((a) => ({
         id: crypto.randomUUID(),
-        policyId: a.policyId,
+        policyAssetCoverageId: a.policyAssetCoverageId,
         allocatedAmount: String(a.allocatedAmount),
       })))
     }
@@ -133,18 +147,33 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
 
   const totalAllocated = policyRows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0)
 
-  const availablePolicies = isEdit
+  const availablePolicySummaries = isEdit
     ? allPolicies.filter((p) => p.insuranceCompany === form.insuranceCompany)
     : allPolicies.filter((p) => p.insuranceCompany === form.insuranceCompany && (p.status === 'vigente' || p.status === 'proximo_vencer'))
 
+  // El selector de distribución necesita las líneas de cobertura (coverages)
+  // de cada póliza, que el listado no trae — se busca el detalle de cada una.
+  const availablePolicyDetailQueries = useQueries({
+    queries: availablePolicySummaries.map((p) => ({ ...policyQueries.detail(p.id) })),
+  })
+  const availablePolicies = availablePolicyDetailQueries
+    .map((q) => q.data)
+    .filter((p): p is NonNullable<typeof p> => !!p)
+
+  const coverageLookup = new Map(
+    availablePolicies.flatMap((p) => (p.coverages ?? []).map((c) => [c.id, { policy: p, coverage: c }])),
+  )
+
   const distribution = policyRows
-    .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
+    .filter((r) => r.policyAssetCoverageId && parseFloat(r.allocatedAmount) > 0)
     .map((r) => {
-      const policy = allPolicies.find((p) => p.id === r.policyId)
+      const match = coverageLookup.get(r.policyAssetCoverageId)
       const amount = parseFloat(r.allocatedAmount) || 0
-      const pct = totalAllocated > 0 ? (amount / totalAllocated) * 100 : 0
-      return { policy, amount, pct }
+      const pct = computedTotal > 0 ? (amount / computedTotal) * 100 : 0
+      return { policy: match?.policy, coverage: match?.coverage, amount, pct }
     })
+
+  const allocationTotalMismatch = policyRows.some((r) => r.policyAssetCoverageId) && Math.abs(computedTotal - totalAllocated) > 0.01
 
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
@@ -170,18 +199,22 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     if (!form.netAmount || isNaN(parseFloat(form.netAmount))) next.netAmount = 'Requerido'
     if (!form.vatAmount || isNaN(parseFloat(form.vatAmount))) next.vatAmount = 'Requerido'
     if (!form.otherTaxesAmount || isNaN(parseFloat(form.otherTaxesAmount))) next.otherTaxesAmount = 'Requerido'
-    if (policyRows.length === 0 || policyRows.every((r) => !r.policyId)) next.policies = 'Asociá al menos una póliza'
+    if (policyRows.length === 0 || policyRows.every((r) => !r.policyAssetCoverageId)) {
+      next.policies = 'Asociá al menos una póliza'
+    } else if (allocationTotalMismatch) {
+      next.policies = `El total asignado (${mainPrefix} ${totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) debe coincidir con el total del documento (${mainPrefix} ${computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+    }
     setErrors(next)
     notifyValidationErrors(next)
     return Object.keys(next).length === 0
   }
 
   const allocationsInput = policyRows
-    .filter((r) => r.policyId && parseFloat(r.allocatedAmount) > 0)
+    .filter((r) => r.policyAssetCoverageId && parseFloat(r.allocatedAmount) > 0)
     .map((r) => ({
-      policyId: r.policyId,
+      policyAssetCoverageId: r.policyAssetCoverageId,
       allocatedAmount: parseFloat(r.allocatedAmount),
-      allocationPercentage: totalAllocated > 0 ? (parseFloat(r.allocatedAmount) / totalAllocated) * 100 : 0,
+      allocationPercentage: computedTotal > 0 ? (parseFloat(r.allocatedAmount) / computedTotal) * 100 : 0,
     }))
 
   const installmentsInput = installmentRows
@@ -258,10 +291,14 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     }
   }
 
-  const savedPolicyNumbers = policyRows
-    .filter((r) => r.policyId)
-    .map((r) => allPolicies.find((p) => p.id === r.policyId)?.policyNumber)
-    .filter(Boolean) as string[]
+  const savedPolicyNumbers = [
+    ...new Set(
+      policyRows
+        .filter((r) => r.policyAssetCoverageId)
+        .map((r) => coverageLookup.get(r.policyAssetCoverageId)?.policy.policyNumber)
+        .filter(Boolean) as string[],
+    ),
+  ]
   const emailSubject = savedPolicyNumbers.length > 0
     ? `Documento póliza ${savedPolicyNumbers.join(', ')} — ${form.insuranceCompany}`
     : `Documento ${form.documentNumber} — ${form.insuranceCompany}`
@@ -381,6 +418,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
             rows={policyRows}
             onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
             currencyPrefix={mainPrefix}
+            documentTotal={computedTotal}
             emptyMessage={!form.insuranceCompany ? 'Seleccioná una compañía aseguradora para ver sus pólizas.' : `No hay pólizas para ${form.insuranceCompany}.`}
           />
         </SectionCard>
@@ -472,14 +510,19 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                       <span className="text-xs font-semibold text-slate-700">{form.paymentMethod || '—'}</span>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-slate-500 mb-2">Distribución por póliza</p>
+                      <p className="text-xs font-semibold text-slate-500 mb-2">Distribución por activo</p>
                       {distribution.length === 0 ? (
                         <p className="text-xs text-slate-400 italic">Sin pólizas asignadas.</p>
                       ) : (
                         <div className="space-y-2">
-                          {distribution.map(({ policy, amount, pct }, i) => (
+                          {distribution.map(({ policy, coverage, amount, pct }, i) => (
                             <div key={i} className="flex items-start justify-between gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                              <p className="text-xs font-semibold text-slate-700">{policy?.policyNumber ?? '—'}</p>
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-slate-700 truncate">
+                                  {coverage?.asset ? coverage.asset.name : 'Sin activo asociado'}
+                                </p>
+                                <p className="text-[11px] text-slate-400">{policy?.policyNumber ?? '—'}</p>
+                              </div>
                               <div className="text-right flex-shrink-0">
                                 <p className="text-xs font-bold text-brand-600">{pct.toFixed(1).replace('.', ',')}%</p>
                                 <p className="text-xs text-slate-500 tabular-nums">
@@ -493,7 +536,11 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                     </div>
                     <div className="flex items-center justify-between border-t border-slate-100 pt-2.5">
                       <span className="text-xs text-slate-500">Adjuntos</span>
-                      <span className="text-xs text-slate-400 italic">Ver en la plataforma</span>
+                      <span className="text-xs text-slate-400 italic">
+                        {docAttachments.length === 0
+                          ? 'Sin adjuntos'
+                          : `Se adjuntan ${docAttachments.length} archivo${docAttachments.length !== 1 ? 's' : ''} al mail`}
+                      </span>
                     </div>
                   </div>
                 </div>

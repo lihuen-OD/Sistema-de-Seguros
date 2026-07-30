@@ -60,7 +60,10 @@ export default function AssetFichaPage() {
   const sortedHistory = [...(asset.valueHistory ?? [])].sort((a, b) => b.date.localeCompare(a.date))
   const latestReal = sortedHistory.find(e => e.type === 'real')
   const latestNuevo = sortedHistory.find(e => e.type === 'nuevo')
-  const baseNuevo = asset.patrimonialValueNew != null && asset.patrimonialValueNew > 0 ? asset.patrimonialValueNew : null
+  // Prioriza el cierre en USD sobre el valor crudo (puede estar en ARS si el
+  // activo se cargó en pesos) — ver mismo criterio en assets.api.ts#mapAsset.
+  const baseNuevoUsd = asset.patrimonialValueNewUsd ?? asset.patrimonialValueNew
+  const baseNuevo = baseNuevoUsd != null && baseNuevoUsd > 0 ? baseNuevoUsd : null
 
   return (
     <PageContent>

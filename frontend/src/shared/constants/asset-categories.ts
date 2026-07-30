@@ -56,7 +56,8 @@ export const CATEGORY_GROUPS: CategoryGroup[] = [
   {
     label: 'Producción animal',
     items: [
-      { key: 'carga', label: 'Carga', desc: 'Hacienda en pie u otra carga animal (porcino, bovino, etc.)', icon: Package, color: 'text-amber-600 bg-amber-50' },
+      { key: 'carga_animal', label: 'Carga Animal', desc: 'Hacienda en pie u otra carga animal (porcino, bovino, etc.)', icon: Package, color: 'text-amber-600 bg-amber-50' },
+      { key: 'carga_comun',  label: 'Carga Común',  desc: 'Carga general no animal (granos, mercadería, insumos, etc.)', icon: Package, color: 'text-amber-600 bg-amber-50' },
     ],
   },
 ]
@@ -67,7 +68,7 @@ export const CATEGORY_LABEL: Record<AssetCategory, string> = {
   tractor: 'Tractor', cosechadora: 'Cosechadora', pulverizadora: 'Pulverizadora', implemento: 'Implemento',
   edificio: 'Edificio', establecimiento: 'Establecimiento',
   equipo: 'Equipo', maquinaria: 'Maquinaria', infraestructura: 'Infraestructura',
-  carga: 'Carga',
+  carga_animal: 'Carga Animal', carga_comun: 'Carga Común',
 }
 
 export const IMPL_TYPES = ['Sembradora', 'Arado', 'Rastra', 'Fertilizadora', 'Cincel', 'Rolo', 'Acoplado', 'Otro']

@@ -29,13 +29,17 @@ export interface DocumentTypeDef {
   hasInstallments: boolean
   hasPaymentStatus: boolean
   affectsLinkedBalance: boolean
-  affectsLinkedDirection?: 'credit' | 'debit' | 'adjusts' | 'replaces'
+  // 'economicImpact': el signo no es fijo por tipo — se resuelve por
+  // instancia leyendo economicImpactType del propio documento (mismo criterio
+  // que 'adjusts' ya resuelve su signo real vía adjustmentSign). Hoy solo lo
+  // usa Endoso.
+  affectsLinkedDirection?: 'credit' | 'debit' | 'adjusts' | 'economicImpact'
   relationType?: RelationType
   requiresAdjustmentReason: boolean
   requiresAdjustmentSign: boolean
-  // Endoso: se asocia a una póliza propia en vez de a otro documento, y no
-  // tiene importes propios (el impacto económico, si existe, lo carga el
-  // documento contable vinculado — ver requiresEconomicImpactType).
+  // Endoso: además de su propio importe (ver hasOwnAmounts), se asocia a una
+  // póliza propia — la que modifica — distinta de la póliza de la factura
+  // vinculada que respalda económicamente ese cambio.
   requiresPolicy: boolean
   hasOwnAmounts: boolean
   requiresEconomicImpactType: boolean
@@ -89,8 +93,13 @@ export const DOCUMENT_TYPES: Record<string, DocumentTypeDef> = {
     requiresLinkedDocument: false,
     linkedDocumentType: 'INVOICE',
     linkedDocumentLabel: 'Factura asociada',
-    hasInstallments: true,
-    hasPaymentStatus: true,
+    // Solo la Factura tiene cuotas propias — la ND ajusta directamente las
+    // cuotas no pagas de la factura vinculada al aplicarse (ver
+    // redistributeAdjustmentAcrossInstallments), igual que NC y Ajuste. Sin
+    // cuotas propias tampoco tiene sentido un paymentStatus propio (no habría
+    // ninguna cuota suya que marcar pagada) — mismo criterio que NC/Ajuste.
+    hasInstallments: false,
+    hasPaymentStatus: false,
     affectsLinkedBalance: true,
     affectsLinkedDirection: 'debit',
     relationType: 'DEBITS',
@@ -103,47 +112,43 @@ export const DOCUMENT_TYPES: Record<string, DocumentTypeDef> = {
     // apenas emitida (ISSUED) — ahora requiere el mismo paso de aplicación
     // que Nota de Crédito y Asiento de Ajuste (ver documents-balance.service.ts).
     documentStatusOptions: ['ISSUED', 'APPLIED', 'CANCELLED', 'OBSERVED'],
-    paymentStatusOptions: ['PENDING', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
+    paymentStatusOptions: ['NOT_APPLICABLE'],
     isInternal: false,
   },
 
   ENDORSEMENT: {
     key: 'ENDORSEMENT',
     label: 'Endoso',
+    // Solo cuando el impacto económico es real (aumenta/reduce costo) hace
+    // falta vincular la factura — para NO_IMPACT/PENDING_DEFINITION sigue
+    // siendo un registro administrativo sin importe ni vínculo. Esa
+    // condicionalidad depende del VALOR de economicImpactType, no se puede
+    // modelar con este flag estático — se resuelve a mano en
+    // validateTypeConstraints.
     requiresLinkedDocument: false,
-    linkedDocumentLabel: 'Documento contable asociado',
+    linkedDocumentType: 'INVOICE',
+    linkedDocumentLabel: 'Factura asociada',
+    // Solo la Factura tiene cuotas propias — el Endoso, cuando tiene impacto
+    // económico real, ajusta directamente las cuotas no pagas de la factura
+    // vinculada al aplicarse (ver redistributeAdjustmentAcrossInstallments).
     hasInstallments: false,
     hasPaymentStatus: false,
-    affectsLinkedBalance: false,
+    // Antes el Endoso no tenía importe propio ni afectaba ningún saldo — el
+    // impacto económico lo cargaba un documento aparte que el usuario debía
+    // crear y vincular por su cuenta. Ahora el Endoso ES ese instrumento:
+    // tiene su propio importe (hasOwnAmounts) y afecta directamente el saldo
+    // de la factura vinculada, con signo resuelto por economicImpactType
+    // (ver 'economicImpact' en DocumentTypeDef.affectsLinkedDirection).
+    affectsLinkedBalance: true,
+    affectsLinkedDirection: 'economicImpact',
     relationType: 'ENDORSES',
     requiresAdjustmentReason: false,
     requiresAdjustmentSign: false,
     requiresPolicy: true,
-    hasOwnAmounts: false,
+    hasOwnAmounts: true,
     requiresEconomicImpactType: true,
     documentStatusOptions: ['ISSUED', 'APPLIED', 'CANCELLED'],
     paymentStatusOptions: ['NOT_APPLICABLE'],
-    isInternal: false,
-  },
-
-  REBILLING: {
-    key: 'REBILLING',
-    label: 'Refacturación',
-    requiresLinkedDocument: true,
-    linkedDocumentType: 'INVOICE',
-    linkedDocumentLabel: 'Factura original a refacturar',
-    hasInstallments: true,
-    hasPaymentStatus: true,
-    affectsLinkedBalance: true,
-    affectsLinkedDirection: 'replaces',
-    relationType: 'REPLACES',
-    requiresAdjustmentReason: false,
-    requiresAdjustmentSign: false,
-    requiresPolicy: false,
-    hasOwnAmounts: true,
-    requiresEconomicImpactType: false,
-    documentStatusOptions: ['ISSUED', 'CANCELLED'],
-    paymentStatusOptions: ['PENDING', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
     isInternal: false,
   },
 
@@ -200,13 +205,6 @@ export const ECONOMIC_IMPACT_TYPES: Record<EconomicImpactType, string> = {
   INCREASES_COST: 'Aumenta costo',
   DECREASES_COST: 'Reduce costo',
   PENDING_DEFINITION: 'Pendiente de definir',
-}
-
-// El Endoso no mueve saldo por sí mismo — cuando aumenta o reduce costo, ese
-// impacto lo debe respaldar un documento contable del tipo correspondiente.
-export const ENDORSEMENT_ALLOWED_LINKED_TYPES: Record<string, string[]> = {
-  INCREASES_COST: ['INVOICE', 'DEBIT_NOTE'],
-  DECREASES_COST: ['CREDIT_NOTE'],
 }
 
 export function getDocumentTypeDef(key: string): DocumentTypeDef | undefined {

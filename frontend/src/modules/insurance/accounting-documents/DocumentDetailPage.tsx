@@ -99,6 +99,9 @@ export default function DocumentDetailPage() {
   const { data: balance } = useQuery(documentQueries.balance(id!))
 
   const { data: allocations = [] } = useQuery(documentQueries.allocations(id!))
+  // Una póliza puede repetirse en varias filas (una por cada activo que
+  // cubre) — el conteo real de pólizas distintas es este, no allocations.length.
+  const distinctAllocatedPolicyCount = new Set(allocations.map((a) => a.policyId)).size
 
   const { data: auditLog = [] } = useQuery(documentQueries.auditLog(id!))
 
@@ -186,6 +189,10 @@ export default function DocumentDetailPage() {
     (doc.documentType !== 'DEBIT_NOTE' || !!doc.linkedDocumentId)
   const canCancel = doc.documentStatus !== 'CANCELLED'
   const hasOwnAmounts = typeDef?.hasOwnAmounts ?? true
+  // Distinto de hasOwnAmounts: NC/ND/Ajuste/Endoso tienen importe propio pero
+  // ninguno tiene cuotas propias — modifican directamente las de la Factura
+  // vinculada al aplicarse. Solo la Factura tiene hasInstallments true.
+  const hasInstallments = typeDef?.hasInstallments ?? true
   const linkedDocBadgeLabel = doc.relationType === 'ENDORSES' ? 'Respalda impacto económico' : 'Aplicado a'
 
   function invalidateAfterStatusChange() {
@@ -257,6 +264,23 @@ export default function DocumentDetailPage() {
           </span>
         )
       },
+    },
+    {
+      id: 'asset',
+      key: 'assetId',
+      label: 'Activo',
+      sortable: true,
+      // Una póliza puede cubrir varios activos — cada fila es una línea de
+      // cobertura (un activo), no una póliza distinta. Sin esta columna, dos
+      // líneas de la MISMA póliza se veían como "2 pólizas" repetidas.
+      sortValue: (row) => row.asset?.name ?? '',
+      render: (_v, row) => (
+        <span className="text-xs text-slate-600">
+          {row.asset
+            ? row.asset.fixedAssetCode ? `${row.asset.name} (${row.asset.fixedAssetCode})` : row.asset.name
+            : 'Sin activo asociado'}
+        </span>
+      ),
     },
     {
       id: 'insuranceCompany',
@@ -387,7 +411,9 @@ export default function DocumentDetailPage() {
         }
       />
 
-      {/* KPI row: amounts — el Endoso no tiene importes propios (hasOwnAmounts: false) */}
+      {/* KPI row: amounts — un Endoso sin impacto económico también tiene
+          hasOwnAmounts true, pero sus importes quedan en 0 (el backend no
+          permite cargarle importe sin impacto económico real). */}
       {hasOwnAmounts && (
       <>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
@@ -445,7 +471,11 @@ export default function DocumentDetailPage() {
         </span>
       </div>
 
-      {/* Payment summary pills */}
+      </>
+      )}
+
+      {/* Payment summary pills — solo la Factura tiene cuotas propias */}
+      {hasInstallments && (
       <div className="flex items-center gap-3 mb-5 flex-wrap">
         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700 font-medium">
           <CheckCircle2 size={13} />
@@ -465,10 +495,11 @@ export default function DocumentDetailPage() {
           {installments.length} cuota{installments.length !== 1 ? 's' : ''} en total
         </span>
       </div>
-      </>
       )}
 
-      {/* Detalle de Endoso — se asocia a una póliza y no mueve saldo directamente */}
+      {/* Detalle de Endoso — datos administrativos (póliza, tipo, vigencia);
+          el importe/distribución con impacto económico se muestra abajo,
+          igual que en NC/ND/Ajuste. */}
       {doc.documentType === 'ENDORSEMENT' && (
         <SectionCard title="Detalle del Endoso" className="mb-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
@@ -514,15 +545,16 @@ export default function DocumentDetailPage() {
         </SectionCard>
       )}
 
-      {/* 2-column: Allocations + Installments — el Endoso ya muestra su póliza
-          en "Detalle del Endoso" arriba (no usa allocations) y no tiene cuotas,
-          así que esta grilla completa no aplica para ese tipo. */}
-      {doc.documentType !== 'ENDORSEMENT' && (
+      {/* 2-column: Allocations + Installments. El Endoso con impacto económico
+          ya tiene allocations reales (distribución por activo) igual que
+          NC/ND/Ajuste, así que esta grilla también aplica para ese tipo —
+          su póliza "administrativa" sigue mostrándose aparte, arriba, en
+          "Detalle del Endoso". */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         {/* LEFT: Policies */}
         <SectionCard
-          title="Pólizas Asociadas"
-          subtitle={`${allocations.length} póliza${allocations.length !== 1 ? 's' : ''} vinculada${allocations.length !== 1 ? 's' : ''}`}
+          title="Distribución por Activo"
+          subtitle={`${allocations.length} activo${allocations.length !== 1 ? 's' : ''} en ${distinctAllocatedPolicyCount} póliza${distinctAllocatedPolicyCount !== 1 ? 's' : ''}`}
           noPadding
         >
           <DataTable
@@ -531,13 +563,13 @@ export default function DocumentDetailPage() {
             data={allocations}
             rowKey="id"
             onRowClick={(row) => navigate(ROUTES.POLICIES_DETAIL(row.policyId))}
-            emptyTitle="Sin pólizas"
-            emptyDescription="Este documento no tiene pólizas asociadas."
+            emptyTitle="Sin distribución"
+            emptyDescription="Este documento no tiene una distribución por activo cargada."
           />
         </SectionCard>
 
-        {/* RIGHT: Installments — no aplica a tipos sin importes propios (Endoso) */}
-        {hasOwnAmounts && (
+        {/* RIGHT: Installments — solo la Factura tiene cuotas propias */}
+        {hasInstallments && (
         <SectionCard
           title="Cuotas"
           subtitle={`${installments.length} cuota${installments.length !== 1 ? 's' : ''} registrada${installments.length !== 1 ? 's' : ''}`}
@@ -583,7 +615,6 @@ export default function DocumentDetailPage() {
         </SectionCard>
         )}
       </div>
-      )}
 
       {/* Saldo + Documentos relacionados */}
       {balance && (

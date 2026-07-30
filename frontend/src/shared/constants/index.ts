@@ -13,7 +13,8 @@ export const ASSET_TYPES = [
   'Infraestructura',
   'Equipo',
   'Maquinaria',
-  'Carga',
+  'Carga Animal',
+  'Carga Común',
 ]
 
 export const PAYMENT_STATUS_LABELS: Record<string, string> = {
@@ -39,7 +40,6 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   CREDIT_NOTE: 'Nota de Crédito',
   DEBIT_NOTE: 'Nota de Débito',
   ENDORSEMENT: 'Endoso',
-  REBILLING: 'Refacturación',
   ADJUSTMENT_ENTRY: 'Asiento de Ajuste',
 }
 
