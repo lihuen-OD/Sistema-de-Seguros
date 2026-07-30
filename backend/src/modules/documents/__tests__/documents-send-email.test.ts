@@ -7,6 +7,7 @@ jest.mock('../../../config/database', () => ({
     user: { findUnique: jest.fn() },
     accountingDocument: { findUnique: jest.fn() },
     asset: { findMany: jest.fn() },
+    policyAssetCoverage: { findMany: jest.fn() },
   },
 }))
 
@@ -88,6 +89,7 @@ describe('POST /api/v1/documents/:id/send-email', () => {
     db.user.findUnique.mockResolvedValue(mockDbUser())
     db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
     db.asset.findMany.mockResolvedValue(fakeAssetWithCostCenter)
+    db.policyAssetCoverage.findMany.mockResolvedValue([])
     mockedEmailService.sendManualEntityEmail.mockResolvedValue({
       sent: true,
       status: 'SENT',
@@ -116,20 +118,18 @@ describe('POST /api/v1/documents/:id/send-email', () => {
           documentNumber: 'A-0001-00012345',
           insuranceCompany: 'La Segunda',
           paymentMethod: 'Transferencia bancaria',
-          assets: [
-            expect.objectContaining({
-              code: 'BU-000002',
-              name: 'Camión Scania R450',
-              amount: 100000,
-              percentage: 100,
-            }),
-          ],
           costCenters: [
             expect.objectContaining({
               code: 'LOG-001',
               name: 'Logística y Transporte',
-              amount: 100000,
-              percentage: 100,
+              items: [
+                expect.objectContaining({
+                  code: 'BU-000002',
+                  name: 'Camión Scania R450',
+                  amount: 100000,
+                  percentage: 100,
+                }),
+              ],
             }),
           ],
           // El adjunto usa fileUrl 'local://...' (sin Cloudinary configurado) —
@@ -196,15 +196,106 @@ describe('POST /api/v1/documents/:id/send-email', () => {
 
     expect(res.status).toBe(200)
     const { templateData } = mockedEmailService.sendManualEntityEmail.mock.calls[0][0] as any
-    expect(templateData.assets).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: 'BU-000002', amount: 60000, percentage: 60 }),
-        expect.objectContaining({ code: 'BU-000003', amount: 40000, percentage: 40 }),
-      ]),
-    )
-    // Ambos activos comparten centro de costo — el desglose por CC los suma.
+    // Ambos activos comparten Centro de Costo — un solo grupo, con sus dos
+    // Bienes de Uso como renglones separados (celda de CC fusionada).
     expect(templateData.costCenters).toEqual([
-      expect.objectContaining({ code: 'LOG-001', amount: 100000, percentage: 100 }),
+      expect.objectContaining({
+        code: 'LOG-001',
+        items: expect.arrayContaining([
+          expect.objectContaining({ code: 'BU-000002', amount: 60000, percentage: 60 }),
+          expect.objectContaining({ code: 'BU-000003', amount: 40000, percentage: 40 }),
+        ]),
+      }),
+    ])
+  })
+
+  it('deja el renglón de Bien de Uso en blanco cuando el activo no tiene uno asignado (no repite el nombre del activo)', async () => {
+    const docWithBareAsset = {
+      ...fakeDocument,
+      allocations: [
+        {
+          id: 'alloc-1',
+          accountingDocumentId: DOC_ID,
+          policyAssetCoverageId: 'coverage-1',
+          allocatedAmount: 100000,
+          allocationPercentage: 100,
+          policyAssetCoverage: {
+            policyId: 'policy-1',
+            assetId: 'asset-3',
+            policy: { id: 'policy-1', policyNumber: 'POL-001', insuredName: 'Cliente Test' },
+            asset: { id: 'asset-3', name: 'Camión sin bien de uso', code: 'VEH-003', fixedAssetCode: null },
+          },
+        },
+      ],
+    }
+    db.accountingDocument.findUnique.mockResolvedValue(docWithBareAsset)
+    db.asset.findMany.mockResolvedValue([
+      {
+        id: 'asset-3',
+        code: 'VEH-003',
+        name: 'Camión sin bien de uso',
+        assetType: 'vehiculo',
+        fixedAssetCode: null,
+        allocations: [{ costCenter: { id: 'cc-2', name: 'Logística y Transporte', code: 'LOG-001' } }],
+      },
+    ])
+
+    const res = await request(app)
+      .post(`/api/v1/documents/${DOC_ID}/send-email`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ to: ['destinatario@empresa.com'] })
+
+    expect(res.status).toBe(200)
+    const { templateData } = mockedEmailService.sendManualEntityEmail.mock.calls[0][0] as any
+    expect(templateData.costCenters).toEqual([
+      expect.objectContaining({
+        code: 'LOG-001',
+        items: [{ code: null, name: null, amount: 100000, percentage: 100 }],
+      }),
+    ])
+  })
+
+  it('resuelve el Centro de Costo directo de la línea de cobertura cuando no hay activo asociado', async () => {
+    const docWithoutAsset = {
+      ...fakeDocument,
+      allocations: [
+        {
+          id: 'alloc-1',
+          accountingDocumentId: DOC_ID,
+          policyAssetCoverageId: 'coverage-sin-activo',
+          allocatedAmount: 100000,
+          allocationPercentage: 100,
+          policyAssetCoverage: {
+            policyId: 'policy-1',
+            assetId: null,
+            policy: { id: 'policy-1', policyNumber: 'POL-001', insuredName: 'Cliente Test' },
+            asset: null,
+          },
+        },
+      ],
+    }
+    db.accountingDocument.findUnique.mockResolvedValue(docWithoutAsset)
+    db.asset.findMany.mockResolvedValue([])
+    db.policyAssetCoverage.findMany.mockResolvedValue([
+      { id: 'coverage-sin-activo', costCenter: { name: 'Administración Central', code: 'ADM-001' } },
+    ])
+
+    const res = await request(app)
+      .post(`/api/v1/documents/${DOC_ID}/send-email`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ to: ['destinatario@empresa.com'] })
+
+    expect(res.status).toBe(200)
+    expect(db.policyAssetCoverage.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['coverage-sin-activo'] } } }),
+    )
+    const { templateData } = mockedEmailService.sendManualEntityEmail.mock.calls[0][0] as any
+    expect(templateData.costCenters).toEqual([
+      expect.objectContaining({
+        code: 'ADM-001',
+        name: 'Administración Central',
+        items: [{ code: null, name: null, amount: 100000, percentage: 100 }],
+      }),
     ])
   })
 

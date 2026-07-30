@@ -23,7 +23,7 @@ import { emailService } from '../email/email.service'
 import { resolveEmailAttachments } from '../email/email-attachments'
 import { assetsService } from '../assets/assets.service'
 import type { EmailActor } from '../email/email.types'
-import type { ManualDocumentEmailData } from '../email/email.templates'
+import type { ManualDocumentEmailData, ManualDocumentCostCenterGroup } from '../email/email.templates'
 import type {
   CreateDocumentDTO,
   UpdateDocumentDTO,
@@ -718,51 +718,68 @@ export const documentsService = {
     const doc = await this.findById(id)
     const typeDef = getDocumentTypeDef(doc.documentType)
 
-    // Bien de uso + Centro de Costo de cada activo asignado — se resuelven
-    // acá (no vienen en DOCUMENT_DETAIL_INCLUDE) porque están asociados al
-    // Activo, no al documento. El peso de cada fila es el real de su línea
-    // de cobertura (allocatedAmount/allocationPercentage) — cada asignación
-    // ya sabe a qué activo (o a ninguno, líneas "sin activo") corresponde,
-    // no hace falta repartir en partes iguales.
+    // Bien de Uso + Centro de Costo de cada asignación — se resuelven acá
+    // (no vienen en DOCUMENT_DETAIL_INCLUDE) porque están asociados al
+    // Activo (o, en líneas "sin activo", directo a la línea de cobertura),
+    // no al documento. El peso de cada fila es el real de su línea de
+    // cobertura (allocatedAmount/allocationPercentage) — cada asignación ya
+    // sabe a qué activo (o a ninguno) corresponde, no hace falta repartir en
+    // partes iguales.
     const assetIds = [...new Set(doc.allocations.map((a) => a.assetId).filter((assetId): assetId is string => !!assetId))]
     const assetsSummary = await assetsService.resolveAssetsSummary(assetIds)
     const assetsById = new Map(assetsSummary.map((a) => [a.id, a]))
 
-    const assetBreakdown = new Map<string, { code: string | null; name: string; amount: number; percentage: number }>()
-    const costCenterBreakdown = new Map<string, { code: string | null; name: string | null; amount: number; percentage: number }>()
+    // Las líneas "sin activo" imputan Centro de Costo directo en la línea de
+    // cobertura (policyAssetCoverage.costCenterId) — sin activo no hay
+    // AssetAllocation de dónde sacarlo (ver resolveAssetsSummary).
+    const coverageIdsWithoutAsset = doc.allocations
+      .filter((a) => !a.assetId)
+      .map((a) => a.policyAssetCoverageId)
+    const coveragesWithoutAsset = coverageIdsWithoutAsset.length > 0
+      ? await prisma.policyAssetCoverage.findMany({
+          where: { id: { in: coverageIdsWithoutAsset } },
+          select: { id: true, costCenter: { select: { name: true, code: true } } },
+        })
+      : []
+    const costCenterByCoverageId = new Map(coveragesWithoutAsset.map((c) => [c.id, c.costCenter]))
+
+    // Se agrupa por Centro de Costo — cada uno lista sus propios Bienes de
+    // Uso (uno o varios). Cuando una línea no tiene Bien de Uso asociado
+    // (activo sin bien de uso, o línea "sin activo"), no se inventa una fila
+    // con el nombre del activo: entra en un renglón en blanco propio del
+    // Centro de Costo, sumando las demás líneas sin Bien de Uso que caigan
+    // ahí — así el % de cada Centro de Costo (arriba, en negrita) sigue
+    // siendo la suma exacta de sus renglones, y el total entre todos los
+    // Centros de Costo sigue dando 100%.
+    const groups = new Map<string, ManualDocumentCostCenterGroup>()
+    const itemIndexByGroup = new Map<string, Map<string, number>>()
 
     for (const alloc of doc.allocations) {
       const asset = alloc.assetId ? assetsById.get(alloc.assetId) : undefined
+      const costCenter = asset
+        ? { code: asset.costCenterCode, name: asset.costCenterName }
+        : (costCenterByCoverageId.get(alloc.policyAssetCoverageId) ?? { code: null, name: null })
 
-      const assetKey = asset ? asset.id : 'sin-activo'
-      const existingAsset = assetBreakdown.get(assetKey)
-      if (existingAsset) {
-        existingAsset.amount += alloc.allocatedAmount
-        existingAsset.percentage += alloc.allocationPercentage
-      } else {
-        assetBreakdown.set(assetKey, {
-          // Nombre del bien de uso del catálogo si está vinculado; si no,
-          // se cae al nombre del activo para no dejar la fila vacía.
-          code: asset?.fixedAssetCode ?? null,
-          name: asset ? (asset.fixedAssetName ?? asset.name) : 'Sin activo asociado',
-          amount: alloc.allocatedAmount,
-          percentage: alloc.allocationPercentage,
-        })
+      const groupKey = costCenter.code ?? costCenter.name ?? `sin-cc-${alloc.policyAssetCoverageId}`
+      let group = groups.get(groupKey)
+      if (!group) {
+        group = { code: costCenter.code ?? null, name: costCenter.name ?? null, items: [] }
+        groups.set(groupKey, group)
+        itemIndexByGroup.set(groupKey, new Map())
       }
 
-      // Sin activo no hay centro de costo del activo para repartir — esa
-      // línea solo entra en el desglose por bien de uso, no en el de CC.
-      if (!asset) continue
-
-      const ccKey = asset.costCenterCode ?? asset.costCenterName ?? `sin-cc-${asset.id}`
-      const existingCC = costCenterBreakdown.get(ccKey)
-      if (existingCC) {
-        existingCC.amount += alloc.allocatedAmount
-        existingCC.percentage += alloc.allocationPercentage
+      const hasBienDeUso = !!asset?.fixedAssetCode
+      const itemKey = hasBienDeUso ? asset!.id : 'sin-bien-de-uso'
+      const itemIndex = itemIndexByGroup.get(groupKey)!
+      const existingIdx = itemIndex.get(itemKey)
+      if (existingIdx !== undefined) {
+        group.items[existingIdx].amount += alloc.allocatedAmount
+        group.items[existingIdx].percentage += alloc.allocationPercentage
       } else {
-        costCenterBreakdown.set(ccKey, {
-          code: asset.costCenterCode,
-          name: asset.costCenterName,
+        itemIndex.set(itemKey, group.items.length)
+        group.items.push({
+          code: hasBienDeUso ? asset!.fixedAssetCode : null,
+          name: hasBienDeUso ? (asset!.fixedAssetName ?? asset!.name) : null,
           amount: alloc.allocatedAmount,
           percentage: alloc.allocationPercentage,
         })
@@ -779,8 +796,7 @@ export const documentsService = {
       paymentMethod: doc.paymentMethod,
       currency: doc.currency,
       totalAmount: doc.totalAmount,
-      costCenters: [...costCenterBreakdown.values()],
-      assets: [...assetBreakdown.values()],
+      costCenters: [...groups.values()],
       attachments: [],
     }
 
