@@ -257,13 +257,14 @@ export default function UsersPage() {
     } else {
       await usersApi.create(input as CreateUserInput)
     }
+    await queryClient.invalidateQueries({ queryKey: userKeys.all })
     setModalUser(undefined)
-    queryClient.invalidateQueries({ queryKey: userKeys.all })
   }
 
   async function handleResetPassword(newPassword: string) {
     if (!resetUser) return
     await usersApi.resetPassword(resetUser.id, newPassword)
+    await queryClient.invalidateQueries({ queryKey: userKeys.all })
     setResetUser(null)
   }
 

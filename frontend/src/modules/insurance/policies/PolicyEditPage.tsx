@@ -24,6 +24,7 @@ import { assetQueries } from '../../../shared/api/assets.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
+import { buildAssetSearchKeywords } from '../../../shared/utils/assetSearch'
 import { CURRENCY_OPTIONS } from '../../../shared/constants'
 import type { Policy, PolicyCoverage } from '../../../shared/types'
 import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
@@ -485,11 +486,16 @@ export default function PolicyEditPage() {
                         <SearchableSelect
                           options={activeAssets
                             .filter((a) => a.id === line.assetId || !usedAssetIds.has(a.id))
-                            .map((a) => ({ value: a.id, label: a.name, sublabel: a.internalCode }))}
+                            .map((a) => ({
+                              value: a.id,
+                              label: a.name,
+                              sublabel: a.internalCode,
+                              keywords: buildAssetSearchKeywords(a),
+                            }))}
                           value={line.assetId}
                           onChange={(v) => updateLine(line.formId, { assetId: v })}
                           placeholder="Seleccionar activo…"
-                          searchPlaceholder="Buscar por nombre o código…"
+                          searchPlaceholder="Buscar por nombre, código, patente, bien de uso…"
                         />
                       </FormField>
                     ) : (

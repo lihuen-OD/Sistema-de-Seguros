@@ -1,25 +1,33 @@
-import type { AuditDashboardSector } from '../api/fire-extinguisher-audits.api'
+import type { AuditDashboardSector, AuditFlaggedExtinguisher } from '../api/fire-extinguisher-audits.api'
 import { formatPeriodLabel } from '../../modules/fire-extinguishers/audits/findingsReportFields'
 import { drawHorizontalBar } from './pdfShapes'
 
 // PDF armado a mano con las primitivas de jsPDF (texto y figuras) — nada de
 // html2canvas/capturas de pantalla. Mismo estilo que ve la pantalla "Informe
-// de auditoría": nivel % + barra por punto de control, en vez de conteos por
-// categoría. Solo incluye los sectores recibidos (los tildados en pantalla),
-// y todos los agregados (nivel general, puntos bajo 50%, etc.) se recalculan
-// sobre ese subconjunto — igual que la pantalla.
+// de auditoría" para el detalle por sector: nivel % + barra por punto de
+// control. A diferencia de la pantalla, el PDF no incluye el resumen global
+// ("Nivel general" / "Nivel por punto de control") — solo tiene sentido en
+// pantalla como vista ejecutiva, no en la hoja que se le manda a la persona
+// que limpia/recarga matafuegos. Solo incluye los sectores recibidos (los
+// tildados en pantalla). Por sector, además, lista (por detalle de ubicación,
+// o número de cilindro si no hay detalle cargado) los matafuegos vencidos y
+// los que necesitan limpieza — la persona que va a limpiar/recargar necesita
+// saber cuáles son, no solo el nivel % del sector.
 
 const TRACK_GRAY: [number, number, number] = [243, 244, 246]
 const SLATE_900: [number, number, number] = [15, 23, 42]
 const SLATE_500: [number, number, number] = [100, 116, 139]
 const RED_600: [number, number, number] = [220, 38, 38]
+const AMBER_600: [number, number, number] = [217, 119, 6]
 const BAR_COLOR = '#334155' // slate-700
 const BAR_COLOR_CRITICAL = '#ef4444' // red-500
 
-function averageOfLevels(levels: (number | null)[]): number | null {
-  const values = levels.filter((v): v is number => v != null)
-  if (values.length === 0) return null
-  return +(values.reduce((s, v) => s + v, 0) / values.length).toFixed(1)
+// Identifica el matafuego por "Detalle de ubicación" (el nombre puntual que
+// la persona reconoce en el campo, ej. "Portón norte") — es un campo
+// opcional, así que si no está cargado se cae al número de cilindro (y el
+// backend a su vez cae al código interno si tampoco hay número de cilindro).
+function formatExtinguisherList(items: AuditFlaggedExtinguisher[]): string {
+  return items.map((i) => i.location ?? i.cylinderNumber).join(', ')
 }
 
 // Mismos cortes que fire-extinguisher-audit-dashboard.constants.ts (backend)
@@ -30,17 +38,6 @@ function classifyLevel(level: number | null): string | null {
   if (level < 75) return 'Regular'
   if (level < 90) return 'Bueno'
   return 'Óptimo'
-}
-
-function byLevelAscending<T extends { level: number | null }>(a: T, b: T): number {
-  if (a.level == null) return 1
-  if (b.level == null) return -1
-  return a.level - b.level
-}
-
-interface ControlPointRow {
-  label: string
-  level: number | null
 }
 
 function groupByEstablishment(sectors: AuditDashboardSector[]): { establishment: string; sectors: AuditDashboardSector[] }[] {
@@ -71,14 +68,25 @@ export async function buildAuditDashboardPdf(period: string, sectors: AuditDashb
 
   function printLine(
     text: string,
-    opts: { x?: number; size?: number; bold?: boolean; color?: [number, number, number]; heightMm?: number } = {},
+    opts: {
+      x?: number
+      size?: number
+      bold?: boolean
+      color?: [number, number, number]
+      heightMm?: number
+      maxWidth?: number
+    } = {},
   ) {
     pdf.setFont('helvetica', opts.bold ? 'bold' : 'normal')
     pdf.setFontSize(opts.size ?? 9)
+    const lineHeight = opts.heightMm ?? 5
+    const x = opts.x ?? marginX
+    const lines = opts.maxWidth ? (pdf.splitTextToSize(text, opts.maxWidth) as string[]) : [text]
+    ensureSpace(lineHeight * lines.length)
     const [r, g, b] = opts.color ?? SLATE_900
     pdf.setTextColor(r, g, b)
-    pdf.text(text, opts.x ?? marginX, cursor.y)
-    cursor.y += opts.heightMm ?? 5
+    pdf.text(lines, x, cursor.y)
+    cursor.y += lineHeight * lines.length
   }
 
   // Fila "label ---barra--- %", mismo trazo que LevelBar.tsx (frontend):
@@ -127,38 +135,6 @@ export async function buildAuditDashboardPdf(period: string, sectors: AuditDashb
     return
   }
 
-  const overallLevel = averageOfLevels(sectors.map((s) => s.level))
-  const totalAudited = sectors.reduce((sum, s) => sum + s.audited, 0)
-  const totalRegistered = sectors.reduce((sum, s) => sum + s.total, 0)
-  const controlPointDefs = sectors[0]?.controlPoints.map((c) => ({ key: c.key, label: c.label })) ?? []
-  const controlPoints: ControlPointRow[] = controlPointDefs
-    .map(({ key, label }) => ({
-      label,
-      level: averageOfLevels(sectors.map((s) => s.controlPoints.find((c) => c.key === key)?.level ?? null)),
-    }))
-    .sort(byLevelAscending)
-  const pointsBelow50 = controlPoints.filter((c) => c.level != null && c.level < 50).length
-
-  // Resumen
-  printLine(
-    `Nivel general: ${overallLevel != null ? overallLevel.toFixed(1) + '%' : '—'} (${classifyLevel(overallLevel) ?? 'Sin datos'})`,
-    { size: 11.5, bold: true, heightMm: 6 },
-  )
-  printLine(
-    `${totalAudited} de ${totalRegistered} matafuegos auditados (seleccionados) · ${pointsBelow50} de 7 puntos bajo 50%`,
-    { size: 8.5, color: SLATE_500, heightMm: 8 },
-  )
-
-  // Nivel por punto de control
-  ensureSpace(10)
-  printLine('Nivel por punto de control', { size: 11.5, bold: true, heightMm: 6.5 })
-  for (const cp of controlPoints) {
-    ensureSpace(6)
-    drawLevelRow(cp.label, cp.level, marginX, contentW, false)
-    cursor.y += 6
-  }
-  cursor.y += 4
-
   // Por establecimiento → sector
   for (const est of groupByEstablishment(sectors)) {
     ensureSpace(12)
@@ -174,6 +150,27 @@ export async function buildAuditDashboardPdf(period: string, sectors: AuditDashb
         `${sector.total} matafuego${sector.total !== 1 ? 's' : ''} · ${sector.audited} auditado${sector.audited !== 1 ? 's' : ''}`,
         { x: marginX + 3, size: 7.5, color: SLATE_500, heightMm: 4.5 },
       )
+
+      if (sector.expiredExtinguishers.length > 0) {
+        printLine(`Vencidos: ${formatExtinguisherList(sector.expiredExtinguishers)}`, {
+          x: marginX + 3,
+          size: 7.5,
+          bold: true,
+          color: RED_600,
+          heightMm: 4.5,
+          maxWidth: contentW - 3,
+        })
+      }
+      if (sector.needsCleaningExtinguishers.length > 0) {
+        printLine(`Hay que limpiar: ${formatExtinguisherList(sector.needsCleaningExtinguishers)}`, {
+          x: marginX + 3,
+          size: 7.5,
+          bold: true,
+          color: AMBER_600,
+          heightMm: 4.5,
+          maxWidth: contentW - 3,
+        })
+      }
 
       const blockX = marginX + 6
       const blockW = contentW - 6

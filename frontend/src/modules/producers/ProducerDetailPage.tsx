@@ -12,6 +12,8 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
+import { useCurrentUser } from '../../app/auth/AuthContext'
+import { hasModule } from '../../app/auth/roleScope'
 import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
 import { producerQueries } from '../../shared/api/producers.api'
 import { policyQueries } from '../../shared/api/policies.api'
@@ -47,10 +49,12 @@ const TASK_PRIORITY_SORT_ORDER: Record<string, number> = { baja: 0, media: 1, al
 export default function ProducerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user } = useCurrentUser()
+  const canPolicies = hasModule(user, 'policies')
 
   const { data: producer, isLoading: producerLoading } = useQuery(producerQueries.detail(id!))
 
-  const { data: allPolicies = [] } = useQuery({ ...policyQueries.list(), enabled: !!producer })
+  const { data: allPolicies = [] } = useQuery({ ...policyQueries.list(), enabled: !!producer && canPolicies })
 
   const { data: tasks = [] } = useQuery(producerQueries.tasks(id!))
 
@@ -274,14 +278,16 @@ export default function ProducerDetailPage() {
       </div>
 
       {/* KPIs */}
-      <MetricGrid cols={3} className="mb-6">
-        <KpiCard
-          label="Pólizas Gestionadas"
-          value={policies.length}
-          description={`${policies.filter((p) => p.status === 'vigente').length} vigentes`}
-          icon={ShieldCheck}
-          variant="info"
-        />
+      <MetricGrid cols={canPolicies ? 3 : 2} className="mb-6">
+        {canPolicies && (
+          <KpiCard
+            label="Pólizas Gestionadas"
+            value={policies.length}
+            description={`${policies.filter((p) => p.status === 'vigente').length} vigentes`}
+            icon={ShieldCheck}
+            variant="info"
+          />
+        )}
         <KpiCard
           label="Tareas Pendientes"
           value={pendingCount}
@@ -300,27 +306,29 @@ export default function ProducerDetailPage() {
 
       {/* Two-column body */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-5">
-        {/* Left: policies table */}
-        <div className="lg:col-span-3">
-          <SectionCard
-            title="Pólizas Gestionadas"
-            subtitle={`${policies.length} pólizas en cartera`}
-            noPadding
-          >
-            <DataTable
-              tableKey="producer-detail-policies"
-              columns={policyColumns}
-              data={policies}
-              rowKey="id"
-              onRowClick={(row) => navigate(`/insurance/policies/${row.id}`)}
-              emptyTitle="Sin pólizas"
-              emptyDescription="Este productor no tiene pólizas asociadas."
-            />
-          </SectionCard>
-        </div>
+        {/* Left: policies table — solo con acceso al módulo Pólizas */}
+        {canPolicies && (
+          <div className="lg:col-span-3">
+            <SectionCard
+              title="Pólizas Gestionadas"
+              subtitle={`${policies.length} pólizas en cartera`}
+              noPadding
+            >
+              <DataTable
+                tableKey="producer-detail-policies"
+                columns={policyColumns}
+                data={policies}
+                rowKey="id"
+                onRowClick={(row) => navigate(`/insurance/policies/${row.id}`)}
+                emptyTitle="Sin pólizas"
+                emptyDescription="Este productor no tiene pólizas asociadas."
+              />
+            </SectionCard>
+          </div>
+        )}
 
         {/* Right: upcoming tasks list */}
-        <div className="lg:col-span-2">
+        <div className={canPolicies ? 'lg:col-span-2' : 'lg:col-span-5'}>
           <SectionCard title="Tareas Asignadas" subtitle="Pendientes y en curso">
             {upcomingTasks.length === 0 ? (
               <EmptyState title="Sin tareas activas" description="No hay tareas pendientes para este productor." />

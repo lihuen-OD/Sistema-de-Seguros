@@ -28,6 +28,8 @@ import {
   computePsaPercentage,
   type TypeDirectionMap,
 } from '../../../shared/utils/policyInvoicedTotal'
+import { useCurrentUser } from '../../../app/auth/AuthContext'
+import { hasModule } from '../../../app/auth/roleScope'
 import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
 import { producerQueries } from '../../../shared/api/producers.api'
 import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
@@ -48,19 +50,26 @@ export default function PolicyDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useCurrentUser()
+
+  // La pestaña/datos de Documentos son de otro módulo — sin él, ni se
+  // intenta el fetch ni se muestra la pestaña. "Total facturado"/P/SA
+  // necesitan además Análisis Financiero (financialDocs) para el prorrateo.
+  const canDocuments = hasModule(user, 'documents')
+  const canFinancial = hasModule(user, 'financial_analysis')
 
   const { data: policy, isLoading: loadingPolicy } = useQuery(policyQueries.detail(id!))
 
   const { data: producers = [] } = useQuery(producerQueries.list())
 
-  const { data: allDocuments = [] } = useQuery(documentQueries.list())
+  const { data: allDocuments = [] } = useQuery({ ...documentQueries.list(), enabled: canDocuments })
 
   // Trae allocations (con allocationPercentage por póliza) embebidas — a
   // diferencia de documentQueries.list(), que solo trae policyIds sin monto.
   // Se usa exclusivamente para prorratear "Total facturado"/P/SA.
-  const { data: financialDocs = [] } = useQuery(documentQueries.financial())
+  const { data: financialDocs = [] } = useQuery({ ...documentQueries.financial(), enabled: canFinancial })
 
-  const { data: documentTypesData } = useQuery(documentQueries.types())
+  const { data: documentTypesData } = useQuery({ ...documentQueries.types(), enabled: canDocuments })
   // Mapa por key para saber, de un NC/ND/Ajuste/Refacturación vinculado,
   // en qué dirección afecta el total de la factura (affectsLinkedDirection)
   // — mismo criterio que documents-balance.service.ts en el backend, para
@@ -91,7 +100,7 @@ export default function PolicyDetailPage() {
     queries: policyDocIds.map((docId) => documentQueries.installments(docId)),
   })
 
-  const [activeDocTab, setActiveDocTab] = useState<'documentos' | 'tareas' | 'adjuntos'>('documentos')
+  const [activeDocTab, setActiveDocTab] = useState<'documentos' | 'tareas' | 'adjuntos'>(canDocuments ? 'documentos' : 'tareas')
 
   // Local installment state — allows inline editing without leaving the page
   const [localInstallments, setLocalInstallments] = useState<Map<string, Installment[]>>(
@@ -172,6 +181,17 @@ export default function PolicyDetailPage() {
     instId: string,
     updates: InstallmentUpdate,
   ) => {
+    // Limpia el override optimista de este documento para que
+    // effectiveInstallments vuelva a usar los datos (ya invalidados) de la
+    // query — sin esto, si el guardado fallaba, el valor optimista incorrecto
+    // seguía "ganándole" a los datos frescos hasta recargar toda la página.
+    const clearLocalOverride = () => {
+      setLocalInstallments((prev) => {
+        const next = new Map(prev)
+        next.delete(docId)
+        return next
+      })
+    }
     setLocalInstallments((prev) => {
       const next = new Map(prev)
       const current = effectiveInstallments.get(docId) ?? []
@@ -180,14 +200,15 @@ export default function PolicyDetailPage() {
     })
     try {
       await documentsApi.updateInstallment(docId, instId, updates)
-      queryClient.invalidateQueries({ queryKey: documentKeys.installments(docId) })
-      setLocalInstallments((prev) => {
-        const next = new Map(prev)
-        next.delete(docId)
-        return next
-      })
+      // documentKeys.all por prefijo cubre detail/list/balance/financial de
+      // CUALQUIER documento — sin esto, DocumentDetailPage, DocumentsPage,
+      // FinancialAnalysisPage/EconomicAnalysisPage y el Dashboard quedaban con
+      // el estado de pago viejo hasta que expirara su staleTime.
+      queryClient.invalidateQueries({ queryKey: documentKeys.all })
+      clearLocalOverride()
     } catch {
-      queryClient.invalidateQueries({ queryKey: documentKeys.installments(docId) })
+      queryClient.invalidateQueries({ queryKey: documentKeys.all })
+      clearLocalOverride()
     }
   }
 
@@ -420,21 +441,25 @@ export default function PolicyDetailPage() {
           {/* Summary panel */}
           <SectionCard title="Resumen">
             <div className="space-y-3">
-              <SummaryRow label="Documentos asociados" value={String(documents.length)} />
+              {canDocuments && <SummaryRow label="Documentos asociados" value={String(documents.length)} />}
               <SummaryRow label="Tareas vinculadas" value={String(tasks.length)} />
               <SummaryRow
                 label="Tareas pendientes"
                 value={String(tasks.filter((t) => t.status === 'pendiente' || t.status === 'en_curso').length)}
                 color={tasks.some((t) => t.status === 'vencida') ? 'text-red-600' : 'text-slate-800'}
               />
-              <SummaryRow
-                label="Total facturado (USD)"
-                value={formatCurrencyCompact(invoicedTotal.totalUsd, 'USD')}
-              />
-              <SummaryRow
-                label="P/SA"
-                value={psaPercentage != null ? formatPercent(psaPercentage, 2) : '—'}
-              />
+              {canDocuments && canFinancial && (
+                <>
+                  <SummaryRow
+                    label="Total facturado (USD)"
+                    value={formatCurrencyCompact(invoicedTotal.totalUsd, 'USD')}
+                  />
+                  <SummaryRow
+                    label="P/SA"
+                    value={psaPercentage != null ? formatPercent(psaPercentage, 2) : '—'}
+                  />
+                </>
+              )}
             </div>
           </SectionCard>
         </div>
@@ -445,7 +470,7 @@ export default function PolicyDetailPage() {
         {/* Tab bar */}
         <div className="flex items-center border-b border-slate-200 mb-5">
           {[
-            { key: 'documentos' as const, label: 'Documentos', count: documents.length },
+            ...(canDocuments ? [{ key: 'documentos' as const, label: 'Documentos', count: documents.length }] : []),
             { key: 'tareas' as const, label: 'Tareas', count: tasks.length },
             { key: 'adjuntos' as const, label: 'Adjuntos', count: attachmentCount },
           ].map((tab) => (

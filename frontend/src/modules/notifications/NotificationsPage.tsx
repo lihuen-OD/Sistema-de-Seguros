@@ -13,8 +13,10 @@ import { DataTable } from '../../shared/components/data-table/DataTable'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatDate, daysUntil } from '../../shared/utils/format'
-import { notificationsApi, notificationKeys, notificationQueries } from '../../shared/api/notifications.api'
+import { notificationsApi, notificationKeys, notificationQueries, NOTIFICATION_CATEGORY_MODULE } from '../../shared/api/notifications.api'
 import type { NotificationItem, NotificationCategory, ReviewNotificationInput } from '../../shared/api/notifications.api'
+import { useCurrentUser } from '../../app/auth/AuthContext'
+import { hasModule } from '../../app/auth/roleScope'
 import { ROUTES } from '../../app/routes'
 import type { TableColumn } from '../../shared/types'
 
@@ -59,6 +61,11 @@ function toKey(item: NotificationItem): ReviewNotificationInput {
 export default function NotificationsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useCurrentUser()
+  // "Revisado" es un estado compartido (no por usuario) — solo el ADMIN
+  // puede marcarlo/desmarcarlo, así nunca le hace desaparecer a otro (incluido
+  // otro ADMIN) algo que todavía no vio. Ver notifications.router.ts.
+  const isAdmin = user?.role === 'ADMIN'
   const [filterCategory, setFilterCategory] = useState('')
   const [filterSeverity, setFilterSeverity] = useState('')
   const [showReviewed, setShowReviewed] = useState(false)
@@ -104,7 +111,13 @@ export default function NotificationsPage() {
     reviewMutation.mutate(pendingVencidasInView.map(toKey))
   }
 
-  const categoryOptions = Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }))
+  // Solo se ofrecen como filtro las categorías de módulos que el usuario
+  // tiene habilitados — mostrar "Matafuego"/"Cuota"/etc. a alguien que solo
+  // tiene Pólizas no tiene sentido: nunca le va a llegar un ítem de esa
+  // categoría (el backend ya la excluye).
+  const categoryOptions = Object.entries(CATEGORY_LABELS)
+    .filter(([key]) => hasModule(user, NOTIFICATION_CATEGORY_MODULE[key as NotificationCategory]))
+    .map(([value, label]) => ({ value, label }))
   const severityOptions = [
     { value: 'vencido', label: 'Vencido' },
     { value: 'proximo_vencer', label: 'Próximo a vencer' },
@@ -166,19 +179,29 @@ export default function NotificationsPage() {
       key: 'id',
       label: '',
       className: 'w-10',
-      render: (_, row) => (
-        <button
-          onClick={(e) => { e.stopPropagation(); handleToggleReviewed(row) }}
-          title={row.reviewed ? 'Marcar como no revisado' : 'Marcar como revisado'}
-          aria-label={row.reviewed ? 'Marcar como no revisado' : 'Marcar como revisado'}
-          className={clsx(
-            'p-1.5 rounded-lg transition-colors',
-            row.reviewed ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-300 hover:text-emerald-600 hover:bg-emerald-50',
-          )}
-        >
-          {row.reviewed ? <CheckCircle2 size={17} /> : <Circle size={17} />}
-        </button>
-      ),
+      render: (_, row) =>
+        isAdmin ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleToggleReviewed(row) }}
+            title={row.reviewed ? 'Marcar como no revisado' : 'Marcar como revisado'}
+            aria-label={row.reviewed ? 'Marcar como no revisado' : 'Marcar como revisado'}
+            className={clsx(
+              'p-1.5 rounded-lg transition-colors',
+              row.reviewed ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-300 hover:text-emerald-600 hover:bg-emerald-50',
+            )}
+          >
+            {row.reviewed ? <CheckCircle2 size={17} /> : <Circle size={17} />}
+          </button>
+        ) : (
+          // Solo lectura — "revisado" es un estado compartido que gestiona el
+          // ADMIN; un usuario común puede ver si ya se atendió, pero no tocarlo.
+          <span
+            className={clsx('p-1.5 inline-flex', row.reviewed ? 'text-emerald-600' : 'text-slate-300')}
+            title={row.reviewed ? 'Revisado' : 'Sin revisar'}
+          >
+            {row.reviewed ? <CheckCircle2 size={17} /> : <Circle size={17} />}
+          </span>
+        ),
     },
   ]
 
@@ -190,7 +213,7 @@ export default function NotificationsPage() {
         title="Notificaciones"
         subtitle="Vencimientos y alertas de todo el sistema"
         actions={
-          pendingVencidasInView.length > 0 && (
+          isAdmin && pendingVencidasInView.length > 0 && (
             <button
               onClick={handleReviewAllVencidas}
               disabled={reviewMutation.isPending}

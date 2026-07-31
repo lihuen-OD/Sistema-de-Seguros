@@ -27,6 +27,9 @@ const PAST = new Date('2020-01-01T00:00:00.000Z') // vencido
 function fe(overrides: Record<string, unknown>) {
   return {
     id: 'fe-default',
+    code: 'fe-default',
+    cylinderNumber: null,
+    location: null,
     establishment: 'LA SUCHO',
     locationType: 'Engorde',
     expirationDate: FAR_FUTURE,
@@ -225,6 +228,57 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
     const sector = res.body.data.sectors[0]
     // El mock ya llega ordenado desc — el primero (más reciente) es MUY_SUCIO (score 10).
     expect(findControlPoint(sector, 'cleanliness').level).toBeCloseTo(10, 1)
+  })
+
+  it('lists expired extinguishers by cylinder number, regardless of whether they were audited this period', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1', cylinderNumber: 'CIL-001', location: 'Depósito norte', expirationDate: FAR_FUTURE }), // vigente
+      fe({ id: 'fe-2', cylinderNumber: 'CIL-002', location: null, expirationDate: PAST }), // vencido, sin auditoría este período
+    ])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/audit-dashboard')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    const sector = res.body.data.sectors[0]
+    expect(sector.expiredExtinguishers).toEqual([{ cylinderNumber: 'CIL-002', location: null }])
+  })
+
+  it('falls back to the code when the extinguisher has no cylinder number on file', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1', code: 'MAT-005', cylinderNumber: null, location: null, expirationDate: PAST }),
+    ])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/audit-dashboard')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    const sector = res.body.data.sectors[0]
+    expect(sector.expiredExtinguishers).toEqual([{ cylinderNumber: 'MAT-005', location: null }])
+  })
+
+  it('lists extinguishers that need cleaning by cylinder number, only when audited this period with a non-IMPECABLE result', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1', cylinderNumber: 'CIL-010', location: 'Cocina' }),
+      fe({ id: 'fe-2', cylinderNumber: 'CIL-011', location: 'Taller' }),
+      fe({ id: 'fe-3', cylinderNumber: 'CIL-012', location: 'Oficina' }), // sin auditoría este período
+    ])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([
+      auditRow({ fireExtinguisherId: 'fe-1', cleanliness: 'IMPECABLE' }),
+      auditRow({ fireExtinguisherId: 'fe-2', cleanliness: 'MUY_SUCIO' }),
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/audit-dashboard')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    const sector = res.body.data.sectors[0]
+    expect(sector.needsCleaningExtinguishers).toEqual([{ cylinderNumber: 'CIL-011', location: 'Taller' }])
   })
 
   it('returns 403 for a USER without the fire_extinguisher_audits module', async () => {

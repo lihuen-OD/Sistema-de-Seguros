@@ -193,13 +193,13 @@ export default function CostCentersPage() {
     } else {
       await costCentersApi.create(input)
     }
+    await queryClient.invalidateQueries({ queryKey: costCenterKeys.all })
     setModalCC(undefined)
-    queryClient.invalidateQueries({ queryKey: costCenterKeys.all })
   }
 
   async function handleDelete(id: string) {
     await costCentersApi.remove(id)
-    queryClient.invalidateQueries({ queryKey: costCenterKeys.all })
+    await queryClient.invalidateQueries({ queryKey: costCenterKeys.all })
     setDeleteId(null)
   }
 

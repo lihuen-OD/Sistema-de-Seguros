@@ -28,6 +28,8 @@ import {
   formatCurrencyCompact,
   formatDate,
 } from '../../../shared/utils/format'
+import { useCurrentUser } from '../../../app/auth/AuthContext'
+import { hasModule } from '../../../app/auth/roleScope'
 import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
 import { policyQueries } from '../../../shared/api/policies.api'
 import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
@@ -87,12 +89,20 @@ export default function DocumentDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const [applyConfirmOpen, setApplyConfirmOpen] = useState(false)
+  const [applying, setApplying] = useState(false)
   const [cancelDocConfirmOpen, setCancelDocConfirmOpen] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
+  const { user } = useCurrentUser()
+
+  // Solo se usa para resolver número de póliza/aseguradora (etiquetas) dentro
+  // de la tabla de distribución — sin el módulo, ni se pide ni se muestran
+  // esas columnas (la distribución en sí sigue siendo de Documentos).
+  const canPolicies = hasModule(user, 'policies')
 
   const { data: doc, isLoading: docLoading } = useQuery(documentQueries.detail(id!))
 
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: allPolicies = [] } = useQuery({ ...policyQueries.list(), enabled: canPolicies })
 
   const { data: documentTypesData } = useQuery(documentQueries.types())
 
@@ -214,23 +224,29 @@ export default function DocumentDetailPage() {
   }
 
   async function handleApply() {
-    setApplyConfirmOpen(false)
+    setApplying(true)
     try {
       await documentsApi.apply(doc!.id)
       invalidateAfterStatusChange()
+      setApplyConfirmOpen(false)
     } catch {
       // El interceptor global de apiClient ya muestra el error con un toast
+    } finally {
+      setApplying(false)
     }
   }
 
   async function handleCancelDocument() {
-    setCancelDocConfirmOpen(false)
+    setCancelling(true)
     try {
       await documentsApi.cancel(doc!.id, cancelReason.trim() || undefined)
       setCancelReason('')
       invalidateAfterStatusChange()
+      setCancelDocConfirmOpen(false)
     } catch {
       // El interceptor global de apiClient ya muestra el error con un toast
+    } finally {
+      setCancelling(false)
     }
   }
 
@@ -246,17 +262,25 @@ export default function DocumentDetailPage() {
       // Cambiar el estado de pago de una cuota también afecta los agregados
       // de Análisis Económico/Financiero.
       queryClient.invalidateQueries({ queryKey: documentKeys.financial() })
+      // documentKeys.all por prefijo cubre además el detail de este documento
+      // y su entrada en la lista — sin esto, DocumentsPage (columna "Estado
+      // Pago") y cualquier card basada en documentQueries.list() quedaban con
+      // el estado viejo hasta que expirara su staleTime.
+      queryClient.invalidateQueries({ queryKey: documentKeys.all })
     }
   }
 
   const allocationColumns: TableColumn<DocumentPolicyAllocation>[] = [
-    {
+    // Sin el módulo Pólizas no se piden ni se muestran estas dos columnas —
+    // mostrar el policyId crudo (un UUID) en su lugar quedaría roto/poco
+    // profesional, así que directamente se omiten.
+    ...(canPolicies ? [{
       id: 'policyNumber',
       key: 'policyId',
       label: 'N° Póliza',
       sortable: true,
-      sortValue: (row) => allPolicies.find((p) => p.id === row.policyId)?.policyNumber,
-      render: (v) => {
+      sortValue: (row: DocumentPolicyAllocation) => allPolicies.find((p) => p.id === row.policyId)?.policyNumber,
+      render: (v: unknown) => {
         const policy = allPolicies.find((p) => p.id === (v as string))
         return (
           <span className="font-mono text-xs text-brand-600 hover:text-brand-700 hover:underline">
@@ -264,7 +288,7 @@ export default function DocumentDetailPage() {
           </span>
         )
       },
-    },
+    } satisfies TableColumn<DocumentPolicyAllocation>] : []),
     {
       id: 'asset',
       key: 'assetId',
@@ -282,17 +306,17 @@ export default function DocumentDetailPage() {
         </span>
       ),
     },
-    {
+    ...(canPolicies ? [{
       id: 'insuranceCompany',
       key: 'policyId',
       label: 'Aseguradora',
       sortable: true,
-      sortValue: (row) => allPolicies.find((p) => p.id === row.policyId)?.insuranceCompany,
-      render: (v) => {
+      sortValue: (row: DocumentPolicyAllocation) => allPolicies.find((p) => p.id === row.policyId)?.insuranceCompany,
+      render: (v: unknown) => {
         const policy = allPolicies.find((p) => p.id === (v as string))
         return <span className="text-xs text-slate-600">{policy?.insuranceCompany ?? '—'}</span>
       },
-    },
+    } satisfies TableColumn<DocumentPolicyAllocation>] : []),
     {
       key: 'allocatedAmount',
       label: 'Importe Asignado',
@@ -505,7 +529,9 @@ export default function DocumentDetailPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
             <div>
               <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Póliza Asociada</p>
-              {doc.policyId ? (
+              {!doc.policyId ? (
+                <span className="text-slate-400">—</span>
+              ) : canPolicies ? (
                 <button
                   type="button"
                   onClick={() => navigate(ROUTES.POLICIES_DETAIL(doc.policyId!))}
@@ -514,7 +540,7 @@ export default function DocumentDetailPage() {
                   {allPolicies.find((p) => p.id === doc.policyId)?.policyNumber ?? doc.policyId}
                 </button>
               ) : (
-                <span className="text-slate-400">—</span>
+                <span className="text-slate-400 text-sm">Sin acceso al módulo Pólizas</span>
               )}
             </div>
             <div>
@@ -703,6 +729,7 @@ export default function DocumentDetailPage() {
         confirmLabel="Sí, aplicar"
         cancelLabel="Cancelar"
         danger={false}
+        loading={applying}
         onConfirm={handleApply}
         onCancel={() => setApplyConfirmOpen(false)}
       />
@@ -714,6 +741,7 @@ export default function DocumentDetailPage() {
         confirmLabel="Sí, anular"
         cancelLabel="Volver"
         danger
+        loading={cancelling}
         onConfirm={handleCancelDocument}
         onCancel={() => {
           setCancelDocConfirmOpen(false)

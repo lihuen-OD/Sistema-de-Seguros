@@ -1,0 +1,106 @@
+name: Neon production backup
+
+on:
+  schedule:
+    # 03:15 UTC = 00:15 en Argentina (UTC-3).
+    - cron: "15 3 * * *"
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operación a ejecutar
+        required: true
+        default: drive-smoke-test
+        type: choice
+        options:
+          - drive-smoke-test
+          - backup
+      tier:
+        description: Retención lógica del backup manual
+        required: true
+        default: pre-migration
+        type: choice
+        options:
+          - daily
+          - weekly
+          - monthly
+          - pre-migration
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neon-production-backup
+  cancel-in-progress: false
+
+jobs:
+  drive-smoke-test:
+    name: Validate Google Drive access
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'drive-smoke-test'
+    runs-on: ubuntu-latest
+    environment: production-backup
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes rclone
+          rclone version
+
+      - name: Upload harmless test file
+        env:
+          GDRIVE_FOLDER_ID: ${{ vars.GDRIVE_FOLDER_ID }}
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+        run: bash scripts/test-google-drive-backup-access.sh
+
+  backup:
+    name: Backup Neon to Google Drive
+    if: >-
+      (github.event_name == 'schedule' && vars.BACKUPS_ENABLED == 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.operation == 'backup')
+    runs-on: ubuntu-latest
+    environment: production-backup
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes rclone
+          rclone version
+
+      - name: Select backup tier
+        id: tier
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tier="${{ inputs.tier }}"
+          elif [[ "$(date -u +%d)" == "01" ]]; then
+            tier="monthly"
+          elif [[ "$(date -u +%u)" == "7" ]]; then
+            tier="weekly"
+          else
+            tier="daily"
+          fi
+          echo "value=${tier}" >> "$GITHUB_OUTPUT"
+
+      - name: Mask database credential
+        env:
+          DATABASE_CREDENTIAL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
+        run: echo "::add-mask::${DATABASE_CREDENTIAL}"
+
+      - name: Create and upload backup
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
+          BACKUP_TIER: ${{ steps.tier.outputs.value }}
+          GDRIVE_FOLDER_ID: ${{ vars.GDRIVE_FOLDER_ID }}
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          PG_DUMP_DOCKER_IMAGE: postgres:${{ vars.NEON_POSTGRES_MAJOR }}-bookworm
+        run: bash scripts/backup-neon-to-drive.sh
+

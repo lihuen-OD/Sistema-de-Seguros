@@ -30,6 +30,10 @@ export type ModuleKey = typeof MODULE_KEYS[number]
 // sin esperar a que el token (12hs) expire.
 export interface JwtPayload {
   userId: string
+  // Inyectado automáticamente por jsonwebtoken al firmar con `expiresIn` — no
+  // es algo que nosotros elijamos codificar. Lo usa authMiddleware para saber
+  // qué tan viejo es el token y decidir si toca renovarlo (sesión deslizante).
+  iat?: number
 }
 
 // Lo que queda en req.user después de authMiddleware.

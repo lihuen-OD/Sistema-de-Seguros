@@ -49,13 +49,13 @@ export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps
       return
     }
     await catalogsApi.update(category, item.id, { label })
-    queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
+    await queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
     setRow(item.id, { editing: false, editLabel: '', confirmDelete: false })
   }
 
   async function toggleActive(item: CatalogItem) {
     await catalogsApi.update(category, item.id, { isActive: !item.isActive })
-    queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
+    await queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
   }
 
   function startDelete(id: string) {
@@ -68,7 +68,7 @@ export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps
 
   async function confirmDelete(item: CatalogItem) {
     await catalogsApi.delete(category, item.id)
-    queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
+    await queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
   }
 
   async function handleAdd() {
@@ -77,7 +77,7 @@ export function CatalogManager({ category, addPlaceholder }: CatalogManagerProps
     setAdding(true)
     try {
       await catalogsApi.create(category, label)
-      queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
+      await queryClient.invalidateQueries({ queryKey: catalogKeys.byCategory(category) })
       setNewLabel('')
     } finally {
       setAdding(false)

@@ -6,6 +6,8 @@ import {
   MapPin, Building2, Download, ShieldAlert, TrendingUp,
   Calendar, ExternalLink, Box, FileText, Plus, Link2, IdCard,
 } from 'lucide-react'
+import { useCurrentUser } from '../../app/auth/AuthContext'
+import { hasModule } from '../../app/auth/roleScope'
 import { AssetPhotoGallery } from '../../shared/components/photos/AssetPhotoGallery'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -130,7 +132,29 @@ function ValuacionesTab({ history, onAdd }: { history: AssetValueEntry[]; onAdd:
 export default function AssetDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<Tab>('Pólizas')
+  const { user } = useCurrentUser()
+
+  // Estas pestañas muestran datos de OTROS módulos — un usuario con acceso
+  // solo a "Activos" no debería verlas ni disparar el fetch (evita el 403 y
+  // el toast de error que eso generaba). Doc. Contables además depende de
+  // Pólizas porque el vínculo documento↔activo pasa por policyIds (los
+  // documentos no tienen assetId propio) — sin Pólizas no hay forma de saber
+  // qué documentos son de este activo, aunque el usuario sí tenga Documentos.
+  const canPolicies = hasModule(user, 'policies')
+  const canDocuments = hasModule(user, 'documents') && canPolicies
+  const canFinancial = hasModule(user, 'financial_analysis')
+  const canClaims = hasModule(user, 'claims')
+  const canFireExtinguishers = hasModule(user, 'fire_extinguishers')
+
+  const visibleTabs = TABS.filter((tab) => {
+    if (tab === 'Pólizas') return canPolicies
+    if (tab === 'Doc. Contables') return canDocuments
+    if (tab === 'Matafuegos') return canFireExtinguishers
+    if (tab === 'Siniestros') return canClaims
+    return true
+  })
+
+  const [activeTab, setActiveTab] = useState<Tab>(visibleTabs[0] ?? 'Valuaciones')
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0)
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
   const [uploadingPhotos, setUploadingPhotos] = useState(false)
@@ -145,17 +169,17 @@ export default function AssetDetailPage() {
 
   const { data: allPolicies = [] } = useQuery({
     ...policyQueries.list({ assetId: id }),
-    enabled: !!id,
+    enabled: !!id && canPolicies,
   })
 
   const { data: allFireExtinguishers = [] } = useQuery({
     ...fireExtinguisherQueries.list({ assetId: id }),
-    enabled: !!id,
+    enabled: !!id && canFireExtinguishers,
   })
 
   const { data: allClaims = [] } = useQuery({
     ...claimQueries.list({ assetId: id }),
-    enabled: !!id,
+    enabled: !!id && canClaims,
   })
 
   const { data: allCompanies = [] } = useQuery({
@@ -170,7 +194,7 @@ export default function AssetDetailPage() {
 
   const { data: allDocuments = [] } = useQuery({
     ...documentQueries.list(),
-    enabled: !!asset,
+    enabled: !!asset && canDocuments,
   })
 
   // Trae allocations (con allocationPercentage por póliza) embebidas — a
@@ -178,10 +202,12 @@ export default function AssetDetailPage() {
   // Se usa exclusivamente para prorratear la columna "P/SA".
   const { data: financialDocs = [] } = useQuery({
     ...documentQueries.financial(),
-    enabled: !!asset,
+    enabled: !!asset && canFinancial,
   })
 
-  const { data: documentTypesData } = useQuery(documentQueries.types())
+  // Gateado por `documents` en el backend (GET /documents/types) — solo hace
+  // falta para la columna P/SA, que ya requiere canDocuments.
+  const { data: documentTypesData } = useQuery({ ...documentQueries.types(), enabled: canDocuments })
   // Mismo mapa que PolicyDetailPage.tsx — necesario para calcular el % P/SA
   // de cada línea de cobertura con computeCoverageInvoicedTotal/computePsaPercentage.
   const typeDefsByKey = useMemo(
@@ -283,7 +309,10 @@ export default function AssetDetailPage() {
     setUploadingPhotos(true)
     try {
       await Promise.all(files.map(file => assetsApi.addAttachment(id!, { file })))
-      await queryClient.invalidateQueries({ queryKey: attachmentsKey })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attachmentsKey }),
+        queryClient.invalidateQueries({ queryKey: assetKeys.all }),
+      ])
     } catch {
       console.error('Error subiendo fotos al activo')
     } finally {
@@ -295,7 +324,10 @@ export default function AssetDetailPage() {
   const handleRemovePhoto = async (idx: number) => {
     if (idx < photoAttachments.length) {
       await assetsApi.deleteAttachment(id!, photoAttachments[idx].id)
-      await queryClient.invalidateQueries({ queryKey: attachmentsKey })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attachmentsKey }),
+        queryClient.invalidateQueries({ queryKey: assetKeys.all }),
+      ])
     } else {
       const pendingIdx = idx - photoAttachments.length
       setPendingPreviews(prev => prev.filter((_, i) => i !== pendingIdx))
@@ -382,7 +414,10 @@ export default function AssetDetailPage() {
       headerClassName: 'text-right',
       className: 'text-right',
     },
-    {
+    // Requiere Análisis Financiero (financialDocs) Y Documentos (typeDefsByKey,
+    // ver documentQueries.types() más arriba) — se omite del todo si falta
+    // cualquiera de los dos, en vez de mostrar siempre "—".
+    ...(canFinancial && canDocuments ? [{
       // Total facturado (neto ajustado, asignado específicamente a ESTE
       // activo) sobre la Suma Asegurada de SU línea de cobertura — mismo
       // criterio que el panel "Resumen" de PolicyDetailPage.tsx (ahí a nivel
@@ -392,10 +427,10 @@ export default function AssetDetailPage() {
       sortable: true,
       headerClassName: 'text-right',
       className: 'text-right',
-      sortValue: (row) => row.assetCoverage
+      sortValue: (row: Policy) => row.assetCoverage
         ? computePsaPercentage(row.assetCoverage.insuredAmountUsd ?? 0, computeCoverageInvoicedTotal(row.assetCoverage.id, financialDocs, typeDefsByKey).totalUsd)
         : null,
-      render: (_, row) => {
+      render: (_: unknown, row: Policy) => {
         const pct = row.assetCoverage
           ? computePsaPercentage(row.assetCoverage.insuredAmountUsd ?? 0, computeCoverageInvoicedTotal(row.assetCoverage.id, financialDocs, typeDefsByKey).totalUsd)
           : null
@@ -403,7 +438,7 @@ export default function AssetDetailPage() {
           ? <span className="font-semibold">{formatPercent(pct, 2)}</span>
           : <span className="text-slate-300">—</span>
       },
-    },
+    } satisfies TableColumn<Policy>] : []),
     {
       key: 'status',
       label: 'Estado',
@@ -797,44 +832,61 @@ export default function AssetDetailPage() {
               variant="default"
             />
           )}
-          <KpiCard
-            label="Valor Asegurado"
-            value={
-              !hasUsdCoverage && !hasArsCoverage ? 'Sin cobertura'
-              : mixedCurrencies ? `${formatCurrencyFull(totalInsuredUsd, 'USD')} + ${formatCurrencyFull(totalInsuredArs, 'ARS')}`
-              : hasUsdCoverage ? formatCurrencyFull(totalInsuredUsd, 'USD')
-              : formatCurrencyFull(totalInsuredArs, 'ARS')
-            }
-            description={`${vigentePolicies.length} póliza${vigentePolicies.length !== 1 ? 's' : ''} vigente${vigentePolicies.length !== 1 ? 's' : ''}${hasArsCoverage && !hasUsdCoverage ? ' · Cobertura en ARS' : ''}`}
-            variant={hasUsdCoverage || hasArsCoverage ? 'success' : 'danger'}
-          />
-          <KpiCard
-            label="Diferencia"
-            value={
-              diffUsd === null ? '—'
-              : diffUsd === 0 ? 'Cubierto 100%'
-              : formatCurrencyFull(Math.abs(diffUsd), 'USD')
-            }
-            description={
-              diffUsd === null ? 'Cobertura en ARS · no comparable en USD'
-              : diffUsd > 0 ? 'Subcobertura'
-              : diffUsd < 0 ? 'Sobrecobertura'
-              : ''
-            }
-            variant={diffUsd === null ? 'default' : diffUsd > 0 ? 'danger' : 'success'}
-          />
+          {/* Depende de las pólizas del activo — sin el módulo, no hay forma
+              de calcular un valor asegurado real, así que se omite la tarjeta
+              en vez de mostrar "Sin cobertura" (que sería engañoso). */}
+          {canPolicies && (
+            <KpiCard
+              label="Valor Asegurado"
+              value={
+                !hasUsdCoverage && !hasArsCoverage ? 'Sin cobertura'
+                : mixedCurrencies ? `${formatCurrencyFull(totalInsuredUsd, 'USD')} + ${formatCurrencyFull(totalInsuredArs, 'ARS')}`
+                : hasUsdCoverage ? formatCurrencyFull(totalInsuredUsd, 'USD')
+                : formatCurrencyFull(totalInsuredArs, 'ARS')
+              }
+              description={`${vigentePolicies.length} póliza${vigentePolicies.length !== 1 ? 's' : ''} vigente${vigentePolicies.length !== 1 ? 's' : ''}${hasArsCoverage && !hasUsdCoverage ? ' · Cobertura en ARS' : ''}`}
+              variant={hasUsdCoverage || hasArsCoverage ? 'success' : 'danger'}
+            />
+          )}
+          {canPolicies && (
+            <KpiCard
+              label="Diferencia"
+              value={
+                diffUsd === null ? '—'
+                : diffUsd === 0 ? 'Cubierto 100%'
+                : formatCurrencyFull(Math.abs(diffUsd), 'USD')
+              }
+              description={
+                diffUsd === null ? 'Cobertura en ARS · no comparable en USD'
+                : diffUsd > 0 ? 'Subcobertura'
+                : diffUsd < 0 ? 'Sobrecobertura'
+                : ''
+              }
+              variant={diffUsd === null ? 'default' : diffUsd > 0 ? 'danger' : 'success'}
+            />
+          )}
 
-          {/* Resumen rápido */}
-          <SectionCard title="Resumen">
-            <div className="space-y-3">
-              <SummaryRow label="Pólizas asociadas" value={String(policies.length)} />
-              <SummaryRow label="Pólizas vigentes" value={String(policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer').length)} />
-              <SummaryRow label="Doc. Contables" value={String(documents.length)} />
-              <SummaryRow label="Matafuegos" value={String(fireExtinguishers.length)} />
-              <SummaryRow label="Mat. vencidos" value={String(fireExtinguishers.filter((f) => f.status === 'vencido').length)} color="text-red-600" />
-              <SummaryRow label="Siniestros" value={String(claimsCount)} color={claimsCount > 0 ? 'text-orange-600' : 'text-slate-800'} />
-            </div>
-          </SectionCard>
+          {/* Resumen rápido — cada fila depende del módulo correspondiente */}
+          {(canPolicies || canDocuments || canFireExtinguishers || canClaims) && (
+            <SectionCard title="Resumen">
+              <div className="space-y-3">
+                {canPolicies && (
+                  <>
+                    <SummaryRow label="Pólizas asociadas" value={String(policies.length)} />
+                    <SummaryRow label="Pólizas vigentes" value={String(policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer').length)} />
+                  </>
+                )}
+                {canDocuments && <SummaryRow label="Doc. Contables" value={String(documents.length)} />}
+                {canFireExtinguishers && (
+                  <>
+                    <SummaryRow label="Matafuegos" value={String(fireExtinguishers.length)} />
+                    <SummaryRow label="Mat. vencidos" value={String(fireExtinguishers.filter((f) => f.status === 'vencido').length)} color="text-red-600" />
+                  </>
+                )}
+                {canClaims && <SummaryRow label="Siniestros" value={String(claimsCount)} color={claimsCount > 0 ? 'text-orange-600' : 'text-slate-800'} />}
+              </div>
+            </SectionCard>
+          )}
 
 
           {asset.coordinates && (
@@ -892,7 +944,7 @@ export default function AssetDetailPage() {
       <SectionCard noPadding>
         {/* Tab header */}
         <div className="flex items-center gap-1 px-4 py-3 border-b border-slate-100 overflow-x-auto scrollbar-hide">
-          {TABS.map((tab) => {
+          {visibleTabs.map((tab) => {
             const count =
               tab === 'Pólizas' ? policies.length
               : tab === 'Doc. Contables' ? documents.length

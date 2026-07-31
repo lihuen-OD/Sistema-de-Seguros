@@ -1,14 +1,21 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
 import { ShieldOff } from 'lucide-react'
 import { AppShell } from '../shared/components/layout/AppShell'
 import { LoadingState } from '../shared/components/empty-states/LoadingState'
 import { EmptyState } from '../shared/components/empty-states/EmptyState'
 import { ErrorBoundary } from '../shared/components/error-boundary/ErrorBoundary'
 import { AuthProvider, useCurrentUser } from './auth/AuthContext'
-import { getStoredToken } from '../shared/api/auth'
+import { getStoredToken, clearToken } from '../shared/api/auth'
 import { hasModuleAccess, firstAllowedPath } from './auth/roleScope'
+
+// Más que el timeout de axios (15s, ver shared/api/client.ts) — si a los 20s
+// la verificación de sesión todavía no resolvió (ni éxito ni error), algo
+// quedó colgado (ej: la conexión no se restableció bien al volver de que la
+// compu estuviera suspendida). Forzamos a re-loguearse en vez de dejar el
+// skeleton de carga trabado para siempre.
+const AUTH_CHECK_TIMEOUT_MS = 20_000
 
 function NoAccessState() {
   const { logout } = useCurrentUser()
@@ -51,7 +58,24 @@ function RoleGuard({ children }: { children: ReactNode }) {
 function AuthGate({ children }: { children: ReactNode }) {
   const location = useLocation()
   const { user, isLoading } = useCurrentUser()
+  const [timedOut, setTimedOut] = useState(false)
 
+  useEffect(() => {
+    if (!isLoading) return
+    const timer = setTimeout(() => setTimedOut(true), AUTH_CHECK_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [isLoading])
+
+  useEffect(() => {
+    if (timedOut && isLoading) {
+      clearToken()
+      toast.error('No se pudo verificar la sesión. Iniciá sesión nuevamente.')
+    }
+  }, [timedOut, isLoading])
+
+  if (timedOut && isLoading) {
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />
+  }
   if (isLoading) {
     return (
       <div className="p-6">

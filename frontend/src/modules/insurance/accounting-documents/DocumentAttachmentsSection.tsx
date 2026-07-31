@@ -208,12 +208,21 @@ export function DocumentAttachmentsSection({ documentId }: DocumentAttachmentsSe
 
   const [showModal, setShowModal] = useState(false)
 
+  // documentKeys.all por prefijo cubre también documentKeys.detail(documentId)
+  // — sin esto, doc.attachmentsCount (mostrado en el subtítulo de esta
+  // sección y en la columna "Adjuntos" de DocumentsPage) quedaba desactualizado
+  // al agregar o borrar un adjunto.
+  const invalidateAttachments = () => {
+    queryClient.invalidateQueries({ queryKey: attachmentsKey })
+    queryClient.invalidateQueries({ queryKey: documentKeys.all })
+  }
+
   const deleteMutation = useMutation({
     mutationFn: (attachmentId: string) => documentsApi.deleteAttachment(documentId, attachmentId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: attachmentsKey }),
+    onSuccess: invalidateAttachments,
   })
 
-  const handleSuccess = () => queryClient.invalidateQueries({ queryKey: attachmentsKey })
+  const handleSuccess = invalidateAttachments
   const handleRemove = (id: string) => deleteMutation.mutate(id)
 
   return (

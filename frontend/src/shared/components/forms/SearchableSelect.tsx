@@ -7,6 +7,8 @@ export interface SearchableSelectOption {
   value: string
   label: string
   sublabel?: string
+  /** Texto adicional por el que se puede buscar (ej. patente, bien de uso) sin mostrarse en la fila. */
+  keywords?: string
 }
 
 interface SearchableSelectProps {
@@ -61,7 +63,10 @@ export function SearchableSelect({
     const q = query.trim().toLowerCase()
     if (!q) return options
     return options.filter(
-      (o) => o.label.toLowerCase().includes(q) || o.sublabel?.toLowerCase().includes(q),
+      (o) =>
+        o.label.toLowerCase().includes(q) ||
+        o.sublabel?.toLowerCase().includes(q) ||
+        o.keywords?.toLowerCase().includes(q),
     )
   }, [options, query])
 

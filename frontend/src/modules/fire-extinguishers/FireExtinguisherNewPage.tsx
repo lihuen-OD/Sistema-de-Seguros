@@ -23,6 +23,7 @@ import { assetQueries } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
+import { buildAssetSearchKeywords } from '../../shared/utils/assetSearch'
 
 function addOneYear(dateStr: string): string {
   if (!dateStr) return ''
@@ -299,11 +300,16 @@ export default function FireExtinguisherNewPage() {
                 value={associatedAssetId}
                 onChange={setAssociatedAssetId}
                 placeholder="— Sin activo específico"
-                searchPlaceholder="Buscar por código, nombre o tipo…"
+                searchPlaceholder="Buscar por código, nombre, tipo, patente, bien de uso…"
                 emptyOptionLabel="— Sin activo específico"
                 options={assets
                   .filter((a) => a.status === 'activo')
-                  .map((a) => ({ value: a.id, label: `${a.internalCode} — ${a.name}`, sublabel: a.assetType }))}
+                  .map((a) => ({
+                    value: a.id,
+                    label: `${a.internalCode} — ${a.name}`,
+                    sublabel: a.assetType,
+                    keywords: buildAssetSearchKeywords(a),
+                  }))}
               />
             </FormField>
           </FormSection>

@@ -272,12 +272,24 @@ export function PolicyAttachmentsSection({ policyId, coverageId, policyEndDate }
 
   const [showModal, setShowModal] = useState(false)
 
+  // policyKeys.detail (['policy', id]) es un árbol de caché separado de
+  // policyKeys.all (['policies']) — invalidar solo attachments no alcanzaba
+  // para refrescar la ficha de la póliza ni, sobre todo, la ficha del Activo
+  // (AssetDetailPage), que muestra la tarjeta de circulación vía
+  // policy.assetCoverage.circulationCardAttachment.
+  const invalidateAttachments = () => {
+    queryClient.invalidateQueries({ queryKey: policyKeys.attachments(policyId, coverageId) })
+    queryClient.invalidateQueries({ queryKey: policyKeys.all })
+    queryClient.invalidateQueries({ queryKey: policyKeys.detail(policyId) })
+    queryClient.invalidateQueries({ queryKey: policyKeys.coverages(policyId) })
+  }
+
   const deleteMutation = useMutation({
     mutationFn: (attachmentId: string) => policiesApi.deleteAttachment(policyId, coverageId, attachmentId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: policyKeys.attachments(policyId, coverageId) }),
+    onSuccess: invalidateAttachments,
   })
 
-  const handleSuccess = () => queryClient.invalidateQueries({ queryKey: policyKeys.attachments(policyId, coverageId) })
+  const handleSuccess = invalidateAttachments
   const handleRemove = (id: string) => deleteMutation.mutate(id)
 
   return (

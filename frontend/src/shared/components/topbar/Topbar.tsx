@@ -86,8 +86,8 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       </div>
 
       <div className="flex items-center gap-1 ml-auto">
-        {/* Notifications — agrega datos de todos los módulos, exclusivo del ADMIN */}
-        {user?.role === 'ADMIN' && <NotificationBell />}
+        {/* Notifications — el backend ya filtra el contenido por los módulos del usuario */}
+        {user && <NotificationBell />}
 
         {/* Settings */}
         <button

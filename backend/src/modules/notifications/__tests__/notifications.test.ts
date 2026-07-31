@@ -68,26 +68,88 @@ beforeEach(() => {
 })
 
 describe('Notifications API', () => {
-  // Agrega datos de todos los módulos (pólizas, cuotas, matafuegos, documentos)
-  // sin filtrar por permisos de cada uno — por eso es exclusivo del ADMIN,
-  // no otorgable por perfil (ver requireRole('ADMIN') en notifications.router.ts).
-  describe('acceso exclusivo de ADMIN', () => {
-    it.each([
-      ['GET', '/api/v1/notifications/preview'],
-      ['GET', '/api/v1/notifications'],
-      ['POST', '/api/v1/notifications/review'],
-      ['POST', '/api/v1/notifications/unreview'],
-    ] as const)('returns 403 for a non-admin USER on %s %s, regardless of modules', async (method, path) => {
-      db.user.findUnique.mockResolvedValueOnce(
-        mockDbUser({ role: 'USER', modules: ['dashboard', 'assets', 'policies', 'claims'] }),
-      )
+  // Agrega datos de varios módulos (pólizas, cuotas, matafuegos, documentos,
+  // activos) — cualquier usuario autenticado entra, pero cada ítem se filtra
+  // según los módulos que ya tiene habilitados (ADMIN ve todo, sin filtrar).
+  describe('filtrado por módulo para usuarios no-ADMIN', () => {
+    function mockAllCategories() {
+      db.policy.findMany.mockResolvedValue([fakePolicy('1')])
+      db.fireExtinguisher.findMany.mockResolvedValue([fakeExtinguisher('1')])
+      db.documentInstallment.findMany
+        .mockResolvedValueOnce([fakeInstallment('o1', daysFromNow(-3))])
+        .mockResolvedValueOnce([fakeInstallment('n1', daysFromNow(3))])
+      db.assetAttachment.findMany.mockResolvedValue([fakeAssetAttachment('1')])
+    }
+
+    it('a USER con solo el módulo policies le llegan únicamente notificaciones de category policy', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['policies'] }))
+      mockAllCategories()
 
       const res = await request(app)
-        [method.toLowerCase() as 'get' | 'post'](path)
+        .get('/api/v1/notifications')
         .set('Authorization', `Bearer ${userToken()}`)
-        .send({ items: [] })
 
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(200)
+      const categories = (res.body.data as any[]).map((i) => i.category)
+      expect(categories).toEqual(['policy'])
+    })
+
+    it('a USER con solo el módulo documents le llegan las dos categorías de cuotas, no pólizas/matafuegos/activos', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['documents'] }))
+      mockAllCategories()
+
+      const res = await request(app)
+        .get('/api/v1/notifications')
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(200)
+      const categories = (res.body.data as any[]).map((i) => i.category).sort()
+      expect(categories).toEqual(['installment_near', 'installment_overdue'])
+    })
+
+    it('a USER sin ninguno de los módulos relevantes no le llega ninguna notificación (200 con lista vacía, no 403)', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['producers', 'tasks'] }))
+      mockAllCategories()
+
+      const res = await request(app)
+        .get('/api/v1/notifications')
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toEqual([])
+    })
+
+    it('el preview de la campanita respeta el mismo filtro por módulo', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguishers'] }))
+      mockAllCategories()
+
+      const res = await request(app)
+        .get('/api/v1/notifications/preview')
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toEqual({
+        expiringPolicies: 0,
+        expiringExtinguishers: 1,
+        overdueInstallments: 0,
+        nearInstallments: 0,
+        expiringAttachments: 0,
+        hasAlerts: true,
+      })
+    })
+
+    it('ADMIN sigue viendo todas las categorías sin filtrar', async () => {
+      mockAllCategories()
+
+      const res = await request(app)
+        .get('/api/v1/notifications')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const categories = (res.body.data as any[]).map((i) => i.category).sort()
+      expect(categories).toEqual(
+        ['asset_attachment', 'fire_extinguisher', 'installment_near', 'installment_overdue', 'policy'].sort(),
+      )
     })
   })
 
@@ -306,6 +368,20 @@ describe('Notifications API', () => {
       expect(res.status).toBe(401)
     })
 
+    // "Revisado" es un estado compartido (no por usuario) — solo el ADMIN
+    // puede gestionarlo, para que un usuario común no le haga desaparecer a
+    // todos (incluido el propio ADMIN) algo que todavía nadie vio.
+    it('returns 403 for a non-admin USER, aunque tenga el módulo policies', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['policies'] }))
+
+      const res = await request(app)
+        .post('/api/v1/notifications/review')
+        .set('Authorization', `Bearer ${userToken()}`)
+        .send({ items: [{ notificationId: 'policy:1', dueDate: '2026-08-01' }] })
+
+      expect(res.status).toBe(403)
+    })
+
     it('marca los ítems enviados como revisados (createMany con skipDuplicates)', async () => {
       db.notificationDismissal.createMany.mockResolvedValue({ count: 2 })
 
@@ -331,7 +407,18 @@ describe('Notifications API', () => {
   })
 
   describe('POST /api/v1/notifications/unreview', () => {
-    it('elimina el descarte de los ítems enviados', async () => {
+    it('returns 403 for a non-admin USER, aunque tenga el módulo policies', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['policies'] }))
+
+      const res = await request(app)
+        .post('/api/v1/notifications/unreview')
+        .set('Authorization', `Bearer ${userToken()}`)
+        .send({ items: [{ notificationId: 'policy:1', dueDate: '2026-08-01' }] })
+
+      expect(res.status).toBe(403)
+    })
+
+    it('elimina el descarte de los ítems enviados, sin acotar por quién lo había revisado', async () => {
       db.notificationDismissal.deleteMany.mockResolvedValue({ count: 1 })
 
       const res = await request(app)
@@ -340,7 +427,11 @@ describe('Notifications API', () => {
         .send({ items: [{ notificationId: 'policy:1', dueDate: '2026-08-01' }] })
 
       expect(res.status).toBe(200)
-      expect(db.notificationDismissal.deleteMany).toHaveBeenCalled()
+      // Sin `userId` en el where — si otro ADMIN lo había revisado, este
+      // ADMIN igual tiene que poder desmarcarlo (estado compartido).
+      expect(db.notificationDismissal.deleteMany).toHaveBeenCalledWith({
+        where: { OR: [{ notificationId: 'policy:1', dueDate: '2026-08-01' }] },
+      })
     })
   })
 })

@@ -156,6 +156,11 @@ export interface AuditControlPointLevel {
   levelLabel: string | null
 }
 
+export interface AuditFlaggedExtinguisher {
+  cylinderNumber: string
+  location: string | null
+}
+
 export interface AuditDashboardSector {
   establishment: string
   locationType: string
@@ -164,6 +169,8 @@ export interface AuditDashboardSector {
   level: number | null
   levelLabel: string | null
   controlPoints: AuditControlPointLevel[]
+  expiredExtinguishers: AuditFlaggedExtinguisher[]
+  needsCleaningExtinguishers: AuditFlaggedExtinguisher[]
 }
 
 export interface AuditDashboard {

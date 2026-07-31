@@ -537,10 +537,13 @@ export default function AssetEditPage() {
       }
 
       toast.success('Activo actualizado correctamente')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: assetKeys.detail(id!) }),
+        queryClient.invalidateQueries({ queryKey: assetKeys.all }),
+        queryClient.invalidateQueries({ queryKey: assetKeys.statusHistory(id!) }),
+        queryClient.invalidateQueries({ queryKey: assetKeys.attachments(id!) }),
+      ])
       navigate(`/assets/${asset.id}`)
-      void queryClient.invalidateQueries({ queryKey: assetKeys.detail(id!) })
-      void queryClient.invalidateQueries({ queryKey: assetKeys.all })
-      void queryClient.invalidateQueries({ queryKey: assetKeys.statusHistory(id!) })
     } finally {
       setSubmitting(false)
     }

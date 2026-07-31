@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit'
 import morgan from 'morgan'
 import { env } from './config/env'
 import { errorMiddleware } from './middleware/error.middleware'
+import { RENEWED_TOKEN_HEADER } from './middleware/auth.middleware'
 import { healthRouter } from './modules/health/health.router'
 import { authRouter } from './modules/auth/auth.router'
 import { usersRouter } from './modules/users/users.router'
@@ -64,6 +65,10 @@ app.use(
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    // Sin esto el navegador descarta el header de renovación de token
+    // (sesión deslizante) en cross-origin — solo expone los headers "simples"
+    // por defecto, y este es uno custom.
+    exposedHeaders: [RENEWED_TOKEN_HEADER],
   }),
 )
 
