@@ -88,7 +88,7 @@ if [[ -n "${PG_DUMP_DOCKER_IMAGE:-}" ]]; then
     --volume "${DATABASE_URL_PATH}:/run/secrets/database-url:ro" \
     "$PG_DUMP_DOCKER_IMAGE" \
     sh -ceu \
-    'IFS= read -r PGDATABASE < /run/secrets/database-url; export PGDATABASE; exec pg_dump "$@"' \
+    'IFS= read -r database_url < /run/secrets/database-url; [ -n "$database_url" ]; exec pg_dump --dbname="$database_url" "$@"' \
     sh \
       --format=plain \
       --encoding=UTF8 \
