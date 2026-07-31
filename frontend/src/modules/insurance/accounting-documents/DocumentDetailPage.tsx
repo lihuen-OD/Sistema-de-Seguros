@@ -89,7 +89,9 @@ export default function DocumentDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const [applyConfirmOpen, setApplyConfirmOpen] = useState(false)
+  const [applying, setApplying] = useState(false)
   const [cancelDocConfirmOpen, setCancelDocConfirmOpen] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const { user } = useCurrentUser()
 
@@ -222,23 +224,29 @@ export default function DocumentDetailPage() {
   }
 
   async function handleApply() {
-    setApplyConfirmOpen(false)
+    setApplying(true)
     try {
       await documentsApi.apply(doc!.id)
       invalidateAfterStatusChange()
+      setApplyConfirmOpen(false)
     } catch {
       // El interceptor global de apiClient ya muestra el error con un toast
+    } finally {
+      setApplying(false)
     }
   }
 
   async function handleCancelDocument() {
-    setCancelDocConfirmOpen(false)
+    setCancelling(true)
     try {
       await documentsApi.cancel(doc!.id, cancelReason.trim() || undefined)
       setCancelReason('')
       invalidateAfterStatusChange()
+      setCancelDocConfirmOpen(false)
     } catch {
       // El interceptor global de apiClient ya muestra el error con un toast
+    } finally {
+      setCancelling(false)
     }
   }
 
@@ -254,6 +262,11 @@ export default function DocumentDetailPage() {
       // Cambiar el estado de pago de una cuota también afecta los agregados
       // de Análisis Económico/Financiero.
       queryClient.invalidateQueries({ queryKey: documentKeys.financial() })
+      // documentKeys.all por prefijo cubre además el detail de este documento
+      // y su entrada en la lista — sin esto, DocumentsPage (columna "Estado
+      // Pago") y cualquier card basada en documentQueries.list() quedaban con
+      // el estado viejo hasta que expirara su staleTime.
+      queryClient.invalidateQueries({ queryKey: documentKeys.all })
     }
   }
 
@@ -716,6 +729,7 @@ export default function DocumentDetailPage() {
         confirmLabel="Sí, aplicar"
         cancelLabel="Cancelar"
         danger={false}
+        loading={applying}
         onConfirm={handleApply}
         onCancel={() => setApplyConfirmOpen(false)}
       />
@@ -727,6 +741,7 @@ export default function DocumentDetailPage() {
         confirmLabel="Sí, anular"
         cancelLabel="Volver"
         danger
+        loading={cancelling}
         onConfirm={handleCancelDocument}
         onCancel={() => {
           setCancelDocConfirmOpen(false)

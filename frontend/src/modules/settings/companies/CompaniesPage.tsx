@@ -183,8 +183,8 @@ export default function CompaniesPage() {
     } else {
       await companiesApi.create(input)
     }
+    await queryClient.invalidateQueries({ queryKey: companyKeys.all })
     setModalCompany(undefined)
-    queryClient.invalidateQueries({ queryKey: companyKeys.all })
   }
 
   const columns: TableColumn<Company>[] = [

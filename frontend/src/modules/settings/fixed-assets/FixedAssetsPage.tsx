@@ -193,13 +193,13 @@ export default function FixedAssetsPage() {
     } else {
       await fixedAssetsApi.create(input)
     }
+    await queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all })
     setModalFA(undefined)
-    queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all })
   }
 
   async function handleDelete(id: string) {
     await fixedAssetsApi.remove(id)
-    queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all })
+    await queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all })
     setDeleteId(null)
   }
 

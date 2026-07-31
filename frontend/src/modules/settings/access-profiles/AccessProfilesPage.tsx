@@ -195,13 +195,13 @@ export default function AccessProfilesPage() {
     } else {
       await accessProfilesApi.create(input)
     }
+    await queryClient.invalidateQueries({ queryKey: accessProfileKeys.all })
     setModalProfile(undefined)
-    queryClient.invalidateQueries({ queryKey: accessProfileKeys.all })
   }
 
   async function handleDelete(id: string) {
     await accessProfilesApi.remove(id)
-    queryClient.invalidateQueries({ queryKey: accessProfileKeys.all })
+    await queryClient.invalidateQueries({ queryKey: accessProfileKeys.all })
     setDeleteId(null)
   }
 

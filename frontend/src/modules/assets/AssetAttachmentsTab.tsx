@@ -477,10 +477,16 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
 
   const deleteMutation = useMutation({
     mutationFn: (attachmentId: string) => assetsApi.deleteAttachment(assetId, attachmentId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: attachmentsKey }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: attachmentsKey })
+      queryClient.invalidateQueries({ queryKey: assetKeys.all })
+    },
   })
 
-  const handleSuccess = () => queryClient.invalidateQueries({ queryKey: attachmentsKey })
+  const handleSuccess = () => {
+    queryClient.invalidateQueries({ queryKey: attachmentsKey })
+    queryClient.invalidateQueries({ queryKey: assetKeys.all })
+  }
 
   const handleRemove = (id: string) => deleteMutation.mutate(id)
 

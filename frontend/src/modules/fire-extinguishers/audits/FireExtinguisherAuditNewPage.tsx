@@ -157,6 +157,7 @@ export default function FireExtinguisherAuditNewPage() {
     try {
       await fireExtinguisherAuditsApi.deleteAttachment(editId, attachmentId)
       setExistingPhotos((prev) => prev.filter((p) => p.id !== attachmentId))
+      queryClient.invalidateQueries({ queryKey: fireExtinguisherAuditKeys.detail(editId) })
       toast.success('Foto eliminada')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al eliminar la foto')

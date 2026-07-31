@@ -181,6 +181,17 @@ export default function PolicyDetailPage() {
     instId: string,
     updates: InstallmentUpdate,
   ) => {
+    // Limpia el override optimista de este documento para que
+    // effectiveInstallments vuelva a usar los datos (ya invalidados) de la
+    // query — sin esto, si el guardado fallaba, el valor optimista incorrecto
+    // seguía "ganándole" a los datos frescos hasta recargar toda la página.
+    const clearLocalOverride = () => {
+      setLocalInstallments((prev) => {
+        const next = new Map(prev)
+        next.delete(docId)
+        return next
+      })
+    }
     setLocalInstallments((prev) => {
       const next = new Map(prev)
       const current = effectiveInstallments.get(docId) ?? []
@@ -189,14 +200,15 @@ export default function PolicyDetailPage() {
     })
     try {
       await documentsApi.updateInstallment(docId, instId, updates)
-      queryClient.invalidateQueries({ queryKey: documentKeys.installments(docId) })
-      setLocalInstallments((prev) => {
-        const next = new Map(prev)
-        next.delete(docId)
-        return next
-      })
+      // documentKeys.all por prefijo cubre detail/list/balance/financial de
+      // CUALQUIER documento — sin esto, DocumentDetailPage, DocumentsPage,
+      // FinancialAnalysisPage/EconomicAnalysisPage y el Dashboard quedaban con
+      // el estado de pago viejo hasta que expirara su staleTime.
+      queryClient.invalidateQueries({ queryKey: documentKeys.all })
+      clearLocalOverride()
     } catch {
-      queryClient.invalidateQueries({ queryKey: documentKeys.installments(docId) })
+      queryClient.invalidateQueries({ queryKey: documentKeys.all })
+      clearLocalOverride()
     }
   }
 

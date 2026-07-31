@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -11,7 +12,7 @@ import {
   FormInput,
   FormSelect,
 } from '../../shared/components/forms/FormSection'
-import { producersApi } from '../../shared/api/producers.api'
+import { producersApi, producerKeys } from '../../shared/api/producers.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { ROUTES } from '../../app/routes'
 
@@ -23,6 +24,7 @@ interface FormErrors {
 
 export default function ProducerNewPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const [name, setName] = useState('')
   const [registrationNumber, setRegistrationNumber] = useState('')
@@ -58,6 +60,7 @@ export default function ProducerNewPage() {
         isActive: status === 'activo',
       })
       toast.success('Productor creado correctamente')
+      await queryClient.invalidateQueries({ queryKey: producerKeys.all })
       navigate(ROUTES.PRODUCERS_DETAIL(newProducer.id))
     } catch {
       setSubmitting(false)

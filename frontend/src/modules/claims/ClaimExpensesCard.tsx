@@ -209,6 +209,7 @@ function todayLocal(): string {
 }
 
 function ExpenseFormModal({ claimId, expense, onClose, onSuccess }: ExpenseFormModalProps) {
+  const queryClient = useQueryClient()
   const isEditing = !!expense
   const [date, setDate] = useState(expense?.date ?? todayLocal())
   const [provider, setProvider] = useState(expense?.provider ?? '')
@@ -236,6 +237,11 @@ function ExpenseFormModal({ claimId, expense, onClose, onSuccess }: ExpenseFormM
     try {
       await claimsApi.deleteExpenseAttachment(claimId, expense.id, attachmentId)
       setAttachments((prev) => prev.filter((a) => a.id !== attachmentId))
+      // El padre solo refresca la lista de gastos si se guarda el modal — si
+      // el usuario cierra sin "Guardar cambios", el borrado ya se persistió
+      // en el servidor y la tabla principal (contador de adjuntos) quedaría
+      // desincronizada sin esta invalidación explícita.
+      queryClient.invalidateQueries({ queryKey: claimKeys.expenses(claimId) })
     } catch {
       setAttachmentError('No se pudo eliminar el adjunto. Intentá de nuevo.')
     }
@@ -399,6 +405,10 @@ function ExpenseFormModal({ claimId, expense, onClose, onSuccess }: ExpenseFormM
                     const uploaded = await claimsApi.addExpenseAttachment(claimId, expense!.id, file)
                     setAttachments((prev) => [uploaded, ...prev])
                   }
+                  // Mismo motivo que en handleDeleteAttachment: mantiene la
+                  // tabla de gastos sincronizada aunque se cierre el modal
+                  // sin pasar por el flujo de "Guardar cambios".
+                  queryClient.invalidateQueries({ queryKey: claimKeys.expenses(claimId) })
                 }}
               />
             ) : (

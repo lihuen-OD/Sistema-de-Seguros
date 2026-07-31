@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -244,6 +244,13 @@ export default function ClaimDetailPage() {
   const [currentStatus, setCurrentStatus] = useState<string | null>(null)
   const [editingStatus, setEditingStatus] = useState(false)
 
+  // Suelta el override local apenas la query trae el valor real (incluyendo
+  // el que la propia mutación de handleStatusChange causó) — evita que el
+  // estado local quede "pegado" para siempre si el dato cambia por otra vía.
+  useEffect(() => {
+    setCurrentStatus(null)
+  }, [claim?.status])
+
   // Derive effective status: local override takes priority once set, otherwise use server value
   const effectiveStatus: string = currentStatus ?? claim?.status ?? (claimStatuses[0]?.label ?? 'Denunciado')
 
@@ -382,6 +389,10 @@ export default function ClaimDetailPage() {
     setCurrentStatus(newStatus)
     setEditingStatus(false)
     await queryClient.invalidateQueries({ queryKey: claimKeys.detail(id!) })
+    // claimKeys.all también invalida la lista (ClaimsPage), la pestaña de
+    // siniestros de AssetDetailPage y el dashboard de seguros, que consumen
+    // el mismo estado por otras query keys que no matchean solo con .detail.
+    await queryClient.invalidateQueries({ queryKey: claimKeys.all })
   }
 
   return (

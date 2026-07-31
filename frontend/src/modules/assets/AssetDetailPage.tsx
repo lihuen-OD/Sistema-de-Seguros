@@ -309,7 +309,10 @@ export default function AssetDetailPage() {
     setUploadingPhotos(true)
     try {
       await Promise.all(files.map(file => assetsApi.addAttachment(id!, { file })))
-      await queryClient.invalidateQueries({ queryKey: attachmentsKey })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attachmentsKey }),
+        queryClient.invalidateQueries({ queryKey: assetKeys.all }),
+      ])
     } catch {
       console.error('Error subiendo fotos al activo')
     } finally {
@@ -321,7 +324,10 @@ export default function AssetDetailPage() {
   const handleRemovePhoto = async (idx: number) => {
     if (idx < photoAttachments.length) {
       await assetsApi.deleteAttachment(id!, photoAttachments[idx].id)
-      await queryClient.invalidateQueries({ queryKey: attachmentsKey })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attachmentsKey }),
+        queryClient.invalidateQueries({ queryKey: assetKeys.all }),
+      ])
     } else {
       const pendingIdx = idx - photoAttachments.length
       setPendingPreviews(prev => prev.filter((_, i) => i !== pendingIdx))

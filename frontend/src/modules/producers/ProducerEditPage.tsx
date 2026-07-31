@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -14,7 +14,7 @@ import {
   FormInput,
   FormSelect,
 } from '../../shared/components/forms/FormSection'
-import { producersApi, producerQueries } from '../../shared/api/producers.api'
+import { producersApi, producerQueries, producerKeys } from '../../shared/api/producers.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { ROUTES } from '../../app/routes'
 
@@ -27,6 +27,7 @@ interface FormErrors {
 export default function ProducerEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const { data: original, isLoading } = useQuery(producerQueries.detail(id!))
 
@@ -94,6 +95,7 @@ export default function ProducerEditPage() {
         isActive: status === 'activo',
       })
       toast.success('Productor actualizado correctamente')
+      await queryClient.invalidateQueries({ queryKey: producerKeys.all })
       navigate(ROUTES.PRODUCERS_DETAIL(original!.id))
     } catch {
       setSubmitting(false)

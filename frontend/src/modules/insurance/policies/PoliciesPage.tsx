@@ -21,6 +21,7 @@ import {
   formatDate,
 } from '../../../shared/utils/format'
 import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
+import { documentKeys } from '../../../shared/api/documents.api'
 import { producerQueries } from '../../../shared/api/producers.api'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
@@ -60,12 +61,20 @@ export default function PoliciesPage() {
   async function handleDelete(id: string) {
     await policiesApi.hardDelete(id)
     queryClient.invalidateQueries({ queryKey: policyKeys.all })
+    // Eliminar la póliza la desvincula (sin borrarlos) de los documentos
+    // contables que la referencian — sin esto, DocumentsPage y el detalle de
+    // esos documentos seguían mostrando la distribución/póliza vieja.
+    queryClient.invalidateQueries({ queryKey: documentKeys.all })
     setDeleteId(null)
   }
 
   async function handleDeBaja(id: string) {
     await policiesApi.markAsDeBaja(id)
     queryClient.invalidateQueries({ queryKey: policyKeys.all })
+    // policyKeys.detail (['policy', id]) es un árbol de caché separado de
+    // policyKeys.all (['policies']) — sin invalidarlo, PolicyDetailPage
+    // seguía mostrando el estado "vencida" viejo hasta recargar la página.
+    queryClient.invalidateQueries({ queryKey: policyKeys.detail(id) })
     setDeBajaId(null)
   }
 
