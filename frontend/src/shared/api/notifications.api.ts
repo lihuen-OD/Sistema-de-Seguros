@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import type { ModuleKey } from '../types'
 
 export interface NotificationsPreview {
   expiringPolicies: number
@@ -18,6 +19,18 @@ export type NotificationCategory =
   | 'installment_overdue'
   | 'installment_near'
   | 'asset_attachment'
+
+// Mismo mapeo que CATEGORY_MODULE en el backend (notifications.service.ts) —
+// acá es solo para no ofrecer, como opción de filtro, una categoría de un
+// módulo que el usuario no tiene (la seguridad real ya la aplica el backend
+// al armar la lista; esto es puramente para no confundir en el filtro).
+export const NOTIFICATION_CATEGORY_MODULE: Record<NotificationCategory, ModuleKey> = {
+  policy: 'policies',
+  fire_extinguisher: 'fire_extinguishers',
+  installment_overdue: 'documents',
+  installment_near: 'documents',
+  asset_attachment: 'assets',
+}
 
 export interface NotificationItem {
   id: string

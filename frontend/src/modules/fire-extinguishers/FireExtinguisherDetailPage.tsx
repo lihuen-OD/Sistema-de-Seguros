@@ -39,6 +39,7 @@ import { FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import type { FireExtinguisherHistory, TableColumn } from '../../shared/types'
 import { useCurrentUser } from '../../app/auth/AuthContext'
+import { hasModule } from '../../app/auth/roleScope'
 
 const EVENT_ICON_CONFIG: Record<string, { bg: string; text: string; Icon: typeof RefreshCw }> = {
   Recarga: { bg: 'bg-emerald-100', text: 'text-emerald-600', Icon: RefreshCw },
@@ -191,6 +192,8 @@ export default function FireExtinguisherDetailPage() {
     user?.role === 'ADMIN' ||
     (user?.modules.includes('fire_extinguisher_audits') ?? false) ||
     (user?.modules.includes('fire_extinguisher_audit_coverage') ?? false)
+  // El activo asociado es de otro módulo — sin él, ni se pide ni se muestra.
+  const canViewAsset = hasModule(user, 'assets')
 
   const { data: fe, isLoading } = useQuery(fireExtinguisherQueries.detail(id!))
 
@@ -201,7 +204,10 @@ export default function FireExtinguisherDetailPage() {
     enabled: canViewAudits && !!id,
   })
 
-  const { data: asset } = useQuery(assetQueries.detail(fe?.associatedAssetId ?? ''))
+  const { data: asset } = useQuery({
+    ...assetQueries.detail(fe?.associatedAssetId ?? ''),
+    enabled: canViewAsset && !!fe?.associatedAssetId,
+  })
 
   async function handleRecharge(data: RechargeInput) {
     if (!fe) return
@@ -264,6 +270,8 @@ export default function FireExtinguisherDetailPage() {
             {asset.internalCode} · {asset.assetType}
           </span>
         </button>
+      ) : fe.associatedAssetId && !canViewAsset ? (
+        <span className="text-slate-400">Sin acceso al módulo Activos</span>
       ) : (
         <span className="text-slate-400">Sin activo asociado</span>
       )}
@@ -429,6 +437,14 @@ export default function FireExtinguisherDetailPage() {
                   description={`${asset.internalCode} · ${asset.assetType}`}
                   icon={Building2}
                   variant="info"
+                />
+              ) : fe.associatedAssetId && !canViewAsset ? (
+                <KpiCard
+                  label="Activo Asociado"
+                  value="—"
+                  description="Sin acceso al módulo Activos"
+                  icon={Building2}
+                  variant="default"
                 />
               ) : (
                 <KpiCard

@@ -17,6 +17,8 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
+import { useCurrentUser } from '../../app/auth/AuthContext'
+import { hasModule } from '../../app/auth/roleScope'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { producerQueries } from '../../shared/api/producers.api'
 import { policyQueries } from '../../shared/api/policies.api'
@@ -49,11 +51,17 @@ function DetailRow({
 export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user } = useCurrentUser()
+
+  // La póliza/activo vinculado a la tarea es de OTRO módulo — sin el
+  // correspondiente, ni se pide ni se muestra ese vínculo.
+  const canPolicies = hasModule(user, 'policies')
+  const canAssets = hasModule(user, 'assets')
 
   // All hooks must be called unconditionally at the top
   const { data: allProducers = [], isError: isErrorProducers } = useQuery(producerQueries.list())
-  const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list())
-  const { data: allAssets = [], isError: isErrorAssets } = useQuery(assetQueries.list())
+  const { data: allPolicies = [], isError: isErrorPolicies } = useQuery({ ...policyQueries.list(), enabled: canPolicies })
+  const { data: allAssets = [], isError: isErrorAssets } = useQuery({ ...assetQueries.list(), enabled: canAssets })
 
   const taskQueries = useQueries({
     queries: allProducers.map((p) => ({ ...producerQueries.tasks(p.id), enabled: allProducers.length > 0 })),
@@ -64,7 +72,7 @@ export default function TaskDetailPage() {
   )
 
   const tasksLoading = allProducers.length > 0 && taskQueries.some((q) => q.isLoading)
-  const isError = isErrorProducers || isErrorPolicies || isErrorAssets || taskQueries.some((q) => q.isError)
+  const isError = isErrorProducers || (canPolicies && isErrorPolicies) || (canAssets && isErrorAssets) || taskQueries.some((q) => q.isError)
   const task = allTasks.find((t) => t.id === id)
 
   if (tasksLoading) {
@@ -100,8 +108,8 @@ export default function TaskDetailPage() {
   }
 
   const producer = allProducers.find((p) => p.id === task.producerId)
-  const policy = task.policyId ? allPolicies.find((p) => p.id === task.policyId) : undefined
-  const asset = task.assetId ? allAssets.find((a) => a.id === task.assetId) : undefined
+  const policy = task.policyId && canPolicies ? allPolicies.find((p) => p.id === task.policyId) : undefined
+  const asset = task.assetId && canAssets ? allAssets.find((a) => a.id === task.assetId) : undefined
 
   const days = daysUntil(task.dueDate)
   const isOverdue = days < 0 && task.status !== 'finalizada'

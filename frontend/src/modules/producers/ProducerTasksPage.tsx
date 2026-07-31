@@ -15,6 +15,8 @@ import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { TableShell } from '../../shared/components/data-table/TableShell'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
+import { useCurrentUser } from '../../app/auth/AuthContext'
+import { hasModule } from '../../app/auth/roleScope'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { producerQueries } from '../../shared/api/producers.api'
 import { policyQueries } from '../../shared/api/policies.api'
@@ -32,8 +34,13 @@ export default function ProducerTasksPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
 
+  const { user } = useCurrentUser()
+  const canPolicies = hasModule(user, 'policies')
+
   const { data: allProducers = [], isError } = useQuery(producerQueries.list())
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  // Solo se usa para resolver el número de póliza de la columna "Póliza" —
+  // sin el módulo, esa columna se omite en vez de mostrar el policyId crudo.
+  const { data: allPolicies = [] } = useQuery({ ...policyQueries.list(), enabled: canPolicies })
 
   const taskQueries = useQueries({
     queries: allProducers.map((p) => ({ ...producerQueries.tasks(p.id), enabled: allProducers.length > 0 })),
@@ -108,10 +115,12 @@ export default function ProducerTasksPage() {
         )
       },
     },
-    {
+    // Sin el módulo Pólizas se omite del todo — mostrar el policyId crudo
+    // (un UUID) en su lugar quedaría roto/poco profesional.
+    ...(canPolicies ? [{
       key: 'policyId',
       label: 'Póliza',
-      render: (v) => {
+      render: (v: unknown) => {
         if (!v) return <span className="text-xs text-slate-400">—</span>
         const policy = allPolicies.find((p) => p.id === v)
         return (
@@ -123,7 +132,7 @@ export default function ProducerTasksPage() {
           </button>
         )
       },
-    },
+    } satisfies TableColumn<ProducerTask>] : []),
     {
       key: 'dueDate',
       label: 'Vence',

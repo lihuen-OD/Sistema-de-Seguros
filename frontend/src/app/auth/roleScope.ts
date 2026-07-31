@@ -48,10 +48,13 @@ const PATH_TO_MODULE: Array<{ prefix: string; modules: ModuleKey[]; landable?: b
   { prefix: '/settings/module-config', modules: ['module_config'] },
 ]
 
-// Nunca otorgables por perfil — exclusivas de role === 'ADMIN'. Notificaciones
-// agrega datos de todos los módulos sin filtrar por permisos, así que no es
-// un módulo otorgable como el resto — queda siempre exclusivo del ADMIN.
-const ADMIN_ONLY_PREFIXES = ['/settings/users', '/settings/access-profiles', '/notifications']
+// Nunca otorgables por perfil — exclusivas de role === 'ADMIN'.
+const ADMIN_ONLY_PREFIXES = ['/settings/users', '/settings/access-profiles']
+
+// Notificaciones no requiere ningún módulo puntual — cualquier usuario
+// autenticado entra, y el backend ya filtra el contenido según sus módulos
+// (ver CATEGORY_MODULE en notifications.service.ts).
+const NOTIFICATIONS_PREFIX = '/notifications'
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`)
@@ -68,6 +71,7 @@ export function isAdminOnlyPath(pathname: string): boolean {
 export function hasModuleAccess(user: CurrentUser | null, pathname: string): boolean {
   if (!user) return false
   if (user.role === 'ADMIN') return true
+  if (matchesPrefix(pathname, NOTIFICATIONS_PREFIX)) return true
   if (isAdminOnlyPath(pathname)) return false
   const modules = modulesForPath(pathname)
   return modules.some((m) => user.modules.includes(m))
@@ -76,6 +80,17 @@ export function hasModuleAccess(user: CurrentUser | null, pathname: string): boo
 // Primera pantalla del usuario según su perfil — a dónde mandarlo si intenta
 // entrar a algo que no tiene, o al loguearse. `/dashboard` si lo tiene (caso
 // normal); si no, la primera que sí tenga; si no tiene ninguna, NO_ACCESS_HOME.
+// Para datos de OTRO módulo embebidos dentro de una pantalla que el usuario
+// sí puede ver (ej. pólizas de un activo dentro de la Ficha de Activo): el
+// usuario necesita el módulo completo de esos datos, no alcanza con poder
+// ver la pantalla contenedora. Mismo criterio OR que requireModule() del
+// backend — se pasa el/los módulo(s) dueños del dato a mostrar.
+export function hasModule(user: CurrentUser | null, ...keys: ModuleKey[]): boolean {
+  if (!user) return false
+  if (user.role === 'ADMIN') return true
+  return keys.some((k) => user.modules.includes(k))
+}
+
 export function firstAllowedPath(user: CurrentUser | null): string {
   if (!user) return '/login'
   if (user.role === 'ADMIN' || user.modules.includes('dashboard')) return '/dashboard'

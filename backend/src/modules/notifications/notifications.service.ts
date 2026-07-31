@@ -4,6 +4,7 @@ import {
   buildFireExtinguisherAtRiskFilter,
   computeFireExtinguisherStatus,
 } from '../fire-extinguishers/fire-extinguishers.expiration'
+import type { ModuleKey, RequestUser } from '../../shared/types'
 
 export type NotificationSeverity = 'vencido' | 'proximo_vencer'
 
@@ -13,6 +14,16 @@ export type NotificationCategory =
   | 'installment_overdue'
   | 'installment_near'
   | 'asset_attachment'
+
+// A qué módulo pertenece cada categoría — un usuario sin ADMIN solo ve las
+// notificaciones de los módulos que ya tiene habilitados.
+const CATEGORY_MODULE: Record<NotificationCategory, ModuleKey> = {
+  policy: 'policies',
+  fire_extinguisher: 'fire_extinguishers',
+  installment_overdue: 'documents',
+  installment_near: 'documents',
+  asset_attachment: 'assets',
+}
 
 export interface NotificationItem {
   id: string
@@ -33,8 +44,8 @@ export const notificationsService = {
   // en vez de recalcular las mismas 6 queries por separado — así el filtro
   // de "revisado" se implementa una sola vez y ambos quedan consistentes
   // entre sí por construcción, no por disciplina de mantenerlos sincronizados.
-  async previewExpirations(userId: string) {
-    const items = await this.listNotifications(userId)
+  async previewExpirations(user: RequestUser) {
+    const items = await this.listNotifications(user)
     const pending = items.filter((i) => !i.reviewed)
 
     const countBy = (category: NotificationCategory) => pending.filter((i) => i.category === category).length
@@ -56,10 +67,10 @@ export const notificationsService = {
   },
 
   // Lista itemizada para el centro de notificaciones — todo calculado en vivo
-  // sobre las tablas reales, sin persistir nada salvo qué ítems ya revisó
-  // cada usuario (mismo criterio que ya usaba previewExpirations, solo que
-  // acá se devuelve el detalle en vez del conteo).
-  async listNotifications(userId: string): Promise<NotificationItem[]> {
+  // sobre las tablas reales, sin persistir nada salvo qué ítems ya se
+  // revisaron. "Revisado" es un estado COMPARTIDO (no por usuario) — lo
+  // gestiona el ADMIN y se ve igual para todos (ver notifications.router.ts).
+  async listNotifications(user: RequestUser): Promise<NotificationItem[]> {
     const today = todayDate()
     const in30Days = dateOffset(30)
     const in7Days = dateOffset(7)
@@ -119,8 +130,10 @@ export const notificationsService = {
           orderBy: { expirationDate: 'asc' },
           take: ITEM_CAP,
         }),
+        // Sin `where: { userId }` a propósito — "revisado" es compartido: si
+        // CUALQUIERA (en la práctica, solo un ADMIN puede llegar a crear esta
+        // fila) ya lo marcó, desaparece para todos.
         prisma.notificationDismissal.findMany({
-          where: { userId },
           select: { notificationId: true, dueDate: true },
         }),
       ])
@@ -196,7 +209,13 @@ export const notificationsService = {
       })),
     ]
 
-    return items.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    // ADMIN ve todo — el resto solo ve categorías de módulos que ya tiene
+    // habilitados (mismo criterio OR que requireModule en el resto de la API).
+    const visible = user.role === 'ADMIN'
+      ? items
+      : items.filter((i) => user.modules.includes(CATEGORY_MODULE[i.category]))
+
+    return visible.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
   },
 
   // Sirve tanto para marcar una sola fila (array de 1) como para el botón
@@ -210,10 +229,12 @@ export const notificationsService = {
     return { message: 'Marcado como revisado' }
   },
 
-  async unreview(userId: string, items: { notificationId: string; dueDate: string }[]) {
+  // Sin scope por userId a propósito — "revisado" es compartido, así que
+  // desmarcar borra la(s) fila(s) de quien sea que lo haya revisado antes,
+  // no solo las del ADMIN que ejecuta esta acción.
+  async unreview(items: { notificationId: string; dueDate: string }[]) {
     await prisma.notificationDismissal.deleteMany({
       where: {
-        userId,
         OR: items.map((i) => ({ notificationId: i.notificationId, dueDate: i.dueDate })),
       },
     })
