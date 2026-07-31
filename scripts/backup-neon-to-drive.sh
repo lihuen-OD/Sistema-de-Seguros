@@ -52,6 +52,7 @@ readonly BACKUP_PATH="${TEMPORARY_DIRECTORY}/${BACKUP_FILENAME}"
 readonly CHECKSUM_PATH="${TEMPORARY_DIRECTORY}/${CHECKSUM_FILENAME}"
 readonly SERVICE_ACCOUNT_PATH="${TEMPORARY_DIRECTORY}/google-service-account.json"
 readonly RCLONE_CONFIG_PATH="${TEMPORARY_DIRECTORY}/rclone.conf"
+readonly DATABASE_ENV_PATH="${TEMPORARY_DIRECTORY}/database.env"
 
 cleanup() {
   unset PGDATABASE BACKUP_DATABASE_URL GDRIVE_SERVICE_ACCOUNT_JSON
@@ -59,7 +60,8 @@ cleanup() {
     "$BACKUP_PATH" \
     "$CHECKSUM_PATH" \
     "$SERVICE_ACCOUNT_PATH" \
-    "$RCLONE_CONFIG_PATH"
+    "$RCLONE_CONFIG_PATH" \
+    "$DATABASE_ENV_PATH"
   rmdir "$TEMPORARY_DIRECTORY" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -80,9 +82,10 @@ export RCLONE_CONFIG="$RCLONE_CONFIG_PATH"
 log "Iniciando backup lógico (${BACKUP_TIER})"
 
 if [[ -n "${PG_DUMP_DOCKER_IMAGE:-}" ]]; then
-  export PGDATABASE="$BACKUP_DATABASE_URL"
+  printf 'PGDATABASE=%s\n' "$BACKUP_DATABASE_URL" > "$DATABASE_ENV_PATH"
+  unset BACKUP_DATABASE_URL
   docker run --rm \
-    --env PGDATABASE \
+    --env-file "$DATABASE_ENV_PATH" \
     "$PG_DUMP_DOCKER_IMAGE" \
     pg_dump \
       --format=plain \
@@ -91,7 +94,6 @@ if [[ -n "${PG_DUMP_DOCKER_IMAGE:-}" ]]; then
       --no-privileges \
       --no-password |
     gzip -9 > "$BACKUP_PATH"
-  unset PGDATABASE
 else
   export PGDATABASE="$BACKUP_DATABASE_URL"
   pg_dump \
