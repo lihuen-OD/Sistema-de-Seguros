@@ -91,7 +91,7 @@ export function InstallmentRow({
                 onChange={(e) => setEditAmount(e.target.value)}
                 min="0"
                 step="0.01"
-                className="w-full text-xs pl-8 pr-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full text-xs pl-10 pr-2.5 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
           </div>
