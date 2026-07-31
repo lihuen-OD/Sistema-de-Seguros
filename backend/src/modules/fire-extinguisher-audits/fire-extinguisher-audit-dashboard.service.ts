@@ -17,6 +17,16 @@ interface Accumulator {
   count: number
 }
 
+interface FlaggedExtinguisher {
+  cylinderNumber: string
+  location: string | null
+}
+
+// "Necesita limpieza" = la última auditoría del período no la marcó
+// impecable. A diferencia de vencimiento (que se recalcula siempre desde el
+// maestro), esto solo puede saberse si hubo auditoría este período.
+const CLEAN_CLEANLINESS_VALUE = 'IMPECABLE'
+
 function emptyAccumulators(): Record<ControlPointKey, Accumulator> {
   return {
     cleanliness: { sum: 0, count: 0 },
@@ -71,6 +81,9 @@ export const fireExtinguisherAuditDashboardService = {
         where: feWhere,
         select: {
           id: true,
+          code: true,
+          cylinderNumber: true,
+          location: true,
           establishment: true,
           locationType: true,
           expirationDate: true,
@@ -106,6 +119,8 @@ export const fireExtinguisherAuditDashboardService = {
       total: number
       audited: number
       controlPoints: Record<ControlPointKey, Accumulator>
+      expiredExtinguishers: FlaggedExtinguisher[]
+      needsCleaningExtinguishers: FlaggedExtinguisher[]
     }
     const establishmentMap = new Map<string, Map<string, SectorAcc>>()
     let totalRegistered = 0
@@ -117,7 +132,13 @@ export const fireExtinguisherAuditDashboardService = {
       if (!establishmentMap.has(est)) establishmentMap.set(est, new Map())
       const sectorsMap = establishmentMap.get(est)!
       if (!sectorsMap.has(fe.locationType)) {
-        sectorsMap.set(fe.locationType, { total: 0, audited: 0, controlPoints: emptyAccumulators() })
+        sectorsMap.set(fe.locationType, {
+          total: 0,
+          audited: 0,
+          controlPoints: emptyAccumulators(),
+          expiredExtinguishers: [],
+          needsCleaningExtinguishers: [],
+        })
       }
       const sectorAcc = sectorsMap.get(fe.locationType)!
       sectorAcc.total += 1
@@ -130,6 +151,9 @@ export const fireExtinguisherAuditDashboardService = {
         fe.hydraulicTestExpirationDate,
       )
       addScore(sectorAcc.controlPoints.expiration, EXPIRATION_SCORES[expirationStatus])
+      if (expirationStatus === 'vencido') {
+        sectorAcc.expiredExtinguishers.push({ cylinderNumber: fe.cylinderNumber ?? fe.code, location: fe.location })
+      }
 
       const audit = latestAuditByExtinguisher.get(fe.id)
       if (!audit) continue
@@ -142,6 +166,9 @@ export const fireExtinguisherAuditDashboardService = {
       addScore(sectorAcc.controlPoints.beaconPlateCondition, BEACON_PLATE_SCORES[audit.beaconPlateCondition])
       addScore(sectorAcc.controlPoints.sealStatus, HAS_STATUS_SCORES[audit.sealStatus])
       addScore(sectorAcc.controlPoints.ringStatus, HAS_STATUS_SCORES[audit.ringStatus])
+      if (audit.cleanliness !== CLEAN_CLEANLINESS_VALUE) {
+        sectorAcc.needsCleaningExtinguishers.push({ cylinderNumber: fe.cylinderNumber ?? fe.code, location: fe.location })
+      }
     }
 
     const sectors = [...establishmentMap.entries()]
@@ -157,6 +184,8 @@ export const fireExtinguisherAuditDashboardService = {
             level,
             levelLabel: classifyLevel(level),
             controlPoints,
+            expiredExtinguishers: sectorAcc.expiredExtinguishers,
+            needsCleaningExtinguishers: sectorAcc.needsCleaningExtinguishers,
           }
         }),
       )
