@@ -184,10 +184,13 @@ export async function printTableAsPDF(
     .join('')
 
   const container = document.createElement('div')
-  // position:absolute + visibility:hidden so the element lays out at its natural width
-  // without being clipped to the viewport (position:fixed would constrain to viewport width,
-  // breaking wide tables with many time-period columns).
-  container.style.cssText = 'visibility:hidden;position:absolute;top:0;left:0;background:#ffffff;padding:24px;font-family:Helvetica Neue,Arial,sans-serif;color:#1e293b;'
+  // position:absolute + off-screen (not visibility:hidden) so the element lays out at its
+  // natural width without being clipped to the viewport (position:fixed would constrain to
+  // viewport width, breaking wide tables with many time-period columns) while still being
+  // actually painted — html2canvas skips any subtree whose computed visibility isn't
+  // "visible", and visibility is inherited, so visibility:hidden here silently produced a
+  // blank canvas (and therefore a blank PDF) instead of clipping.
+  container.style.cssText = 'position:absolute;top:-99999px;left:-99999px;background:#ffffff;padding:24px;font-family:Helvetica Neue,Arial,sans-serif;color:#1e293b;'
   container.innerHTML = `
     <div data-pdf-header>
       <h1 style="font-size:14px;font-weight:700;margin:0 0 4px">${escapeHtml(title)}</h1>
