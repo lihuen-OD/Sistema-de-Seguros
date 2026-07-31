@@ -51,7 +51,8 @@ rclone copyto \
   --low-level-retries 10 \
   --log-level NOTICE
 
-rclone lsf "backup-drive:connection-tests/${TEST_FILENAME}" --files-only >/dev/null
+remote_listing="$(rclone lsf "backup-drive:connection-tests" --files-only)"
+grep -Fxq "$TEST_FILENAME" <<< "$remote_listing" ||
+  fail "El archivo se subió, pero no se encontró durante la verificación remota"
 
 printf 'Prueba completada. Archivo creado: connection-tests/%s\n' "$TEST_FILENAME"
-
