@@ -101,6 +101,6 @@ jobs:
           BACKUP_TIER: ${{ steps.tier.outputs.value }}
           GDRIVE_FOLDER_ID: ${{ vars.GDRIVE_FOLDER_ID }}
           GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
-          PG_DUMP_DOCKER_IMAGE: postgres:${{ vars.NEON_POSTGRES_MAJOR }}-bookworm
+          # Neon ejecuta PostgreSQL 18; pg_dump no puede ser de una versión mayor anterior a la del servidor.
+          PG_DUMP_DOCKER_IMAGE: postgres:18-bookworm
         run: bash scripts/backup-neon-to-drive.sh
-

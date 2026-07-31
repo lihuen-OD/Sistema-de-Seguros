@@ -34,11 +34,14 @@ Environment requerido: `production-backup`.
 | Nombre | Ejemplo | Uso |
 | --- | --- | --- |
 | `GDRIVE_FOLDER_ID` | ID de la carpeta, no la URL completa | Raíz de backups en Drive |
-| `NEON_POSTGRES_MAJOR` | `17` | Versión de `pg_dump`; debe ser igual o superior al servidor |
 | `BACKUPS_ENABLED` | `false` inicialmente | Habilita el cron solamente cuando vale `true` |
 
 No reutilizar `DATABASE_URL` pooled de Render. La URL de backup debe usar el endpoint
 directo de la branch correcta y `sslmode=require`.
+
+El workflow fija `pg_dump` en PostgreSQL 18, compatible con la versión mayor ejecutada
+por Neon. Al actualizar la versión mayor del servidor, actualizar también
+`PG_DUMP_DOCKER_IMAGE` y validar un backup y una restauración antes de reactivar el cron.
 
 `GDRIVE_FOLDER_ID` limita `rclone` directamente a la carpeta compartida. No configurar
 `shared_with_me` junto con esa raíz: las subcarpetas creadas por la cuenta de servicio no
