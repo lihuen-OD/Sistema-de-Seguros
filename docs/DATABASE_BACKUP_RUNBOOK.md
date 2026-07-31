@@ -40,6 +40,10 @@ Environment requerido: `production-backup`.
 No reutilizar `DATABASE_URL` pooled de Render. La URL de backup debe usar el endpoint
 directo de la branch correcta y `sslmode=require`.
 
+`GDRIVE_FOLDER_ID` limita `rclone` directamente a la carpeta compartida. No configurar
+`shared_with_me` junto con esa raíz: las subcarpetas creadas por la cuenta de servicio no
+se consideran elementos "compartidos conmigo" y luego no pueden verificarse ni reutilizarse.
+
 ## Activación gradual
 
 1. Mantener `BACKUPS_ENABLED=false`.
@@ -135,4 +139,3 @@ tests antes de reabrir escrituras. No borrar la base dañada hasta cerrar el inc
 - Registrar archivo, checksum, duración del dump, duración del restore y validaciones.
 - Crear un backup `pre-migration` antes de migraciones importantes.
 - Rotar la clave de Google y la contraseña del rol de Neon periódicamente.
-

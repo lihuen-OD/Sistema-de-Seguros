@@ -73,7 +73,6 @@ type = drive
 scope = drive
 service_account_file = ${SERVICE_ACCOUNT_PATH}
 root_folder_id = ${GDRIVE_FOLDER_ID}
-shared_with_me = true
 EOF
 
 export RCLONE_CONFIG="$RCLONE_CONFIG_PATH"
