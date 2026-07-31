@@ -107,4 +107,4 @@ export const authService = {
   },
 }
 
-export { BCRYPT_COST }
+export { BCRYPT_COST, TOKEN_EXPIRES_IN }

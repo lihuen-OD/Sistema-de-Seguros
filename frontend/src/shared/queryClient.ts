@@ -9,7 +9,11 @@ export const queryClient = new QueryClient({
       staleTime: 2 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
       retry: 1,
-      refetchOnWindowFocus: false,
+      // Al volver a la pestaña/ventana después de un rato afuera (ej: la
+      // compu estuvo suspendida), revalida en vez de confiar en datos que
+      // pueden llevar horas sin refrescarse. Antes estaba en false y era
+      // parte de por qué la sesión podía quedar en un estado colgado.
+      refetchOnWindowFocus: true,
     },
   },
 })

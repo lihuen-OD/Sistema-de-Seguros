@@ -1,7 +1,9 @@
 import axios from 'axios'
 import { toast } from 'sonner'
-import { clearToken, getStoredToken } from './auth'
+import { clearToken, getStoredToken, setToken } from './auth'
 import { queryClient } from '../queryClient'
+
+const RENEWED_TOKEN_HEADER = 'x-renewed-token'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
@@ -49,7 +51,15 @@ function buildErrorMessage(error: {
 }
 
 apiClient.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // Sesión deslizante: si el backend firmó un token nuevo (porque el
+    // anterior ya tenía más de 1h) lo guardamos calladamente — así, mientras
+    // haya actividad, la sesión nunca llega a las 12hs y no corta a mitad de
+    // uso. Axios normaliza los nombres de header a minúscula.
+    const renewedToken = res.headers[RENEWED_TOKEN_HEADER]
+    if (typeof renewedToken === 'string' && renewedToken) setToken(renewedToken)
+    return res
+  },
   (error) => {
     const message = buildErrorMessage(error)
     const details = error.response?.data?.error?.details
