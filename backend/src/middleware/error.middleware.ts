@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from 'express'
 import multer from 'multer'
 import { ZodError } from 'zod'
 import { AppError } from '../shared/errors/AppError'
-import { env } from '../config/env'
 
 const MULTER_ERROR_MESSAGES: Record<string, string> = {
   LIMIT_FILE_SIZE: 'El archivo supera el tamaño máximo permitido (20 MB)',
@@ -57,10 +56,11 @@ export function errorMiddleware(
     return
   }
 
-  // Error desconocido — loguear en desarrollo, respuesta genérica siempre
-  if (env.NODE_ENV === 'development') {
-    console.error('[Unhandled Error]', err)
-  }
+  // Error desconocido — se loguea siempre (también en producción: Render
+  // captura stdout/stderr en sus propios logs, no depende de un servicio
+  // externo). Antes solo se logueaba en development, así que un error real
+  // en producción no dejaba ningún rastro para investigar después.
+  console.error(`[Unhandled Error] ${req.method} ${req.path}`, err)
 
   res.status(500).json({
     error: {
