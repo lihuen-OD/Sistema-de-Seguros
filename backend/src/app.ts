@@ -41,6 +41,18 @@ if (env.NODE_ENV === 'production') {
 // ─── Security headers ────────────────────────────────────────────────────────
 app.use(helmet())
 
+// ─── No cache ────────────────────────────────────────────────────────────────
+// Todas las respuestas de esta API son datos privados por usuario (incluido
+// el token de /auth/login) — sin este header, el navegador, un antivirus con
+// inspección web o un proxy intermedio puede guardar una respuesta y
+// reservirla ante pedidos futuros en vez de repetir el request real. Se vio
+// en producción: un login viejo quedó cacheado y siempre devolvía el mismo
+// token (ya vencido) sin volver a pegarle al servidor.
+app.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store')
+  next()
+})
+
 // ─── Gzip compression ────────────────────────────────────────────────────────
 app.use(compression())
 
