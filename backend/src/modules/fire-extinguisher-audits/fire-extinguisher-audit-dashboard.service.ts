@@ -1,5 +1,6 @@
 import { prisma } from '../../config/database'
 import { computeFireExtinguisherStatus } from '../fire-extinguishers/fire-extinguishers.expiration'
+import { classifyAssetType } from '../fire-extinguishers/asset-type-classification'
 import {
   CLEANLINESS_SCORES,
   CHARGE_FILL_SCORES,
@@ -89,6 +90,8 @@ export const fireExtinguisherAuditDashboardService = {
           expirationDate: true,
           manufacturingYear: true,
           hydraulicTestExpirationDate: true,
+          assetId: true,
+          asset: { select: { assetType: true } },
         },
         orderBy: [{ establishment: 'asc' }, { locationType: 'asc' }],
       }),
@@ -127,6 +130,12 @@ export const fireExtinguisherAuditDashboardService = {
     let totalAudited = 0
 
     for (const fe of extinguishers) {
+      // Matafuegos vinculados a un vehículo/maquinaria no forman parte de
+      // este informe (tienen su propio circuito futuro de auditoría de
+      // activos) — mismo criterio que getCoverage()/create() en
+      // fire-extinguisher-audits.service.ts.
+      if (fe.assetId && classifyAssetType(fe.asset!.assetType) !== null) continue
+
       totalRegistered += 1
       const est = fe.establishment ?? 'Sin establecimiento'
       if (!establishmentMap.has(est)) establishmentMap.set(est, new Map())

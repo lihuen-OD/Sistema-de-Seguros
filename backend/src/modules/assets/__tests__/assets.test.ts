@@ -224,6 +224,36 @@ describe('Assets API', () => {
       expect(res.body.data.name).toBe('Toyota Hilux')
     })
 
+    it('passes auditable through to asset.create, defaulting to false when omitted', async () => {
+      db.company.findMany.mockResolvedValue([fakeCompany])
+      db.costCenter.findMany.mockResolvedValue([fakeCostCenter])
+      db.$queryRaw.mockResolvedValue([{ nextval: 1n }])
+      const createMock = jest.fn().mockResolvedValue(fakeAsset)
+      db.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          asset: { create: createMock },
+          assetAllocation: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+          assetStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        }),
+      )
+      db.asset.findUniqueOrThrow.mockResolvedValue(fakeAsset)
+
+      await request(app)
+        .post('/api/v1/assets')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ ...validAssetBody, auditable: true })
+
+      expect(createMock.mock.calls[0][0].data.auditable).toBe(true)
+
+      createMock.mockClear()
+      await request(app)
+        .post('/api/v1/assets')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validAssetBody)
+
+      expect(createMock.mock.calls[0][0].data.auditable).toBe(false)
+    })
+
     it('returns 201 when CONTADOR creates an asset', async () => {
       db.company.findMany.mockResolvedValue([fakeCompany])
       db.costCenter.findMany.mockResolvedValue([fakeCostCenter])

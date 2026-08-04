@@ -5,6 +5,7 @@ import { detectFileType, formatFileSize, matchesDeclaredMimetype, sanitizeFileNa
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import { todayDate, currentYearMonth, toDateStr } from '../../shared/utils/dates'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { classifyAssetType } from '../fire-extinguishers/asset-type-classification'
 import type {
   CreateFireExtinguisherAuditDTO,
   UpdateFireExtinguisherAuditDTO,
@@ -160,9 +161,23 @@ function assertDecisionsCoverPending(
 
 export const fireExtinguisherAuditsService = {
   async create(data: CreateFireExtinguisherAuditDTO, performedBy: string) {
-    const fe = await prisma.fireExtinguisher.findUnique({ where: { id: data.fireExtinguisherId } })
+    const fe = await prisma.fireExtinguisher.findUnique({
+      where: { id: data.fireExtinguisherId },
+      include: { asset: { select: { assetType: true } } },
+    })
     if (!fe) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
     if (!fe.isActive) throw new AppError(400, 'El matafuego está dado de baja', 'INACTIVE_FIRE_EXTINGUISHER')
+    // Matafuegos vinculados a un vehículo/maquinaria no forman parte de esta
+    // auditoría (tienen su propio circuito futuro de auditoría de activos) —
+    // ver AuditStep1Selection/getCoverage, que ya no los ofrecen; este chequeo
+    // es la defensa de último recurso si alguien llega igual por la API.
+    if (fe.assetId && classifyAssetType(fe.asset!.assetType) !== null) {
+      throw new AppError(
+        400,
+        'Este matafuego corresponde a un vehículo o maquinaria y no forma parte de la auditoría de matafuegos',
+        'ASSET_EXCLUDED_FROM_FIRE_EXTINGUISHER_AUDIT',
+      )
+    }
 
     const auditDate = todayDate()
     const auditPeriod = currentYearMonth()
@@ -428,10 +443,11 @@ export const fireExtinguisherAuditsService = {
     )
   },
 
-  // Cobertura de auditoría: todos los matafuegos activos, marcados con la
-  // auditoría más reciente (si existe) que tengan en el período dado, sin
-  // contar las rechazadas — mismo criterio que `auditedThisPeriod` en
-  // fire-extinguishers-dashboard.service.ts.
+  // Cobertura de auditoría: todos los matafuegos activos NO vinculados a un
+  // vehículo/maquinaria (esos tienen su propio circuito futuro de auditoría
+  // de activos), marcados con la auditoría más reciente (si existe) que
+  // tengan en el período dado, sin contar las rechazadas — mismo criterio
+  // que `auditedThisPeriod` en fire-extinguishers-dashboard.service.ts.
   async getCoverage(period: string) {
     const [extinguishers, audits] = await Promise.all([
       prisma.fireExtinguisher.findMany({
@@ -444,6 +460,8 @@ export const fireExtinguisherAuditsService = {
           establishment: true,
           locationType: true,
           location: true,
+          assetId: true,
+          asset: { select: { assetType: true } },
         },
         orderBy: [{ establishment: 'asc' }, { code: 'asc' }],
       }),
@@ -461,7 +479,11 @@ export const fireExtinguisherAuditsService = {
       }
     }
 
-    return extinguishers.map((fe) => {
+    const auditApplicable = extinguishers.filter(
+      (fe) => !(fe.assetId && classifyAssetType(fe.asset!.assetType) !== null),
+    )
+
+    return auditApplicable.map((fe) => {
       const audit = latestAuditByExtinguisher.get(fe.id)
       return {
         id: fe.id,

@@ -17,7 +17,7 @@ export function AuditStep1Selection({ selected, onSelect }: AuditStep1SelectionP
 
   const { data: extinguishers = [], isLoading } = useQuery({
     queryKey: ['fire-extinguishers', 'audit-selection'],
-    queryFn: () => fireExtinguishersApi.findAll({ isActive: true }),
+    queryFn: () => fireExtinguishersApi.findAll({ isActive: true, excludeVehicleMachinery: true }),
   })
 
   const q = search.trim().toLowerCase()

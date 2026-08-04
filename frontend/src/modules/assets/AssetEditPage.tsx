@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save, X, MapPin, Hash, Tag } from 'lucide-react'
+import { Save, X, MapPin, Hash, Tag, ClipboardCheck } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -164,6 +164,7 @@ export default function AssetEditPage() {
   const [dischargeDate, setDischargeDate] = useState('')
   const [saleDate, setSaleDate] = useState('')
   const [reactivationDate, setReactivationDate] = useState('')
+  const [auditable, setAuditable] = useState(false)
   const [allocations, setAllocations] = useState<AssetAllocation[]>([
     { id: 'alloc-init', companyId: '', costCenterId: '', percentage: 100 },
   ])
@@ -276,6 +277,7 @@ export default function AssetEditPage() {
     setValuationDate(asset.valuationDate ?? '')
     setDischargeDate(asset.dischargeDate ?? '')
     setSaleDate(asset.saleDate ?? '')
+    setAuditable(asset.auditable ?? false)
     if (asset.allocations && asset.allocations.length > 0) {
       setAllocations(asset.allocations)
     } else {
@@ -313,6 +315,14 @@ export default function AssetEditPage() {
   // admiten Bien de Uso asociado.
   const isLivestock = assetCategory === 'carga_animal'
   const isEquipoMaq = ['equipo', 'maquinaria'].includes(assetCategory ?? '')
+  // Categorías elegibles para la futura auditoría de activos — las mismas
+  // que se excluyen de la auditoría de matafuegos (ver
+  // asset-type-classification.ts en el backend). "moto" queda afuera a
+  // propósito: no lleva matafuego, nunca va a entrar en ese circuito.
+  const isAuditableCategory = [
+    'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
+    'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',
+  ].includes(assetCategory ?? '')
   const isSiloInfra = isInfraestructura && form.infraType === 'Silo'
 
   // ── Early returns ──────────────────────────────────────────────────────────
@@ -497,6 +507,7 @@ export default function AssetEditPage() {
           name: form.name.trim(),
           assetType: form.assetType.trim(),
           status: form.status,
+          auditable,
           fixedAssetId: form.fixedAssetId?.trim() || undefined,
           brand: form.brand.trim() || undefined,
           model: form.model.trim() || undefined,
@@ -608,6 +619,27 @@ export default function AssetEditPage() {
               {form.status === 'activo' && asset.status !== 'activo' && (
                 <FormField label="Fecha de reactivación">
                   <FormInput type="date" value={reactivationDate} onChange={(e) => setReactivationDate(e.target.value)} />
+                </FormField>
+              )}
+              {isAuditableCategory && (
+                <FormField label="Auditoría de activos" fullWidth>
+                  <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={auditable}
+                      onChange={(e) => setAuditable(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                        <ClipboardCheck size={14} className="text-slate-400" />
+                        Incluir en auditoría de activos
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Marcá esta opción si este activo debe formar parte de la futura auditoría de activos. Por ahora es solo un dato de referencia: todavía no dispara ningún proceso automático.
+                      </p>
+                    </div>
+                  </label>
                 </FormField>
               )}
             </FormSection>

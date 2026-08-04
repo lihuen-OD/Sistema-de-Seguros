@@ -210,6 +210,22 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
     expect(res.body.data.establishments).toEqual(['LA SUCHO', 'OTRO CAMPO'])
   })
 
+  it('excludes an extinguisher linked to a vehicle/machinery asset from the report entirely', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1', establishment: 'LA SUCHO' }),
+      fe({ id: 'fe-2', establishment: 'MAQUINARIA/VEHICULOS', assetId: 'a1', asset: { assetType: 'Tractor' } }),
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/audit-dashboard')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.totalRegistered).toBe(1)
+    expect(res.body.data.establishments).toEqual(['LA SUCHO'])
+  })
+
   it('keeps only the most recent non-rejected audit per extinguisher', async () => {
     db.fireExtinguisher.findMany.mockResolvedValue([fe({ id: 'fe-1' })])
     db.fireExtinguisherAudit.findMany.mockResolvedValue([

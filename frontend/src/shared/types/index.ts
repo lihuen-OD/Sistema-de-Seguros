@@ -281,6 +281,8 @@ export interface Asset {
   attachmentsCount?: number
   dischargeDate?: string | null
   saleDate?: string | null
+  /** Marca el activo para la futura auditoría de activos (vehículos/maquinaria) */
+  auditable: boolean
   createdAt: string
   updatedAt: string
 }

@@ -42,6 +42,13 @@ export const ListFireExtinguishersQuerySchema = PaginationSchema.extend({
     .enum(['true'])
     .transform(() => true)
     .optional(),
+  // Uso exclusivo de la auditoría de matafuegos (AuditStep1Selection) — no
+  // afecta el comportamiento default de este endpoint para ningún otro
+  // caller. Ver asset-type-classification.ts.
+  excludeVehicleMachinery: z
+    .enum(['true'])
+    .transform(() => true)
+    .optional(),
   search: z.string().optional(),
   isActive: z
     .enum(['true', 'false'])

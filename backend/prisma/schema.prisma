@@ -122,6 +122,10 @@ model Asset {
   description            String?
   metadata               Json?
   isActive               Boolean   @default(true)
+  // Marca activos (típicamente vehículos/maquinaria) a incluir en la futura
+  // auditoría de activos — hoy es solo un dato de referencia, sin proceso
+  // automático asociado todavía.
+  auditable              Boolean   @default(false)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 

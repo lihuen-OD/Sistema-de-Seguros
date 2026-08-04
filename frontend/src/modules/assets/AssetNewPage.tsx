@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Save, X, Plus, MapPin, Hash,
+  Save, X, Plus, MapPin, Hash, ClipboardCheck,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -39,6 +39,12 @@ const IS_WHEELED = (c: AssetCategory | '') =>
 const IS_AGRO = (c: AssetCategory | '') =>
   ['tractor', 'cosechadora', 'pulverizadora', 'implemento'].includes(c)
 const HAS_BRAND = (c: AssetCategory | '') => IS_WHEELED(c) || IS_AGRO(c)
+// Categorías elegibles para la futura auditoría de activos — las mismas que
+// se excluyen de la auditoría de matafuegos (ver asset-type-classification.ts
+// en el backend). "moto" queda afuera a propósito: no lleva matafuego, así
+// que nunca va a entrar en ese circuito.
+const IS_AUDITABLE_CATEGORY = (c: AssetCategory | '') =>
+  ['vehiculo', 'camioneta', 'camion', 'transporte_pasajeros', 'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria'].includes(c)
 // Solo la carga animal tiene especie/raza — la carga común (granos,
 // mercadería, insumos) no. Ambas sí admiten Bien de Uso asociado.
 const IS_LIVESTOCK = (c: AssetCategory | '') => c === 'carga_animal'
@@ -187,6 +193,7 @@ export default function AssetNewPage() {
   const [buildings, setBuildings] = useState<EstBuilding[]>([])
   const [silos, setSilos] = useState<Silo[]>([])
   const [attachments, setAttachments] = useState<AssetAttachment[]>([])
+  const [auditable, setAuditable] = useState(false)
 
   // Prefill del tipo de cambio actual (global) — solo mientras el usuario no
   // lo haya tocado a mano, y solo en Alta (en Edición no se pisa un TC
@@ -270,6 +277,7 @@ export default function AssetNewPage() {
     setForm(EMPTY)
     setBuildings([])
     setSilos([])
+    setAuditable(false)
   }
 
   function addBuilding() {
@@ -389,6 +397,7 @@ export default function AssetNewPage() {
         name: form.name.trim(),
         assetType: CATEGORY_LABEL[category],
         status: form.status,
+        auditable,
         fixedAssetId: form.bienDeUsoId || undefined,
         brand: form.brand.trim() || undefined,
         model: form.model.trim() || undefined,
@@ -554,6 +563,27 @@ export default function AssetNewPage() {
                 <FormField label="Fecha de Valuación" required={!!form.patrimonialValueUsd} error={errors.valuationDate}>
                   <FormInput type="date" value={form.valuationDate} onChange={set('valuationDate')} />
                 </FormField>
+                {IS_AUDITABLE_CATEGORY(category) && (
+                  <FormField label="Auditoría de activos" fullWidth>
+                    <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={auditable}
+                        onChange={(e) => setAuditable(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                          <ClipboardCheck size={14} className="text-slate-400" />
+                          Incluir en auditoría de activos
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Marcá esta opción si este activo debe formar parte de la futura auditoría de activos. Por ahora es solo un dato de referencia: todavía no dispara ningún proceso automático.
+                        </p>
+                      </div>
+                    </label>
+                  </FormField>
+                )}
               </FormSection>
             </SectionCard>
 

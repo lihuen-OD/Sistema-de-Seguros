@@ -508,6 +508,24 @@ describe('Fire Extinguisher Audits — Review API', () => {
       const res = await request(app).get('/api/v1/fire-extinguisher-audits/coverage?period=2026-07')
       expect(res.status).toBe(401)
     })
+
+    it('excludes an extinguisher linked to a vehicle/machinery asset, but keeps one with no asset linked', async () => {
+      const VEHICLE_FE_ID = '60000000-0000-0000-0000-000000000004'
+      db.fireExtinguisher.findMany.mockResolvedValue([
+        { id: FE_ID, code: 'MAT-001-A', cylinderNumber: 'CIL-01', type: 'Polvo seco ABC', establishment: 'PLANTA', location: 'Planta baja', assetId: null, asset: null },
+        { id: VEHICLE_FE_ID, code: 'MAT-004-A', cylinderNumber: 'CIL-04', type: 'Polvo seco ABC', establishment: 'MAQUINARIA/VEHICULOS', location: null, assetId: 'a0000000-0000-0000-0000-000000000001', asset: { assetType: 'Tractor' } },
+      ])
+      db.fireExtinguisherAudit.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .get('/api/v1/fire-extinguisher-audits/coverage?period=2026-07')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const ids = res.body.data.map((d: any) => d.id)
+      expect(ids).toContain(FE_ID)
+      expect(ids).not.toContain(VEHICLE_FE_ID)
+    })
   })
 
   // ── Recorrección (create() sigue funcionando sin cambios) ─────────────────

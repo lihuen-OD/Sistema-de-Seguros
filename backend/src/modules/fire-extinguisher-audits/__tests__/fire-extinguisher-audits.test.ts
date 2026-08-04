@@ -284,6 +284,37 @@ describe('Fire Extinguisher Audits API', () => {
       expect(res.status).toBe(400)
       expect(res.body.error.code).toBe('INACTIVE_FIRE_EXTINGUISHER')
     })
+
+    it('returns 400 ASSET_EXCLUDED_FROM_FIRE_EXTINGUISHER_AUDIT when linked to a vehicle/machinery asset', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue({
+        ...fakeFireExt,
+        assetId: 'a0000000-0000-0000-0000-000000000001',
+        asset: { assetType: 'Tractor' },
+      })
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validCreateBody)
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('ASSET_EXCLUDED_FROM_FIRE_EXTINGUISHER_AUDIT')
+    })
+
+    it('allows creating an audit for a fire extinguisher linked to a non-vehicle asset (e.g. a building)', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue({
+        ...fakeFireExt,
+        assetId: 'a0000000-0000-0000-0000-000000000002',
+        asset: { assetType: 'Edificio' },
+      })
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validCreateBody)
+
+      expect(res.status).toBe(201)
+    })
   })
 
   // ── GET /api/v1/fire-extinguisher-audits/:id ──────────────────────────────
