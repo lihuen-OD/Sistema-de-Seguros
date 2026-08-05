@@ -1,10 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { ArrowLeftRight } from 'lucide-react'
 import clsx from 'clsx'
+import { formatCurrencyInteger } from '../../utils/format'
+
+interface KpiCardCurrency {
+  ars: number
+  usd: number
+  /** Moneda que se muestra primero — default 'ars' */
+  primary?: 'ars' | 'usd'
+}
 
 interface KpiCardProps {
   label: string
-  value: string | number
+  value?: string | number
+  /**
+   * Cuando la card muestra un monto en dos monedas, alterna cuál es la
+   * grande con una animación de flip. `value`/`description` se ignoran —
+   * `description` pasa a usarse solo como texto adicional (ej. "93 activos
+   * activos"), que se muestra junto al monto de la moneda secundaria.
+   */
+  currency?: KpiCardCurrency
   description?: string
   icon?: React.ElementType
   iconClassName?: string
@@ -28,6 +44,7 @@ const variantStyles = {
 export function KpiCard({
   label,
   value,
+  currency,
   description,
   icon: Icon,
   iconClassName,
@@ -39,6 +56,26 @@ export function KpiCard({
   const styles = variantStyles[variant]
   const valueRef = useRef<HTMLSpanElement>(null)
   const [tooltip, setTooltip] = useState<{ top: number; left: number } | null>(null)
+
+  const [activeCurrency, setActiveCurrency] = useState<'ars' | 'usd'>(currency?.primary ?? 'ars')
+  const [flipTick, setFlipTick] = useState(0)
+  const [spinDeg, setSpinDeg] = useState(0)
+  const otherCurrency = activeCurrency === 'ars' ? 'usd' : 'ars'
+
+  function toggleCurrency(e: React.MouseEvent) {
+    e.stopPropagation()
+    setSpinDeg((d) => d + 180)
+    setFlipTick((t) => t + 1)
+    // Cambia el contenido a mitad de la animación de flip (ver keyframes
+    // 'flip-value' en tailwind.config.js), momento en que la opacidad ya
+    // está en 0 — el cambio queda invisible, no hay "salto" brusco.
+    setTimeout(() => setActiveCurrency((c) => (c === 'ars' ? 'usd' : 'ars')), 200)
+  }
+
+  const displayValue = currency ? formatCurrencyInteger(currency[activeCurrency], activeCurrency.toUpperCase()) : value
+  const displayDescription = currency
+    ? [formatCurrencyInteger(currency[otherCurrency], otherCurrency.toUpperCase()), description].filter(Boolean).join(' · ')
+    : description
 
   // El valor puede truncarse en cards angostas (montos largos). Si no está
   // truncado, no hay nada que mostrar — solo abrimos el popover cuando
@@ -97,25 +134,46 @@ export function KpiCard({
       </div>
 
       {/* Value — separate row, no icon overlap possible */}
-      <div className="min-w-0">
-        <span
-          ref={valueRef}
-          className="text-2xl font-bold text-slate-900 leading-none block truncate cursor-default"
-          onMouseEnter={showValueTooltip}
-          onMouseLeave={hideValueTooltip}
-          onClick={(e) => {
-            // En touch no hay hover — el tap togglea el popover. stopPropagation
-            // evita que además dispare el onClick de la card (si lo tuviera).
-            e.stopPropagation()
-            if (tooltip) {
-              hideValueTooltip()
-            } else {
-              showValueTooltip()
-            }
-          }}
-        >
-          {value}
-        </span>
+      <div className="min-w-0" style={currency ? { perspective: '800px' } : undefined}>
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            key={flipTick}
+            ref={valueRef}
+            className={clsx(
+              'text-2xl font-bold text-slate-900 leading-none truncate cursor-default flex-1 min-w-0',
+              currency && 'animate-flip-value',
+            )}
+            onMouseEnter={showValueTooltip}
+            onMouseLeave={hideValueTooltip}
+            onClick={(e) => {
+              // En touch no hay hover — el tap togglea el popover. stopPropagation
+              // evita que además dispare el onClick de la card (si lo tuviera).
+              e.stopPropagation()
+              if (tooltip) {
+                hideValueTooltip()
+              } else {
+                showValueTooltip()
+              }
+            }}
+          >
+            {displayValue}
+          </span>
+          {currency && (
+            <button
+              type="button"
+              onClick={toggleCurrency}
+              title={`Ver en ${otherCurrency.toUpperCase()}`}
+              aria-label={`Ver valor en ${otherCurrency.toUpperCase()}`}
+              className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center flex-shrink-0 transition-colors"
+            >
+              <ArrowLeftRight
+                size={12}
+                className="text-slate-500 transition-transform duration-300"
+                style={{ transform: `rotate(${spinDeg}deg)` }}
+              />
+            </button>
+          )}
+        </div>
         {tooltip &&
           createPortal(
             <div
@@ -124,12 +182,12 @@ export function KpiCard({
               onMouseEnter={showValueTooltip}
               onMouseLeave={hideValueTooltip}
             >
-              {value}
+              {displayValue}
             </div>,
             document.body,
           )}
-        {description && (
-          <span className="text-xs text-slate-500 mt-1 block">{description}</span>
+        {displayDescription && (
+          <span className="text-xs text-slate-500 mt-1 block">{displayDescription}</span>
         )}
         {trend && (
           <span

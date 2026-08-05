@@ -503,16 +503,16 @@ export default function DashboardPage() {
       <MetricGrid cols={4} className="mb-5">
         <KpiCard
           label="Valor Patrimonial"
-          value={formatCurrencyCompact(totalPatrimonialUsd, 'USD')}
-          description={`${formatCurrencyCompact(totalPatrimonialArs, 'ARS')} · ${activeAssets.length} activos activos`}
+          currency={{ ars: totalPatrimonialArs, usd: totalPatrimonialUsd, primary: 'usd' }}
+          description={`${activeAssets.length} activos activos`}
           icon={Package}
           variant="info"
           onClick={() => navigate('/assets')}
         />
         <KpiCard
           label="Suma Asegurada"
-          value={formatCurrencyCompact(totalInsuredArs, 'ARS')}
-          description={`${formatCurrencyCompact(totalInsuredUsd, 'USD')} · ${vigentePolicies.length} pólizas vigentes`}
+          currency={{ ars: totalInsuredArs, usd: totalInsuredUsd, primary: 'ars' }}
+          description={`${vigentePolicies.length} pólizas vigentes`}
           icon={ShieldCheck}
           variant="success"
           onClick={() => navigate('/insurance/policies')}
@@ -527,8 +527,8 @@ export default function DashboardPage() {
         />
         <KpiCard
           label="Facturas Pendientes"
-          value={formatCurrencyCompact(pendingTotalArs, 'ARS')}
-          description={`${formatCurrencyCompact(pendingTotalUsd, 'USD')} · ${pendingDocs.length} documentos`}
+          currency={{ ars: pendingTotalArs, usd: pendingTotalUsd, primary: 'ars' }}
+          description={`${pendingDocs.length} documentos`}
           icon={FileText}
           variant={pendingDocs.length > 0 ? 'warning' : 'default'}
           onClick={() => navigate('/insurance/documents')}
@@ -539,8 +539,8 @@ export default function DashboardPage() {
       <MetricGrid cols={4} className="mb-6">
         <KpiCard
           label="Cuotas Pendientes"
-          value={formatCurrencyCompact(pendingInstallmentsTotalArs, 'ARS')}
-          description={`${formatCurrencyCompact(pendingInstallmentsTotalUsd, 'USD')} · ${pendingInstallments.length} cuotas`}
+          currency={{ ars: pendingInstallmentsTotalArs, usd: pendingInstallmentsTotalUsd, primary: 'ars' }}
+          description={`${pendingInstallments.length} cuotas`}
           icon={Clock}
           variant={pendingInstallments.length > 10 ? 'warning' : 'default'}
           onClick={() => navigate('/insurance/financial-analysis')}

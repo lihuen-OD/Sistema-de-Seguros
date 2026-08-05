@@ -208,7 +208,10 @@ export const dashboardService = {
       policiesVencida,
     ] = await Promise.all([
         prisma.documentInstallment.findMany({
-          where: { dueDate: { gte: yearStart, lte: yearEnd } },
+          // documentStatus 'CANCELLED' se excluye — un documento anulado no
+          // debe impactar este reporte (mismo criterio que
+          // documentsService.findAllForFinancial).
+          where: { dueDate: { gte: yearStart, lte: yearEnd }, document: { documentStatus: { not: 'CANCELLED' } } },
           select: { dueDate: true, amountArs: true, amountUsd: true },
         }),
         // La empresa ya no es un campo único de la póliza — se resuelve por
