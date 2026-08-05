@@ -77,6 +77,10 @@ export interface PolicySummaryRow {
   insuredAmountUsd: number
   invoicedTotalUsd: number
   psaPercentage: number | null
+  /** Meses contratados (startDate → endDate) — la referencia exacta de monthlyRateUsd. */
+  termMonths: number
+  /** Facturado de esta póliza ÷ meses de vigencia contratados — "cuánto cuesta por mes", sin importar la duración del período. */
+  monthlyRateUsd: number | null
   isShared: boolean
 }
 
@@ -104,6 +108,8 @@ export interface AssetInsuranceSummary {
   /** Suma asegurada sobre valor a nuevo (o real si no hay valor a nuevo cargado) — "qué tan cubierto está". */
   coveragePct: number | null
   facturado12mUsd: number
+  /** Suma de la tasa mensual (ver PolicySummaryRow.monthlyRateUsd) de las pólizas activas — "cuánto cuesta por mes asegurar esto hoy", comparable entre activos sin importar cuántos meses dure cada póliza. null si no hay ninguna póliza activa. */
+  costoMensualUsd: number | null
   facturadoTotalUsd: number
   claimsCount: number
   claimsCostUsd: number
@@ -121,6 +127,16 @@ function daysUntil(dateStr: string): number {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return Math.round((target.getTime() - today.getTime()) / 86_400_000)
+}
+
+// Meses contratados de una póliza, a partir de la duración real en días (no
+// resta año/mes calendario) — así da un número correcto sin importar en qué
+// día del mes arranca/termina la vigencia (ej. 121 días ⇒ 4 meses, no 3 ni 5).
+function policyTermMonths(startDate: string, endDate: string): number {
+  const start = new Date(startDate + 'T00:00:00')
+  const end = new Date(endDate + 'T00:00:00')
+  const days = (end.getTime() - start.getTime()) / 86_400_000
+  return Math.max(1, Math.round(days / 30.4375))
 }
 
 function monthLabel(monthKey: string): string {
@@ -258,6 +274,8 @@ export function computeFleetSummaries(
     const toRow = (l: { coverage: PolicyCoverage; policy: Policy }): PolicySummaryRow => {
       const invoicedTotalUsd = sumBuckets(buildInvoicedBucketsByCoverages(new Set([l.coverage.id]), financialDocs, typeDefsByKey))
       const psaPercentage = computePsaPercentage(l.coverage.insuredAmountUsd, invoicedTotalUsd)
+      const termMonths = policyTermMonths(l.policy.startDate, l.policy.endDate)
+      const monthlyRateUsd = invoicedTotalUsd > 0 ? invoicedTotalUsd / termMonths : null
       const distinctAssetIds = new Set(coveragesOf(l.policy).map((c) => c.assetId).filter((id): id is string => !!id))
       return {
         id: l.policy.id,
@@ -268,12 +286,20 @@ export function computeFleetSummaries(
         insuredAmountUsd: l.coverage.insuredAmountUsd,
         invoicedTotalUsd,
         psaPercentage,
+        termMonths,
+        monthlyRateUsd,
         isShared: distinctAssetIds.size > 1,
       }
     }
 
     const allPolicyRows = assetLines.map(toRow)
     const activePolicyRows = allPolicyRows.filter((r) => ACTIVE_POLICY_STATUSES.includes(r.status))
+    // Suma la tasa mensual de cada póliza activa (puede haber más de una a la
+    // vez, ej. casco + RC con vigencias distintas) — null si no hay ninguna
+    // activa, para distinguirlo de "cuesta $0/mes" en la tabla.
+    const costoMensualUsd = activePolicyRows.length > 0
+      ? activePolicyRows.reduce((sum, r) => sum + (r.monthlyRateUsd ?? 0), 0)
+      : null
     const hasSharedPolicy = assetLines.some((l) => new Set(coveragesOf(l.policy).map((c) => c.assetId).filter(Boolean)).size > 1)
 
     const upcoming = active
@@ -310,6 +336,7 @@ export function computeFleetSummaries(
       primaPctValor,
       coveragePct,
       facturado12mUsd,
+      costoMensualUsd,
       facturadoTotalUsd,
       claimsCount: assetClaims.length,
       claimsCostUsd,
