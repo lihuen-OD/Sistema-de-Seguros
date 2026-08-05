@@ -6,7 +6,6 @@ import { dashboardController } from './dashboard.controller'
 import {
   ExpiringPoliciesQuerySchema,
   ExpiringInstallmentsQuerySchema,
-  ChartsQuerySchema,
 } from './dashboard.schemas'
 
 export const dashboardRouter = Router()
@@ -25,4 +24,3 @@ dashboardRouter.get(
   validateQuery(ExpiringInstallmentsQuerySchema),
   dashboardController.getExpiringInstallments,
 )
-dashboardRouter.get('/charts', validateQuery(ChartsQuerySchema), dashboardController.getCharts)
