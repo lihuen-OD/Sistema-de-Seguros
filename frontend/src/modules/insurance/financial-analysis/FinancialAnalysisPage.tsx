@@ -146,8 +146,11 @@ interface FinancialMatrixResult {
   paymentMethods: PaymentMethodMatrix
 }
 
+// Siempre por fecha de vencimiento, esté pagada o no — el Análisis
+// Financiero quiere ver cada cuota en el período que le correspondía vencer,
+// no en el período en que se terminó pagando.
 function getInstallmentEffectiveDate(inst: Installment): string {
-  return inst.paymentStatus === 'PAID' ? (inst.paidAt ?? inst.dueDate) : inst.dueDate
+  return inst.dueDate
 }
 
 function buildMatrixData(

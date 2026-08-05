@@ -237,14 +237,11 @@ export const documentsService = {
           return { lt: new Date(Date.UTC(year, month, 1)) }
         })()),
       }
-      where.installments = {
-        some: {
-          OR: [
-            { paymentStatus: 'PAID', paymentDate: range },
-            { paymentStatus: { not: 'PAID' }, dueDate: range },
-          ],
-        },
-      }
+      // Siempre por fecha de vencimiento de la cuota, esté pagada o no — el
+      // Análisis Financiero posiciona cada cuota por cuándo correspondía
+      // vencer, nunca por cuándo se terminó pagando (ver
+      // getInstallmentEffectiveDate en FinancialAnalysisPage.tsx).
+      where.installments = { some: { dueDate: range } }
     }
     const docs = await prisma.accountingDocument.findMany({
       where,

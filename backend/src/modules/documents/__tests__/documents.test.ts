@@ -855,7 +855,7 @@ describe('Documents API', () => {
   })
 
   describe('GET /api/v1/documents/financial', () => {
-    it('filters by paidAt for paid installments and dueDate for pending installments', async () => {
+    it('filters by dueDate regardless of payment status — Análisis Financiero siempre posiciona por vencimiento', async () => {
       db.accountingDocument.findMany.mockResolvedValue([])
 
       const res = await request(app)
@@ -868,22 +868,10 @@ describe('Documents API', () => {
           where: expect.objectContaining({
             installments: {
               some: {
-                OR: [
-                  {
-                    paymentStatus: 'PAID',
-                    paymentDate: {
-                      gte: new Date('2026-02-01T00:00:00.000Z'),
-                      lt: new Date('2026-04-01T00:00:00.000Z'),
-                    },
-                  },
-                  {
-                    paymentStatus: { not: 'PAID' },
-                    dueDate: {
-                      gte: new Date('2026-02-01T00:00:00.000Z'),
-                      lt: new Date('2026-04-01T00:00:00.000Z'),
-                    },
-                  },
-                ],
+                dueDate: {
+                  gte: new Date('2026-02-01T00:00:00.000Z'),
+                  lt: new Date('2026-04-01T00:00:00.000Z'),
+                },
               },
             },
           }),
