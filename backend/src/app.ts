@@ -26,6 +26,7 @@ import { catalogsRouter } from './modules/catalogs/catalogs.router'
 import { exchangeRateRouter } from './modules/exchange-rate/exchange-rate.router'
 import { dashboardRouter } from './modules/dashboard/dashboard.router'
 import { notificationsRouter } from './modules/notifications/notifications.router'
+import { renewalProjectionsRouter } from './modules/renewal-projections/renewal-projections.router'
 
 const app = express()
 
@@ -145,6 +146,8 @@ app.use('/api/v1/exchange-rate', exchangeRateRouter)
 app.use('/api/v1/dashboard', dashboardRouter)
 // Fase 10 — Notificaciones
 app.use('/api/v1/notifications', notificationsRouter)
+// Fase 12 — Proyección de Renovaciones
+app.use('/api/v1/renewal-projections', renewalProjectionsRouter)
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((req, res) => {

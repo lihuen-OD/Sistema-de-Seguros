@@ -15,7 +15,7 @@ export type Role = 'ADMIN' | 'USER'
 export const MODULE_KEYS = [
   'dashboard',
   'assets',
-  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'insurance_dashboard',
+  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
   'producers', 'tasks',

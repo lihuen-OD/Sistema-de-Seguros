@@ -16,6 +16,7 @@ import { useLinkedDocumentPolicies } from '../hooks/useLinkedDocumentPolicies'
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
+import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
 import type { AccountingDocument, AdjustmentSign, DocumentType } from '../../../../shared/types'
 
 const ADJUSTABLE_TYPES: DocumentType[] = ['INVOICE', 'DEBIT_NOTE', 'CREDIT_NOTE', 'ENDORSEMENT']
@@ -122,7 +123,7 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
     .map((r) => ({
       policyAssetCoverageId: r.policyAssetCoverageId,
       allocatedAmount: parseFloat(r.allocatedAmount),
-      allocationPercentage: amount > 0 ? (parseFloat(r.allocatedAmount) / amount) * 100 : 0,
+      allocationPercentage: calculateAllocationPercentage(parseFloat(r.allocatedAmount), amount),
     }))
 
   const createMutation = useMutation({

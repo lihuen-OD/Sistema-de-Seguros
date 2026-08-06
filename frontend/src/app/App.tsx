@@ -37,6 +37,8 @@ const DocumentFichaPage = lazy(() => import('../modules/insurance/accounting-doc
 // Insurance — Analysis
 const FinancialAnalysisPage = lazy(() => import('../modules/insurance/financial-analysis/FinancialAnalysisPage'))
 const EconomicAnalysisPage = lazy(() => import('../modules/insurance/economic-analysis/EconomicAnalysisPage'))
+const RenewalProjectionsFinancialPage = lazy(() => import('../modules/insurance/renewal-projections/RenewalProjectionsFinancialPage'))
+const RenewalProjectionsEconomicPage = lazy(() => import('../modules/insurance/renewal-projections/RenewalProjectionsEconomicPage'))
 const InsuranceDashboardPage = lazy(() => import('../modules/insurance/insurance-dashboard/InsuranceDashboardPage'))
 
 // Producers
@@ -137,7 +139,9 @@ export default function App() {
 
           {/* Analysis */}
           <Route path="/insurance/financial-analysis" element={<FinancialAnalysisPage />} />
+          <Route path="/insurance/financial-analysis/renewal-projections" element={<RenewalProjectionsFinancialPage />} />
           <Route path="/insurance/economic-analysis" element={<EconomicAnalysisPage />} />
+          <Route path="/insurance/economic-analysis/renewal-projections" element={<RenewalProjectionsEconomicPage />} />
           <Route path="/insurance/dashboard" element={<InsuranceDashboardPage />} />
 
           {/* Producers */}

@@ -9,7 +9,7 @@ export type Role = 'ADMIN' | 'USER'
 export const MODULE_KEYS = [
   'dashboard',
   'assets',
-  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'insurance_dashboard',
+  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
   'producers', 'tasks',
@@ -25,6 +25,8 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   documents: 'Documentos',
   financial_analysis: 'Análisis Financiero',
   economic_analysis: 'Análisis Económico',
+  renewal_projections: 'Proyección de Renovaciones (Financiero)',
+  renewal_projections_economic: 'Proyección de Renovaciones (Económico)',
   insurance_dashboard: 'Dashboard de Seguros',
   claims: 'Siniestros',
   fire_extinguishers: 'Matafuegos',
@@ -51,7 +53,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   { label: 'Principal', modules: ['dashboard'] },
   { label: 'Patrimonio', modules: ['assets'] },
   { label: 'Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard'] },
-  { label: 'Seguros', modules: ['policies', 'documents', 'financial_analysis', 'economic_analysis', 'insurance_dashboard', 'claims'] },
+  { label: 'Seguros', modules: ['policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard', 'claims'] },
   { label: 'Operaciones', modules: ['producers', 'tasks'] },
   { label: 'Configuración', modules: ['companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config'] },
 ]

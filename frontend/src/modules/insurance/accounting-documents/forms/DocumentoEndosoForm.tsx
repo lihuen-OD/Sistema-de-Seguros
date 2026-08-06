@@ -16,6 +16,7 @@ import { documentsApi, documentKeys, documentQueries } from '../../../../shared/
 import { policyQueries } from '../../../../shared/api/policies.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
+import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
 import { CURRENCY_OPTIONS } from '../../../../shared/constants'
 import type { AccountingDocument, Currency, EconomicImpactType } from '../../../../shared/types'
 
@@ -191,7 +192,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
         .map((r) => ({
           policyAssetCoverageId: r.policyAssetCoverageId,
           allocatedAmount: parseFloat(r.allocatedAmount),
-          allocationPercentage: computedTotal > 0 ? (parseFloat(r.allocatedAmount) / computedTotal) * 100 : 0,
+          allocationPercentage: calculateAllocationPercentage(parseFloat(r.allocatedAmount), computedTotal),
         }))
     : []
 

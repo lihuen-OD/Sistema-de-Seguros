@@ -27,7 +27,13 @@ const PATH_TO_MODULE: Array<{ prefix: string; modules: ModuleKey[]; landable?: b
   { prefix: '/assets', modules: ['assets'] },
   { prefix: '/insurance/policies', modules: ['policies'] },
   { prefix: '/insurance/documents', modules: ['documents'] },
+  // Financiero calcula lo real por cuota, Económico por documento — dos
+  // páginas separadas, cada una con su propio módulo (no comparten dataset
+  // ni overrides). Van antes que su análisis padre: prefijo más específico
+  // primero, mismo criterio que /fire-extinguishers/audits/new más abajo.
+  { prefix: '/insurance/financial-analysis/renewal-projections', modules: ['renewal_projections'] },
   { prefix: '/insurance/financial-analysis', modules: ['financial_analysis'] },
+  { prefix: '/insurance/economic-analysis/renewal-projections', modules: ['renewal_projections_economic'] },
   { prefix: '/insurance/economic-analysis', modules: ['economic_analysis'] },
   { prefix: '/insurance/dashboard', modules: ['insurance_dashboard'] },
   { prefix: '/claims', modules: ['claims'] },

@@ -49,7 +49,7 @@ export function groupForAssetType(assetTypeLabel: string): string {
 // nada acá.
 
 const ADJUSTING_TYPES = ['CREDIT_NOTE', 'DEBIT_NOTE', 'ADJUSTMENT_ENTRY', 'ENDORSEMENT']
-const ACTIVE_POLICY_STATUSES: Policy['status'][] = ['vigente', 'proximo_vencer']
+export const ACTIVE_POLICY_STATUSES: Policy['status'][] = ['vigente', 'proximo_vencer']
 const DASHBOARD_POLICY_STATUSES: Policy['status'][] = ['vigente', 'proximo_vencer', 'vencida']
 
 /**
@@ -132,7 +132,7 @@ function daysUntil(dateStr: string): number {
 // Meses contratados de una póliza, a partir de la duración real en días (no
 // resta año/mes calendario) — así da un número correcto sin importar en qué
 // día del mes arranca/termina la vigencia (ej. 121 días ⇒ 4 meses, no 3 ni 5).
-function policyTermMonths(startDate: string, endDate: string): number {
+export function policyTermMonths(startDate: string, endDate: string): number {
   const start = new Date(startDate + 'T00:00:00')
   const end = new Date(endDate + 'T00:00:00')
   const days = (end.getTime() - start.getTime()) / 86_400_000

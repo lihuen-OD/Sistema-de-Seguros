@@ -129,14 +129,15 @@ model Asset {
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
-  allocations       AssetAllocation[]
-  valueHistory      AssetValueHistory[]
-  statusHistory     AssetStatusHistory[]
-  attachments       AssetAttachment[]
-  fireExtinguishers FireExtinguisher[]
-  claims            Claim[]
-  policyCoverages   PolicyAssetCoverage[]
-  fixedAsset        FixedAsset?           @relation(fields: [fixedAssetId], references: [id])
+  allocations               AssetAllocation[]
+  valueHistory              AssetValueHistory[]
+  statusHistory             AssetStatusHistory[]
+  attachments               AssetAttachment[]
+  fireExtinguishers         FireExtinguisher[]
+  claims                    Claim[]
+  policyCoverages           PolicyAssetCoverage[]
+  fixedAsset                 FixedAsset?                      @relation(fields: [fixedAssetId], references: [id])
+  renewalProjectionOverrides AssetRenewalProjectionOverride[]
 
   @@index([isActive, status])
   @@index([isActive, assetType])
@@ -210,6 +211,40 @@ model AssetAttachment {
   @@index([assetId])
   @@index([expirationDate])
   @@map("asset_attachments")
+}
+
+// Overrides editables de "Proyección de Renovaciones" — nunca toca
+// Policy/AccountingDocument, solo guarda ajustes manuales por activo sobre
+// una proyección calculada en el frontend a partir del historial real.
+// null en cualquier campo = "usar el valor automático". Reset = borrar la fila.
+// `mode` separa el override de la página de Financiero (cálculo por cuotas)
+// del de Económico (cálculo por documento) — son números distintos por
+// definición, así que un activo puede tener una fila independiente en cada modo.
+model AssetRenewalProjectionOverride {
+  id                    String   @id @default(uuid())
+  assetId               String
+  mode                  String
+  netOverride           Float?
+  vatOverride           Float?
+  otherOverride         Float?
+  // Escala 0-100, puede ser negativo (ej. -5 = -5% en cada renovación).
+  growthPercentOverride Float?
+  // Cada cuántos meses se repite la renovación proyectada (ambos modos) y
+  // cuántas cuotas iguales la componen (solo tiene sentido en modo cuota —
+  // Económico siempre es un pago único por documento, así que este campo
+  // queda sin usar en esa página).
+  cycleLengthMonthsOverride Int?
+  installmentsCountOverride Int?
+  // 'YYYY-MM' — pisa el mes de inicio detectado de la última renovación real
+  // (el ancla que usa la proyección para calcular en qué mes cae cada pago
+  // futuro). Útil para simular "esto lo doy de baja y arranco otro en X mes".
+  startMonthOverride        String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  asset                 Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, mode])
+  @@map("asset_renewal_projection_overrides")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
