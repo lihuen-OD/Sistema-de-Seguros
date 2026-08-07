@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
-import type { Role } from '../types'
+import type { Role, UserAuditScopeItem } from '../types'
 
 export interface AppUser {
   id: string
@@ -9,6 +9,7 @@ export interface AppUser {
   role: Role
   accessProfileId: string | null
   accessProfileName: string | null
+  auditScope: UserAuditScopeItem[]
   isActive: boolean
   mustChangePassword: boolean
   lastLoginAt: string | null
@@ -21,6 +22,7 @@ export interface CreateUserInput {
   role: Role
   accessProfileId?: string | null
   password: string
+  auditScope?: UserAuditScopeItem[]
 }
 
 export interface UpdateUserInput {
@@ -29,6 +31,7 @@ export interface UpdateUserInput {
   role?: Role
   accessProfileId?: string | null
   isActive?: boolean
+  auditScope?: UserAuditScopeItem[]
 }
 
 export const usersApi = {

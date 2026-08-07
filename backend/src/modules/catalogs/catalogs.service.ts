@@ -19,7 +19,16 @@ const CATALOG_USAGE_CHECKS: Record<string, (label: string) => Promise<number>> =
   fire_ext_type: (label) => prisma.fireExtinguisher.count({ where: { type: label } }),
   fire_ext_capacity: (label) => prisma.fireExtinguisher.count({ where: { capacity: label } }),
   fire_ext_location_type: (label) => prisma.fireExtinguisher.count({ where: { locationType: label } }),
-  fire_ext_establishment: (label) => prisma.fireExtinguisher.count({ where: { establishment: label } }),
+  fire_ext_establishment: async (label) => {
+    // Además del matafuego, cuenta también los auditores con este
+    // establecimiento asignado (UserAuditScope) — no se puede borrar/desactivar
+    // un establecimiento que todavía tiene a alguien auditándolo.
+    const [extinguishers, scopes] = await Promise.all([
+      prisma.fireExtinguisher.count({ where: { establishment: label } }),
+      prisma.userAuditScope.count({ where: { area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue: label } }),
+    ])
+    return extinguishers + scopes
+  },
   fire_ext_brand: (label) => prisma.fireExtinguisher.count({ where: { brand: label } }),
   claim_type: (label) => prisma.claim.count({ where: { claimType: label } }),
   document_payment_method: (label) => prisma.accountingDocument.count({ where: { paymentMethod: label } }),

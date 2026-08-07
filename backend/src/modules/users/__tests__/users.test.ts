@@ -7,12 +7,21 @@ jest.mock('../../../config/database', () => ({
     user: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
     userAuditLog: {
       create: jest.fn(),
     },
+    userAuditScope: {
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    catalogItem: {
+      findMany: jest.fn(),
+    },
+    $transaction: jest.fn(),
   },
 }))
 
@@ -44,6 +53,12 @@ const fakeUser = {
 describe('Users API (admin)', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    // create()/update() envuelven el write + el reemplazo de auditScopes en
+    // una transacción (mismo patrón que fire-extinguisher-audits.service.ts) —
+    // acá se simula pasándole el propio mock `db` como `tx`.
+    db.$transaction.mockImplementation(async (arg: unknown) =>
+      typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(db) : Promise.all(arg as unknown[]),
+    )
   })
 
   describe('GET /api/v1/users', () => {
@@ -83,6 +98,7 @@ describe('Users API (admin)', () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser()) // auth: ADMIN actor
       db.user.findUnique.mockResolvedValueOnce(null) // business: email libre
       db.user.create.mockResolvedValue({ ...fakeUser, mustChangePassword: true })
+      db.user.findUniqueOrThrow.mockResolvedValue({ ...fakeUser, mustChangePassword: true })
 
       const res = await request(app)
         .post('/api/v1/users')
@@ -128,6 +144,74 @@ describe('Users API (admin)', () => {
 
       expect(res.status).toBe(422)
     })
+
+    it('persists an ASSET_AUDIT scope (validated by Zod, no catalog lookup needed)', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser())
+      db.user.findUnique.mockResolvedValueOnce(null)
+      db.user.create.mockResolvedValue(fakeUser)
+      db.user.findUniqueOrThrow.mockResolvedValue({
+        ...fakeUser,
+        auditScopes: [{ area: 'ASSET_AUDIT', scopeValue: 'tractor' }],
+      })
+
+      const res = await request(app)
+        .post('/api/v1/users')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          name: 'Usuario Uno',
+          email: 'usuario@losodwyer.com',
+          role: 'USER',
+          password: 'Password1',
+          auditScope: [{ area: 'ASSET_AUDIT', scopeValue: 'tractor' }],
+        })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.auditScope).toEqual([{ area: 'ASSET_AUDIT', scopeValue: 'tractor' }])
+      expect(db.userAuditScope.createMany).toHaveBeenCalledWith({
+        data: [{ userId: fakeUser.id, area: 'ASSET_AUDIT', scopeValue: 'tractor' }],
+      })
+    })
+
+    it('returns 400 INVALID_REFERENCE when a FIRE_EXTINGUISHER_AUDIT scopeValue is not an active establishment', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser())
+      db.user.findUnique.mockResolvedValueOnce(null)
+      db.catalogItem.findMany.mockResolvedValue([]) // ningún establecimiento activo coincide
+
+      const res = await request(app)
+        .post('/api/v1/users')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          name: 'Usuario Uno',
+          email: 'usuario@losodwyer.com',
+          role: 'USER',
+          password: 'Password1',
+          auditScope: [{ area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue: 'INEXISTENTE' }],
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('INVALID_REFERENCE')
+      expect(db.user.create).not.toHaveBeenCalled()
+    })
+
+    it('returns 422 when the same audit scope is assigned twice', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser())
+
+      const res = await request(app)
+        .post('/api/v1/users')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          name: 'Usuario Uno',
+          email: 'usuario@losodwyer.com',
+          role: 'USER',
+          password: 'Password1',
+          auditScope: [
+            { area: 'ASSET_AUDIT', scopeValue: 'tractor' },
+            { area: 'ASSET_AUDIT', scopeValue: 'tractor' },
+          ],
+        })
+
+      expect(res.status).toBe(422)
+    })
   })
 
   describe('PUT /api/v1/users/:id', () => {
@@ -135,6 +219,7 @@ describe('Users API (admin)', () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser()) // auth: ADMIN actor
       db.user.findUnique.mockResolvedValueOnce(fakeUser) // business: usuario existente
       db.user.update.mockResolvedValue({ ...fakeUser, isActive: false })
+      db.user.findUniqueOrThrow.mockResolvedValue({ ...fakeUser, isActive: false })
 
       const res = await request(app)
         .put(`/api/v1/users/${OTHER_ID}`)
@@ -160,6 +245,7 @@ describe('Users API (admin)', () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser()) // auth: ADMIN actor
       db.user.findUnique.mockResolvedValueOnce(fakeUser) // business: usuario existente
       db.user.update.mockResolvedValue(fakeUser)
+      db.user.findUniqueOrThrow.mockResolvedValue(fakeUser)
 
       await request(app)
         .put(`/api/v1/users/${OTHER_ID}`)

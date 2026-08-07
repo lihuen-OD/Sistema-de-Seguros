@@ -13,6 +13,7 @@ import { FormField, FormTextarea } from '../../../shared/components/forms/FormSe
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { ChecklistReadOnlySummary } from './ChecklistReadOnlySummary'
 import { ProposedChangeDecisionRow } from './ProposedChangeDecisionRow'
+import { getChecklistFields } from './checklistConfig'
 import {
   fireExtinguisherAuditsApi,
   fireExtinguisherAuditKeys,
@@ -27,6 +28,8 @@ const AUDIT_DECISION_OPTIONS = [
   { value: 'REJECTED', label: 'Rechazar' },
   { value: 'NEEDS_CORRECTION', label: 'Solicitar corrección' },
 ]
+
+const CHECKLIST_FIELDS = getChecklistFields('ESTABLISHMENT')
 
 export default function FireExtinguisherAuditDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -175,7 +178,11 @@ export default function FireExtinguisherAuditDetailPage() {
       </SectionCard>
 
       <SectionCard title="Checklist de condición" className="mb-5">
-        <ChecklistReadOnlySummary checklist={audit.checklist as unknown as Record<string, string>} comments={audit.checklist.comments} />
+        <ChecklistReadOnlySummary
+          fields={CHECKLIST_FIELDS}
+          checklist={audit.checklist as unknown as Record<string, string>}
+          comments={audit.checklist.comments}
+        />
       </SectionCard>
 
       <SectionCard title="Fotografías adjuntas" subtitle={`${photos.length} foto${photos.length === 1 ? '' : 's'}`} className="mb-5">

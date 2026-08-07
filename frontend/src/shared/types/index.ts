@@ -12,6 +12,8 @@ export const MODULE_KEYS = [
   'policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
+  'asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard',
+  'insurance_audits', 'insurance_audit_coverage', 'insurance_audit_dashboard',
   'producers', 'tasks',
   'companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config',
 ] as const
@@ -33,6 +35,12 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   fire_extinguisher_audits: 'Auditoría de Matafuegos',
   fire_extinguisher_audit_coverage: 'Cobertura de Matafuegos',
   fire_extinguisher_dashboard: 'Dashboard de Matafuegos',
+  asset_audits: 'Auditoría de Activos',
+  asset_audit_coverage: 'Cobertura de Auditoría de Activos',
+  asset_audit_dashboard: 'Dashboard de Auditoría de Activos',
+  insurance_audits: 'Auditoría de Seguros',
+  insurance_audit_coverage: 'Cobertura de Auditoría de Seguros',
+  insurance_audit_dashboard: 'Dashboard de Auditoría de Seguros',
   producers: 'Productores',
   tasks: 'Tareas',
   companies: 'Empresas',
@@ -53,10 +61,23 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   { label: 'Principal', modules: ['dashboard'] },
   { label: 'Patrimonio', modules: ['assets'] },
   { label: 'Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard'] },
+  { label: 'Auditoría de Activos', modules: ['asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard'] },
+  { label: 'Auditoría de Seguros', modules: ['insurance_audits', 'insurance_audit_coverage', 'insurance_audit_dashboard'] },
   { label: 'Seguros', modules: ['policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard', 'claims'] },
   { label: 'Operaciones', modules: ['producers', 'tasks'] },
   { label: 'Configuración', modules: ['companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config'] },
 ]
+
+// ─── Alcance de auditoría ──────────────────────────────────────────────────────
+// Mismo listado que el backend (backend/src/shared/types/index.ts) — duplicado
+// a propósito, igual que MODULE_KEYS.
+export const AUDIT_SCOPE_AREAS = ['FIRE_EXTINGUISHER_AUDIT', 'ASSET_AUDIT', 'INSURANCE_AUDIT'] as const
+export type AuditScopeArea = typeof AUDIT_SCOPE_AREAS[number]
+
+export interface UserAuditScopeItem {
+  area: AuditScopeArea
+  scopeValue: string
+}
 
 // ─── Status types ────────────────────────────────────────────────────────────
 
@@ -169,6 +190,15 @@ export type AssetCategory =
   | 'edificio' | 'establecimiento'
   | 'equipo' | 'maquinaria' | 'infraestructura'
   | 'carga_animal' | 'carga_comun'
+
+// Subconjunto de AssetCategory habilitado para Asset.auditable (ver
+// IS_AUDITABLE_CATEGORY en modules/assets/AssetNewPage.tsx) — mismo listado
+// que AUDITABLE_ASSET_CATEGORIES del backend, usado como scopeValue en
+// UserAuditScope para las áreas ASSET_AUDIT/INSURANCE_AUDIT.
+export const AUDITABLE_ASSET_CATEGORIES: AssetCategory[] = [
+  'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
+  'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',
+]
 
 export type Currency = 'ARS' | 'USD'
 
@@ -559,6 +589,10 @@ export interface FireExtinguisher {
   observations: string
   createdAt: string
   updatedAt: string
+  // Poblado solo cuando associatedAssetId apunta a un vehículo/maquinaria
+  // (ver fire-extinguishers.service.ts#findById) — usado por Auditoría de
+  // Activos para mostrar a qué activo pertenece este matafuego.
+  asset?: { id: string; name: string; assetType: string; code: string | null } | null
 }
 
 export interface AssetStatusHistory {

@@ -7,7 +7,7 @@ import { classifyLevel } from '../fire-extinguisher-audit-dashboard.constants'
 
 jest.mock('../../../config/database', () => ({
   prisma: {
-    user: { findUnique: jest.fn() },
+    user: { findUnique: jest.fn(), findMany: jest.fn() },
     fireExtinguisher: {
       findMany: jest.fn(),
     },
@@ -45,7 +45,7 @@ function auditRow(overrides: Record<string, unknown>) {
     auditDate: new Date('2026-07-15T00:00:00.000Z'),
     cleanliness: 'IMPECABLE',
     chargeFillStatus: 'CARGADO',
-    beaconPlateCondition: 'SANA',
+    mountingCondition: 'SANA',
     sealStatus: 'TIENE',
     ringStatus: 'TIENE',
     hoseNozzleCondition: 'SANA',
@@ -74,12 +74,12 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
       auditRow({
         fireExtinguisherId: 'fe-1',
         cleanliness: 'IMPECABLE', chargeFillStatus: 'CARGADO', hoseNozzleCondition: 'SANA',
-        beaconPlateCondition: 'SANA', sealStatus: 'TIENE', ringStatus: 'TIENE',
+        mountingCondition: 'SANA', sealStatus: 'TIENE', ringStatus: 'TIENE',
       }),
       auditRow({
         fireExtinguisherId: 'fe-2',
         cleanliness: 'LEVE_POLVO', chargeFillStatus: 'SOBRECARGADO', hoseNozzleCondition: 'ROTA_LEVE',
-        beaconPlateCondition: 'ROTA_LEVE', sealStatus: 'NO_TIENE', ringStatus: 'TIENE',
+        mountingCondition: 'ROTA_LEVE', sealStatus: 'NO_TIENE', ringStatus: 'TIENE',
       }),
     ])
 
@@ -98,7 +98,7 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
     // (100 + 60) / 2
     expect(findControlPoint(sector, 'hoseNozzleCondition').level).toBeCloseTo(80, 1)
     // (100 + 40) / 2 — beacon colapsa ROTA_LEVE a 40
-    expect(findControlPoint(sector, 'beaconPlateCondition').level).toBeCloseTo(70, 1)
+    expect(findControlPoint(sector, 'mountingCondition').level).toBeCloseTo(70, 1)
     // (100 + 0) / 2
     expect(findControlPoint(sector, 'sealStatus').level).toBeCloseTo(50, 1)
     // (100 + 100) / 2
@@ -107,14 +107,14 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
     expect(findControlPoint(sector, 'expiration').level).toBeCloseTo(50, 1)
   })
 
-  it('collapses beaconPlateCondition ROTA_LEVE/ROTA_REQUIERE_CAMBIO into the same score (40), unlike hoseNozzleCondition which keeps them distinct (0)', async () => {
+  it('collapses mountingCondition ROTA_LEVE/ROTA_REQUIERE_CAMBIO into the same score (40), unlike hoseNozzleCondition which keeps them distinct (0)', async () => {
     db.fireExtinguisher.findMany.mockResolvedValue([
       fe({ id: 'fe-1' }),
       fe({ id: 'fe-2' }),
     ])
     db.fireExtinguisherAudit.findMany.mockResolvedValue([
-      auditRow({ fireExtinguisherId: 'fe-1', beaconPlateCondition: 'ROTA_LEVE', hoseNozzleCondition: 'ROTA_LEVE' }),
-      auditRow({ fireExtinguisherId: 'fe-2', beaconPlateCondition: 'ROTA_REQUIERE_CAMBIO', hoseNozzleCondition: 'ROTA_REQUIERE_CAMBIO' }),
+      auditRow({ fireExtinguisherId: 'fe-1', mountingCondition: 'ROTA_LEVE', hoseNozzleCondition: 'ROTA_LEVE' }),
+      auditRow({ fireExtinguisherId: 'fe-2', mountingCondition: 'ROTA_REQUIERE_CAMBIO', hoseNozzleCondition: 'ROTA_REQUIERE_CAMBIO' }),
     ])
 
     const res = await request(app)
@@ -124,7 +124,7 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
 
     const sector = res.body.data.sectors[0]
     // Ambas dan 40 (colapsado) → promedio 40, no una mezcla de valores distintos.
-    expect(findControlPoint(sector, 'beaconPlateCondition').level).toBeCloseTo(40, 1)
+    expect(findControlPoint(sector, 'mountingCondition').level).toBeCloseTo(40, 1)
     // Manguera SÍ distingue: ROTA_LEVE=60, ROTA_REQUIERE_CAMBIO=0 → promedio 30.
     expect(findControlPoint(sector, 'hoseNozzleCondition').level).toBeCloseTo(30, 1)
   })
@@ -331,6 +331,94 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
       .set('Authorization', `Bearer ${adminToken()}`)
     expect(res.status).toBeGreaterThanOrEqual(400)
     expect(res.status).toBeLessThan(500)
+  })
+})
+
+describe('GET /api/v1/fire-extinguisher-audits/auditor-progress', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    db.user.findUnique.mockResolvedValue(mockDbUser())
+    db.user.findMany.mockResolvedValue([])
+    db.fireExtinguisher.findMany.mockResolvedValue([])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([])
+  })
+
+  function auditor(overrides: Record<string, unknown> = {}) {
+    return { id: 'u1', name: 'Malena', email: 'malena@losodwyer.com', auditScopes: [], ...overrides }
+  }
+
+  it('counts assigned/completed/pending only within the establishments assigned to each auditor', async () => {
+    db.user.findMany.mockResolvedValue([
+      auditor({ id: 'u1', name: 'Malena', email: 'malena@losodwyer.com', auditScopes: [{ scopeValue: 'LA SUCHO' }] }),
+      auditor({ id: 'u2', name: 'Pedro', email: 'pedro@losodwyer.com', auditScopes: [{ scopeValue: 'TALLER' }] }),
+    ])
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1', establishment: 'LA SUCHO' }),
+      fe({ id: 'fe-2', establishment: 'LA SUCHO' }),
+      fe({ id: 'fe-3', establishment: 'TALLER' }),
+    ])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([
+      { fireExtinguisherId: 'fe-1', auditedBy: 'malena@losodwyer.com', auditDate: new Date('2026-07-10') },
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/auditor-progress')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    const byEmail = Object.fromEntries(res.body.data.auditors.map((a: any) => [a.email, a]))
+    expect(byEmail['malena@losodwyer.com']).toMatchObject({ assigned: 2, completed: 1, pending: 1, completionRate: 50 })
+    expect(byEmail['pedro@losodwyer.com']).toMatchObject({ assigned: 1, completed: 0, pending: 1, completionRate: 0 })
+  })
+
+  it('reports assigned=0 and completionRate=null for an auditor with no establishment assigned yet', async () => {
+    db.user.findMany.mockResolvedValue([auditor({ auditScopes: [] })])
+    db.fireExtinguisher.findMany.mockResolvedValue([fe({ id: 'fe-1', establishment: 'LA SUCHO' })])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/auditor-progress')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.body.data.auditors[0]).toMatchObject({ assigned: 0, completed: 0, pending: 0, completionRate: null })
+  })
+
+  it('excludes a vehicle/machinery-linked extinguisher from the assigned count, same as the coverage/dashboard views', async () => {
+    db.user.findMany.mockResolvedValue([auditor({ auditScopes: [{ scopeValue: 'LA SUCHO' }] })])
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1', establishment: 'LA SUCHO' }),
+      fe({ id: 'fe-2', establishment: 'LA SUCHO', assetId: 'a1', asset: { assetType: 'Tractor' } }),
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/auditor-progress')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.body.data.auditors[0].assigned).toBe(1)
+  })
+
+  it('returns 403 for a USER without the fire_extinguisher_audits module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/auditor-progress')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 200 for a USER with the fire_extinguisher_audits module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguisher_audits'] }))
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/auditor-progress')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(200)
   })
 })
 

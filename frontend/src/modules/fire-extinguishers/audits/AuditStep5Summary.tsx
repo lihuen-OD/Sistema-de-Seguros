@@ -1,11 +1,13 @@
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { FIELD_VALIDATION_CONFIG } from './AuditStep3FieldValidation'
 import { ChecklistReadOnlySummary } from './ChecklistReadOnlySummary'
+import type { ChecklistFieldConfig } from './checklistConfig'
 import type { FieldValidationState } from './ValidatedField'
 import type { FireExtinguisher } from '../../../shared/types'
 
 interface AuditStep5SummaryProps {
   extinguisher: FireExtinguisher
+  checklistFields: ChecklistFieldConfig[]
   locationConfirmed: boolean | null
   proposedLocation: string
   fieldValidations: Record<string, FieldValidationState>
@@ -20,6 +22,7 @@ interface AuditStep5SummaryProps {
 
 export function AuditStep5Summary({
   extinguisher,
+  checklistFields,
   locationConfirmed,
   proposedLocation,
   fieldValidations,
@@ -73,7 +76,7 @@ export function AuditStep5Summary({
 
       <div>
         <h3 className="text-sm font-semibold text-slate-800 mb-2">Checklist de condición</h3>
-        <ChecklistReadOnlySummary checklist={checklist} comments={comments} />
+        <ChecklistReadOnlySummary fields={checklistFields} checklist={checklist} comments={comments} />
       </div>
 
       <div className="text-sm text-slate-500">

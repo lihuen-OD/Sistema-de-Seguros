@@ -8,8 +8,12 @@ export const FIRE_EXT_AUDIT_CLEANLINESS = [
 
 export const FIRE_EXT_AUDIT_CHARGE_FILL_STATUS = ['CARGADO', 'DESCARGADO', 'SOBRECARGADO'] as const
 
-// Fusiona "¿tiene chapa baliza?" + "estado de la chapa" en un solo campo.
-export const FIRE_EXT_AUDIT_PLATE_CONDITION = ['SANA', 'ROTA_LEVE', 'ROTA_REQUIERE_CAMBIO', 'NO_TIENE'] as const
+// Fusiona "¿tiene chapa baliza/soporte?" + "estado" en un solo campo. Mismo
+// campo para las dos poblaciones de FireExtinguisherAudit — rotulado "Chapa
+// Baliza" en la población ESTABLISHMENT (edificio) o "Soporte / Abrazadera"
+// en la población ASSET (vehículo/maquinaria); ver
+// fire-extinguisher-audits.population.ts.
+export const FIRE_EXT_AUDIT_MOUNTING_CONDITION = ['SANA', 'ROTA_LEVE', 'ROTA_REQUIERE_CAMBIO', 'NO_TIENE'] as const
 
 // Compartido por sealStatus y ringStatus (mismo set de valores).
 export const FIRE_EXT_AUDIT_HAS_STATUS = ['TIENE', 'NO_TIENE'] as const
@@ -30,7 +34,7 @@ export const FIRE_EXT_AUDIT_PROPOSED_CHANGE_STATUSES = ['PENDING', 'APPROVED', '
 
 export type FireExtAuditCleanliness = (typeof FIRE_EXT_AUDIT_CLEANLINESS)[number]
 export type FireExtAuditChargeFillStatus = (typeof FIRE_EXT_AUDIT_CHARGE_FILL_STATUS)[number]
-export type FireExtAuditPlateCondition = (typeof FIRE_EXT_AUDIT_PLATE_CONDITION)[number]
+export type FireExtAuditMountingCondition = (typeof FIRE_EXT_AUDIT_MOUNTING_CONDITION)[number]
 export type FireExtAuditHasStatus = (typeof FIRE_EXT_AUDIT_HAS_STATUS)[number]
 export type FireExtAuditHoseNozzleCondition = (typeof FIRE_EXT_AUDIT_HOSE_NOZZLE_CONDITION)[number]
 export type FireExtAuditMasterField = (typeof FIRE_EXT_AUDIT_MASTER_FIELDS)[number]

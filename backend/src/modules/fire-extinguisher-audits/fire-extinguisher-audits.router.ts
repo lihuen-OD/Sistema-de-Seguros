@@ -12,6 +12,7 @@ import {
   ListFireExtinguisherAuditsQuerySchema,
   CoverageQuerySchema,
   AuditDashboardQuerySchema,
+  AuditorProgressQuerySchema,
 } from './fire-extinguisher-audits.schemas'
 import { fireExtinguisherAuditsController } from './fire-extinguisher-audits.controller'
 
@@ -32,6 +33,16 @@ fireExtinguisherAuditsRouter.get(
   requireModule('fire_extinguisher_audits'),
   validateQuery(AuditDashboardQuerySchema),
   fireExtinguisherAuditsController.auditDashboard,
+)
+
+// Progreso por auditor — vista de revisor/admin sobre el trabajo de otros,
+// mismo gate que el dashboard general (no `_coverage`: un auditor no debe
+// ver el detalle de asignación/avance de sus compañeros).
+fireExtinguisherAuditsRouter.get(
+  '/auditor-progress',
+  requireModule('fire_extinguisher_audits'),
+  validateQuery(AuditorProgressQuerySchema),
+  fireExtinguisherAuditsController.auditorProgress,
 )
 
 fireExtinguisherAuditsRouter.post(

@@ -1,33 +1,41 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Flame, MapPin } from 'lucide-react'
+import { Flame, MapPin, Package } from 'lucide-react'
 import clsx from 'clsx'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
-import { fireExtinguishersApi } from '../../../shared/api/fire-extinguishers.api'
-import type { FireExtinguisher } from '../../../shared/types'
+import type { FireExtinguisherCoverageItem } from '../../../shared/api/fire-extinguisher-audits.api'
+import type { AuditPopulation } from './checklistConfig'
+import type { QueryConfig } from './AuditWizard'
 
 interface AuditStep1SelectionProps {
-  selected: FireExtinguisher | null
-  onSelect: (extinguisher: FireExtinguisher) => void
+  population: AuditPopulation
+  selectedId: string | null
+  onSelect: (id: string) => void
+  // Misma forma en las dos poblaciones (FireExtinguisherCoverageItem) — el
+  // caller pasa fireExtinguisherAuditQueries.coverage(period) o
+  // assetAuditQueries.coverage(period) según corresponda.
+  coverageQuery: QueryConfig<FireExtinguisherCoverageItem[]>
 }
 
-export function AuditStep1Selection({ selected, onSelect }: AuditStep1SelectionProps) {
+export function AuditStep1Selection({ population, selectedId, onSelect, coverageQuery }: AuditStep1SelectionProps) {
   const [search, setSearch] = useState('')
 
-  const { data: extinguishers = [], isLoading } = useQuery({
-    queryKey: ['fire-extinguishers', 'audit-selection'],
-    queryFn: () => fireExtinguishersApi.findAll({ isActive: true, excludeVehicleMachinery: true }),
-  })
+  // Ya viene filtrada por el alcance del usuario (establecimientos o
+  // categorías asignadas) y por población — mismo criterio que la pestaña
+  // "Cobertura".
+  const { data: coverage = [], isLoading } = useQuery(coverageQuery)
+
+  const auditable = useMemo(() => coverage.filter((fe) => !fe.audited || fe.auditStatus === 'NEEDS_CORRECTION'), [coverage])
 
   const q = search.trim().toLowerCase()
   const filtered = q
-    ? extinguishers.filter((fe) =>
-        [fe.cylinderNumber, fe.code, fe.type, fe.location, fe.establishment]
+    ? auditable.filter((fe) =>
+        [fe.cylinderNumber, fe.code, fe.type, fe.location, fe.establishment, fe.asset?.name]
           .filter(Boolean)
           .some((v) => v!.toLowerCase().includes(q)),
       )
-    : extinguishers
+    : auditable
 
   return (
     <div>
@@ -46,12 +54,12 @@ export function AuditStep1Selection({ selected, onSelect }: AuditStep1SelectionP
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[520px] overflow-y-auto pr-1">
           {filtered.map((fe) => {
-            const isActive = selected?.id === fe.id
+            const isActive = selectedId === fe.id
             return (
               <button
                 key={fe.id}
                 type="button"
-                onClick={() => onSelect(fe)}
+                onClick={() => onSelect(fe.id)}
                 className={clsx(
                   'text-left border rounded-lg p-4 transition-all',
                   isActive
@@ -69,20 +77,28 @@ export function AuditStep1Selection({ selected, onSelect }: AuditStep1SelectionP
                         {fe.code}
                         {fe.cylinderNumber ? ` · ${fe.cylinderNumber}` : ''}
                       </p>
-                      <p className="text-xs text-slate-500 truncate">
-                        {fe.type} · {fe.capacity}
-                      </p>
+                      <p className="text-xs text-slate-500 truncate">{fe.type}</p>
                     </div>
                   </div>
-                  <StatusPill status={fe.status} size="sm" />
+                  {fe.auditStatus && <StatusPill status={fe.auditStatus} size="sm" />}
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <MapPin size={12} className="flex-shrink-0" />
-                  <span className="truncate">
-                    {fe.establishment ?? '—'}
-                    {fe.location ? ` · ${fe.location}` : ''}
-                  </span>
-                </div>
+                {population === 'ASSET' ? (
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <Package size={12} className="flex-shrink-0" />
+                    <span className="truncate">
+                      {fe.asset?.name ?? '—'}
+                      {fe.asset?.assetType ? ` · ${fe.asset.assetType}` : ''}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <MapPin size={12} className="flex-shrink-0" />
+                    <span className="truncate">
+                      {fe.establishment ?? '—'}
+                      {fe.location ? ` · ${fe.location}` : ''}
+                    </span>
+                  </div>
+                )}
               </button>
             )
           })}

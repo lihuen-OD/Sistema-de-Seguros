@@ -292,7 +292,7 @@ export const fireExtinguishersService = {
     const fe = await prisma.fireExtinguisher.findUnique({
       where: { id },
       include: {
-        asset: { select: { id: true, name: true } },
+        asset: { select: { id: true, name: true, assetType: true, code: true } },
         history: { orderBy: { date: 'desc' }, take: 100 },
       },
     })

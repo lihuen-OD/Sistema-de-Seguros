@@ -23,6 +23,7 @@ interface BackendExtinguisher {
   iramCertificateNumber?: string | null
   isActive: boolean; createdAt: string; updatedAt: string
   history?: BackendHistory[]
+  asset?: { id: string; name: string; assetType: string; code: string | null } | null
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
 
@@ -70,6 +71,7 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
     observations: b.observations,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
+    asset: b.asset ?? null,
   }
 }
 

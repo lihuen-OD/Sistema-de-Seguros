@@ -70,6 +70,20 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: 'Auditoría de Activos',
+    items: [
+      { label: 'Auditorías', to: '/asset-audits', icon: ClipboardCheck },
+      { label: 'Dashboard de Auditoría', to: '/asset-audits/dashboard', icon: BarChart3 },
+    ],
+  },
+  {
+    label: 'Auditoría de Seguros',
+    items: [
+      { label: 'Auditorías', to: '/insurance-audits', icon: ClipboardCheck },
+      { label: 'Dashboard de Auditoría', to: '/insurance-audits/dashboard', icon: BarChart3 },
+    ],
+  },
+  {
     label: 'Seguros',
     items: [
       { label: 'Pólizas', to: '/insurance/policies', icon: ShieldCheck },

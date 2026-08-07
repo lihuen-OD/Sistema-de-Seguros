@@ -31,6 +31,9 @@ jest.mock('../../../config/database', () => ({
       count: jest.fn(),
       create: jest.fn(),
     },
+    userAuditScope: {
+      findMany: jest.fn(),
+    },
     $transaction: jest.fn(),
   },
 }))
@@ -84,7 +87,7 @@ function makeAuditRow(overrides: Record<string, unknown> = {}) {
     locationChangeReason: null,
     cleanliness: 'IMPECABLE',
     chargeFillStatus: 'CARGADO',
-    beaconPlateCondition: 'SANA',
+    mountingCondition: 'SANA',
     sealStatus: 'TIENE',
     ringStatus: 'TIENE',
     hoseNozzleCondition: 'SANA',
@@ -97,6 +100,8 @@ function makeAuditRow(overrides: Record<string, unknown> = {}) {
     updatedAt: BASE_DATE,
     proposedChanges: [] as unknown[],
     attachments: [] as unknown[],
+    // Usado por review()/findById() para el chequeo de población.
+    extinguisher: { establishment: 'PLANTA', assetId: null, asset: null },
     ...overrides,
   }
 }
@@ -116,6 +121,11 @@ describe('Fire Extinguisher Audits — Review API', () => {
     db.fireExtinguisherHistory.create.mockResolvedValue({})
     db.fireExtinguisherAuditProposedChange.updateMany.mockResolvedValue({ count: 0 })
     db.fireExtinguisherAudit.update.mockResolvedValue({})
+    db.userAuditScope.findMany.mockResolvedValue([])
+    // Población por defecto para findAll()/getCoverage() — un solo matafuego
+    // de edificio, dentro de scope. Los describe blocks de GET /coverage
+    // pisan esto con su propio fixture más rico.
+    db.fireExtinguisher.findMany.mockResolvedValue([{ id: FE_ID, establishment: 'PLANTA', assetId: null, asset: null }])
     db.$transaction.mockImplementation(async (arg: unknown) =>
       Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => unknown)(db),
     )
@@ -419,7 +429,7 @@ describe('Fire Extinguisher Audits — Review API', () => {
 
       expect(res.status).toBe(200)
       expect(db.fireExtinguisherAudit.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {}, orderBy: { createdAt: 'desc' } }),
+        expect.objectContaining({ where: { fireExtinguisherId: { in: [FE_ID] } }, orderBy: { createdAt: 'desc' } }),
       )
       expect(res.body.data[0].extinguisher.code).toBe('MAT-001-A')
       expect(res.body.data[0].proposedChangesCount).toBe(2)
@@ -433,7 +443,7 @@ describe('Fire Extinguisher Audits — Review API', () => {
 
       expect(res.status).toBe(200)
       expect(db.fireExtinguisherAudit.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { status: { in: ['SUBMITTED'] } } }),
+        expect.objectContaining({ where: { fireExtinguisherId: { in: [FE_ID] }, status: { in: ['SUBMITTED'] } } }),
       )
     })
 
@@ -444,7 +454,7 @@ describe('Fire Extinguisher Audits — Review API', () => {
 
       expect(res.status).toBe(200)
       expect(db.fireExtinguisherAudit.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { status: { in: ['SUBMITTED', 'NEEDS_CORRECTION'] } } }),
+        expect.objectContaining({ where: { fireExtinguisherId: { in: [FE_ID] }, status: { in: ['SUBMITTED', 'NEEDS_CORRECTION'] } } }),
       )
     })
   })
@@ -509,6 +519,12 @@ describe('Fire Extinguisher Audits — Review API', () => {
       expect(res.status).toBe(401)
     })
 
+    // Esta exclusión NO depende de Asset.auditable — un matafuego de
+    // vehículo/maquinaria queda afuera de Matafuegos tenga o no ese tilde
+    // (auditable solo decide si entra o no en Activos, ver
+    // asset-audits.test.ts "excludes a vehicle-linked matafuego whose asset
+    // does not have the auditable flag set" — sin el tilde, el matafuego
+    // queda afuera de las DOS auditorías, no cae acá por descarte).
     it('excludes an extinguisher linked to a vehicle/machinery asset, but keeps one with no asset linked', async () => {
       const VEHICLE_FE_ID = '60000000-0000-0000-0000-000000000004'
       db.fireExtinguisher.findMany.mockResolvedValue([
@@ -558,7 +574,7 @@ describe('Fire Extinguisher Audits — Review API', () => {
           checklist: {
             cleanliness: 'IMPECABLE',
             chargeFillStatus: 'CARGADO',
-            beaconPlateCondition: 'SANA',
+            mountingCondition: 'SANA',
             sealStatus: 'TIENE',
             ringStatus: 'TIENE',
             hoseNozzleCondition: 'SANA',
@@ -579,14 +595,14 @@ describe('Fire Extinguisher Audits — Review API', () => {
     const FE_B = '60000000-0000-0000-0000-00000000000b'
     const PC_B = '80000000-0000-0000-0000-00000000000b'
 
-    const rowA = makeAuditRow({ id: AUDIT_A, extinguisher: { code: 'MAT-A' } })
+    const rowA = makeAuditRow({ id: AUDIT_A, extinguisher: { code: 'MAT-A', establishment: 'PLANTA', assetId: null, asset: null } })
     const rowB = makeAuditRow({
       id: AUDIT_B,
       fireExtinguisherId: FE_B,
       proposedChanges: [{ id: PC_B, auditId: AUDIT_B, fireExtinguisherId: FE_B, fieldName: 'capacity', currentValue: '10 kg', proposedValue: '6 kg', reason: null, status: 'PENDING' }],
-      extinguisher: { code: 'MAT-B' },
+      extinguisher: { code: 'MAT-B', establishment: 'PLANTA', assetId: null, asset: null },
     })
-    const rowC = makeAuditRow({ id: AUDIT_C, status: 'APPROVED', extinguisher: { code: 'MAT-C' } })
+    const rowC = makeAuditRow({ id: AUDIT_C, status: 'APPROVED', extinguisher: { code: 'MAT-C', establishment: 'PLANTA', assetId: null, asset: null } })
 
     beforeEach(() => {
       db.fireExtinguisherAudit.findMany.mockResolvedValue([rowA, rowB, rowC])
@@ -636,7 +652,7 @@ describe('Fire Extinguisher Audits — Review API', () => {
     })
 
     it('lets an ADMIN bulk-approve an audit they themselves audited, but blocks a non-ADMIN reviewer on the same case', async () => {
-      const selfAuditedRow = makeAuditRow({ id: AUDIT_A, auditedBy: 'test@losodwyer.com', extinguisher: { code: 'MAT-A' } })
+      const selfAuditedRow = makeAuditRow({ id: AUDIT_A, auditedBy: 'test@losodwyer.com', extinguisher: { code: 'MAT-A', establishment: 'PLANTA', assetId: null, asset: null } })
       db.fireExtinguisherAudit.findMany.mockResolvedValue([selfAuditedRow])
       db.fireExtinguisherAudit.findUnique.mockResolvedValue(selfAuditedRow)
 

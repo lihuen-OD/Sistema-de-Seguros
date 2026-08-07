@@ -1,7 +1,29 @@
 import { z } from 'zod'
 import { NewPasswordSchema } from '../auth/auth.schemas'
+import { AUDITABLE_ASSET_CATEGORIES } from '../../shared/types'
 
 export const AssignableRoleSchema = z.enum(['ADMIN', 'USER'])
+
+// Alcance de auditoría de un usuario — ver UserAuditScope en schema.prisma.
+// FIRE_EXTINGUISHER_AUDIT valida contra el catálogo real (fire_ext_establishment,
+// chequeo async en el service, no expresable acá); ASSET_AUDIT/INSURANCE_AUDIT
+// validan contra la lista fija AUDITABLE_ASSET_CATEGORIES.
+const AuditScopeItemSchema = z.discriminatedUnion('area', [
+  z.object({ area: z.literal('FIRE_EXTINGUISHER_AUDIT'), scopeValue: z.string().trim().min(1).max(200) }),
+  z.object({ area: z.literal('ASSET_AUDIT'), scopeValue: z.enum(AUDITABLE_ASSET_CATEGORIES) }),
+  z.object({ area: z.literal('INSURANCE_AUDIT'), scopeValue: z.enum(AUDITABLE_ASSET_CATEGORIES) }),
+])
+
+export const AuditScopeInputSchema = z
+  .array(AuditScopeItemSchema)
+  .max(200)
+  .refine(
+    (arr) => {
+      const keys = arr.map((s) => `${s.area}::${s.scopeValue}`)
+      return new Set(keys).size === keys.length
+    },
+    { message: 'No se puede asignar el mismo alcance dos veces' },
+  )
 
 export const CreateUserSchema = z.object({
   name: z.string().trim().min(1, 'El nombre es requerido').max(200),
@@ -9,6 +31,7 @@ export const CreateUserSchema = z.object({
   role: AssignableRoleSchema,
   accessProfileId: z.string().uuid('Perfil de acceso inválido').nullable().optional(),
   password: NewPasswordSchema,
+  auditScope: AuditScopeInputSchema.optional(),
 })
 
 export const UpdateUserSchema = z.object({
@@ -17,6 +40,7 @@ export const UpdateUserSchema = z.object({
   role: AssignableRoleSchema.optional(),
   accessProfileId: z.string().uuid('Perfil de acceso inválido').nullable().optional(),
   isActive: z.boolean().optional(),
+  auditScope: AuditScopeInputSchema.optional(),
 })
 
 export const ResetPasswordSchema = z.object({

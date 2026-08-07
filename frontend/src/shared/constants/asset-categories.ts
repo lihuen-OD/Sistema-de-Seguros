@@ -3,7 +3,7 @@ import {
   Building2, Landmark, Box, Cog, Network, Package, Bike,
 } from 'lucide-react'
 import type { ElementType } from 'react'
-import type { AssetCategory } from '../types'
+import { AUDITABLE_ASSET_CATEGORIES, type AssetCategory } from '../types'
 
 export interface CategoryGroupItem {
   key: AssetCategory
@@ -77,3 +77,12 @@ export const IMPL_TYPES = ['Sembradora', 'Arado', 'Rastra', 'Fertilizadora', 'Ci
 export const LABEL_TO_CATEGORY: Record<string, AssetCategory> = Object.fromEntries(
   Object.entries(CATEGORY_LABEL).map(([key, label]) => [label, key as AssetCategory]),
 )
+
+// CATEGORY_GROUPS recortado a las categorías auditables (ver
+// AUDITABLE_ASSET_CATEGORIES) — reutilizado por el picker de "Alcance de
+// auditoría" de Auditoría de Activos y de Seguros (misma agrupación visual
+// que ya usa CategoryPicker, sin duplicar el armado de grupos).
+export const AUDITABLE_CATEGORY_GROUPS: CategoryGroup[] = CATEGORY_GROUPS.map((group) => ({
+  ...group,
+  items: group.items.filter((item) => (AUDITABLE_ASSET_CATEGORIES as readonly string[]).includes(item.key)),
+})).filter((group) => group.items.length > 0)

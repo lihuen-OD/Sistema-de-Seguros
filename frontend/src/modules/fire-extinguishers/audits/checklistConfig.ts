@@ -17,7 +17,7 @@ export const CHARGE_FILL_STATUS_OPTIONS: ChoiceOption[] = [
   { value: 'SOBRECARGADO', label: 'Sobrecargado' },
 ]
 
-export const PLATE_CONDITION_OPTIONS: ChoiceOption[] = [
+export const MOUNTING_CONDITION_OPTIONS: ChoiceOption[] = [
   { value: 'SANA', label: 'Sana' },
   { value: 'ROTA_LEVE', label: 'Rota (leve)' },
   { value: 'ROTA_REQUIERE_CAMBIO', label: 'Rota (requiere cambio)' },
@@ -48,18 +48,33 @@ export interface ChecklistFieldConfig {
   required: boolean
 }
 
-export const CHECKLIST_FIELDS: ChecklistFieldConfig[] = [
-  { key: 'cleanliness', label: 'Limpieza', type: 'choice', options: CLEANLINESS_OPTIONS, required: true },
-  { key: 'chargeFillStatus', label: 'Carga', type: 'choice', options: CHARGE_FILL_STATUS_OPTIONS, required: true },
-  { key: 'beaconPlateCondition', label: 'Chapa Baliza', type: 'choice', options: PLATE_CONDITION_OPTIONS, required: true },
-  { key: 'sealStatus', label: 'Precinto', type: 'choice', options: HAS_STATUS_OPTIONS, required: true },
-  { key: 'ringStatus', label: 'Anillo', type: 'choice', options: HAS_STATUS_OPTIONS, required: true },
-  { key: 'hoseNozzleCondition', label: 'Manguera y Tobera', type: 'choice', options: HOSE_NOZZLE_CONDITION_OPTIONS, required: true },
-  { key: 'chargeExpirationDateObserved', label: 'Fecha de vencimiento de la carga', type: 'date', required: false },
-]
+export type AuditPopulation = 'ESTABLISHMENT' | 'ASSET'
 
-export function isChecklistComplete(checklist: Record<string, string>): boolean {
-  return CHECKLIST_FIELDS.every((field) => {
+// El checklist es idéntico entre las dos poblaciones de FireExtinguisherAudit
+// (matafuegos de edificio vs. montados en un vehículo/maquinaria) salvo UN
+// rótulo: "Chapa Baliza" tiene sentido en la pared de un edificio, "Soporte /
+// Abrazadera" en un vehículo — mismo campo (`mountingCondition`), mismas 4
+// opciones. Ver fire-extinguisher-audits.population.ts en el backend.
+export function getChecklistFields(population: AuditPopulation): ChecklistFieldConfig[] {
+  return [
+    { key: 'cleanliness', label: 'Limpieza', type: 'choice', options: CLEANLINESS_OPTIONS, required: true },
+    { key: 'chargeFillStatus', label: 'Carga', type: 'choice', options: CHARGE_FILL_STATUS_OPTIONS, required: true },
+    {
+      key: 'mountingCondition',
+      label: population === 'ASSET' ? 'Soporte / Abrazadera' : 'Chapa Baliza',
+      type: 'choice',
+      options: MOUNTING_CONDITION_OPTIONS,
+      required: true,
+    },
+    { key: 'sealStatus', label: 'Precinto', type: 'choice', options: HAS_STATUS_OPTIONS, required: true },
+    { key: 'ringStatus', label: 'Anillo', type: 'choice', options: HAS_STATUS_OPTIONS, required: true },
+    { key: 'hoseNozzleCondition', label: 'Manguera y Tobera', type: 'choice', options: HOSE_NOZZLE_CONDITION_OPTIONS, required: true },
+    { key: 'chargeExpirationDateObserved', label: 'Fecha de vencimiento de la carga', type: 'date', required: false },
+  ]
+}
+
+export function isChecklistComplete(checklist: Record<string, string>, fields: ChecklistFieldConfig[]): boolean {
+  return fields.every((field) => {
     if (!field.required) return true
     return Boolean(checklist[field.key])
   })

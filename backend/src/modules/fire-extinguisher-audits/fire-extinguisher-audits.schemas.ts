@@ -1,9 +1,10 @@
 import { z } from 'zod'
 import { PaginationSchema } from '../../shared/schemas/common'
+import { AUDITABLE_ASSET_CATEGORIES } from '../../shared/types'
 import {
   FIRE_EXT_AUDIT_CLEANLINESS,
   FIRE_EXT_AUDIT_CHARGE_FILL_STATUS,
-  FIRE_EXT_AUDIT_PLATE_CONDITION,
+  FIRE_EXT_AUDIT_MOUNTING_CONDITION,
   FIRE_EXT_AUDIT_HAS_STATUS,
   FIRE_EXT_AUDIT_HOSE_NOZZLE_CONDITION,
   FIRE_EXT_AUDIT_MASTER_FIELDS,
@@ -74,7 +75,7 @@ const MasterDataReviewSchema = z
 const ChecklistSchema = z.object({
   cleanliness: z.enum(FIRE_EXT_AUDIT_CLEANLINESS),
   chargeFillStatus: z.enum(FIRE_EXT_AUDIT_CHARGE_FILL_STATUS),
-  beaconPlateCondition: z.enum(FIRE_EXT_AUDIT_PLATE_CONDITION),
+  mountingCondition: z.enum(FIRE_EXT_AUDIT_MOUNTING_CONDITION),
   sealStatus: z.enum(FIRE_EXT_AUDIT_HAS_STATUS),
   ringStatus: z.enum(FIRE_EXT_AUDIT_HAS_STATUS),
   hoseNozzleCondition: z.enum(FIRE_EXT_AUDIT_HOSE_NOZZLE_CONDITION),
@@ -153,10 +154,14 @@ export const CoverageQuerySchema = z.object({
 })
 
 // ── Dashboard de nivel % (auditoría mensual) ────────────────────────────────────
+// `establishment` solo tiene efecto en la población ESTABLISHMENT (Matafuegos);
+// `category` solo en la población ASSET (Activos) — cada router de auditoría
+// ignora el filtro que no le corresponde.
 
 export const AuditDashboardQuerySchema = z.object({
   period: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM'),
   establishment: z.string().optional(),
+  category: z.enum(AUDITABLE_ASSET_CATEGORIES).optional(),
 })
 
 export type LocationReviewDTO = z.infer<typeof LocationReviewSchema>
@@ -170,3 +175,8 @@ export type BulkApproveFireExtinguisherAuditsDTO = z.infer<typeof BulkApproveFir
 export type ListFireExtinguisherAuditsQueryDTO = z.infer<typeof ListFireExtinguisherAuditsQuerySchema>
 export type CoverageQueryDTO = z.infer<typeof CoverageQuerySchema>
 export type AuditDashboardQueryDTO = z.infer<typeof AuditDashboardQuerySchema>
+
+// Mismo shape que CoverageQuerySchema (solo `period`) — alias propio para que
+// el nombre del tipo hable del endpoint que lo usa.
+export const AuditorProgressQuerySchema = CoverageQuerySchema
+export type AuditorProgressQueryDTO = z.infer<typeof AuditorProgressQuerySchema>

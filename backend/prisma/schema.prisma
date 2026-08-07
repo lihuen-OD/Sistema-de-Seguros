@@ -122,9 +122,12 @@ model Asset {
   description            String?
   metadata               Json?
   isActive               Boolean   @default(true)
-  // Marca activos (típicamente vehículos/maquinaria) a incluir en la futura
-  // auditoría de activos — hoy es solo un dato de referencia, sin proceso
-  // automático asociado todavía.
+  // Marca activos (típicamente vehículos/maquinaria) elegibles para la
+  // auditoría de seguros (ver InsuranceAudit) — junto con isActive y la
+  // categoría (una de AUDITABLE_ASSET_CATEGORIES), define el pool elegible.
+  // "Auditoría de Activos" ya no depende de este flag: audita los
+  // FireExtinguisher vinculados a este activo (ver FireExtinguisherAudit /
+  // fire-extinguisher-audits.population.ts), no al activo en sí.
   auditable              Boolean   @default(false)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
@@ -138,6 +141,7 @@ model Asset {
   policyCoverages           PolicyAssetCoverage[]
   fixedAsset                 FixedAsset?                      @relation(fields: [fixedAssetId], references: [id])
   renewalProjectionOverrides AssetRenewalProjectionOverride[]
+  insuranceAudits           InsuranceAudit[]
 
   @@index([isActive, status])
   @@index([isActive, assetType])
@@ -245,6 +249,80 @@ model AssetRenewalProjectionOverride {
 
   @@unique([assetId, mode])
   @@map("asset_renewal_projection_overrides")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auditoría de Seguros — alcance por categoría de activo (UserAuditScope,
+// área INSURANCE_AUDIT), checklist que combina (a) documentación/cobertura
+// vigente y (b) condición física relevante al seguro. Checklist
+// deliberadamente mínimo/genérico — se amplía cuando se defina el detalle
+// exacto con el negocio. Sin "InsuranceAuditProposedChange": este checklist
+// no revisa/corrige datos maestros del activo ni de la póliza, así que no
+// hay nada que proponer-y-aprobar.
+//
+// Nota: "Auditoría de Activos" (la contraparte de este modelo para
+// condición física, no seguros) NO tiene un modelo propio — audita
+// FireExtinguisher (los matafuegos montados en vehículos/maquinaria), no
+// Asset, así que reutiliza FireExtinguisherAudit con `population: 'ASSET'`
+// (ver fire-extinguisher-audits.population.ts). Este modelo (InsuranceAudit)
+// es el único que sigue auditando el Asset directamente.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model InsuranceAudit {
+  id          String   @id @default(uuid())
+  assetId     String
+  status      String   @default("SUBMITTED") // DRAFT | SUBMITTED | APPROVED | REJECTED | NEEDS_CORRECTION
+  auditDate   DateTime @db.Date // derivado en el server ("hoy"), nunca confiado del cliente
+  auditPeriod String // "YYYY-MM", derivado en el server
+  auditedBy   String
+
+  // (a) Documentación / cobertura vigente
+  policyActiveConfirmed   Boolean @default(false)
+  insuranceCardPresent    Boolean @default(false)
+  dataMatchesInsuredAsset Boolean @default(false)
+  // (b) Condición física relevante al seguro (no un chequeo general de vehículo/maquinaria)
+  physicalConditionOk     Boolean @default(false)
+  odometerOrHoursObserved String?
+  comments                String?
+
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  asset       Asset                      @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  attachments InsuranceAuditAttachment[]
+
+  // La unicidad real de (assetId, auditPeriod) vive en un ÍNDICE ÚNICO
+  // PARCIAL creado a mano en la migración de este modelo (WHERE status NOT
+  // IN ('REJECTED','NEEDS_CORRECTION')) — mismo patrón que asset_audits y
+  // fire_extinguisher_audits. Permite crear una auditoría nueva del mismo
+  // activo+período tras una recorrección.
+  // NO agregar @@unique([assetId, auditPeriod]) acá.
+  // NO correr `prisma db push` contra esta tabla sin revisar a mano.
+  @@index([assetId, auditPeriod])
+  @@index([assetId])
+  @@map("insurance_audits")
+}
+
+model InsuranceAuditAttachment {
+  id                 String         @id @default(uuid())
+  auditId            String
+  name               String
+  description        String?
+  fileType           String
+  fileSize           String
+  fileUrl            String
+  cloudinaryPublicId String?
+  uploadedAt         DateTime       @default(now())
+  uploadedBy         String
+
+  audit InsuranceAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  @@index([auditId])
+  @@map("insurance_audit_attachments")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -612,6 +690,17 @@ model FireExtinguisherHistory {
 // modifica el maestro directamente — cualquier discrepancia detectada por el
 // auditor (ubicación o campos de FireExtinguisherAuditProposedChange) queda
 // en estado PENDING hasta que una fase futura (revisión/aprobación) la aplique.
+//
+// Este mismo modelo sirve para DOS poblaciones de FireExtinguisher, nunca
+// mezcladas en una consulta: matafuegos de edificio ("Auditoría de
+// Matafuegos", alcance por establecimiento) y matafuegos montados en un
+// vehículo/maquinaria ("Auditoría de Activos", alcance por categoría de
+// activo). La población nunca se guarda en una columna — se deriva siempre
+// de `extinguisher.assetId` + `classifyAssetType()` (ver
+// fire-extinguisher-audits.population.ts). `mountingCondition` es el único
+// campo del checklist cuyo RÓTULO cambia según la población ("Chapa Baliza"
+// en un edificio, "Soporte / Abrazadera" en un vehículo) — mismos 4 valores
+// en ambos casos.
 // ─────────────────────────────────────────────────────────────────────────────
 
 model FireExtinguisherAudit {
@@ -631,7 +720,7 @@ model FireExtinguisherAudit {
   // Paso 4 — Checklist de condición (embebido, sin tabla separada)
   cleanliness                  String
   chargeFillStatus             String // CARGADO | DESCARGADO — no confundir con el status de vencimiento (vigente/proximo_vencer/vencido)
-  beaconPlateCondition         String // SANA | ROTA_LEVE | ROTA_REQUIERE_CAMBIO | NO_TIENE
+  mountingCondition            String // SANA | ROTA_LEVE | ROTA_REQUIERE_CAMBIO | NO_TIENE — "Chapa Baliza" (edificio) o "Soporte/Abrazadera" (vehículo), ver comentario del modelo
   sealStatus                   String
   ringStatus                   String
   hoseNozzleCondition          String
@@ -926,10 +1015,43 @@ model User {
 
   accessProfile AccessProfile?          @relation(fields: [accessProfileId], references: [id])
   dismissals    NotificationDismissal[]
+  auditScopes   UserAuditScope[]
 
   @@index([role])
   @@index([accessProfileId])
   @@map("users")
+}
+
+// Alcance de auditoría — qué establecimientos (matafuegos) o categorías de
+// activo (activos/seguros) puede ver/operar un usuario auditor puntual.
+//
+// Muchos-a-muchos real: un mismo (area, scopeValue) puede estar asignado a más
+// de un usuario (ej. un auditor de respaldo) — la unicidad es sobre la TERNA
+// (userId, area, scopeValue), no sobre (area, scopeValue) solo.
+//
+// NO es un permiso de módulo (eso lo sigue resolviendo AccessProfile.modules
+// vía requireModule) — es un filtro de "cuáles" recursos dentro de un módulo
+// ya habilitado. Un usuario auditor sin ninguna fila para su área ve una
+// pantalla vacía, no un error (ver resolveAuditScope). Los revisores y el
+// ADMIN nunca se restringen por esta tabla.
+model UserAuditScope {
+  id         String   @id @default(uuid())
+  userId     String
+  area       String // FIRE_EXTINGUISHER_AUDIT | ASSET_AUDIT | INSURANCE_AUDIT
+  // FIRE_EXTINGUISHER_AUDIT: label de CatalogItem(category:'fire_ext_establishment'),
+  //   texto libre igual que FireExtinguisher.establishment — sin FK real, mismo
+  //   criterio que el resto del catálogo de establecimientos.
+  // ASSET_AUDIT / INSURANCE_AUDIT: una de AUDITABLE_ASSET_CATEGORIES (lista fija
+  //   del backend, espejo de AssetCategory del frontend).
+  scopeValue String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, area, scopeValue])
+  @@index([userId, area])
+  @@index([area, scopeValue])
+  @@map("user_audit_scopes")
 }
 
 // Sin relación formal a User a propósito: un audit log debe sobrevivir aunque

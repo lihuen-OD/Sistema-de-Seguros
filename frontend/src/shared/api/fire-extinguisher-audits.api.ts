@@ -16,7 +16,7 @@ export type LocationReview =
 export interface AuditChecklistInput {
   cleanliness: string
   chargeFillStatus: string
-  beaconPlateCondition: string
+  mountingCondition: string
   sealStatus: string
   ringStatus: string
   hoseNozzleCondition: string
@@ -101,6 +101,7 @@ export interface FireExtinguisherAuditListItem {
     establishment: string | null
     associatedLocationType: string
     location: string | null
+    asset: { id: string; code: string | null; name: string; assetType: string } | null
   } | null
 }
 
@@ -130,6 +131,11 @@ export interface FireExtinguisherCoverageItem {
   establishment: string | null
   associatedLocationType: string
   location: string | null
+  // Poblados solo del lado Activos (matafuego vinculado a un vehículo/
+  // maquinaria) — null del lado Matafuegos (edificio). Ver
+  // fire-extinguisher-audits.population.ts en el backend.
+  asset: { id: string; code: string | null; name: string; assetType: string } | null
+  category: string | null
   audited: boolean
   auditId: string | null
   auditStatus: FireExtinguisherAuditStatus | null
@@ -143,7 +149,7 @@ export interface FireExtinguisherCoverageItem {
 export type AuditControlPointKey =
   | 'cleanliness'
   | 'chargeFillStatus'
-  | 'beaconPlateCondition'
+  | 'mountingCondition'
   | 'sealStatus'
   | 'ringStatus'
   | 'hoseNozzleCondition'
@@ -183,6 +189,24 @@ export interface AuditDashboard {
   overallLevelLabel: string | null
   controlPoints: AuditControlPointLevel[]
   sectors: AuditDashboardSector[]
+}
+
+// ── Progreso por auditor ─────────────────────────────────────────────────────────
+
+export interface AuditorProgress {
+  userId: string
+  name: string
+  email: string
+  assignedEstablishments: string[]
+  assigned: number
+  completed: number
+  pending: number
+  completionRate: number | null
+}
+
+export interface AuditorProgressReport {
+  period: string
+  auditors: AuditorProgress[]
 }
 
 export interface FireExtinguisherAuditListFilters {
@@ -260,6 +284,13 @@ export const fireExtinguisherAuditsApi = {
     })
     return res.data.data
   },
+
+  async getAuditorProgress(period: string): Promise<AuditorProgressReport> {
+    const res = await apiClient.get<{ data: AuditorProgressReport }>('/fire-extinguisher-audits/auditor-progress', {
+      params: { period },
+    })
+    return res.data.data
+  },
 }
 
 // ── Query options (categoría B — semi-dinámico) ──────────────────────────────────
@@ -289,6 +320,12 @@ export const fireExtinguisherAuditQueries = {
     queryOptions({
       queryKey: [...fireExtinguisherAuditKeys.all, 'audit-dashboard', period, establishment ?? null] as const,
       queryFn: () => fireExtinguisherAuditsApi.getAuditDashboard(period, establishment),
+      staleTime: 60 * 1000,
+    }),
+  auditorProgress: (period: string) =>
+    queryOptions({
+      queryKey: [...fireExtinguisherAuditKeys.all, 'auditor-progress', period] as const,
+      queryFn: () => fireExtinguisherAuditsApi.getAuditorProgress(period),
       staleTime: 60 * 1000,
     }),
 }

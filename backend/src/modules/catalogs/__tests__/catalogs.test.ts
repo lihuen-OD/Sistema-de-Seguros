@@ -16,6 +16,7 @@ jest.mock('../../../config/database', () => ({
       delete: jest.fn(),
     },
     fireExtinguisher: { count: jest.fn() },
+    userAuditScope: { count: jest.fn() },
     claim: { count: jest.fn() },
     accountingDocument: { count: jest.fn() },
     policy: { count: jest.fn() },
@@ -36,6 +37,7 @@ describe('Catalogs API', () => {
     jest.clearAllMocks()
     db.user.findUnique.mockResolvedValue(mockDbUser())
     db.fireExtinguisher.count.mockResolvedValue(0)
+    db.userAuditScope.count.mockResolvedValue(0)
     db.claim.count.mockResolvedValue(0)
     db.accountingDocument.count.mockResolvedValue(0)
     db.policy.count.mockResolvedValue(0)
@@ -116,6 +118,20 @@ describe('Catalogs API', () => {
 
       const res = await request(app)
         .delete(`/api/v1/catalogs/fire_ext_type/${ITEM_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('CATALOG_ITEM_IN_USE')
+      expect(db.catalogItem.delete).not.toHaveBeenCalled()
+    })
+
+    it('returns 409 CATALOG_ITEM_IN_USE when a fire_ext_establishment value has an auditor scope assigned to it', async () => {
+      db.catalogItem.findUnique.mockResolvedValue(fakeItem({ category: 'fire_ext_establishment', label: 'PLANTA' }))
+      db.fireExtinguisher.count.mockResolvedValue(0)
+      db.userAuditScope.count.mockResolvedValue(1)
+
+      const res = await request(app)
+        .delete(`/api/v1/catalogs/fire_ext_establishment/${ITEM_ID}`)
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(409)

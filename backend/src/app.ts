@@ -21,6 +21,8 @@ import { policiesRouter } from './modules/policies/policies.router'
 import { documentsRouter } from './modules/documents/documents.router'
 import { fireExtinguishersRouter } from './modules/fire-extinguishers/fire-extinguishers.router'
 import { fireExtinguisherAuditsRouter } from './modules/fire-extinguisher-audits/fire-extinguisher-audits.router'
+import { assetAuditsRouter } from './modules/asset-audits/asset-audits.router'
+import { insuranceAuditsRouter } from './modules/insurance-audits/insurance-audits.router'
 import { claimsRouter } from './modules/claims/claims.router'
 import { catalogsRouter } from './modules/catalogs/catalogs.router'
 import { exchangeRateRouter } from './modules/exchange-rate/exchange-rate.router'
@@ -136,6 +138,10 @@ app.use('/api/v1/documents', documentsRouter)
 app.use('/api/v1/fire-extinguishers', fireExtinguishersRouter)
 // Matafuegos Fase 3 — Auditoría mensual
 app.use('/api/v1/fire-extinguisher-audits', fireExtinguisherAuditsRouter)
+// Auditoría de Activos — condición física de vehículos/maquinaria
+app.use('/api/v1/asset-audits', assetAuditsRouter)
+// Auditoría de Seguros — documentación/cobertura vigente + condición física relevante al seguro
+app.use('/api/v1/insurance-audits', insuranceAuditsRouter)
 // Fase 8 — Siniestros
 app.use('/api/v1/claims', claimsRouter)
 // Fase 11 — Catálogos dinámicos

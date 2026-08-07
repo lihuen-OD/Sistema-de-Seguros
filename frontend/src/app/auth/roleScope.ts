@@ -45,6 +45,14 @@ const PATH_TO_MODULE: Array<{ prefix: string; modules: ModuleKey[]; landable?: b
   { prefix: '/fire-extinguishers/audits', modules: ['fire_extinguisher_audits', 'fire_extinguisher_audit_coverage'] },
   { prefix: '/fire-extinguishers/dashboard', modules: ['fire_extinguisher_dashboard'] },
   { prefix: '/fire-extinguishers', modules: ['fire_extinguishers'] },
+  // Mismo criterio que /fire-extinguishers/audits/*: auditar y revisar son
+  // permisos distintos, cada pantalla filtra más fino adentro.
+  { prefix: '/asset-audits/new', modules: ['asset_audit_coverage'], landable: false },
+  { prefix: '/asset-audits/dashboard', modules: ['asset_audit_dashboard'], landable: false },
+  { prefix: '/asset-audits', modules: ['asset_audits', 'asset_audit_coverage'] },
+  { prefix: '/insurance-audits/new', modules: ['insurance_audit_coverage'], landable: false },
+  { prefix: '/insurance-audits/dashboard', modules: ['insurance_audit_dashboard'], landable: false },
+  { prefix: '/insurance-audits', modules: ['insurance_audits', 'insurance_audit_coverage'] },
   { prefix: '/producers', modules: ['producers'] },
   { prefix: '/tasks', modules: ['tasks'] },
   { prefix: '/settings/companies', modules: ['companies'] },
