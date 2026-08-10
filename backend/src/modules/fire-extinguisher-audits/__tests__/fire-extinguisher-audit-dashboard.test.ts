@@ -226,7 +226,7 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
     expect(res.body.data.establishments).toEqual(['LA SUCHO'])
   })
 
-  it('keeps only the most recent non-rejected audit per extinguisher', async () => {
+  it('keeps only the most recent audit per extinguisher, ordered by createdAt not auditDate', async () => {
     db.fireExtinguisher.findMany.mockResolvedValue([fe({ id: 'fe-1' })])
     db.fireExtinguisherAudit.findMany.mockResolvedValue([
       auditRow({ fireExtinguisherId: 'fe-1', auditDate: new Date('2026-07-20T00:00:00.000Z'), cleanliness: 'MUY_SUCIO' }),
@@ -239,11 +239,30 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
       .set('Authorization', `Bearer ${adminToken()}`)
 
     expect(db.fireExtinguisherAudit.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ orderBy: { auditDate: 'desc' } }),
+      expect.objectContaining({ orderBy: { createdAt: 'desc' } }),
     )
     const sector = res.body.data.sectors[0]
     // El mock ya llega ordenado desc — el primero (más reciente) es MUY_SUCIO (score 10).
     expect(findControlPoint(sector, 'cleanliness').level).toBeCloseTo(10, 1)
+  })
+
+  it('picks the audit created later even when both share the same auditDate (recorrección same-day)', async () => {
+    // Reproduce el bug real: una auditoría NEEDS_CORRECTION y su recorrección
+    // APPROVED, ambas con auditDate de "hoy" — createdAt es lo único que las
+    // distingue de forma confiable.
+    db.fireExtinguisher.findMany.mockResolvedValue([fe({ id: 'fe-1' })])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([
+      auditRow({ fireExtinguisherId: 'fe-1', auditDate: new Date('2026-07-20T00:00:00.000Z'), cleanliness: 'IMPECABLE' }), // la recorrección, createdAt más nuevo → primera en el mock (orderBy createdAt desc)
+      auditRow({ fireExtinguisherId: 'fe-1', auditDate: new Date('2026-07-20T00:00:00.000Z'), cleanliness: 'MUY_SUCIO' }), // la vieja, superada
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/audit-dashboard')
+      .query({ period: PERIOD })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    const sector = res.body.data.sectors[0]
+    expect(findControlPoint(sector, 'cleanliness').level).toBeCloseTo(100, 1)
   })
 
   it('lists expired extinguishers by cylinder number, regardless of whether they were audited this period', async () => {

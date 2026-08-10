@@ -38,3 +38,18 @@ export async function resolveAuditScope(
 export function isInScope(scope: AuditScopeContext, value: string | null | undefined): boolean {
   return !scope.restricted || (!!value && scope.values.includes(value))
 }
+
+// Reemplazo total del alcance de UN usuario en UNA sola área — a diferencia
+// de users.service.ts#replaceAuditScope (que reemplaza el conjunto completo
+// que le manda el frontend, ya reconstruido con las áreas no editadas
+// preservadas), esta función es la que usan los endpoints dedicados de
+// asignación (.../assignments/:userId) para pisar exclusivamente ASSET_AUDIT
+// o INSURANCE_AUDIT sin tocar ninguna otra área del mismo usuario.
+export async function replaceUserAuditScope(userId: string, area: AuditScopeArea, scopeValues: string[]): Promise<void> {
+  await prisma.$transaction([
+    prisma.userAuditScope.deleteMany({ where: { userId, area } }),
+    ...(scopeValues.length > 0
+      ? [prisma.userAuditScope.createMany({ data: scopeValues.map((scopeValue) => ({ userId, area, scopeValue })) })]
+      : []),
+  ])
+}

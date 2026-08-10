@@ -25,6 +25,14 @@ jest.mock('../../../config/database', () => ({
       findFirst: jest.fn(),
       delete: jest.fn(),
     },
+    auditComment: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
     userAuditScope: {
       findMany: jest.fn(),
     },

@@ -9,9 +9,11 @@ import type {
   FireExtinguisherAuditReviewInput as AssetAuditReviewInput,
   BulkApproveFireExtinguisherAuditsResult as BulkApproveAssetAuditsResult,
   FireExtinguisherCoverageItem as AssetAuditCoverageItem,
+  FireExtinguisherAuditCommentItem as AssetAuditCommentItem,
   AuditControlPointLevel,
   AuditFlaggedExtinguisher,
 } from './fire-extinguisher-audits.api'
+import { fireExtinguisherLabel } from '../utils/format'
 
 // "Auditoría de Activos" reutiliza el motor de FireExtinguisherAudit
 // (auditar los matafuegos montados en vehículos/maquinaria, no el vehículo
@@ -29,6 +31,7 @@ export type {
   AssetAuditReviewInput,
   BulkApproveAssetAuditsResult,
   AssetAuditCoverageItem,
+  AssetAuditCommentItem,
 }
 
 export type AssetAuditStatus = 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'NEEDS_CORRECTION'
@@ -62,7 +65,7 @@ export interface AssetAuditorProgress {
   userId: string
   name: string
   email: string
-  assignedCategories: string[]
+  assignedAssetIds: string[]
   assigned: number
   completed: number
   pending: number
@@ -76,6 +79,30 @@ export interface AssetAuditorProgressReport {
 
 export interface AssetAuditListFilters {
   fireExtinguisherId?: string
+}
+
+// Asignación por activo individual — reemplaza la asignación por categoría.
+export interface AssetAuditAssignableAsset {
+  id: string
+  code: string | null
+  name: string
+  assetType: string
+  category: string
+  plate: string | null
+  chassisNumber: string | null
+  engineNumber: string | null
+}
+
+export interface AssetAuditAssignmentAuditor {
+  userId: string
+  name: string
+  email: string
+  assetIds: string[]
+}
+
+export interface AssetAuditAssignments {
+  auditors: AssetAuditAssignmentAuditor[]
+  assets: AssetAuditAssignableAsset[]
 }
 
 export const assetAuditKeys = {
@@ -142,6 +169,38 @@ export const assetAuditsApi = {
     const res = await apiClient.get<{ data: AssetAuditorProgressReport }>('/asset-audits/auditor-progress', { params: { period } })
     return res.data.data
   },
+
+  async getAssignments(): Promise<AssetAuditAssignments> {
+    const res = await apiClient.get<{ data: AssetAuditAssignments }>('/asset-audits/assignments')
+    return res.data.data
+  },
+
+  async saveAssignment(userId: string, assetIds: string[]): Promise<void> {
+    await apiClient.put(`/asset-audits/assignments/${userId}`, { assetIds })
+  },
+
+  async getComments(period: string): Promise<AssetAuditCommentItem[]> {
+    type RawComment = Omit<AssetAuditCommentItem, 'target'> & {
+      target: { id: string; code: string; cylinderNumber: string | null; location: string | null; establishment: string | null; assetName: string | null }
+    }
+    const res = await apiClient.get<{ data: RawComment[] }>('/asset-audits/comments', { params: { period } })
+    return res.data.data.map((c) => ({
+      ...c,
+      target: {
+        id: c.target.id,
+        label: fireExtinguisherLabel(c.target.cylinderNumber, c.target.location, c.target.code),
+        sublabel: c.target.assetName ?? c.target.establishment ?? null,
+      },
+    }))
+  },
+
+  async addComment(targetId: string, body: string): Promise<void> {
+    await apiClient.post('/asset-audits/comments', { targetId, body })
+  },
+
+  async markCommentSeen(id: string): Promise<void> {
+    await apiClient.post(`/asset-audits/comments/${id}/mark-seen`)
+  },
 }
 
 export const assetAuditQueries = {
@@ -174,6 +233,18 @@ export const assetAuditQueries = {
     queryOptions({
       queryKey: [...assetAuditKeys.all, 'auditor-progress', period] as const,
       queryFn: () => assetAuditsApi.getAuditorProgress(period),
+      staleTime: 60 * 1000,
+    }),
+  assignments: () =>
+    queryOptions({
+      queryKey: [...assetAuditKeys.all, 'assignments'] as const,
+      queryFn: () => assetAuditsApi.getAssignments(),
+      staleTime: 30 * 1000,
+    }),
+  comments: (period: string) =>
+    queryOptions({
+      queryKey: [...assetAuditKeys.all, 'comments', period] as const,
+      queryFn: () => assetAuditsApi.getComments(period),
       staleTime: 60 * 1000,
     }),
 }

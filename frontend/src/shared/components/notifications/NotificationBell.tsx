@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { Bell, ShieldAlert, CreditCard, Flame, Paperclip, X, ArrowRight } from 'lucide-react'
+import { Bell, ShieldAlert, CreditCard, Flame, Paperclip, IdCard, X, ArrowRight } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { notificationQueries } from '../../api/notifications.api'
@@ -22,7 +22,12 @@ export function NotificationBell() {
   }, [open])
 
   const totalAlerts = data
-    ? data.expiringPolicies + data.expiringExtinguishers + data.overdueInstallments + data.nearInstallments + data.expiringAttachments
+    ? data.expiringPolicies +
+      data.expiringExtinguishers +
+      data.overdueInstallments +
+      data.nearInstallments +
+      data.expiringAttachments +
+      data.pendingCardUpdates
     : 0
 
   return (
@@ -129,6 +134,16 @@ export function NotificationBell() {
                   label={`${data.expiringAttachments} documento${data.expiringAttachments !== 1 ? 's' : ''} adjunto${data.expiringAttachments !== 1 ? 's' : ''} por vencer`}
                   sub="Adjuntos de Activos y Pólizas"
                   onClick={() => { navigate('/notifications'); setOpen(false) }}
+                />
+              )}
+              {data.pendingCardUpdates > 0 && (
+                <AlertRow
+                  icon={IdCard}
+                  iconColor="text-brand-500"
+                  iconBg="bg-brand-50"
+                  label={`${data.pendingCardUpdates} auditoría${data.pendingCardUpdates !== 1 ? 's' : ''} con tarjeta de circulación para confirmar`}
+                  sub="El auditor avisó que ya la colocó en el vehículo"
+                  onClick={() => { navigate('/insurance-audits'); setOpen(false) }}
                 />
               )}
             </div>

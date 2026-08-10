@@ -5,8 +5,10 @@ import { detectFileType, formatFileSize, matchesDeclaredMimetype, sanitizeFileNa
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
 import { todayDate, currentYearMonth, toDateStr } from '../../shared/utils/dates'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { latestByKey } from '../../shared/utils/latest-by-key'
 import { isInScope, type AuditScopeContext } from '../../shared/services/audit-scope.service'
-import { matchesAuditPopulation, auditScopeKeyFor, type FireExtAuditPopulation } from './fire-extinguisher-audits.population'
+import { listAuditComments, createManualComment, recordAuditorNote, recordReviewDecision, markAuditCommentSeen } from '../../shared/services/audit-comments.service'
+import { matchesAuditPopulation, auditScopeKeyFor, auditScopeMatchValueFor, type FireExtAuditPopulation } from './fire-extinguisher-audits.population'
 import type {
   CreateFireExtinguisherAuditDTO,
   UpdateFireExtinguisherAuditDTO,
@@ -181,7 +183,7 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
         )
       : new AppError(
           400,
-          'Este matafuego no está vinculado a un vehículo o maquinaria y no forma parte de la auditoría de activos',
+          'Este matafuego no está vinculado a un vehículo o maquinaria y no forma parte de la auditoría de rodados',
           'FIRE_EXTINGUISHER_NOT_ASSET_LINKED',
         )
   }
@@ -190,12 +192,12 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
     async create(data: CreateFireExtinguisherAuditDTO, performedBy: string, scope: AuditScopeContext) {
       const fe = await prisma.fireExtinguisher.findUnique({
         where: { id: data.fireExtinguisherId },
-        include: { asset: { select: { assetType: true, auditable: true } } },
+        include: { asset: { select: { assetType: true, fireExtinguisherAuditable: true } } },
       })
       if (!fe) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
       // Fuera del alcance asignado = mismo 404 que "no existe" — no debe
       // filtrarse que el matafuego existe en otro establecimiento/categoría.
-      if (!isInScope(scope, auditScopeKeyFor(fe, population))) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
+      if (!isInScope(scope, auditScopeMatchValueFor(fe, population))) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
       if (!fe.isActive) throw new AppError(400, 'El matafuego está dado de baja', 'INACTIVE_FIRE_EXTINGUISHER')
       // Un matafuego de la población equivocada (edificio vs vehículo/maquinaria)
       // no forma parte de esta auditoría — ver AuditStep1Selection/getCoverage,
@@ -263,6 +265,8 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
             ),
           )
 
+          await recordAuditorNote(tx, 'FIRE_EXTINGUISHER', fe.id, auditPeriod, created.id, performedBy, data.checklist.comments ?? null)
+
           return created.id
         })
         .catch(handleDuplicateAudit)
@@ -293,11 +297,11 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
 
       const fe = await prisma.fireExtinguisher.findUnique({
         where: { id: audit.fireExtinguisherId },
-        include: { asset: { select: { assetType: true, auditable: true } } },
+        include: { asset: { select: { assetType: true, fireExtinguisherAuditable: true } } },
       })
       if (!fe) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
       if (!matchesAuditPopulation(fe, population)) throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
-      if (!isInScope(scope, auditScopeKeyFor(fe, population))) throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
+      if (!isInScope(scope, auditScopeMatchValueFor(fe, population))) throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
 
       type ChangeRow = { fireExtinguisherId: string; fieldName: string; currentValue: string; proposedValue: string; reason: string | null }
       const changes: ChangeRow[] = []
@@ -349,6 +353,10 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
         if (changes.length > 0) {
           await Promise.all(changes.map((c) => tx.fireExtinguisherAuditProposedChange.create({ data: { ...c, auditId: id } })))
         }
+
+        // authorEmail = el auditor original (auditedBy), no quien guarda el
+        // edit — el comentario queda atribuido a quien hizo la auditoría.
+        await recordAuditorNote(tx, 'FIRE_EXTINGUISHER', fe.id, audit.auditPeriod, id, audit.auditedBy, data.checklist.comments ?? null)
       })
 
       return this.findById(id)
@@ -367,7 +375,7 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
         include: {
           proposedChanges: true,
           attachments: true,
-          extinguisher: { select: { establishment: true, assetId: true, asset: { select: { assetType: true, auditable: true } } } },
+          extinguisher: { select: { establishment: true, assetId: true, asset: { select: { assetType: true, fireExtinguisherAuditable: true } } } },
         },
       })
       if (!audit) throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
@@ -375,7 +383,7 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
         if (!audit.extinguisher || !matchesAuditPopulation(audit.extinguisher, population)) {
           throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
         }
-        if (!isInScope(scope, auditScopeKeyFor(audit.extinguisher, population))) {
+        if (!isInScope(scope, auditScopeMatchValueFor(audit.extinguisher, population))) {
           throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
         }
       }
@@ -391,13 +399,13 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
     ) {
       const audit = await prisma.fireExtinguisherAudit.findUnique({
         where: { id: auditId },
-        include: { extinguisher: { select: { establishment: true, assetId: true, asset: { select: { assetType: true, auditable: true } } } } },
+        include: { extinguisher: { select: { establishment: true, assetId: true, asset: { select: { assetType: true, fireExtinguisherAuditable: true } } } } },
       })
       if (!audit) throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
       if (!audit.extinguisher || !matchesAuditPopulation(audit.extinguisher, population)) {
         throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
       }
-      if (!isInScope(scope, auditScopeKeyFor(audit.extinguisher, population))) throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
+      if (!isInScope(scope, auditScopeMatchValueFor(audit.extinguisher, population))) throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
 
       const count = await prisma.fireExtinguisherAttachment.count({ where: { auditId } })
       if (count >= MAX_ATTACHMENTS_PER_AUDIT) {
@@ -445,13 +453,13 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
     async deleteAttachment(auditId: string, attachmentId: string, scope: AuditScopeContext) {
       const attachment = await prisma.fireExtinguisherAttachment.findFirst({
         where: { id: attachmentId, auditId },
-        include: { extinguisher: { select: { establishment: true, assetId: true, asset: { select: { assetType: true, auditable: true } } } } },
+        include: { extinguisher: { select: { establishment: true, assetId: true, asset: { select: { assetType: true, fireExtinguisherAuditable: true } } } } },
       })
       if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
       if (!attachment.extinguisher || !matchesAuditPopulation(attachment.extinguisher, population)) {
         throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
       }
-      if (!isInScope(scope, auditScopeKeyFor(attachment.extinguisher, population))) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+      if (!isInScope(scope, auditScopeMatchValueFor(attachment.extinguisher, population))) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
       if (attachment.cloudinaryPublicId) {
         await deleteFromCloudinary(attachment.cloudinaryPublicId)
       }
@@ -461,13 +469,13 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
     async getAttachmentForDownload(auditId: string, attachmentId: string, scope: AuditScopeContext) {
       const attachment = await prisma.fireExtinguisherAttachment.findFirst({
         where: { id: attachmentId, auditId },
-        include: { extinguisher: { select: { establishment: true, assetId: true, asset: { select: { assetType: true, auditable: true } } } } },
+        include: { extinguisher: { select: { establishment: true, assetId: true, asset: { select: { assetType: true, fireExtinguisherAuditable: true } } } } },
       })
       if (!attachment) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
       if (!attachment.extinguisher || !matchesAuditPopulation(attachment.extinguisher, population)) {
         throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
       }
-      if (!isInScope(scope, auditScopeKeyFor(attachment.extinguisher, population))) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
+      if (!isInScope(scope, auditScopeMatchValueFor(attachment.extinguisher, population))) throw new AppError(404, 'Adjunto no encontrado', 'NOT_FOUND')
       return attachment
     },
 
@@ -482,11 +490,11 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
       // esto, GET /fire-extinguisher-audits empezaría a devolver también
       // auditorías de matafuegos de vehículos (y viceversa en /asset-audits).
       const allExtinguishers = await prisma.fireExtinguisher.findMany({
-        select: { id: true, establishment: true, assetId: true, asset: { select: { assetType: true, auditable: true } } },
+        select: { id: true, establishment: true, assetId: true, asset: { select: { assetType: true, fireExtinguisherAuditable: true } } },
       })
       let allowed = allExtinguishers.filter((fe) => matchesAuditPopulation(fe, population))
       if (scope.restricted) {
-        allowed = allowed.filter((fe) => isInScope(scope, auditScopeKeyFor(fe, population)))
+        allowed = allowed.filter((fe) => isInScope(scope, auditScopeMatchValueFor(fe, population)))
       }
       let fireExtinguisherIds = allowed.map((fe) => fe.id)
       if (query.fireExtinguisherId) {
@@ -530,9 +538,13 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
 
     // Cobertura de auditoría: todos los matafuegos activos de esta población
     // (edificio o vehículo/maquinaria, según corresponda), marcados con la
-    // auditoría más reciente (si existe) que tengan en el período dado, sin
-    // contar las rechazadas — mismo criterio que `auditedThisPeriod` en
-    // fire-extinguishers-dashboard.service.ts.
+    // auditoría MÁS RECIENTE (si existe) que tengan en el período dado —
+    // cualquier estado, incluso REJECTED, para que Cobertura siempre refleje
+    // el resultado real de la última recorrección. "Más reciente" se define
+    // por `createdAt` (orden de creación real), no por `auditDate` (solo la
+    // fecha calendario "hoy" — una recorrección hecha el mismo día empataría
+    // con la auditoría que reemplaza, y ese empate no tiene desempate
+    // garantizado en Postgres). Ver latest-by-key.ts.
     async getCoverage(period: string, scope: AuditScopeContext) {
       const [extinguishers, audits] = await Promise.all([
         prisma.fireExtinguisher.findMany({
@@ -546,27 +558,22 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
             locationType: true,
             location: true,
             assetId: true,
-            asset: { select: { id: true, code: true, name: true, assetType: true, auditable: true } },
+            asset: { select: { id: true, code: true, name: true, assetType: true, fireExtinguisherAuditable: true } },
           },
           orderBy: [{ establishment: 'asc' }, { code: 'asc' }],
         }),
         prisma.fireExtinguisherAudit.findMany({
-          where: { auditPeriod: period, status: { not: 'REJECTED' } },
+          where: { auditPeriod: period },
           select: { id: true, fireExtinguisherId: true, status: true, auditDate: true },
-          orderBy: { auditDate: 'desc' },
+          orderBy: { createdAt: 'desc' },
         }),
       ])
 
-      const latestAuditByExtinguisher = new Map<string, { id: string; status: string; auditDate: Date }>()
-      for (const a of audits) {
-        if (!latestAuditByExtinguisher.has(a.fireExtinguisherId)) {
-          latestAuditByExtinguisher.set(a.fireExtinguisherId, { id: a.id, status: a.status, auditDate: a.auditDate })
-        }
-      }
+      const latestAuditByExtinguisher = latestByKey(audits, (a) => a.fireExtinguisherId)
 
       const auditApplicable = extinguishers
         .filter((fe) => matchesAuditPopulation(fe, population))
-        .filter((fe) => isInScope(scope, auditScopeKeyFor(fe, population)))
+        .filter((fe) => isInScope(scope, auditScopeMatchValueFor(fe, population)))
 
       return auditApplicable.map((fe) => {
         const audit = latestAuditByExtinguisher.get(fe.id)
@@ -588,6 +595,87 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
       })
     },
 
+    // Feed de comentarios de Cobertura para esta población — misma
+    // resolución de alcance/aislamiento que getCoverage: un matafuego de la
+    // población equivocada, o fuera del alcance del auditor, no debe filtrar
+    // sus comentarios tampoco.
+    async getComments(period: string, scope: AuditScopeContext) {
+      const [extinguishers, comments] = await Promise.all([
+        prisma.fireExtinguisher.findMany({
+          where: { isActive: true },
+          select: {
+            id: true,
+            code: true,
+            cylinderNumber: true,
+            establishment: true,
+            location: true,
+            assetId: true,
+            asset: { select: { id: true, name: true, assetType: true, fireExtinguisherAuditable: true } },
+          },
+        }),
+        listAuditComments('FIRE_EXTINGUISHER', period),
+      ])
+
+      const feById = new Map(extinguishers.map((fe) => [fe.id, fe]))
+
+      return comments
+        .map((c) => {
+          const fe = feById.get(c.targetId)
+          if (!fe || !matchesAuditPopulation(fe, population) || !isInScope(scope, auditScopeMatchValueFor(fe, population))) return null
+          return {
+            id: c.id,
+            source: c.source,
+            auditStatus: c.auditStatus,
+            body: c.body,
+            authorEmail: c.authorEmail,
+            createdAt: c.createdAt.toISOString(),
+            seenAt: c.seenAt ? c.seenAt.toISOString() : null,
+            seenByEmail: c.seenByEmail,
+            target: {
+              id: fe.id,
+              code: fe.code,
+              cylinderNumber: fe.cylinderNumber ?? null,
+              location: fe.location ?? null,
+              establishment: fe.establishment ?? null,
+              assetName: fe.asset?.name ?? null,
+            },
+          }
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null)
+    },
+
+    // Comentario suelto, sin auditoría de por medio (botón "Agregar
+    // comentario") — mismo chequeo de población/alcance que create().
+    async addComment(targetId: string, body: string, authorEmail: string, scope: AuditScopeContext) {
+      const fe = await prisma.fireExtinguisher.findUnique({
+        where: { id: targetId },
+        include: { asset: { select: { assetType: true, fireExtinguisherAuditable: true } } },
+      })
+      if (!fe) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
+      if (!matchesAuditPopulation(fe, population)) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
+      if (!isInScope(scope, auditScopeMatchValueFor(fe, population))) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
+
+      return createManualComment('FIRE_EXTINGUISHER', targetId, currentYearMonth(), authorEmail, body)
+    },
+
+    // Valida que el comentario pertenezca a esta población/alcance ANTES de
+    // delegar en el servicio compartido — sin esto, alguien con acceso a
+    // Rodados podría marcar como visto un comentario de Matafuegos y viceversa.
+    async markCommentSeen(commentId: string, seenByEmail: string, scope: AuditScopeContext) {
+      const comment = await prisma.auditComment.findUnique({ where: { id: commentId } })
+      if (!comment || comment.targetType !== 'FIRE_EXTINGUISHER') throw new AppError(404, 'Comentario no encontrado', 'NOT_FOUND')
+
+      const fe = await prisma.fireExtinguisher.findUnique({
+        where: { id: comment.targetId },
+        include: { asset: { select: { assetType: true, fireExtinguisherAuditable: true } } },
+      })
+      if (!fe || !matchesAuditPopulation(fe, population) || !isInScope(scope, auditScopeMatchValueFor(fe, population))) {
+        throw new AppError(404, 'Comentario no encontrado', 'NOT_FOUND')
+      }
+
+      return markAuditCommentSeen(commentId, seenByEmail)
+    },
+
     // `reviewerIsAdmin` exceptúa la restricción de autorevisión — un ADMIN
     // suele ser quien audita (desde Cobertura) Y revisa/aprueba en esta misma
     // cuenta, a diferencia de un auditor común (solo tiene el módulo de
@@ -600,7 +688,7 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
         where: { id },
         include: {
           proposedChanges: true,
-          extinguisher: { select: { establishment: true, assetId: true, asset: { select: { assetType: true, auditable: true } } } },
+          extinguisher: { select: { establishment: true, assetId: true, asset: { select: { assetType: true, fireExtinguisherAuditable: true } } } },
         },
       })
       if (!audit) throw new AppError(404, 'Auditoría no encontrada', 'NOT_FOUND')
@@ -647,57 +735,62 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
           }
         }
 
-        await prisma.$transaction([
-          ...(approved.length > 0
-            ? [
-                prisma.fireExtinguisher.update({ where: { id: audit.fireExtinguisherId }, data: masterUpdateData }),
-                prisma.fireExtinguisherHistory.create({
-                  data: {
-                    fireExtinguisherId: audit.fireExtinguisherId,
-                    action: 'Auditoría',
-                    date: todayDate(),
-                    performedBy: reviewedBy,
-                    description: `Cambios aplicados por revisión de auditoría del período ${audit.auditPeriod}`,
-                    previousData: previousData as Prisma.InputJsonValue,
-                    newData: newData as Prisma.InputJsonValue,
-                  },
-                }),
-                prisma.fireExtinguisherAuditProposedChange.updateMany({
-                  where: { id: { in: approved.map((c) => c.id) } },
-                  data: { status: 'APPLIED' },
-                }),
-              ]
-            : []),
-          ...(rejected.length > 0
-            ? [
-                prisma.fireExtinguisherAuditProposedChange.updateMany({
-                  where: { id: { in: rejected.map((c) => c.id) } },
-                  data: { status: 'REJECTED' },
-                }),
-              ]
-            : []),
-          prisma.fireExtinguisherAudit.update({
+        await prisma.$transaction(async (tx) => {
+          if (approved.length > 0) {
+            await tx.fireExtinguisher.update({ where: { id: audit.fireExtinguisherId }, data: masterUpdateData })
+            await tx.fireExtinguisherHistory.create({
+              data: {
+                fireExtinguisherId: audit.fireExtinguisherId,
+                action: 'Auditoría',
+                date: todayDate(),
+                performedBy: reviewedBy,
+                description: `Cambios aplicados por revisión de auditoría del período ${audit.auditPeriod}`,
+                previousData: previousData as Prisma.InputJsonValue,
+                newData: newData as Prisma.InputJsonValue,
+              },
+            })
+            await tx.fireExtinguisherAuditProposedChange.updateMany({
+              where: { id: { in: approved.map((c) => c.id) } },
+              data: { status: 'APPLIED' },
+            })
+          }
+          if (rejected.length > 0) {
+            await tx.fireExtinguisherAuditProposedChange.updateMany({
+              where: { id: { in: rejected.map((c) => c.id) } },
+              data: { status: 'REJECTED' },
+            })
+          }
+          await tx.fireExtinguisherAudit.update({
             where: { id },
             data: { status: 'APPROVED', reviewedBy, reviewedAt, reviewNotes: data.reviewNotes ?? null },
-          }),
-        ])
+          })
+          await recordReviewDecision(tx, 'FIRE_EXTINGUISHER', audit.fireExtinguisherId, audit.auditPeriod, id, reviewedBy, 'APPROVED', data.reviewNotes ?? null)
+        })
       } else {
         // REJECTED | NEEDS_CORRECTION: nada se aplica al maestro sin importar lo
         // que digan las decisiones individuales — todos los PENDING pasan a REJECTED.
-        await prisma.$transaction([
-          ...(pending.length > 0
-            ? [
-                prisma.fireExtinguisherAuditProposedChange.updateMany({
-                  where: { id: { in: pending.map((c) => c.id) } },
-                  data: { status: 'REJECTED' },
-                }),
-              ]
-            : []),
-          prisma.fireExtinguisherAudit.update({
+        await prisma.$transaction(async (tx) => {
+          if (pending.length > 0) {
+            await tx.fireExtinguisherAuditProposedChange.updateMany({
+              where: { id: { in: pending.map((c) => c.id) } },
+              data: { status: 'REJECTED' },
+            })
+          }
+          await tx.fireExtinguisherAudit.update({
             where: { id },
             data: { status: data.auditDecision, reviewedBy, reviewedAt, reviewNotes: data.reviewNotes ?? null },
-          }),
-        ])
+          })
+          await recordReviewDecision(
+            tx,
+            'FIRE_EXTINGUISHER',
+            audit.fireExtinguisherId,
+            audit.auditPeriod,
+            id,
+            reviewedBy,
+            data.auditDecision,
+            data.reviewNotes ?? null,
+          )
+        })
       }
 
       // Lectura final fuera de la transacción, mismo criterio que create().

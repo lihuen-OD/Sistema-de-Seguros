@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, X, FileText } from 'lucide-react'
+import { ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, X, Gauge } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -247,6 +247,18 @@ export default function FireExtinguisherAuditsQueuePage() {
       <PageHeader
         title="Auditorías de Matafuegos"
         subtitle="Revisión y aprobación de auditorías enviadas por los auditores"
+        actions={
+          canReview && activeTab === 'auditorias' ? (
+            <button
+              type="button"
+              onClick={() => navigate(`${ROUTES.FIRE_EXTINGUISHERS_AUDIT_FINDINGS_REPORT}?period=${coveragePeriod}`)}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors"
+            >
+              <Gauge size={15} />
+              Ver informe de auditoría
+            </button>
+          ) : undefined
+        }
       />
 
       {canReview && (
@@ -319,14 +331,6 @@ export default function FireExtinguisherAuditsQueuePage() {
               <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
                 {filtered.length} de {all.length} auditorías
               </span>
-              <button
-                type="button"
-                onClick={() => navigate(`${ROUTES.FIRE_EXTINGUISHERS_AUDIT_FINDINGS_REPORT}?period=${coveragePeriod}`)}
-                className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors whitespace-nowrap"
-              >
-                <FileText size={13} />
-                Ver informe de auditoría
-              </button>
             </div>
 
             {selectedIds.size > 0 && (

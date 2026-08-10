@@ -32,7 +32,7 @@ interface BackendAsset {
   location: string | null; mapsUrl: string | null
   productiveUnit: string | null; area: string | null
   description: string | null; metadata: Record<string, unknown> | null
-  isActive: boolean; auditable: boolean; createdAt: string; updatedAt: string
+  isActive: boolean; fireExtinguisherAuditable: boolean; insuranceAuditable: boolean; createdAt: string; updatedAt: string
   allocations: BackendAllocation[]
   valueHistory?: BackendValueHistory[]
   _count?: { attachments: number; fireExtinguishers: number }
@@ -115,7 +115,8 @@ function mapAsset(b: BackendAsset): Asset {
     attachmentsCount: b._count?.attachments ?? 0,
     dischargeDate: b.dischargeDate ? b.dischargeDate.slice(0, 10) : null,
     saleDate: b.saleDate ? b.saleDate.slice(0, 10) : null,
-    auditable: b.auditable,
+    fireExtinguisherAuditable: b.fireExtinguisherAuditable,
+    insuranceAuditable: b.insuranceAuditable,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   }
@@ -156,7 +157,8 @@ export interface AssetCreateInput {
   name: string
   assetType: string
   status?: string
-  auditable?: boolean
+  fireExtinguisherAuditable?: boolean
+  insuranceAuditable?: boolean
   fixedAssetId?: string | null
   brand?: string
   model?: string

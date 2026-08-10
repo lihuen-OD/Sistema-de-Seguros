@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import { fireExtinguisherLabel } from '../utils/format'
 
 // ── Contrato (ver plan de Fase 3 — reconciliado entre backend y frontend) ──────
 
@@ -213,6 +214,22 @@ export interface FireExtinguisherAuditListFilters {
   fireExtinguisherId?: string
 }
 
+// ── Comentarios de Cobertura (feed compartido — ver AuditCommentsPanel.tsx) ────
+
+export type FireExtinguisherAuditCommentSource = 'AUDITOR_NOTE' | 'REVIEW_DECISION' | 'MANUAL'
+
+export interface FireExtinguisherAuditCommentItem {
+  id: string
+  source: FireExtinguisherAuditCommentSource
+  auditStatus: FireExtinguisherAuditStatus | null
+  body: string
+  authorEmail: string
+  createdAt: string
+  seenAt: string | null
+  seenByEmail: string | null
+  target: { id: string; label: string; sublabel: string | null }
+}
+
 export const fireExtinguisherAuditKeys = {
   all: ['fire-extinguisher-audits'] as const,
   list: (filters?: FireExtinguisherAuditListFilters) =>
@@ -291,6 +308,29 @@ export const fireExtinguisherAuditsApi = {
     })
     return res.data.data
   },
+
+  async getComments(period: string): Promise<FireExtinguisherAuditCommentItem[]> {
+    type RawComment = Omit<FireExtinguisherAuditCommentItem, 'target'> & {
+      target: { id: string; code: string; cylinderNumber: string | null; location: string | null; establishment: string | null; assetName: string | null }
+    }
+    const res = await apiClient.get<{ data: RawComment[] }>('/fire-extinguisher-audits/comments', { params: { period } })
+    return res.data.data.map((c) => ({
+      ...c,
+      target: {
+        id: c.target.id,
+        label: fireExtinguisherLabel(c.target.cylinderNumber, c.target.location, c.target.code),
+        sublabel: c.target.establishment ?? c.target.assetName ?? null,
+      },
+    }))
+  },
+
+  async addComment(targetId: string, body: string): Promise<void> {
+    await apiClient.post('/fire-extinguisher-audits/comments', { targetId, body })
+  },
+
+  async markCommentSeen(id: string): Promise<void> {
+    await apiClient.post(`/fire-extinguisher-audits/comments/${id}/mark-seen`)
+  },
 }
 
 // ── Query options (categoría B — semi-dinámico) ──────────────────────────────────
@@ -326,6 +366,12 @@ export const fireExtinguisherAuditQueries = {
     queryOptions({
       queryKey: [...fireExtinguisherAuditKeys.all, 'auditor-progress', period] as const,
       queryFn: () => fireExtinguisherAuditsApi.getAuditorProgress(period),
+      staleTime: 60 * 1000,
+    }),
+  comments: (period: string) =>
+    queryOptions({
+      queryKey: [...fireExtinguisherAuditKeys.all, 'comments', period] as const,
+      queryFn: () => fireExtinguisherAuditsApi.getComments(period),
       staleTime: 60 * 1000,
     }),
 }

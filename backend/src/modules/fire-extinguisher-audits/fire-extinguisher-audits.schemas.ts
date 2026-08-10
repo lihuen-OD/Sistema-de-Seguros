@@ -180,3 +180,12 @@ export type AuditDashboardQueryDTO = z.infer<typeof AuditDashboardQuerySchema>
 // el nombre del tipo hable del endpoint que lo usa.
 export const AuditorProgressQuerySchema = CoverageQuerySchema
 export type AuditorProgressQueryDTO = z.infer<typeof AuditorProgressQuerySchema>
+
+// Comentario suelto ("Agregar comentario"), sin auditoría de por medio — ver
+// fire-extinguisher-audits.service.ts#addComment. Compartido por Matafuegos
+// (ESTABLISHMENT) y Rodados (ASSET) — ambos routers importan de este archivo.
+export const AddCommentSchema = z.object({
+  targetId: z.string().uuid('ID de matafuego inválido'),
+  body: z.string().trim().min(1, 'El comentario no puede estar vacío').max(1000),
+})
+export type AddCommentDTO = z.infer<typeof AddCommentSchema>

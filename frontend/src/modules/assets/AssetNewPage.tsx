@@ -39,8 +39,9 @@ const IS_WHEELED = (c: AssetCategory | '') =>
 const IS_AGRO = (c: AssetCategory | '') =>
   ['tractor', 'cosechadora', 'pulverizadora', 'implemento'].includes(c)
 const HAS_BRAND = (c: AssetCategory | '') => IS_WHEELED(c) || IS_AGRO(c)
-// Categorías elegibles para la futura auditoría de activos — las mismas que
-// se excluyen de la auditoría de matafuegos (ver asset-type-classification.ts
+// Categorías elegibles para Auditoría de Rodados y Auditoría de Seguros
+// (dos flags independientes, ver más abajo) — las mismas que se excluyen de
+// la auditoría de matafuegos de edificio (ver asset-type-classification.ts
 // en el backend). "moto" queda afuera a propósito: no lleva matafuego, así
 // que nunca va a entrar en ese circuito.
 const IS_AUDITABLE_CATEGORY = (c: AssetCategory | '') =>
@@ -193,7 +194,8 @@ export default function AssetNewPage() {
   const [buildings, setBuildings] = useState<EstBuilding[]>([])
   const [silos, setSilos] = useState<Silo[]>([])
   const [attachments, setAttachments] = useState<AssetAttachment[]>([])
-  const [auditable, setAuditable] = useState(false)
+  const [fireExtinguisherAuditable, setFireExtinguisherAuditable] = useState(false)
+  const [insuranceAuditable, setInsuranceAuditable] = useState(false)
 
   // Prefill del tipo de cambio actual (global) — solo mientras el usuario no
   // lo haya tocado a mano, y solo en Alta (en Edición no se pisa un TC
@@ -277,7 +279,8 @@ export default function AssetNewPage() {
     setForm(EMPTY)
     setBuildings([])
     setSilos([])
-    setAuditable(false)
+    setFireExtinguisherAuditable(false)
+    setInsuranceAuditable(false)
   }
 
   function addBuilding() {
@@ -397,7 +400,8 @@ export default function AssetNewPage() {
         name: form.name.trim(),
         assetType: CATEGORY_LABEL[category],
         status: form.status,
-        auditable,
+        fireExtinguisherAuditable,
+        insuranceAuditable,
         fixedAssetId: form.bienDeUsoId || undefined,
         brand: form.brand.trim() || undefined,
         model: form.model.trim() || undefined,
@@ -564,24 +568,43 @@ export default function AssetNewPage() {
                   <FormInput type="date" value={form.valuationDate} onChange={set('valuationDate')} />
                 </FormField>
                 {IS_AUDITABLE_CATEGORY(category) && (
-                  <FormField label="Auditoría de activos" fullWidth>
-                    <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={auditable}
-                        onChange={(e) => setAuditable(e.target.checked)}
-                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
-                          <ClipboardCheck size={14} className="text-slate-400" />
-                          Incluir en auditoría de activos
-                        </p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Marcá esta opción si este activo debe formar parte de la futura auditoría de activos. Por ahora es solo un dato de referencia: todavía no dispara ningún proceso automático.
-                        </p>
-                      </div>
-                    </label>
+                  <FormField label="Auditorías" fullWidth>
+                    <div className="space-y-2.5">
+                      <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={fireExtinguisherAuditable}
+                          onChange={(e) => setFireExtinguisherAuditable(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                            <ClipboardCheck size={14} className="text-slate-400" />
+                            Incluir en Auditoría de Rodados
+                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Habilita este activo para la Auditoría de Rodados, que verifica el matafuego montado en el vehículo.
+                          </p>
+                        </div>
+                      </label>
+                      <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={insuranceAuditable}
+                          onChange={(e) => setInsuranceAuditable(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                            <ClipboardCheck size={14} className="text-slate-400" />
+                            Incluir en Auditoría de Seguros
+                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Habilita este activo para la Auditoría de Seguros, que verifica la tarjeta de circulación.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
                   </FormField>
                 )}
               </FormSection>

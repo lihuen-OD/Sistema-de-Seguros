@@ -41,10 +41,9 @@ function safeUser(user: {
   }
 }
 
-// FIRE_EXTINGUISHER_AUDIT valida contra el catálogo real (a diferencia de
-// ASSET_AUDIT/INSURANCE_AUDIT, que ya vienen validados por Zod contra la
-// lista fija AUDITABLE_ASSET_CATEGORIES) — un establecimiento es texto libre
-// editable, así que hace falta chequear que exista y esté activo.
+// Único área que este modal gestiona (ver users.schemas.ts) — un
+// establecimiento es texto libre editable, así que hace falta chequear
+// contra el catálogo real que exista y esté activo.
 async function assertValidAuditScope(items: AuditScopeInput): Promise<void> {
   const establishments = items.filter((s) => s.area === 'FIRE_EXTINGUISHER_AUDIT').map((s) => s.scopeValue)
   if (establishments.length === 0) return
@@ -60,10 +59,15 @@ async function assertValidAuditScope(items: AuditScopeInput): Promise<void> {
   }
 }
 
-// Reemplazo completo del set de alcance de un usuario — mismo patrón que ya
-// usa fire-extinguisher-audits.service.ts para sus proposedChanges en update().
+// Reemplazo completo del alcance de establecimientos de un usuario — única
+// área que este modal gestiona (ver users.schemas.ts). A propósito acota el
+// borrado a FIRE_EXTINGUISHER_AUDIT en vez de `userId` a secas:
+// ASSET_AUDIT/INSURANCE_AUDIT ya no se gestionan desde acá, se asignan por
+// activo individual desde .../assignments/:userId (ver
+// audit-scope.service.ts#replaceUserAuditScope), y no deben perderse cada
+// vez que se edita cualquier otro dato del usuario desde este modal.
 async function replaceAuditScope(tx: Prisma.TransactionClient, userId: string, items: AuditScopeInput): Promise<void> {
-  await tx.userAuditScope.deleteMany({ where: { userId } })
+  await tx.userAuditScope.deleteMany({ where: { userId, area: 'FIRE_EXTINGUISHER_AUDIT' } })
   if (items.length > 0) {
     await tx.userAuditScope.createMany({
       data: items.map((s) => ({ userId, area: s.area, scopeValue: s.scopeValue })),

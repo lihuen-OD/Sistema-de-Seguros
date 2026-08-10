@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import clsx from 'clsx'
 import { CalendarDays, Building2, Flame, ClipboardCheck, Pencil, ChevronDown, ChevronUp } from 'lucide-react'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
+import { AuditCommentsPanel } from '../../../shared/components/audit-comments/AuditCommentsPanel'
 import { formatDate, fireExtinguisherLabel } from '../../../shared/utils/format'
-import type { FireExtinguisherCoverageItem } from '../../../shared/api/fire-extinguisher-audits.api'
+import { fireExtinguisherAuditsApi, fireExtinguisherAuditKeys, fireExtinguisherAuditQueries, type FireExtinguisherCoverageItem } from '../../../shared/api/fire-extinguisher-audits.api'
+import { useCurrentUser } from '../../../app/auth/AuthContext'
 import { ROUTES } from '../../../app/routes'
 
 interface AuditCoverageTabProps {
@@ -84,9 +88,35 @@ function locationTypeKey(establishment: string, locationType: string): string {
 
 export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canAudit }: AuditCoverageTabProps) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { user } = useCurrentUser()
   const [search, setSearch] = useState('')
   const [collapsedEstablishments, setCollapsedEstablishments] = useState<Set<string>>(new Set())
   const [collapsedLocationTypes, setCollapsedLocationTypes] = useState<Set<string>>(new Set())
+
+  const { data: comments = [] } = useQuery(fireExtinguisherAuditQueries.comments(period))
+  const commentTargets = useMemo(
+    () => data.map((item) => ({ id: item.id, label: fireExtinguisherLabel(item.cylinderNumber, item.location, item.code), sublabel: item.establishment })),
+    [data],
+  )
+
+  const addCommentMutation = useMutation({
+    mutationFn: ({ targetId, body }: { targetId: string; body: string }) => fireExtinguisherAuditsApi.addComment(targetId, body),
+    onSuccess: () => {
+      toast.success('Comentario agregado')
+      queryClient.invalidateQueries({ queryKey: fireExtinguisherAuditKeys.all })
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Error al agregar el comentario'),
+  })
+
+  const markCommentSeenMutation = useMutation({
+    mutationFn: (commentId: string) => fireExtinguisherAuditsApi.markCommentSeen(commentId),
+    onSuccess: () => {
+      toast.success('Comentario marcado como visto')
+      queryClient.invalidateQueries({ queryKey: fireExtinguisherAuditKeys.all })
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Error al marcar como visto'),
+  })
 
   function toggleEstablishmentCollapse(establishment: string) {
     setCollapsedEstablishments((prev) => {
@@ -163,6 +193,14 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canA
           </span>
         </div>
       </SectionCard>
+
+      <AuditCommentsPanel
+        comments={comments}
+        targets={commentTargets}
+        currentUserEmail={user?.email ?? ''}
+        onAddComment={(targetId, body) => addCommentMutation.mutateAsync({ targetId, body })}
+        onMarkSeen={(commentId) => markCommentSeenMutation.mutateAsync(commentId)}
+      />
 
       {isLoading ? (
         <SectionCard>
@@ -241,10 +279,12 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canA
                 {!ltCollapsed && (
                 <div className="divide-y divide-slate-100">
                   {ltGroup.items.map((item) => {
-                    // Recorrección permitida solo si NEEDS_CORRECTION/sin auditar —
-                    // una auditoría SUBMITTED/APPROVED ya bloquea una nueva en el
-                    // mismo período (ver índice único parcial del backend).
-                    const isAuditable = canAudit && (!item.audited || item.auditStatus === 'NEEDS_CORRECTION')
+                    // Recorrección permitida si NEEDS_CORRECTION/REJECTED/sin
+                    // auditar — el índice único parcial del backend excluye
+                    // AMBOS estados (no solo NEEDS_CORRECTION), así que una
+                    // auditoría rechazada también tiene que poder rehacerse.
+                    // Solo SUBMITTED/APPROVED bloquean una nueva en el mismo período.
+                    const isAuditable = canAudit && (!item.audited || item.auditStatus === 'NEEDS_CORRECTION' || item.auditStatus === 'REJECTED')
                     // Pendiente de revisión — se puede corregir sin tener que
                     // rechazarla primero (ver fire-extinguisher-audits.service.ts's update()).
                     const isEditable = canAudit && item.audited && item.auditStatus === 'SUBMITTED' && !!item.auditId

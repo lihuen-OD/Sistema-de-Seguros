@@ -11,7 +11,17 @@ jest.mock('../../../config/database', () => ({
       findMany: jest.fn(),
       update: jest.fn(),
     },
+    auditComment: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    policyAssetCoverage: { findMany: jest.fn() },
     userAuditScope: { findMany: jest.fn() },
+    $transaction: jest.fn(),
   },
 }))
 
@@ -30,12 +40,11 @@ function makeAuditRow(overrides: Record<string, unknown> = {}) {
     auditDate: BASE_DATE,
     auditPeriod: '2026-08',
     auditedBy: 'auditor@losodwyer.com',
-    policyActiveConfirmed: true,
-    insuranceCardPresent: true,
-    dataMatchesInsuredAsset: true,
-    physicalConditionOk: true,
-    odometerOrHoursObserved: null,
+    hasCirculationCard: true,
     comments: null,
+    cardUpdateRequested: false,
+    cardUpdateRequestedAt: null,
+    cardUpdateRequestedBy: null,
     reviewedBy: null,
     reviewedAt: null,
     reviewNotes: null,
@@ -53,6 +62,10 @@ describe('Insurance Audits — Review API', () => {
     db.user.findUnique.mockResolvedValue(mockDbUser())
     db.insuranceAudit.update.mockResolvedValue({})
     db.userAuditScope.findMany.mockResolvedValue([])
+    db.policyAssetCoverage.findMany.mockResolvedValue([])
+    db.$transaction.mockImplementation(async (arg: unknown) =>
+      Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => unknown)(db),
+    )
   })
 
   describe('POST /api/v1/insurance-audits/:id/review', () => {

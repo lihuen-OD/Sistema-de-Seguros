@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
-import { Bell, ShieldCheck, Flame, CreditCard, Paperclip, AlertTriangle, Clock, CheckCircle2, Circle, CheckCheck } from 'lucide-react'
+import { Bell, ShieldCheck, Flame, CreditCard, Paperclip, IdCard, AlertTriangle, Clock, CheckCircle2, Circle, CheckCheck } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -26,6 +26,7 @@ const CATEGORY_LABELS: Record<NotificationCategory, string> = {
   installment_overdue: 'Cuota vencida',
   installment_near: 'Cuota próxima',
   asset_attachment: 'Adjunto de Activo',
+  insurance_card_pending: 'Tarjeta de circulación',
 }
 
 const CATEGORY_ICONS: Record<NotificationCategory, React.ElementType> = {
@@ -34,6 +35,7 @@ const CATEGORY_ICONS: Record<NotificationCategory, React.ElementType> = {
   installment_overdue: CreditCard,
   installment_near: CreditCard,
   asset_attachment: Paperclip,
+  insurance_card_pending: IdCard,
 }
 
 // Orden por severidad al ordenar la columna "Estado" — alfabético dejaría
@@ -51,6 +53,8 @@ function resolveLink(item: NotificationItem): string {
       return ROUTES.DOCUMENTS_DETAIL(item.entityId)
     case 'Asset':
       return ROUTES.ASSETS_DETAIL(item.entityId)
+    case 'InsuranceAudit':
+      return ROUTES.INSURANCE_AUDITS_DETAIL(item.entityId)
   }
 }
 

@@ -1,7 +1,8 @@
 import { prisma } from '../../config/database'
 import type { ModuleKey, AuditScopeArea } from '../../shared/types'
+import { latestByKey } from '../../shared/utils/latest-by-key'
 import { computeFireExtinguisherStatus } from '../fire-extinguishers/fire-extinguishers.expiration'
-import { matchesAuditPopulation, auditScopeKeyFor, type FireExtAuditPopulation } from './fire-extinguisher-audits.population'
+import { matchesAuditPopulation, auditScopeKeyFor, auditScopeMatchValueFor, type FireExtAuditPopulation } from './fire-extinguisher-audits.population'
 import {
   CLEANLINESS_SCORES,
   CHARGE_FILL_SCORES,
@@ -127,12 +128,12 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
             manufacturingYear: true,
             hydraulicTestExpirationDate: true,
             assetId: true,
-            asset: { select: { assetType: true, auditable: true } },
+            asset: { select: { assetType: true, fireExtinguisherAuditable: true } },
           },
           orderBy: [{ establishment: 'asc' }, { locationType: 'asc' }],
         }),
         prisma.fireExtinguisherAudit.findMany({
-          where: { auditPeriod: period, status: { not: 'REJECTED' } },
+          where: { auditPeriod: period },
           select: {
             fireExtinguisherId: true,
             auditDate: true,
@@ -143,16 +144,12 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
             ringStatus: true,
             hoseNozzleCondition: true,
           },
-          orderBy: { auditDate: 'desc' },
+          // Más reciente por createdAt, no por auditDate — ver latest-by-key.ts.
+          orderBy: { createdAt: 'desc' },
         }),
       ])
 
-      const latestAuditByExtinguisher = new Map<string, (typeof audits)[number]>()
-      for (const a of audits) {
-        if (!latestAuditByExtinguisher.has(a.fireExtinguisherId)) {
-          latestAuditByExtinguisher.set(a.fireExtinguisherId, a)
-        }
-      }
+      const latestAuditByExtinguisher = latestByKey(audits, (a) => a.fireExtinguisherId)
 
       interface GroupAcc {
         total: number
@@ -330,33 +327,29 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
         }),
         prisma.fireExtinguisher.findMany({
           where: { isActive: true },
-          select: { id: true, establishment: true, assetId: true, asset: { select: { assetType: true, auditable: true } } },
+          select: { id: true, establishment: true, assetId: true, asset: { select: { assetType: true, fireExtinguisherAuditable: true } } },
         }),
         prisma.fireExtinguisherAudit.findMany({
-          where: { auditPeriod: period, status: { not: 'REJECTED' } },
+          where: { auditPeriod: period },
           select: { fireExtinguisherId: true, auditedBy: true, auditDate: true },
-          orderBy: { auditDate: 'desc' },
+          // Más reciente por createdAt, no por auditDate — ver latest-by-key.ts.
+          orderBy: { createdAt: 'desc' },
         }),
       ])
 
       const eligible = extinguishers
         .filter((fe) => matchesAuditPopulation(fe, population))
-        .map((fe) => ({ id: fe.id, scopeKey: auditScopeKeyFor(fe, population) }))
+        .map((fe) => ({ id: fe.id, scopeKey: auditScopeMatchValueFor(fe, population) }))
         .filter((fe): fe is { id: string; scopeKey: string } => fe.scopeKey != null)
 
-      const latestAuditByExtinguisher = new Map<string, string>() // fireExtinguisherId -> auditedBy
-      for (const a of auditRows) {
-        if (!latestAuditByExtinguisher.has(a.fireExtinguisherId)) {
-          latestAuditByExtinguisher.set(a.fireExtinguisherId, a.auditedBy)
-        }
-      }
+      const latestAuditByExtinguisher = latestByKey(auditRows, (a) => a.fireExtinguisherId) // fireExtinguisherId -> última fila
 
       return {
         period,
         auditors: auditors.map((u) => {
           const scope = new Set(u.auditScopes.map((s) => s.scopeValue))
           const assignedExtinguishers = eligible.filter((fe) => scope.has(fe.scopeKey))
-          const completed = assignedExtinguishers.filter((fe) => latestAuditByExtinguisher.get(fe.id) === u.email).length
+          const completed = assignedExtinguishers.filter((fe) => latestAuditByExtinguisher.get(fe.id)?.auditedBy === u.email).length
           const assigned = assignedExtinguishers.length
           const sortedScope = [...scope].sort((a, b) => a.localeCompare(b))
           const base = {
@@ -370,7 +363,7 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
           }
           return population === 'ESTABLISHMENT'
             ? { ...base, assignedEstablishments: sortedScope }
-            : { ...base, assignedCategories: sortedScope }
+            : { ...base, assignedAssetIds: sortedScope }
         }),
       }
     },

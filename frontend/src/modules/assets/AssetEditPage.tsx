@@ -164,7 +164,8 @@ export default function AssetEditPage() {
   const [dischargeDate, setDischargeDate] = useState('')
   const [saleDate, setSaleDate] = useState('')
   const [reactivationDate, setReactivationDate] = useState('')
-  const [auditable, setAuditable] = useState(false)
+  const [fireExtinguisherAuditable, setFireExtinguisherAuditable] = useState(false)
+  const [insuranceAuditable, setInsuranceAuditable] = useState(false)
   const [allocations, setAllocations] = useState<AssetAllocation[]>([
     { id: 'alloc-init', companyId: '', costCenterId: '', percentage: 100 },
   ])
@@ -277,7 +278,8 @@ export default function AssetEditPage() {
     setValuationDate(asset.valuationDate ?? '')
     setDischargeDate(asset.dischargeDate ?? '')
     setSaleDate(asset.saleDate ?? '')
-    setAuditable(asset.auditable ?? false)
+    setFireExtinguisherAuditable(asset.fireExtinguisherAuditable ?? false)
+    setInsuranceAuditable(asset.insuranceAuditable ?? false)
     if (asset.allocations && asset.allocations.length > 0) {
       setAllocations(asset.allocations)
     } else {
@@ -507,7 +509,8 @@ export default function AssetEditPage() {
           name: form.name.trim(),
           assetType: form.assetType.trim(),
           status: form.status,
-          auditable,
+          fireExtinguisherAuditable,
+          insuranceAuditable,
           fixedAssetId: form.fixedAssetId?.trim() || undefined,
           brand: form.brand.trim() || undefined,
           model: form.model.trim() || undefined,
@@ -622,24 +625,43 @@ export default function AssetEditPage() {
                 </FormField>
               )}
               {isAuditableCategory && (
-                <FormField label="Auditoría de activos" fullWidth>
-                  <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={auditable}
-                      onChange={(e) => setAuditable(e.target.checked)}
-                      className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
-                        <ClipboardCheck size={14} className="text-slate-400" />
-                        Incluir en auditoría de activos
-                      </p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Marcá esta opción si este activo debe formar parte de la futura auditoría de activos. Por ahora es solo un dato de referencia: todavía no dispara ningún proceso automático.
-                      </p>
-                    </div>
-                  </label>
+                <FormField label="Auditorías" fullWidth>
+                  <div className="space-y-2.5">
+                    <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={fireExtinguisherAuditable}
+                        onChange={(e) => setFireExtinguisherAuditable(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                          <ClipboardCheck size={14} className="text-slate-400" />
+                          Incluir en Auditoría de Rodados
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Habilita este activo para la Auditoría de Rodados, que verifica el matafuego montado en el vehículo.
+                        </p>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={insuranceAuditable}
+                        onChange={(e) => setInsuranceAuditable(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                          <ClipboardCheck size={14} className="text-slate-400" />
+                          Incluir en Auditoría de Seguros
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Habilita este activo para la Auditoría de Seguros, que verifica la tarjeta de circulación.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
                 </FormField>
               )}
             </FormSection>

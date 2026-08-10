@@ -122,13 +122,16 @@ model Asset {
   description            String?
   metadata               Json?
   isActive               Boolean   @default(true)
-  // Marca activos (típicamente vehículos/maquinaria) elegibles para la
-  // auditoría de seguros (ver InsuranceAudit) — junto con isActive y la
-  // categoría (una de AUDITABLE_ASSET_CATEGORIES), define el pool elegible.
-  // "Auditoría de Activos" ya no depende de este flag: audita los
-  // FireExtinguisher vinculados a este activo (ver FireExtinguisherAudit /
-  // fire-extinguisher-audits.population.ts), no al activo en sí.
-  auditable              Boolean   @default(false)
+  // Dos flags ortogonales — cada uno gatea una auditoría distinta, un mismo
+  // activo puede habilitarse para una y no para la otra. Junto con isActive
+  // y la categoría (una de AUDITABLE_ASSET_CATEGORIES), definen el pool
+  // elegible de cada módulo.
+  // fireExtinguisherAuditable: Auditoría de Rodados — audita el
+  // FireExtinguisher montado en este activo (ver fire-extinguisher-audits.population.ts).
+  fireExtinguisherAuditable Boolean @default(false)
+  // insuranceAuditable: Auditoría de Seguros — audita la tarjeta de
+  // circulación de este activo (ver InsuranceAudit).
+  insuranceAuditable        Boolean @default(false)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -253,10 +256,11 @@ model AssetRenewalProjectionOverride {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auditoría de Seguros — alcance por categoría de activo (UserAuditScope,
-// área INSURANCE_AUDIT), checklist que combina (a) documentación/cobertura
-// vigente y (b) condición física relevante al seguro. Checklist
-// deliberadamente mínimo/genérico — se amplía cuando se defina el detalle
-// exacto con el negocio. Sin "InsuranceAuditProposedChange": este checklist
+// área INSURANCE_AUDIT). El checklist real (confirmado con el negocio):
+// comparar la tarjeta de circulación archivada en el sistema (subida al
+// asegurar el activo, ver PolicyAttachment.isCirculationCard) contra la que
+// debería estar físicamente en el vehículo — `hasCirculationCard` + fotos +
+// comentario, nada más. Sin "InsuranceAuditProposedChange": este checklist
 // no revisa/corrige datos maestros del activo ni de la póliza, así que no
 // hay nada que proponer-y-aprobar.
 //
@@ -276,14 +280,22 @@ model InsuranceAudit {
   auditPeriod String // "YYYY-MM", derivado en el server
   auditedBy   String
 
-  // (a) Documentación / cobertura vigente
-  policyActiveConfirmed   Boolean @default(false)
-  insuranceCardPresent    Boolean @default(false)
-  dataMatchesInsuredAsset Boolean @default(false)
-  // (b) Condición física relevante al seguro (no un chequeo general de vehículo/maquinaria)
-  physicalConditionOk     Boolean @default(false)
-  odometerOrHoursObserved String?
-  comments                String?
+  // Checklist real (definido con el negocio): ¿la tarjeta de circulación
+  // física está a bordo del vehículo? Se compara contra la tarjeta ya
+  // archivada en el sistema (subida al asegurar el activo — ver
+  // PolicyAttachment.isCirculationCard), que el wizard muestra como
+  // referencia antes de tildar esto.
+  hasCirculationCard Boolean @default(false)
+  comments           String?
+
+  // Seguimiento: el auditor "avisa" cuando coloca la tarjeta impresa en un
+  // vehículo que había quedado marcado sin ella, y el revisor confirma desde
+  // /:id/confirm-card-placed — funciona aunque la auditoría ya esté
+  // APPROVED, a propósito (ver insurance-audits.service.ts). No reabre el
+  // resto de la revisión ni cambia `status`.
+  cardUpdateRequested   Boolean   @default(false)
+  cardUpdateRequestedAt DateTime?
+  cardUpdateRequestedBy String?
 
   reviewedBy  String?
   reviewedAt  DateTime?
@@ -1052,6 +1064,32 @@ model UserAuditScope {
   @@index([userId, area])
   @@index([area, scopeValue])
   @@map("user_audit_scopes")
+}
+
+// Feed de comentarios compartido por las 3 auditorías (Matafuegos, Rodados,
+// Seguros) — vive en Cobertura, visible para auditor y admin. Se alimenta
+// solo (nota del auditor al auditar/editar, decisión del revisor al
+// aprobar/rechazar/pedir corrección) y también admite un comentario suelto
+// sin auditoría de por medio (botón "Agregar comentario"). Sin FK real a
+// propósito — mismo criterio que UserAuditScope.scopeValue: la tabla es
+// genérica entre poblaciones, `targetId` es un fireExtinguisherId o un
+// assetId según `targetType`, nunca ambos a la vez.
+model AuditComment {
+  id          String   @id @default(uuid())
+  targetType  String // FIRE_EXTINGUISHER (Matafuegos+Rodados, targetId = fireExtinguisherId) | ASSET (Seguros, targetId = assetId)
+  targetId    String
+  auditPeriod String // "YYYY-MM" — mismo criterio de período que el resto de Cobertura
+  auditId     String? // fila de origen (fire_extinguisher_audits/insurance_audits) si vino de un checklist/revisión — null si es un comentario suelto
+  source      String // AUDITOR_NOTE | REVIEW_DECISION | MANUAL
+  auditStatus String? // snapshot de la decisión (APPROVED/REJECTED/NEEDS_CORRECTION) — solo en REVIEW_DECISION, para el badge en la UI
+  body        String
+  authorEmail String
+  seenAt      DateTime?
+  seenByEmail String?
+  createdAt   DateTime @default(now())
+
+  @@index([targetType, targetId, auditPeriod])
+  @@map("audit_comments")
 }
 
 // Sin relación formal a User a propósito: un audit log debe sobrevivir aunque

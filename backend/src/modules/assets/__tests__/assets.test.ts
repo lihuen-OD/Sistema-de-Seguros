@@ -224,7 +224,7 @@ describe('Assets API', () => {
       expect(res.body.data.name).toBe('Toyota Hilux')
     })
 
-    it('passes auditable through to asset.create, defaulting to false when omitted', async () => {
+    it('passes fireExtinguisherAuditable/insuranceAuditable through to asset.create, defaulting to false when omitted', async () => {
       db.company.findMany.mockResolvedValue([fakeCompany])
       db.costCenter.findMany.mockResolvedValue([fakeCostCenter])
       db.$queryRaw.mockResolvedValue([{ nextval: 1n }])
@@ -241,9 +241,10 @@ describe('Assets API', () => {
       await request(app)
         .post('/api/v1/assets')
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ ...validAssetBody, auditable: true })
+        .send({ ...validAssetBody, fireExtinguisherAuditable: true, insuranceAuditable: true })
 
-      expect(createMock.mock.calls[0][0].data.auditable).toBe(true)
+      expect(createMock.mock.calls[0][0].data.fireExtinguisherAuditable).toBe(true)
+      expect(createMock.mock.calls[0][0].data.insuranceAuditable).toBe(true)
 
       createMock.mockClear()
       await request(app)
@@ -251,7 +252,8 @@ describe('Assets API', () => {
         .set('Authorization', `Bearer ${adminToken()}`)
         .send(validAssetBody)
 
-      expect(createMock.mock.calls[0][0].data.auditable).toBe(false)
+      expect(createMock.mock.calls[0][0].data.fireExtinguisherAuditable).toBe(false)
+      expect(createMock.mock.calls[0][0].data.insuranceAuditable).toBe(false)
     })
 
     it('returns 201 when CONTADOR creates an asset', async () => {

@@ -87,7 +87,7 @@ export default function AssetAuditDetailPage() {
       <PageHeader
         title={`Auditoría · ${extinguisher?.code ?? '…'}${extinguisher?.cylinderNumber ? ` · Cilindro ${extinguisher.cylinderNumber}` : ''}`}
         subtitle={`Período ${audit.auditPeriod} · Auditado por ${audit.auditedBy} el ${audit.auditDate}`}
-        category="Auditoría de Activos"
+        category="Auditoría de Rodados"
         backTo={ROUTES.ASSET_AUDITS}
         backLabel="Volver a auditorías"
         badge={<StatusPill status={audit.status} />}

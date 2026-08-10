@@ -90,8 +90,13 @@ export const fireExtinguishersDashboardService = {
         where: { isActive: true },
         orderBy: { _count: { type: 'desc' } },
       }),
+      // Sin filtrar por status — mismo criterio que getCoverage()/getAuditDashboard()
+      // en fire-extinguisher-audits.service.ts: un matafuego con solo una
+      // auditoría RECHAZADA todavía sin recorregir cuenta como "auditado este
+      // período" acá también, igual que ya contaba si esa auditoría estaba en
+      // NEEDS_CORRECTION.
       prisma.fireExtinguisherAudit.findMany({
-        where: { auditPeriod: currentPeriod, status: { not: 'REJECTED' } },
+        where: { auditPeriod: currentPeriod },
         select: { fireExtinguisherId: true },
         distinct: ['fireExtinguisherId'],
       }),

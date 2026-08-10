@@ -56,10 +56,10 @@ export const AUDIT_SCOPE_AREAS = ['FIRE_EXTINGUISHER_AUDIT', 'ASSET_AUDIT', 'INS
 export type AuditScopeArea = typeof AUDIT_SCOPE_AREAS[number]
 
 // Espejo de AssetCategory (frontend/src/shared/types/index.ts), filtrado a las
-// categorías que Asset.auditable habilita hoy (ver IS_AUDITABLE_CATEGORY en
-// frontend/src/modules/assets/AssetNewPage.tsx) — mismo patrón de duplicación
-// FE/BE ya usado para MODULE_KEYS, porque el backend no tiene enum/catálogo
-// propio de categoría de activo.
+// categorías que Asset.fireExtinguisherAuditable/insuranceAuditable habilitan
+// hoy (ver IS_AUDITABLE_CATEGORY en frontend/src/modules/assets/AssetNewPage.tsx)
+// — mismo patrón de duplicación FE/BE ya usado para MODULE_KEYS, porque el
+// backend no tiene enum/catálogo propio de categoría de activo.
 export const AUDITABLE_ASSET_CATEGORIES = [
   'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
   'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',

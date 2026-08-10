@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import clsx from 'clsx'
 import { CalendarDays, Package, Pencil, ChevronDown, ChevronUp, ClipboardCheck } from 'lucide-react'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
+import { AuditCommentsPanel } from '../../shared/components/audit-comments/AuditCommentsPanel'
 import { fireExtinguisherLabel } from '../../shared/utils/format'
 import { CATEGORY_LABEL, AUDITABLE_CATEGORY_GROUPS } from '../../shared/constants/asset-categories'
 import type { AssetCategory } from '../../shared/types'
-import type { AssetAuditCoverageItem } from '../../shared/api/asset-audits.api'
+import { assetAuditsApi, assetAuditKeys, assetAuditQueries, type AssetAuditCoverageItem } from '../../shared/api/asset-audits.api'
+import { useCurrentUser } from '../../app/auth/AuthContext'
 import { ROUTES } from '../../app/routes'
 
 const CATEGORY_ICON = Object.fromEntries(
@@ -48,8 +52,34 @@ function groupByCategory(data: AssetAuditCoverageItem[]): CategoryGroup[] {
 
 export function AssetAuditCoverageTab({ period, onPeriodChange, data, isLoading, canAudit }: AssetAuditCoverageTabProps) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { user } = useCurrentUser()
   const [search, setSearch] = useState('')
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
+
+  const { data: comments = [] } = useQuery(assetAuditQueries.comments(period))
+  const commentTargets = useMemo(
+    () => data.map((item) => ({ id: item.id, label: fireExtinguisherLabel(item.cylinderNumber, item.asset?.name ?? null, item.code), sublabel: item.asset?.assetType ?? null })),
+    [data],
+  )
+
+  const addCommentMutation = useMutation({
+    mutationFn: ({ targetId, body }: { targetId: string; body: string }) => assetAuditsApi.addComment(targetId, body),
+    onSuccess: () => {
+      toast.success('Comentario agregado')
+      queryClient.invalidateQueries({ queryKey: assetAuditKeys.all })
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Error al agregar el comentario'),
+  })
+
+  const markCommentSeenMutation = useMutation({
+    mutationFn: (commentId: string) => assetAuditsApi.markCommentSeen(commentId),
+    onSuccess: () => {
+      toast.success('Comentario marcado como visto')
+      queryClient.invalidateQueries({ queryKey: assetAuditKeys.all })
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Error al marcar como visto'),
+  })
 
   function toggleCollapse(category: string) {
     setCollapsedCategories((prev) => {
@@ -109,6 +139,14 @@ export function AssetAuditCoverageTab({ period, onPeriodChange, data, isLoading,
         </div>
       </SectionCard>
 
+      <AuditCommentsPanel
+        comments={comments}
+        targets={commentTargets}
+        currentUserEmail={user?.email ?? ''}
+        onAddComment={(targetId, body) => addCommentMutation.mutateAsync({ targetId, body })}
+        onMarkSeen={(commentId) => markCommentSeenMutation.mutateAsync(commentId)}
+      />
+
       {isLoading ? (
         <SectionCard>
           <p className="text-sm text-slate-400 text-center py-8">Cargando cobertura…</p>
@@ -158,7 +196,7 @@ export function AssetAuditCoverageTab({ period, onPeriodChange, data, isLoading,
               {!collapsed && (
                 <div className="divide-y divide-slate-100">
                   {group.items.map((item) => {
-                    const isAuditable = canAudit && (!item.audited || item.auditStatus === 'NEEDS_CORRECTION')
+                    const isAuditable = canAudit && (!item.audited || item.auditStatus === 'NEEDS_CORRECTION' || item.auditStatus === 'REJECTED')
                     const isEditable = canAudit && item.audited && item.auditStatus === 'SUBMITTED' && !!item.auditId
                     const onItemClick = isAuditable ? () => goToAudit(item.id) : isEditable ? () => goToEditAudit(item.auditId!) : undefined
                     const primaryLabel = fireExtinguisherLabel(item.cylinderNumber, item.asset?.name ?? null, item.code)

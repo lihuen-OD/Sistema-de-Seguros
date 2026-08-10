@@ -3,39 +3,42 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import clsx from 'clsx'
-import { Package, X, Loader2, Save } from 'lucide-react'
+import { Package, X, Loader2, Save, IdCard } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
-import { FormField, FormInput, FormTextarea } from '../../shared/components/forms/FormSection'
+import { FormField, FormTextarea } from '../../shared/components/forms/FormSection'
+import { ChoiceGroup } from '../../shared/components/forms/ChoiceGroup'
 import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
+import { FileViewDownloadButtons } from '../../shared/components/file-viewer/FileViewDownloadButtons'
 import {
   insuranceAuditsApi,
   insuranceAuditKeys,
   insuranceAuditQueries,
   type InsuranceAuditCoverageItem,
   type InsuranceAuditAttachment,
+  type CirculationCardReference,
 } from '../../shared/api/insurance-audits.api'
 import { ROUTES } from '../../app/routes'
 
-const CHECKLIST_ITEMS: { key: 'policyActiveConfirmed' | 'insuranceCardPresent' | 'dataMatchesInsuredAsset' | 'physicalConditionOk'; label: string }[] = [
-  { key: 'policyActiveConfirmed', label: 'La póliza está vigente' },
-  { key: 'insuranceCardPresent', label: 'Tiene la tarjeta/certificado de seguro a bordo' },
-  { key: 'dataMatchesInsuredAsset', label: 'Los datos del activo coinciden con lo asegurado' },
-  { key: 'physicalConditionOk', label: 'Sin daños o condiciones no declaradas a la aseguradora' },
+const CIRCULATION_CARD_OPTIONS = [
+  { value: 'yes', label: 'Tiene la tarjeta a bordo' },
+  { value: 'no', label: 'No tiene la tarjeta a bordo' },
 ]
 
 // Stub liviano de activo — es todo lo que esta pantalla necesita mostrar
-// (nombre, tipo, código). Se resuelve siempre a partir de la cobertura de
-// Auditoría de Seguros, ya scopeada al alcance del usuario, en vez de la
-// lista/detalle maestro de Activos (que requiere el módulo `assets`, que un
-// auditor con solo el permiso de cobertura no tiene por qué tener).
+// (nombre, tipo, código, patente). Se resuelve siempre a partir de la
+// cobertura de Auditoría de Seguros, ya scopeada al alcance del usuario, en
+// vez de la lista/detalle maestro de Activos (que requiere el módulo
+// `assets`, que un auditor con solo el permiso de cobertura no tiene por qué
+// tener).
 interface AssetStub {
   id: string
   name: string
   assetType: string
   code: string | null
+  plate: string | null
 }
 
 function currentPeriod(): string {
@@ -49,22 +52,24 @@ function AssetPicker({
   isLoading,
 }: {
   selected: AssetStub | null
-  onSelect: (asset: AssetStub) => void
+  onSelect: (item: InsuranceAuditCoverageItem) => void
   coverage: InsuranceAuditCoverageItem[]
   isLoading: boolean
 }) {
   const [search, setSearch] = useState('')
-  const auditable = coverage.filter((a) => !a.audited || a.auditStatus === 'NEEDS_CORRECTION')
+  const auditable = coverage.filter((a) => !a.audited || a.auditStatus === 'NEEDS_CORRECTION' || a.auditStatus === 'REJECTED')
 
   const q = search.trim().toLowerCase()
   const filtered = q
-    ? auditable.filter((a) => [a.code, a.name, a.assetType].filter(Boolean).some((v) => v!.toLowerCase().includes(q)))
+    ? auditable.filter((a) =>
+        [a.code, a.name, a.assetType, a.plate, a.chassisNumber, a.engineNumber].filter(Boolean).some((v) => v!.toLowerCase().includes(q)),
+      )
     : auditable
 
   return (
     <div>
-      <p className="text-sm text-slate-600 mb-4">Seleccioná el activo que vas a auditar.</p>
-      <SearchInput value={search} onChange={setSearch} placeholder="Buscar por código, nombre o tipo…" className="mb-4" />
+      <p className="text-sm text-slate-600 mb-4">Seleccioná el vehículo o maquinaria que vas a auditar.</p>
+      <SearchInput value={search} onChange={setSearch} placeholder="Buscar por código, nombre, tipo, patente, chasis o motor…" className="mb-4" />
 
       {isLoading ? (
         <p className="text-sm text-slate-400 py-10 text-center">Cargando activos…</p>
@@ -78,7 +83,7 @@ function AssetPicker({
               <button
                 key={a.id}
                 type="button"
-                onClick={() => onSelect({ id: a.id, name: a.name, assetType: a.assetType, code: a.code })}
+                onClick={() => onSelect(a)}
                 className={clsx(
                   'text-left border rounded-lg p-4 transition-all',
                   isActive ? 'border-brand-400 bg-brand-50/60 ring-2 ring-brand-500/20' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50',
@@ -90,7 +95,10 @@ function AssetPicker({
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-800 truncate">{a.name}</p>
-                    <p className="text-xs text-slate-500 truncate">{a.assetType} · {a.code ?? '—'}</p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {a.assetType} · {a.code ?? '—'}
+                      {a.plate ? ` · ${a.plate}` : ''}
+                    </p>
                   </div>
                 </div>
               </button>
@@ -99,6 +107,29 @@ function AssetPicker({
         </div>
       )}
     </div>
+  )
+}
+
+function CirculationCardReferenceCard({ card, assetId }: { card: CirculationCardReference | null; assetId: string }) {
+  return (
+    <SectionCard title="Tarjeta de circulación en el sistema" className="mb-5">
+      {card ? (
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+            <IdCard size={16} className="text-brand-500" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-slate-800 truncate">{card.name}</p>
+            <p className="text-xs text-slate-500">Compará esta imagen contra la tarjeta física que debería estar en el vehículo.</p>
+          </div>
+          <FileViewDownloadButtons fetchUrl={`/insurance-audits/assets/${assetId}/circulation-card`} name={card.name} />
+        </div>
+      ) : (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3.5 py-2.5">
+          No hay tarjeta de circulación cargada en el sistema para este activo.
+        </p>
+      )}
+    </SectionCard>
   )
 }
 
@@ -112,24 +143,28 @@ export default function InsuranceAuditNewPage() {
   const isEditing = Boolean(editId)
 
   const [selectedAsset, setSelectedAsset] = useState<AssetStub | null>(null)
+  const [referenceCard, setReferenceCard] = useState<CirculationCardReference | null>(null)
   const [seeded, setSeeded] = useState(false)
 
   const { data: coverage = [], isLoading: coverageLoading } = useQuery(insuranceAuditQueries.coverage(currentPeriod()))
+
+  function handleSelectFromCoverage(item: InsuranceAuditCoverageItem) {
+    setSelectedAsset({ id: item.id, name: item.name, assetType: item.assetType, code: item.code, plate: item.plate })
+    setReferenceCard(item.referenceCirculationCard)
+  }
 
   // Preselección desde la pestaña "Cobertura" (?assetId=) — se resuelve
   // buscando dentro de la misma lista ya scopeada, sin una consulta aparte.
   useEffect(() => {
     if (!preselectedId || selectedAsset) return
     const match = coverage.find((c) => c.id === preselectedId)
-    if (match) setSelectedAsset({ id: match.id, name: match.name, assetType: match.assetType, code: match.code })
+    if (match) handleSelectFromCoverage(match)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preselectedId, coverage, selectedAsset])
 
   const { data: editingAudit } = useQuery(insuranceAuditQueries.detail(editId ?? ''))
 
-  const [checklist, setChecklist] = useState<Record<string, boolean>>(
-    Object.fromEntries(CHECKLIST_ITEMS.map((c) => [c.key, false])),
-  )
-  const [odometerOrHoursObserved, setOdometerOrHoursObserved] = useState('')
+  const [hasCirculationCard, setHasCirculationCard] = useState<boolean | null>(null)
   const [comments, setComments] = useState('')
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
   const [existingPhotos, setExistingPhotos] = useState<InsuranceAuditAttachment[]>([])
@@ -143,14 +178,17 @@ export default function InsuranceAuditNewPage() {
       navigate(ROUTES.INSURANCE_AUDITS_DETAIL(editingAudit.id), { replace: true })
       return
     }
-    if (editingAudit.asset) setSelectedAsset(editingAudit.asset)
-    setChecklist({
-      policyActiveConfirmed: editingAudit.checklist.policyActiveConfirmed,
-      insuranceCardPresent: editingAudit.checklist.insuranceCardPresent,
-      dataMatchesInsuredAsset: editingAudit.checklist.dataMatchesInsuredAsset,
-      physicalConditionOk: editingAudit.checklist.physicalConditionOk,
-    })
-    setOdometerOrHoursObserved(editingAudit.checklist.odometerOrHoursObserved ?? '')
+    if (editingAudit.asset) {
+      setSelectedAsset({
+        id: editingAudit.asset.id,
+        name: editingAudit.asset.name,
+        assetType: editingAudit.asset.assetType,
+        code: editingAudit.asset.code,
+        plate: editingAudit.asset.plate,
+      })
+    }
+    setReferenceCard(editingAudit.referenceCirculationCard)
+    setHasCirculationCard(editingAudit.checklist.hasCirculationCard)
     setComments(editingAudit.checklist.comments ?? '')
     setExistingPhotos(editingAudit.attachments.filter((a) => a.fileType === 'image'))
     setSeeded(true)
@@ -168,20 +206,16 @@ export default function InsuranceAuditNewPage() {
     }
   }
 
-  const canSubmit = !!selectedAsset
+  const canSubmit = !!selectedAsset && hasCirculationCard !== null
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!selectedAsset) return
+    if (!selectedAsset || hasCirculationCard === null) return
     setSubmitting(true)
     setSubmitError(null)
     try {
       const checklistPayload = {
-        policyActiveConfirmed: checklist.policyActiveConfirmed,
-        insuranceCardPresent: checklist.insuranceCardPresent,
-        dataMatchesInsuredAsset: checklist.dataMatchesInsuredAsset,
-        physicalConditionOk: checklist.physicalConditionOk,
-        odometerOrHoursObserved: odometerOrHoursObserved.trim() || undefined,
+        hasCirculationCard,
         comments: comments.trim() || undefined,
       }
       const auditId = isEditing
@@ -212,7 +246,7 @@ export default function InsuranceAuditNewPage() {
     <PageContent>
       <PageHeader
         title={isEditing ? 'Editar auditoría' : 'Auditoría de Seguros'}
-        subtitle={isEditing ? 'Corregir una auditoría pendiente de revisión' : 'Registrar la verificación de cobertura y condición de un vehículo o maquinaria'}
+        subtitle={isEditing ? 'Corregir una auditoría pendiente de revisión' : 'Verificar la tarjeta de circulación de un vehículo o maquinaria'}
         category="Auditoría de Seguros"
         backTo={isEditing ? ROUTES.INSURANCE_AUDITS_DETAIL(editId!) : ROUTES.INSURANCE_AUDITS}
         backLabel={isEditing ? 'Volver a la auditoría' : 'Volver a Auditoría de Seguros'}
@@ -230,32 +264,29 @@ export default function InsuranceAuditNewPage() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-800">{selectedAsset.name}</p>
-                <p className="text-xs text-slate-500">{selectedAsset.assetType} · {selectedAsset.code ?? '—'}</p>
+                <p className="text-xs text-slate-500">
+                  {selectedAsset.assetType} · {selectedAsset.code ?? '—'}
+                  {selectedAsset.plate ? ` · ${selectedAsset.plate}` : ''}
+                </p>
               </div>
             </div>
           ) : !isEditing && !preselectedId ? (
-            <AssetPicker selected={selectedAsset} onSelect={setSelectedAsset} coverage={coverage} isLoading={coverageLoading} />
+            <AssetPicker selected={selectedAsset} onSelect={handleSelectFromCoverage} coverage={coverage} isLoading={coverageLoading} />
           ) : (
             <p className="text-sm text-slate-400">Cargando activo…</p>
           )}
         </SectionCard>
 
-        <SectionCard title="Checklist de seguro" className="mb-5">
-          <div className="space-y-4">
-            {CHECKLIST_ITEMS.map((item) => (
-              <label key={item.key} className="flex items-start gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={checklist[item.key]}
-                  onChange={(e) => setChecklist((prev) => ({ ...prev, [item.key]: e.target.checked }))}
-                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
-                />
-                <span className="text-sm text-slate-700">{item.label}</span>
-              </label>
-            ))}
+        {selectedAsset && <CirculationCardReferenceCard card={referenceCard} assetId={selectedAsset.id} />}
 
-            <FormField label="Kilometraje / horas observado (opcional)">
-              <FormInput value={odometerOrHoursObserved} onChange={(e) => setOdometerOrHoursObserved(e.target.value)} placeholder="Ej: 45.000 km" />
+        <SectionCard title="Checklist" className="mb-5">
+          <div className="space-y-4">
+            <FormField label="¿Tiene la tarjeta de circulación a bordo?" required>
+              <ChoiceGroup
+                options={CIRCULATION_CARD_OPTIONS}
+                value={hasCirculationCard === null ? '' : hasCirculationCard ? 'yes' : 'no'}
+                onChange={(v) => setHasCirculationCard(v === 'yes')}
+              />
             </FormField>
 
             <FormField label="Comentarios (opcional)">

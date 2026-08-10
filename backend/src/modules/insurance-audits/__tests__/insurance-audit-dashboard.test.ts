@@ -23,15 +23,15 @@ describe('GET /api/v1/insurance-audits/audit-dashboard', () => {
     db.insuranceAudit.findMany.mockResolvedValue([])
   })
 
-  it('groups coverage and checklist compliance by category', async () => {
+  it('groups coverage and circulation-card compliance by category', async () => {
     db.asset.findMany.mockResolvedValue([
       { id: 'a1', assetType: 'Camioneta' },
       { id: 'a2', assetType: 'Camioneta' },
       { id: 'a3', assetType: 'Tractor' },
     ])
     db.insuranceAudit.findMany.mockResolvedValue([
-      { assetId: 'a1', policyActiveConfirmed: true, insuranceCardPresent: true, dataMatchesInsuredAsset: true, physicalConditionOk: true, auditDate: new Date('2026-08-10') },
-      { assetId: 'a2', policyActiveConfirmed: false, insuranceCardPresent: true, dataMatchesInsuredAsset: false, physicalConditionOk: true, auditDate: new Date('2026-08-11') },
+      { assetId: 'a1', hasCirculationCard: true, auditDate: new Date('2026-08-10') },
+      { assetId: 'a2', hasCirculationCard: false, auditDate: new Date('2026-08-11') },
     ])
 
     const res = await request(app)
@@ -43,12 +43,13 @@ describe('GET /api/v1/insurance-audits/audit-dashboard', () => {
     expect(res.body.data.totalRegistered).toBe(3)
     expect(res.body.data.totalAudited).toBe(2)
     const camioneta = res.body.data.categories.find((c: any) => c.category === 'camioneta')
-    expect(camioneta).toMatchObject({ total: 2, audited: 2, pending: 0, percentAudited: 100 })
-    expect(camioneta.checklistCompliance).toEqual({
-      policyActiveConfirmed: 1,
-      insuranceCardPresent: 2,
-      dataMatchesInsuredAsset: 1,
-      physicalConditionOk: 2,
+    expect(camioneta).toMatchObject({
+      total: 2,
+      audited: 2,
+      pending: 0,
+      percentAudited: 100,
+      withCirculationCard: 1,
+      withoutCirculationCard: 1,
     })
     const tractor = res.body.data.categories.find((c: any) => c.category === 'tractor')
     expect(tractor).toMatchObject({ total: 1, audited: 0, pending: 1, percentAudited: 0 })
@@ -75,9 +76,9 @@ describe('GET /api/v1/insurance-audits/auditor-progress', () => {
     db.insuranceAudit.findMany.mockResolvedValue([])
   })
 
-  it('counts assigned/completed/pending only within the categories assigned to each auditor', async () => {
+  it('counts assigned/completed/pending only within the assets assigned to each auditor', async () => {
     db.user.findMany.mockResolvedValue([
-      { id: 'u1', name: 'Esteban', email: 'esteban@losodwyer.com', auditScopes: [{ scopeValue: 'camioneta' }] },
+      { id: 'u1', name: 'Esteban', email: 'esteban@losodwyer.com', auditScopes: [{ scopeValue: 'a1' }, { scopeValue: 'a2' }] },
     ])
     db.asset.findMany.mockResolvedValue([
       { id: 'a1', assetType: 'Camioneta' },

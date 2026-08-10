@@ -14,6 +14,7 @@ import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { Tabs, type TabItem } from '../../shared/components/tabs/Tabs'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
+import { AuditAssignmentTab } from '../../shared/components/audit-assignment/AuditAssignmentTab'
 import { formatDate } from '../../shared/utils/format'
 import { useCurrentUser } from '../../app/auth/AuthContext'
 import { insuranceAuditsApi, insuranceAuditKeys, insuranceAuditQueries, type InsuranceAuditListItem } from '../../shared/api/insurance-audits.api'
@@ -36,10 +37,11 @@ export default function InsuranceAuditsQueuePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user } = useCurrentUser()
-  const canReview = user?.role === 'ADMIN' || (user?.modules.includes('insurance_audits') ?? false)
-  const canAudit = user?.role === 'ADMIN' || (user?.modules.includes('insurance_audit_coverage') ?? false)
+  const isAdmin = user?.role === 'ADMIN'
+  const canReview = isAdmin || (user?.modules.includes('insurance_audits') ?? false)
+  const canAudit = isAdmin || (user?.modules.includes('insurance_audit_coverage') ?? false)
 
-  const [activeTab, setActiveTab] = useState<'auditorias' | 'cobertura'>('cobertura')
+  const [activeTab, setActiveTab] = useState<'auditorias' | 'cobertura' | 'asignacion'>('cobertura')
   const [search, setSearch] = useState('')
   const [coveragePeriod, setCoveragePeriod] = useState(currentPeriod())
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -48,6 +50,10 @@ export default function InsuranceAuditsQueuePage() {
 
   const { data: all = [], isLoading, isError } = useQuery(insuranceAuditQueries.list())
   const { data: coverage = [], isLoading: coverageLoading } = useQuery(insuranceAuditQueries.coverage(coveragePeriod))
+  const { data: assignments, isLoading: assignmentsLoading } = useQuery({
+    ...insuranceAuditQueries.assignments(),
+    enabled: isAdmin && activeTab === 'asignacion',
+  })
 
   const pendingCoverageCount = useMemo(() => coverage.filter((c) => !c.audited).length, [coverage])
 
@@ -55,6 +61,7 @@ export default function InsuranceAuditsQueuePage() {
     ? [
         { id: 'auditorias', label: 'Auditorías' },
         { id: 'cobertura', label: 'Cobertura', count: pendingCoverageCount },
+        ...(isAdmin ? [{ id: 'asignacion', label: 'Asignación' }] : []),
       ]
     : []
 
@@ -72,7 +79,9 @@ export default function InsuranceAuditsQueuePage() {
     const q = search.trim().toLowerCase()
     return all.filter((a) => {
       if (!q) return true
-      return [a.asset?.code, a.asset?.name, a.asset?.assetType, a.auditedBy].filter(Boolean).some((v) => v!.toLowerCase().includes(q))
+      return [a.asset?.code, a.asset?.name, a.asset?.assetType, a.asset?.plate, a.asset?.chassisNumber, a.asset?.engineNumber, a.auditedBy]
+        .filter(Boolean)
+        .some((v) => v!.toLowerCase().includes(q))
     })
   }, [all, search])
 
@@ -130,7 +139,10 @@ export default function InsuranceAuditsQueuePage() {
           <div className="min-w-0">
             <p className="text-sm font-medium text-slate-800">{row.asset.name}</p>
             <p className="text-xs text-slate-500">{row.asset.assetType}</p>
-            <p className="text-xs text-slate-400 font-mono">{row.asset.code ?? '—'}</p>
+            <p className="text-xs text-slate-400 font-mono">
+              {row.asset.code ?? '—'}
+              {row.asset.plate ? ` · ${row.asset.plate}` : ''}
+            </p>
           </div>
         ) : (
           <span className="text-slate-400">—</span>
@@ -171,7 +183,7 @@ export default function InsuranceAuditsQueuePage() {
 
       {canReview && (
         <SectionCard noPadding className="mb-5">
-          <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => setActiveTab(id as 'auditorias' | 'cobertura')} />
+          <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => setActiveTab(id as 'auditorias' | 'cobertura' | 'asignacion')} />
         </SectionCard>
       )}
 
@@ -186,7 +198,7 @@ export default function InsuranceAuditsQueuePage() {
 
           <SectionCard noPadding>
             <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
-              <SearchInput value={search} onChange={setSearch} placeholder="Buscar por activo, tipo o auditor…" className="w-full sm:w-80" />
+              <SearchInput value={search} onChange={setSearch} placeholder="Buscar por activo, tipo, patente, chasis, motor o auditor…" className="w-full sm:w-80" />
               <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">{filtered.length} de {all.length} auditorías</span>
             </div>
 
@@ -235,7 +247,31 @@ export default function InsuranceAuditsQueuePage() {
       )}
 
       {(activeTab === 'cobertura' || !canReview) && (
-        <InsuranceAuditCoverageTab period={coveragePeriod} onPeriodChange={setCoveragePeriod} data={coverage} isLoading={coverageLoading} canAudit={canAudit} />
+        <InsuranceAuditCoverageTab
+          period={coveragePeriod}
+          onPeriodChange={setCoveragePeriod}
+          data={coverage}
+          isLoading={coverageLoading}
+          canAudit={canAudit}
+          canReview={canReview}
+        />
+      )}
+
+      {activeTab === 'asignacion' && isAdmin && (
+        <AuditAssignmentTab
+          auditors={assignments?.auditors ?? []}
+          assets={assignments?.assets ?? []}
+          isLoading={assignmentsLoading}
+          onSave={async (userId, assetIds) => {
+            try {
+              await insuranceAuditsApi.saveAssignment(userId, assetIds)
+              queryClient.invalidateQueries({ queryKey: insuranceAuditKeys.all })
+              toast.success('Asignación guardada correctamente')
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : 'Error al guardar la asignación')
+            }
+          }}
+        />
       )}
 
       <ConfirmDialog

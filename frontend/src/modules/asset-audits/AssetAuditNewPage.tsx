@@ -12,9 +12,9 @@ export default function AssetAuditNewPage() {
       coverageQuery={assetAuditQueries.coverage}
       detailRoute={ROUTES.ASSET_AUDITS_DETAIL}
       backRoute={ROUTES.ASSET_AUDITS}
-      backLabel="Volver a Auditoría de Activos"
-      category="Auditoría de Activos"
-      newTitle="Auditoría de Activos"
+      backLabel="Volver a Auditoría de Rodados"
+      category="Auditoría de Rodados"
+      newTitle="Auditoría de Rodados"
       newSubtitle="Registrar la inspección del matafuego montado en un vehículo o maquinaria"
     />
   )

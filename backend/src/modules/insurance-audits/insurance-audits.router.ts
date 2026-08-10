@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
-import { requireModule } from '../../middleware/roles.middleware'
+import { requireModule, requireRole } from '../../middleware/roles.middleware'
 import { validate, validateQuery } from '../../middleware/validate.middleware'
 import { upload } from '../../middleware/upload.middleware'
 import {
@@ -13,6 +13,8 @@ import {
   CoverageQuerySchema,
   AuditDashboardQuerySchema,
   AuditorProgressQuerySchema,
+  SaveAssignmentSchema,
+  AddCommentSchema,
 } from './insurance-audits.schemas'
 import { insuranceAuditsController } from './insurance-audits.controller'
 
@@ -28,6 +30,17 @@ insuranceAuditsRouter.get('/', requireModule(...AUDITS_SHARED_READ_MODULES), val
 
 // Antes de "/:id" — si no, Express interpreta "coverage"/"audit-dashboard" como un :id.
 insuranceAuditsRouter.get('/coverage', requireModule(...AUDITS_SHARED_READ_MODULES), validateQuery(CoverageQuerySchema), insuranceAuditsController.coverage)
+insuranceAuditsRouter.get('/comments', requireModule(...AUDITS_SHARED_READ_MODULES), validateQuery(CoverageQuerySchema), insuranceAuditsController.comments)
+// Comentario suelto ("Agregar comentario") — cualquiera de las dos partes
+// puede dejar uno, sin necesidad de auditar.
+insuranceAuditsRouter.post('/comments', requireModule(...AUDITS_SHARED_READ_MODULES), validate(AddCommentSchema), insuranceAuditsController.addComment)
+// Bytes reales de la tarjeta de circulación de un activo (Ver/Descargar) —
+// no pasa por :id porque también se usa antes de crear la auditoría (wizard).
+insuranceAuditsRouter.get(
+  '/assets/:assetId/circulation-card',
+  requireModule(...AUDITS_SHARED_READ_MODULES),
+  insuranceAuditsController.downloadCirculationCard,
+)
 insuranceAuditsRouter.get(
   '/audit-dashboard',
   requireModule('insurance_audit_dashboard'),
@@ -39,6 +52,16 @@ insuranceAuditsRouter.get(
   requireModule('insurance_audits'),
   validateQuery(AuditorProgressQuerySchema),
   insuranceAuditsController.auditorProgress,
+)
+
+// Asignación por activo individual — exclusivo del admin, reparte el pool
+// elegible entre los auditores (ver insurance-audits.service.ts#getAssignments).
+insuranceAuditsRouter.get('/assignments', requireRole('ADMIN'), insuranceAuditsController.getAssignments)
+insuranceAuditsRouter.put(
+  '/assignments/:userId',
+  requireRole('ADMIN'),
+  validate(SaveAssignmentSchema),
+  insuranceAuditsController.saveAssignment,
 )
 
 insuranceAuditsRouter.post('/', requireModule('insurance_audit_coverage'), validate(CreateInsuranceAuditSchema), insuranceAuditsController.create)
@@ -84,4 +107,28 @@ insuranceAuditsRouter.post(
   requireModule('insurance_audits'),
   validate(ReviewInsuranceAuditSchema),
   insuranceAuditsController.review,
+)
+
+// Seguimiento de tarjeta de circulación: el auditor avisa (módulo de
+// cobertura), el revisor confirma (módulo de revisión) — funciona aunque la
+// auditoría ya esté aprobada, ver insurance-audits.service.ts.
+insuranceAuditsRouter.post(
+  '/:id/request-card-update',
+  requireModule('insurance_audit_coverage'),
+  insuranceAuditsController.requestCardUpdate,
+)
+
+insuranceAuditsRouter.post(
+  '/:id/confirm-card-placed',
+  requireModule('insurance_audits'),
+  insuranceAuditsController.confirmCardPlaced,
+)
+
+// Seguimiento de comentarios: cualquiera de las dos partes marca como visto
+// el comentario de la OTRA, desde la sección "Comentarios" de Cobertura — el
+// service rechaza que alguien marque su propio comentario (SELF_SEEN_FORBIDDEN).
+insuranceAuditsRouter.post(
+  '/:id/mark-comment-seen',
+  requireModule(...AUDITS_SHARED_READ_MODULES),
+  insuranceAuditsController.markCommentSeen,
 )

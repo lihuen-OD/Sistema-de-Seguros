@@ -49,10 +49,17 @@ fireExtinguishersRouter.post(
   fireExtinguishersController.create,
 )
 // El detalle también lo consumen las pantallas de Auditorías (para mostrar
-// el matafuego auditado/a auditar).
+// el matafuego auditado/a auditar) — tanto Matafuegos (edificio) como
+// Rodados (población ASSET, mismo motor con distinto módulo de cobertura).
 fireExtinguishersRouter.get(
   '/:id',
-  requireModule('fire_extinguishers', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_audits'),
+  requireModule(
+    'fire_extinguishers',
+    'fire_extinguisher_audit_coverage',
+    'fire_extinguisher_audits',
+    'asset_audit_coverage',
+    'asset_audits',
+  ),
   fireExtinguishersController.getById,
 )
 fireExtinguishersRouter.put(

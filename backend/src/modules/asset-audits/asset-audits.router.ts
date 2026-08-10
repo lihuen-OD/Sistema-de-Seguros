@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
-import { requireModule } from '../../middleware/roles.middleware'
+import { requireModule, requireRole } from '../../middleware/roles.middleware'
 import { validate, validateQuery } from '../../middleware/validate.middleware'
 import { upload } from '../../middleware/upload.middleware'
 import {
@@ -13,7 +13,9 @@ import {
   CoverageQuerySchema,
   AuditDashboardQuerySchema,
   AuditorProgressQuerySchema,
+  AddCommentSchema,
 } from '../fire-extinguisher-audits/fire-extinguisher-audits.schemas'
+import { SaveAssignmentSchema } from './asset-audits-assignments.schemas'
 import { assetAuditsController } from './asset-audits.controller'
 
 export const assetAuditsRouter = Router()
@@ -28,6 +30,12 @@ assetAuditsRouter.get('/', requireModule(...AUDITS_SHARED_READ_MODULES), validat
 
 // Antes de "/:id" — si no, Express interpreta "coverage"/"audit-dashboard" como un :id.
 assetAuditsRouter.get('/coverage', requireModule(...AUDITS_SHARED_READ_MODULES), validateQuery(CoverageQuerySchema), assetAuditsController.coverage)
+
+// Sección "Comentarios" de Cobertura — leer, agregar uno suelto, y marcar
+// como visto (mismo gate que coverage: auditor y revisor, ambos leen/escriben).
+assetAuditsRouter.get('/comments', requireModule(...AUDITS_SHARED_READ_MODULES), validateQuery(CoverageQuerySchema), assetAuditsController.comments)
+assetAuditsRouter.post('/comments', requireModule(...AUDITS_SHARED_READ_MODULES), validate(AddCommentSchema), assetAuditsController.addComment)
+assetAuditsRouter.post('/comments/:id/mark-seen', requireModule(...AUDITS_SHARED_READ_MODULES), assetAuditsController.markCommentSeen)
 assetAuditsRouter.get(
   '/audit-dashboard',
   requireModule('asset_audit_dashboard'),
@@ -39,6 +47,16 @@ assetAuditsRouter.get(
   requireModule('asset_audits'),
   validateQuery(AuditorProgressQuerySchema),
   assetAuditsController.auditorProgress,
+)
+
+// Asignación por activo individual — exclusivo del admin, reparte el pool
+// elegible entre los auditores (ver asset-audits-assignments.service.ts).
+assetAuditsRouter.get('/assignments', requireRole('ADMIN'), assetAuditsController.getAssignments)
+assetAuditsRouter.put(
+  '/assignments/:userId',
+  requireRole('ADMIN'),
+  validate(SaveAssignmentSchema),
+  assetAuditsController.saveAssignment,
 )
 
 assetAuditsRouter.post('/', requireModule('asset_audit_coverage'), validate(CreateFireExtinguisherAuditSchema), assetAuditsController.create)

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { CalendarDays, Gauge, ClipboardCheck, AlertTriangle, Package, ChevronDown, ChevronUp } from 'lucide-react'
@@ -32,7 +33,8 @@ function classifyLevel(level: number | null): string | null {
 }
 
 export default function AssetAuditDashboardPage() {
-  const [period, setPeriod] = useState(currentPeriod())
+  const [searchParams] = useSearchParams()
+  const [period, setPeriod] = useState(searchParams.get('period') || currentPeriod())
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
   const { data, isLoading } = useQuery(assetAuditQueries.auditDashboard(period))
   const { data: progress } = useQuery(assetAuditQueries.auditorProgress(period))
@@ -57,9 +59,9 @@ export default function AssetAuditDashboardPage() {
   return (
     <PageContent>
       <PageHeader
-        title="Informe de Auditoría de Activos"
+        title="Informe de Auditoría de Rodados"
         subtitle="Nivel de la auditoría mensual de matafuegos montados en vehículos y maquinaria, por categoría"
-        category="Auditoría de Activos"
+        category="Auditoría de Rodados"
         backTo={ROUTES.ASSET_AUDITS}
         backLabel="Volver a Auditorías"
       />

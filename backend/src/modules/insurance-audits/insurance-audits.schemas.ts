@@ -3,11 +3,7 @@ import { PaginationSchema } from '../../shared/schemas/common'
 import { INSURANCE_AUDIT_STATUSES } from './insurance-audits.constants'
 
 const ChecklistSchema = z.object({
-  policyActiveConfirmed: z.boolean(),
-  insuranceCardPresent: z.boolean(),
-  dataMatchesInsuredAsset: z.boolean(),
-  physicalConditionOk: z.boolean(),
-  odometerOrHoursObserved: z.string().max(50).optional().nullable(),
+  hasCirculationCard: z.boolean(),
   comments: z.string().max(1000).optional().nullable(),
 })
 
@@ -57,6 +53,18 @@ export const AuditDashboardQuerySchema = z.object({
 
 export const AuditorProgressQuerySchema = CoverageQuerySchema
 
+// Asignación por activo individual — ver insurance-audits.service.ts#saveAssignment.
+export const SaveAssignmentSchema = z.object({
+  assetIds: z.array(z.string().uuid('ID de activo inválido')).max(500),
+})
+
+// Comentario suelto ("Agregar comentario"), sin auditoría de por medio — ver
+// insurance-audits.service.ts#addComment.
+export const AddCommentSchema = z.object({
+  assetId: z.string().uuid('ID de activo inválido'),
+  body: z.string().trim().min(1, 'El comentario no puede estar vacío').max(1000),
+})
+
 export type ChecklistDTO = z.infer<typeof ChecklistSchema>
 export type CreateInsuranceAuditDTO = z.infer<typeof CreateInsuranceAuditSchema>
 export type UpdateInsuranceAuditDTO = z.infer<typeof UpdateInsuranceAuditSchema>
@@ -67,3 +75,5 @@ export type ListInsuranceAuditsQueryDTO = z.infer<typeof ListInsuranceAuditsQuer
 export type CoverageQueryDTO = z.infer<typeof CoverageQuerySchema>
 export type AuditDashboardQueryDTO = z.infer<typeof AuditDashboardQuerySchema>
 export type AuditorProgressQueryDTO = z.infer<typeof AuditorProgressQuerySchema>
+export type SaveAssignmentDTO = z.infer<typeof SaveAssignmentSchema>
+export type AddCommentDTO = z.infer<typeof AddCommentSchema>

@@ -25,13 +25,7 @@ import {
 } from '../../../shared/api/users.api'
 import { accessProfileQueries } from '../../../shared/api/access-profiles.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
-import { AUDITABLE_CATEGORY_GROUPS } from '../../../shared/constants/asset-categories'
 import type { Role, TableColumn, UserAuditScopeItem } from '../../../shared/types'
-
-const AUDITABLE_CATEGORY_SECTIONS = AUDITABLE_CATEGORY_GROUPS.map((group) => ({
-  label: group.label,
-  options: group.items.map((item) => ({ value: item.key, label: item.label })),
-}))
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Administrador',
@@ -63,12 +57,6 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
   const [fireExtScope, setFireExtScope] = useState<string[]>(
     () => (user?.auditScope ?? []).filter((s) => s.area === 'FIRE_EXTINGUISHER_AUDIT').map((s) => s.scopeValue),
   )
-  const [assetScope, setAssetScope] = useState<string[]>(
-    () => (user?.auditScope ?? []).filter((s) => s.area === 'ASSET_AUDIT').map((s) => s.scopeValue),
-  )
-  const [insuranceScope, setInsuranceScope] = useState<string[]>(
-    () => (user?.auditScope ?? []).filter((s) => s.area === 'INSURANCE_AUDIT').map((s) => s.scopeValue),
-  )
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({})
   const [apiError, setApiError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -78,12 +66,11 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
 
   const selectedProfile = profiles.find((p) => p.id === accessProfileId)
   // Alcance de auditoría: solo aplica a un USER cuyo perfil de acceso le da
-  // el módulo "de auditar" (coverage) de esa área — un revisor, o alguien
-  // sin ese módulo, no necesita elegir nada acá.
+  // el módulo "de auditar" (coverage) de Matafuegos — el único que se sigue
+  // asignando por establecimiento acá. Rodados/Seguros (por categoría de
+  // activo) se reemplazaron por asignación de activo individual, gestionada
+  // desde la pestaña "Asignación" de cada auditoría, no desde este modal.
   const showFireExtScope = role === 'USER' && (selectedProfile?.modules.includes('fire_extinguisher_audit_coverage') ?? false)
-  const showAssetScope = role === 'USER' && (selectedProfile?.modules.includes('asset_audit_coverage') ?? false)
-  const showInsuranceScope = role === 'USER' && (selectedProfile?.modules.includes('insurance_audit_coverage') ?? false)
-  const showAnyScope = showFireExtScope || showAssetScope || showInsuranceScope
   const { data: establishments = [] } = useQuery({ ...catalogQueries.byCategory('fire_ext_establishment'), enabled: showFireExtScope })
 
   function validate(): boolean {
@@ -103,23 +90,15 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
     setApiError('')
     const profileField = { accessProfileId: role === 'USER' ? (accessProfileId || null) : null }
     // Solo se manda auditScope cuando esta pantalla efectivamente muestra (y
-    // por lo tanto puede editar) alguna sección de alcance — así un guardado
-    // que no toca ninguna sección de alcance no pisa asignaciones de áreas
-    // que este modal no gestionó en esta sesión. De las áreas que SÍ se
-    // muestran acá, se reemplaza el set completo; cualquier otra área queda
-    // preservada tal cual venía.
-    const replacedAreas: UserAuditScopeItem['area'][] = [
-      ...(showFireExtScope ? (['FIRE_EXTINGUISHER_AUDIT'] as const) : []),
-      ...(showAssetScope ? (['ASSET_AUDIT'] as const) : []),
-      ...(showInsuranceScope ? (['INSURANCE_AUDIT'] as const) : []),
-    ]
-    const scopeField = showAnyScope
+    // por lo tanto puede editar) la sección de establecimientos — así un
+    // guardado que no la toca no pisa esa asignación. ASSET_AUDIT/
+    // INSURANCE_AUDIT nunca se tocan desde acá (ver comentario en
+    // showFireExtScope), así que jamás forman parte de este payload.
+    const scopeField = showFireExtScope
       ? {
           auditScope: [
-            ...(user?.auditScope ?? []).filter((s) => !replacedAreas.includes(s.area)),
-            ...(showFireExtScope ? fireExtScope.map((scopeValue): UserAuditScopeItem => ({ area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue })) : []),
-            ...(showAssetScope ? assetScope.map((scopeValue): UserAuditScopeItem => ({ area: 'ASSET_AUDIT', scopeValue })) : []),
-            ...(showInsuranceScope ? insuranceScope.map((scopeValue): UserAuditScopeItem => ({ area: 'INSURANCE_AUDIT', scopeValue })) : []),
+            ...(user?.auditScope ?? []).filter((s) => s.area !== 'FIRE_EXTINGUISHER_AUDIT'),
+            ...fireExtScope.map((scopeValue): UserAuditScopeItem => ({ area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue })),
           ],
         }
       : {}
@@ -140,7 +119,7 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
     <Modal
       open
       onClose={onClose}
-      size={showAnyScope ? 'md' : 'sm'}
+      size={showFireExtScope ? 'md' : 'sm'}
       icon={UsersIcon}
       title={isEdit ? 'Editar usuario' : 'Nuevo usuario'}
       description={isEdit ? user!.email : 'La contraseña que cargues es temporal — la persona la cambia en su primer login.'}
@@ -182,24 +161,6 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
               value={fireExtScope}
               onChange={setFireExtScope}
             />
-          </FormField>
-        )}
-
-        {showAssetScope && (
-          <FormField label="Alcance de auditoría — Categorías de activo" fullWidth>
-            <p className="text-xs text-slate-500 -mt-0.5 mb-1.5">
-              Categorías de vehículos/maquinaria que esta persona puede auditar en Auditoría de Activos. Sin ninguna tildada, no va a poder auditar ninguna categoría.
-            </p>
-            <CheckboxGroup sections={AUDITABLE_CATEGORY_SECTIONS} value={assetScope} onChange={setAssetScope} />
-          </FormField>
-        )}
-
-        {showInsuranceScope && (
-          <FormField label="Alcance de auditoría — Categorías de activo (Seguros)" fullWidth>
-            <p className="text-xs text-slate-500 -mt-0.5 mb-1.5">
-              Categorías de vehículos/maquinaria que esta persona puede auditar en Auditoría de Seguros. Sin ninguna tildada, no va a poder auditar ninguna categoría.
-            </p>
-            <CheckboxGroup sections={AUDITABLE_CATEGORY_SECTIONS} value={insuranceScope} onChange={setInsuranceScope} />
           </FormField>
         )}
 

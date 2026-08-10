@@ -25,6 +25,7 @@ import {
   Bell,
   UserCog,
   KeyRound,
+  Tractor,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useCurrentUser } from '../../../app/auth/AuthContext'
@@ -66,14 +67,14 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Matafuegos', to: '/fire-extinguishers', icon: Flame },
       { label: 'Auditoría de Matafuegos', to: '/fire-extinguishers/audits', icon: ClipboardCheck },
+      // Audita matafuegos montados en vehículos/maquinaria (no el vehículo en
+      // sí) — mismo motor que "Auditoría de Matafuegos", por eso vive en este
+      // mismo grupo en vez de tener su propia sección, junto al otro ítem de
+      // auditoría. Sin ítem de dashboard propio: el informe se ve desde el
+      // botón "Ver informe de auditoría" dentro de la pantalla, igual que en
+      // Matafuegos.
+      { label: 'Auditoría de Rodados', to: '/asset-audits', icon: Tractor },
       { label: 'Dashboard de Matafuegos', to: '/fire-extinguishers/dashboard', icon: BarChart3 },
-    ],
-  },
-  {
-    label: 'Auditoría de Activos',
-    items: [
-      { label: 'Auditorías', to: '/asset-audits', icon: ClipboardCheck },
-      { label: 'Dashboard de Auditoría', to: '/asset-audits/dashboard', icon: BarChart3 },
     ],
   },
   {

@@ -4,12 +4,22 @@ import { apiClient } from './client'
 export type InsuranceAuditStatus = 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'NEEDS_CORRECTION'
 
 export interface InsuranceAuditChecklistInput {
-  policyActiveConfirmed: boolean
-  insuranceCardPresent: boolean
-  dataMatchesInsuredAsset: boolean
-  physicalConditionOk: boolean
-  odometerOrHoursObserved?: string
+  hasCirculationCard: boolean
   comments?: string
+}
+
+// Patente/chasis/motor viven en Asset.metadata, no son columnas propias —
+// mismas claves que arma el backend en insurance-audits.service.ts.
+export interface InsuranceAuditVehicleMeta {
+  plate: string | null
+  chassisNumber: string | null
+  engineNumber: string | null
+}
+
+export interface CirculationCardReference {
+  id: string
+  fileUrl: string
+  name: string
 }
 
 export interface InsuranceAuditCreateInput {
@@ -41,7 +51,11 @@ export interface InsuranceAudit {
   auditedBy: string
   checklist: InsuranceAuditChecklistInput
   attachments: InsuranceAuditAttachment[]
-  asset: { id: string; code: string | null; name: string; assetType: string } | null
+  asset: ({ id: string; code: string | null; name: string; assetType: string } & InsuranceAuditVehicleMeta) | null
+  referenceCirculationCard: CirculationCardReference | null
+  cardUpdateRequested: boolean
+  cardUpdateRequestedAt: string | null
+  cardUpdateRequestedBy: string | null
   reviewedBy: string | null
   reviewedAt: string | null
   reviewNotes: string | null
@@ -58,7 +72,8 @@ export interface InsuranceAuditListItem {
   reviewedBy: string | null
   reviewedAt: string | null
   reviewNotes: string | null
-  asset: { id: string; code: string | null; name: string; assetType: string } | null
+  cardUpdateRequested: boolean
+  asset: ({ id: string; code: string | null; name: string; assetType: string } & InsuranceAuditVehicleMeta) | null
 }
 
 export interface InsuranceAuditReviewInput {
@@ -71,7 +86,7 @@ export interface BulkApproveInsuranceAuditsResult {
   failed: { id: string; code: string | null; message: string }[]
 }
 
-export interface InsuranceAuditCoverageItem {
+export interface InsuranceAuditCoverageItem extends InsuranceAuditVehicleMeta {
   id: string
   code: string | null
   name: string
@@ -81,6 +96,9 @@ export interface InsuranceAuditCoverageItem {
   auditId: string | null
   auditStatus: InsuranceAuditStatus | null
   auditDate: string | null
+  hasCirculationCard: boolean | null
+  cardUpdateRequested: boolean
+  referenceCirculationCard: CirculationCardReference | null
 }
 
 export interface InsuranceAuditDashboardCategory {
@@ -89,12 +107,8 @@ export interface InsuranceAuditDashboardCategory {
   audited: number
   pending: number
   percentAudited: number | null
-  checklistCompliance: {
-    policyActiveConfirmed: number
-    insuranceCardPresent: number
-    dataMatchesInsuredAsset: number
-    physicalConditionOk: number
-  }
+  withCirculationCard: number
+  withoutCirculationCard: number
 }
 
 export interface InsuranceAuditDashboard {
@@ -110,7 +124,7 @@ export interface InsuranceAuditorProgress {
   userId: string
   name: string
   email: string
-  assignedCategories: string[]
+  assignedAssetIds: string[]
   assigned: number
   completed: number
   pending: number
@@ -124,6 +138,45 @@ export interface InsuranceAuditorProgressReport {
 
 export interface InsuranceAuditListFilters {
   assetId?: string
+}
+
+// Feed de comentarios compartido — ver AuditCommentsPanel.tsx. `target` es el
+// activo al que pertenece el comentario, con el mismo shape que espera el
+// panel genérico (label/sublabel ya armados por este archivo, no por el
+// backend).
+export type InsuranceAuditCommentSource = 'AUDITOR_NOTE' | 'REVIEW_DECISION' | 'MANUAL'
+
+export interface InsuranceAuditCommentItem {
+  id: string
+  source: InsuranceAuditCommentSource
+  auditStatus: InsuranceAuditStatus | null
+  body: string
+  authorEmail: string
+  createdAt: string
+  seenAt: string | null
+  seenByEmail: string | null
+  target: { id: string; label: string; sublabel: string | null }
+}
+
+// Asignación por activo individual — reemplaza la asignación por categoría.
+export interface InsuranceAuditAssignableAsset extends InsuranceAuditVehicleMeta {
+  id: string
+  code: string | null
+  name: string
+  assetType: string
+  category: string
+}
+
+export interface InsuranceAuditAssignmentAuditor {
+  userId: string
+  name: string
+  email: string
+  assetIds: string[]
+}
+
+export interface InsuranceAuditAssignments {
+  auditors: InsuranceAuditAssignmentAuditor[]
+  assets: InsuranceAuditAssignableAsset[]
 }
 
 export const insuranceAuditKeys = {
@@ -190,6 +243,44 @@ export const insuranceAuditsApi = {
     const res = await apiClient.get<{ data: InsuranceAuditorProgressReport }>('/insurance-audits/auditor-progress', { params: { period } })
     return res.data.data
   },
+
+  async requestCardUpdate(id: string): Promise<InsuranceAudit> {
+    const res = await apiClient.post<{ data: InsuranceAudit }>(`/insurance-audits/${id}/request-card-update`)
+    return res.data.data
+  },
+
+  async confirmCardPlaced(id: string): Promise<InsuranceAudit> {
+    const res = await apiClient.post<{ data: InsuranceAudit }>(`/insurance-audits/${id}/confirm-card-placed`)
+    return res.data.data
+  },
+
+  async getComments(period: string): Promise<InsuranceAuditCommentItem[]> {
+    type RawComment = Omit<InsuranceAuditCommentItem, 'target'> & {
+      target: { id: string; code: string | null; name: string; assetType: string } & InsuranceAuditVehicleMeta
+    }
+    const res = await apiClient.get<{ data: RawComment[] }>('/insurance-audits/comments', { params: { period } })
+    return res.data.data.map((c) => ({
+      ...c,
+      target: { id: c.target.id, label: c.target.name, sublabel: c.target.code ?? c.target.plate ?? null },
+    }))
+  },
+
+  async addComment(assetId: string, body: string): Promise<void> {
+    await apiClient.post('/insurance-audits/comments', { assetId, body })
+  },
+
+  async markCommentSeen(id: string): Promise<void> {
+    await apiClient.post(`/insurance-audits/${id}/mark-comment-seen`)
+  },
+
+  async getAssignments(): Promise<InsuranceAuditAssignments> {
+    const res = await apiClient.get<{ data: InsuranceAuditAssignments }>('/insurance-audits/assignments')
+    return res.data.data
+  },
+
+  async saveAssignment(userId: string, assetIds: string[]): Promise<void> {
+    await apiClient.put(`/insurance-audits/assignments/${userId}`, { assetIds })
+  },
 }
 
 export const insuranceAuditQueries = {
@@ -223,5 +314,17 @@ export const insuranceAuditQueries = {
       queryKey: [...insuranceAuditKeys.all, 'auditor-progress', period] as const,
       queryFn: () => insuranceAuditsApi.getAuditorProgress(period),
       staleTime: 60 * 1000,
+    }),
+  comments: (period: string) =>
+    queryOptions({
+      queryKey: [...insuranceAuditKeys.all, 'comments', period] as const,
+      queryFn: () => insuranceAuditsApi.getComments(period),
+      staleTime: 60 * 1000,
+    }),
+  assignments: () =>
+    queryOptions({
+      queryKey: [...insuranceAuditKeys.all, 'assignments'] as const,
+      queryFn: () => insuranceAuditsApi.getAssignments(),
+      staleTime: 30 * 1000,
     }),
 }

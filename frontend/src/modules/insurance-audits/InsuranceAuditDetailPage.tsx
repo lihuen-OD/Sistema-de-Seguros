@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ImageOff, Pencil, Package, CheckCircle2, XCircle } from 'lucide-react'
+import { ImageOff, Pencil, Package, CheckCircle2, XCircle, IdCard, Bell, BadgeCheck } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -11,16 +11,10 @@ import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { ChoiceGroup } from '../../shared/components/forms/ChoiceGroup'
 import { FormField, FormTextarea } from '../../shared/components/forms/FormSection'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
+import { FileViewDownloadButtons } from '../../shared/components/file-viewer/FileViewDownloadButtons'
 import { insuranceAuditsApi, insuranceAuditKeys, insuranceAuditQueries } from '../../shared/api/insurance-audits.api'
 import { ROUTES } from '../../app/routes'
 import { useCurrentUser } from '../../app/auth/AuthContext'
-
-const CHECKLIST_LABELS: Record<string, string> = {
-  policyActiveConfirmed: 'Póliza vigente',
-  insuranceCardPresent: 'Tarjeta/certificado a bordo',
-  dataMatchesInsuredAsset: 'Datos coinciden con lo asegurado',
-  physicalConditionOk: 'Sin daños no declarados',
-}
 
 const AUDIT_DECISION_OPTIONS = [
   { value: 'APPROVED', label: 'Aprobar auditoría' },
@@ -55,6 +49,15 @@ export default function InsuranceAuditDetailPage() {
       queryClient.invalidateQueries({ queryKey: insuranceAuditKeys.all })
     },
     onError: () => setShowConfirm(false),
+  })
+
+  const confirmCardMutation = useMutation({
+    mutationFn: () => insuranceAuditsApi.confirmCardPlaced(id!),
+    onSuccess: () => {
+      toast.success('Confirmado: el activo ya tiene la tarjeta de circulación')
+      queryClient.invalidateQueries({ queryKey: insuranceAuditKeys.all })
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Error al confirmar'),
   })
 
   if ((!canReview && !canAudit) || isLoading || !audit) {
@@ -100,7 +103,10 @@ export default function InsuranceAuditDetailPage() {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-800">{asset.name}</p>
-              <p className="text-xs text-slate-500">{asset.assetType} · {asset.code ?? '—'}</p>
+              <p className="text-xs text-slate-500">
+                {asset.assetType} · {asset.code ?? '—'}
+                {asset.plate ? ` · ${asset.plate}` : ''}
+              </p>
             </div>
             <button
               type="button"
@@ -115,24 +121,63 @@ export default function InsuranceAuditDetailPage() {
         )}
       </SectionCard>
 
-      <SectionCard title="Checklist de seguro" className="mb-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-4">
-          {Object.entries(CHECKLIST_LABELS).map(([key, label]) => {
-            const ok = (audit.checklist as unknown as Record<string, boolean>)[key]
-            return (
-              <div key={key} className="flex items-center gap-2">
-                {ok ? <CheckCircle2 size={15} className="text-emerald-500 flex-shrink-0" /> : <XCircle size={15} className="text-red-500 flex-shrink-0" />}
-                <span className="text-slate-700">{label}</span>
-              </div>
-            )
-          })}
-        </div>
-        {audit.checklist.odometerOrHoursObserved && (
-          <div className="mb-3">
-            <p className="text-xs text-slate-500 mb-0.5">Kilometraje / horas observado</p>
-            <p className="text-sm font-medium text-slate-800">{audit.checklist.odometerOrHoursObserved}</p>
+      {audit.cardUpdateRequested && (
+        <SectionCard className="mb-5 border-brand-200 bg-brand-50/60">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-brand-100 flex items-center justify-center flex-shrink-0">
+              <Bell size={16} className="text-brand-600" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-brand-900">El auditor avisó que ya colocó la tarjeta de circulación</p>
+              <p className="text-xs text-brand-700 mt-0.5">
+                Confirmá para actualizar esta auditoría a "Tiene la tarjeta a bordo".
+              </p>
+            </div>
+            {canReview && (
+              <button
+                type="button"
+                onClick={() => confirmCardMutation.mutate()}
+                disabled={confirmCardMutation.isPending}
+                className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                <BadgeCheck size={14} />
+                Confirmar
+              </button>
+            )}
           </div>
+        </SectionCard>
+      )}
+
+      <SectionCard title="Tarjeta de circulación en el sistema" className="mb-5">
+        {audit.referenceCirculationCard ? (
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
+              <IdCard size={16} className="text-brand-500" />
+            </div>
+            <p className="text-sm font-medium text-slate-800 truncate flex-1">{audit.referenceCirculationCard.name}</p>
+            <FileViewDownloadButtons
+              fetchUrl={`/insurance-audits/assets/${audit.assetId}/circulation-card`}
+              name={audit.referenceCirculationCard.name}
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3.5 py-2.5">
+            No hay tarjeta de circulación cargada en el sistema para este activo.
+          </p>
         )}
+      </SectionCard>
+
+      <SectionCard title="Checklist" className="mb-5">
+        <div className="flex items-center gap-2 text-sm mb-4">
+          {audit.checklist.hasCirculationCard ? (
+            <CheckCircle2 size={15} className="text-emerald-500 flex-shrink-0" />
+          ) : (
+            <XCircle size={15} className="text-red-500 flex-shrink-0" />
+          )}
+          <span className="text-slate-700">
+            {audit.checklist.hasCirculationCard ? 'Tiene la tarjeta a bordo' : 'No tiene la tarjeta a bordo'}
+          </span>
+        </div>
         {audit.checklist.comments && (
           <div>
             <p className="text-xs text-slate-500 mb-0.5">Comentarios</p>

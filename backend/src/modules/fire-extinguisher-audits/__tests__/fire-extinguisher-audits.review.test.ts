@@ -31,6 +31,14 @@ jest.mock('../../../config/database', () => ({
       count: jest.fn(),
       create: jest.fn(),
     },
+    auditComment: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
     userAuditScope: {
       findMany: jest.fn(),
     },
@@ -477,14 +485,14 @@ describe('Fire Extinguisher Audits — Review API', () => {
       ])
     })
 
-    it('marks extinguishers with a non-rejected audit this period as audited, the rest as pending', async () => {
+    it('marks extinguishers with any audit this period as audited, the rest as pending', async () => {
       const res = await request(app)
         .get('/api/v1/fire-extinguisher-audits/coverage?period=2026-07')
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(200)
       expect(db.fireExtinguisherAudit.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { auditPeriod: '2026-07', status: { not: 'REJECTED' } } }),
+        expect.objectContaining({ where: { auditPeriod: '2026-07' }, orderBy: { createdAt: 'desc' } }),
       )
 
       const byId = Object.fromEntries(res.body.data.map((d: any) => [d.id, d]))
@@ -494,16 +502,32 @@ describe('Fire Extinguisher Audits — Review API', () => {
       expect(byId[OTHER_FE_ID].auditStatus).toBeNull()
     })
 
-    it('does not count a REJECTED audit as coverage — the query already excludes it, service just reflects that', async () => {
-      db.fireExtinguisherAudit.findMany.mockResolvedValue([])
-
+    it('shows a REJECTED audit as such (not as pending) so it can be re-audited from Cobertura', async () => {
       const res = await request(app)
         .get('/api/v1/fire-extinguisher-audits/coverage?period=2026-07')
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(200)
       const rejectedRow = res.body.data.find((d: any) => d.id === REJECTED_FE_ID)
-      expect(rejectedRow.audited).toBe(false)
+      expect(rejectedRow.audited).toBe(true)
+      expect(rejectedRow.auditStatus).toBe('REJECTED')
+    })
+
+    it('picks the audit created later even when both share the same auditDate (recorrección same-day)', async () => {
+      // Reproduce el bug real encontrado en la base: una auditoría
+      // NEEDS_CORRECTION y su recorrección APPROVED, ambas con auditDate de
+      // "hoy" — el orden que importa es createdAt, no auditDate.
+      db.fireExtinguisherAudit.findMany.mockResolvedValue([
+        { fireExtinguisherId: FE_ID, status: 'APPROVED', auditDate: BASE_DATE }, // recorrección, createdAt más nuevo
+        { fireExtinguisherId: FE_ID, status: 'NEEDS_CORRECTION', auditDate: BASE_DATE }, // vieja, superada
+      ])
+
+      const res = await request(app)
+        .get('/api/v1/fire-extinguisher-audits/coverage?period=2026-07')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const row = res.body.data.find((d: any) => d.id === FE_ID)
+      expect(row.auditStatus).toBe('APPROVED')
     })
 
     it('returns 422 when period has an invalid format', async () => {
@@ -541,6 +565,103 @@ describe('Fire Extinguisher Audits — Review API', () => {
       const ids = res.body.data.map((d: any) => d.id)
       expect(ids).toContain(FE_ID)
       expect(ids).not.toContain(VEHICLE_FE_ID)
+    })
+  })
+
+  // ── Comentarios de Cobertura ───────────────────────────────────────────────
+
+  describe('GET /api/v1/fire-extinguisher-audits/comments', () => {
+    const VEHICLE_FE_ID = '60000000-0000-0000-0000-000000000005'
+
+    beforeEach(() => {
+      db.fireExtinguisher.findMany.mockResolvedValue([
+        { ...fakeFireExt, assetId: null, asset: null },
+        { id: VEHICLE_FE_ID, code: 'MAT-005-A', cylinderNumber: 'CIL-05', establishment: 'MAQUINARIA/VEHICULOS', location: null, assetId: 'a1', asset: { id: 'a1', name: 'Tractor 1', assetType: 'Tractor', fireExtinguisherAuditable: true } },
+      ])
+      db.auditComment.findMany.mockResolvedValue([
+        { id: 'c1', targetType: 'FIRE_EXTINGUISHER', targetId: FE_ID, source: 'REVIEW_DECISION', auditStatus: 'REJECTED', body: 'Auditoría rechazada.', authorEmail: 'admin@losodwyer.com', seenAt: null, seenByEmail: null, createdAt: BASE_DATE },
+        { id: 'c2', targetType: 'FIRE_EXTINGUISHER', targetId: VEHICLE_FE_ID, source: 'AUDITOR_NOTE', auditStatus: null, body: 'Nota de Rodados', authorEmail: 'auditor@losodwyer.com', seenAt: null, seenByEmail: null, createdAt: BASE_DATE },
+      ])
+    })
+
+    it('only returns comments for extinguishers of the ESTABLISHMENT population (excludes Rodados)', async () => {
+      const res = await request(app)
+        .get('/api/v1/fire-extinguisher-audits/comments?period=2026-07')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0].id).toBe('c1')
+      expect(res.body.data[0].auditStatus).toBe('REJECTED')
+    })
+  })
+
+  describe('POST /api/v1/fire-extinguisher-audits/comments', () => {
+    it('returns 201 and creates a manual comment for a building extinguisher', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue({ ...fakeFireExt, asset: null })
+      db.auditComment.create.mockResolvedValue({ id: 'c1', source: 'MANUAL' })
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits/comments')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ targetId: FE_ID, body: 'Falta revisar el soporte' })
+
+      expect(res.status).toBe(201)
+      expect(db.auditComment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ targetType: 'FIRE_EXTINGUISHER', targetId: FE_ID, source: 'MANUAL', body: 'Falta revisar el soporte' }),
+      })
+    })
+
+    it('returns 404 for an extinguisher belonging to the ASSET population (Rodados)', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue({
+        ...fakeFireExt,
+        establishment: 'MAQUINARIA/VEHICULOS',
+        assetId: 'a1',
+        asset: { assetType: 'Tractor', fireExtinguisherAuditable: true },
+      })
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits/comments')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ targetId: FE_ID, body: 'Este no es mío' })
+
+      expect(res.status).toBe(404)
+    })
+  })
+
+  describe('POST /api/v1/fire-extinguisher-audits/comments/:id/mark-seen', () => {
+    it('returns 200 when marking a comment authored by someone else', async () => {
+      db.auditComment.findUnique
+        .mockResolvedValueOnce({ id: 'c1', targetType: 'FIRE_EXTINGUISHER', targetId: FE_ID, authorEmail: 'auditor@losodwyer.com' })
+        .mockResolvedValueOnce({ id: 'c1', targetType: 'FIRE_EXTINGUISHER', targetId: FE_ID, authorEmail: 'auditor@losodwyer.com' })
+      db.fireExtinguisher.findUnique.mockResolvedValue({ ...fakeFireExt, asset: null })
+      db.auditComment.update.mockResolvedValue({ id: 'c1' })
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits/comments/c1/mark-seen')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.auditComment.update).toHaveBeenCalledWith({
+        where: { id: 'c1' },
+        data: expect.objectContaining({ seenByEmail: 'test@losodwyer.com' }),
+      })
+    })
+
+    it('returns 404 for a comment on an extinguisher of the ASSET population (Rodados)', async () => {
+      db.auditComment.findUnique.mockResolvedValue({ id: 'c1', targetType: 'FIRE_EXTINGUISHER', targetId: FE_ID, authorEmail: 'auditor@losodwyer.com' })
+      db.fireExtinguisher.findUnique.mockResolvedValue({
+        ...fakeFireExt,
+        establishment: 'MAQUINARIA/VEHICULOS',
+        assetId: 'a1',
+        asset: { assetType: 'Tractor', fireExtinguisherAuditable: true },
+      })
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits/comments/c1/mark-seen')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(404)
     })
   })
 

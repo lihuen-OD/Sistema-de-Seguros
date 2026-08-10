@@ -1,52 +1,38 @@
 import { prisma } from '../../config/database'
+import { latestByKey } from '../../shared/utils/latest-by-key'
 import { classifyAuditableAssetCategory } from '../asset-audits/asset-audit-category-classification'
 import type { AuditableAssetCategory } from '../../shared/types'
 
 interface CategoryAcc {
   total: number
   audited: number
-  // Cuántas de las auditadas este período cumplieron cada ítem del checklist
-  // — a diferencia de Auditoría de Activos (una condición general BUENO/
-  // REGULAR/MALO), acá cada ítem es un booleano independiente.
-  policyActiveConfirmed: number
-  insuranceCardPresent: number
-  dataMatchesInsuredAsset: number
-  physicalConditionOk: number
+  withCirculationCard: number
 }
 
 function emptyCategoryAcc(): CategoryAcc {
-  return { total: 0, audited: 0, policyActiveConfirmed: 0, insuranceCardPresent: 0, dataMatchesInsuredAsset: 0, physicalConditionOk: 0 }
+  return { total: 0, audited: 0, withCirculationCard: 0 }
 }
 
 export const insuranceAuditDashboardService = {
   // Dashboard de cobertura por categoría — igual que Auditoría de Activos, sin
   // un puntaje 0-100 por punto de control (checklist deliberadamente
-  // mínimo). Reporta cobertura y, de lo auditado, cuántos cumplieron cada
-  // ítem de documentación/condición.
+  // mínimo: solo "¿tiene la tarjeta de circulación a bordo?"). Reporta
+  // cobertura y, de lo auditado, cuántos activos tienen la tarjeta.
   async getAuditDashboard(period: string) {
     const [assets, audits] = await Promise.all([
       prisma.asset.findMany({
-        where: { isActive: true, auditable: true },
+        where: { isActive: true, insuranceAuditable: true },
         select: { id: true, assetType: true },
       }),
       prisma.insuranceAudit.findMany({
-        where: { auditPeriod: period, status: { not: 'REJECTED' } },
-        select: {
-          assetId: true,
-          policyActiveConfirmed: true,
-          insuranceCardPresent: true,
-          dataMatchesInsuredAsset: true,
-          physicalConditionOk: true,
-          auditDate: true,
-        },
-        orderBy: { auditDate: 'desc' },
+        where: { auditPeriod: period },
+        select: { assetId: true, hasCirculationCard: true, auditDate: true },
+        // Más reciente por createdAt, no por auditDate — ver latest-by-key.ts.
+        orderBy: { createdAt: 'desc' },
       }),
     ])
 
-    const latestAuditByAsset = new Map<string, (typeof audits)[number]>()
-    for (const a of audits) {
-      if (!latestAuditByAsset.has(a.assetId)) latestAuditByAsset.set(a.assetId, a)
-    }
+    const latestAuditByAsset = latestByKey(audits, (a) => a.assetId)
 
     const byCategory = new Map<string, CategoryAcc>()
     let totalRegistered = 0
@@ -66,10 +52,7 @@ export const insuranceAuditDashboardService = {
 
       totalAudited += 1
       acc.audited += 1
-      if (audit.policyActiveConfirmed) acc.policyActiveConfirmed += 1
-      if (audit.insuranceCardPresent) acc.insuranceCardPresent += 1
-      if (audit.dataMatchesInsuredAsset) acc.dataMatchesInsuredAsset += 1
-      if (audit.physicalConditionOk) acc.physicalConditionOk += 1
+      if (audit.hasCirculationCard) acc.withCirculationCard += 1
     }
 
     const categories = [...byCategory.entries()]
@@ -79,12 +62,8 @@ export const insuranceAuditDashboardService = {
         audited: acc.audited,
         pending: acc.total - acc.audited,
         percentAudited: acc.total > 0 ? Math.round((acc.audited / acc.total) * 100) : null,
-        checklistCompliance: {
-          policyActiveConfirmed: acc.policyActiveConfirmed,
-          insuranceCardPresent: acc.insuranceCardPresent,
-          dataMatchesInsuredAsset: acc.dataMatchesInsuredAsset,
-          physicalConditionOk: acc.physicalConditionOk,
-        },
+        withCirculationCard: acc.withCirculationCard,
+        withoutCirculationCard: acc.audited - acc.withCirculationCard,
       }))
       .sort((a, b) => a.category.localeCompare(b.category))
 
@@ -98,8 +77,8 @@ export const insuranceAuditDashboardService = {
     }
   },
 
-  // Progreso por auditor — mismo patrón que asset-audit-dashboard.service.ts,
-  // alcance por categoría (UserAuditScope, área INSURANCE_AUDIT).
+  // Progreso por auditor — alcance por activo individual (UserAuditScope,
+  // área INSURANCE_AUDIT, scopeValue = assetId — ver asset-audits-assignments.service.ts).
   async getAuditorProgress(period: string) {
     const [auditors, assets, auditRows] = await Promise.all([
       prisma.user.findMany({
@@ -113,13 +92,14 @@ export const insuranceAuditDashboardService = {
         orderBy: { name: 'asc' },
       }),
       prisma.asset.findMany({
-        where: { isActive: true, auditable: true },
+        where: { isActive: true, insuranceAuditable: true },
         select: { id: true, assetType: true },
       }),
       prisma.insuranceAudit.findMany({
-        where: { auditPeriod: period, status: { not: 'REJECTED' } },
+        where: { auditPeriod: period },
         select: { assetId: true, auditedBy: true, auditDate: true },
-        orderBy: { auditDate: 'desc' },
+        // Más reciente por createdAt, no por auditDate — ver latest-by-key.ts.
+        orderBy: { createdAt: 'desc' },
       }),
     ])
 
@@ -127,23 +107,20 @@ export const insuranceAuditDashboardService = {
       .map((a) => ({ id: a.id, category: classifyAuditableAssetCategory(a.assetType) }))
       .filter((a): a is { id: string; category: AuditableAssetCategory } => a.category !== null)
 
-    const latestAuditByAsset = new Map<string, string>() // assetId -> auditedBy
-    for (const a of auditRows) {
-      if (!latestAuditByAsset.has(a.assetId)) latestAuditByAsset.set(a.assetId, a.auditedBy)
-    }
+    const latestAuditByAsset = latestByKey(auditRows, (a) => a.assetId) // assetId -> última fila
 
     return {
       period,
       auditors: auditors.map((u) => {
         const scope = new Set(u.auditScopes.map((s) => s.scopeValue))
-        const assignedAssets = eligible.filter((a) => scope.has(a.category))
-        const completed = assignedAssets.filter((a) => latestAuditByAsset.get(a.id) === u.email).length
+        const assignedAssets = eligible.filter((a) => scope.has(a.id))
+        const completed = assignedAssets.filter((a) => latestAuditByAsset.get(a.id)?.auditedBy === u.email).length
         const assigned = assignedAssets.length
         return {
           userId: u.id,
           name: u.name,
           email: u.email,
-          assignedCategories: [...scope].sort((a, b) => a.localeCompare(b)),
+          assignedAssetIds: [...scope].sort((a, b) => a.localeCompare(b)),
           assigned,
           completed,
           pending: assigned - completed,

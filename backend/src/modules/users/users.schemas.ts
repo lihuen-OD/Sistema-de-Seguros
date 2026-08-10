@@ -1,17 +1,16 @@
 import { z } from 'zod'
 import { NewPasswordSchema } from '../auth/auth.schemas'
-import { AUDITABLE_ASSET_CATEGORIES } from '../../shared/types'
 
 export const AssignableRoleSchema = z.enum(['ADMIN', 'USER'])
 
 // Alcance de auditoría de un usuario — ver UserAuditScope en schema.prisma.
-// FIRE_EXTINGUISHER_AUDIT valida contra el catálogo real (fire_ext_establishment,
-// chequeo async en el service, no expresable acá); ASSET_AUDIT/INSURANCE_AUDIT
-// validan contra la lista fija AUDITABLE_ASSET_CATEGORIES.
+// Único área que se gestiona desde el alta/edición de usuario:
+// FIRE_EXTINGUISHER_AUDIT (matafuegos de edificio, por establecimiento —
+// valida contra el catálogo real, chequeo async en el service, no expresable
+// acá). ASSET_AUDIT/INSURANCE_AUDIT (Rodados/Seguros) ya no viajan por acá —
+// se asignan por activo individual desde .../assignments/:userId.
 const AuditScopeItemSchema = z.discriminatedUnion('area', [
   z.object({ area: z.literal('FIRE_EXTINGUISHER_AUDIT'), scopeValue: z.string().trim().min(1).max(200) }),
-  z.object({ area: z.literal('ASSET_AUDIT'), scopeValue: z.enum(AUDITABLE_ASSET_CATEGORIES) }),
-  z.object({ area: z.literal('INSURANCE_AUDIT'), scopeValue: z.enum(AUDITABLE_ASSET_CATEGORIES) }),
 ])
 
 export const AuditScopeInputSchema = z

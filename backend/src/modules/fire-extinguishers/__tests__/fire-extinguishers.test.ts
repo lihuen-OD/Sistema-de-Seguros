@@ -189,6 +189,42 @@ describe('Fire Extinguishers API', () => {
       expect(res.body.data.chargeStatus).toBe('vigente')
       expect(res.body.data.manufacturingLifeStatus).toBe('vencido')
     })
+
+    // El wizard de Auditoría de Rodados (AuditWizard.tsx, población ASSET)
+    // pide este mismo detalle para poblar los pasos 2-5 — un auditor con
+    // solo asset_audit_coverage/asset_audits (sin el módulo `fire_extinguishers`
+    // completo) tiene que poder leerlo igual.
+    it('returns 200 for a USER with only asset_audit_coverage (Auditoría de Rodados)', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['asset_audit_coverage'] }))
+      db.fireExtinguisher.findUnique.mockResolvedValue({ ...fakeFireExt, history: [], asset: null })
+
+      const res = await request(app)
+        .get(`/api/v1/fire-extinguishers/${FE_ID}`)
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(200)
+    })
+
+    it('returns 200 for a USER with only asset_audits (revisor de Rodados)', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['asset_audits'] }))
+      db.fireExtinguisher.findUnique.mockResolvedValue({ ...fakeFireExt, history: [], asset: null })
+
+      const res = await request(app)
+        .get(`/api/v1/fire-extinguishers/${FE_ID}`)
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(200)
+    })
+
+    it('returns 403 for a USER without any fire-extinguisher-related module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+      const res = await request(app)
+        .get(`/api/v1/fire-extinguishers/${FE_ID}`)
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(403)
+    })
   })
 
   // ── POST /api/v1/fire-extinguishers ───────────────────────────────────────

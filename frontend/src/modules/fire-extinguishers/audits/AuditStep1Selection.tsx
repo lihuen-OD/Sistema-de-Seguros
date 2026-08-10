@@ -26,7 +26,10 @@ export function AuditStep1Selection({ population, selectedId, onSelect, coverage
   // "Cobertura".
   const { data: coverage = [], isLoading } = useQuery(coverageQuery)
 
-  const auditable = useMemo(() => coverage.filter((fe) => !fe.audited || fe.auditStatus === 'NEEDS_CORRECTION'), [coverage])
+  const auditable = useMemo(
+    () => coverage.filter((fe) => !fe.audited || fe.auditStatus === 'NEEDS_CORRECTION' || fe.auditStatus === 'REJECTED'),
+    [coverage],
+  )
 
   const q = search.trim().toLowerCase()
   const filtered = q

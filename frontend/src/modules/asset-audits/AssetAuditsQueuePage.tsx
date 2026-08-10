@@ -16,6 +16,7 @@ import { DateRangeMonthPicker } from '../../shared/components/filters/DateRangeM
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { Tabs, type TabItem } from '../../shared/components/tabs/Tabs'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
+import { AuditAssignmentTab } from '../../shared/components/audit-assignment/AuditAssignmentTab'
 import { formatDate, fireExtinguisherLabel } from '../../shared/utils/format'
 import { useCurrentUser } from '../../app/auth/AuthContext'
 import {
@@ -47,10 +48,11 @@ export default function AssetAuditsQueuePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user } = useCurrentUser()
-  const canReview = user?.role === 'ADMIN' || (user?.modules.includes('asset_audits') ?? false)
-  const canAudit = user?.role === 'ADMIN' || (user?.modules.includes('asset_audit_coverage') ?? false)
+  const isAdmin = user?.role === 'ADMIN'
+  const canReview = isAdmin || (user?.modules.includes('asset_audits') ?? false)
+  const canAudit = isAdmin || (user?.modules.includes('asset_audit_coverage') ?? false)
 
-  const [activeTab, setActiveTab] = useState<'auditorias' | 'cobertura'>('cobertura')
+  const [activeTab, setActiveTab] = useState<'auditorias' | 'cobertura' | 'asignacion'>('cobertura')
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string[]>([])
   const [filterDateFrom, setFilterDateFrom] = useState('')
@@ -62,6 +64,10 @@ export default function AssetAuditsQueuePage() {
 
   const { data: all = [], isLoading, isError } = useQuery(assetAuditQueries.list())
   const { data: coverage = [], isLoading: coverageLoading } = useQuery(assetAuditQueries.coverage(coveragePeriod))
+  const { data: assignments, isLoading: assignmentsLoading } = useQuery({
+    ...assetAuditQueries.assignments(),
+    enabled: isAdmin && activeTab === 'asignacion',
+  })
 
   const pendingCoverageCount = useMemo(() => coverage.filter((c) => !c.audited).length, [coverage])
 
@@ -69,6 +75,7 @@ export default function AssetAuditsQueuePage() {
     ? [
         { id: 'auditorias', label: 'Auditorías' },
         { id: 'cobertura', label: 'Cobertura', count: pendingCoverageCount },
+        ...(isAdmin ? [{ id: 'asignacion', label: 'Asignación' }] : []),
       ]
     : []
 
@@ -230,13 +237,13 @@ export default function AssetAuditsQueuePage() {
   return (
     <PageContent>
       <PageHeader
-        title="Auditoría de Activos"
+        title="Auditoría de Rodados"
         subtitle="Matafuegos montados en vehículos y maquinaria — revisión y aprobación"
         actions={
-          canReview ? (
+          canReview && activeTab === 'auditorias' ? (
             <button
               type="button"
-              onClick={() => navigate(ROUTES.ASSET_AUDITS_DASHBOARD)}
+              onClick={() => navigate(`${ROUTES.ASSET_AUDITS_DASHBOARD}?period=${coveragePeriod}`)}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors"
             >
               <Gauge size={15} />
@@ -248,7 +255,7 @@ export default function AssetAuditsQueuePage() {
 
       {canReview && (
         <SectionCard noPadding className="mb-5">
-          <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => setActiveTab(id as 'auditorias' | 'cobertura')} />
+          <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => setActiveTab(id as 'auditorias' | 'cobertura' | 'asignacion')} />
         </SectionCard>
       )}
 
@@ -369,6 +376,23 @@ export default function AssetAuditsQueuePage() {
           data={coverage}
           isLoading={coverageLoading}
           canAudit={canAudit}
+        />
+      )}
+
+      {activeTab === 'asignacion' && isAdmin && (
+        <AuditAssignmentTab
+          auditors={assignments?.auditors ?? []}
+          assets={assignments?.assets ?? []}
+          isLoading={assignmentsLoading}
+          onSave={async (userId, assetIds) => {
+            try {
+              await assetAuditsApi.saveAssignment(userId, assetIds)
+              queryClient.invalidateQueries({ queryKey: assetAuditKeys.all })
+              toast.success('Asignación guardada correctamente')
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : 'Error al guardar la asignación')
+            }
+          }}
         />
       )}
 

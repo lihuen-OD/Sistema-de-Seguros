@@ -10,6 +10,7 @@ import type {
   CoverageQueryDTO,
   AuditDashboardQueryDTO,
   AuditorProgressQueryDTO,
+  AddCommentDTO,
 } from './fire-extinguisher-audits.schemas'
 
 type IdParam = { id: string }
@@ -114,5 +115,30 @@ export const fireExtinguisherAuditsController = {
     const scope = await resolveAuditScope(req.user, 'FIRE_EXTINGUISHER_AUDIT', [...COVERAGE_MODULES])
     const attachment = await fireExtinguisherAuditsService.getAttachmentForDownload(req.params.id, req.params.attachmentId, scope)
     await sendAttachmentDownload(res, attachment)
+  }),
+
+  // Sección "Comentarios" de la pestaña Cobertura — ver comentario en
+  // fire-extinguisher-audits.service.ts#getComments/addComment/markCommentSeen.
+  comments: asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
+    const { period } = req.query as unknown as CoverageQueryDTO
+    const scope = await resolveAuditScope(req.user, 'FIRE_EXTINGUISHER_AUDIT', [...COVERAGE_MODULES])
+    const data = await fireExtinguisherAuditsService.getComments(period, scope)
+    res.json({ data })
+  }),
+
+  addComment: asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
+    const { targetId, body } = req.body as AddCommentDTO
+    const scope = await resolveAuditScope(req.user, 'FIRE_EXTINGUISHER_AUDIT', [...COVERAGE_MODULES])
+    const comment = await fireExtinguisherAuditsService.addComment(targetId, body, req.user.email, scope)
+    res.status(201).json({ data: comment })
+  }),
+
+  markCommentSeen: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    if (!req.user) throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
+    const scope = await resolveAuditScope(req.user, 'FIRE_EXTINGUISHER_AUDIT', [...COVERAGE_MODULES])
+    const comment = await fireExtinguisherAuditsService.markCommentSeen(req.params.id, req.user.email, scope)
+    res.json({ data: comment })
   }),
 }

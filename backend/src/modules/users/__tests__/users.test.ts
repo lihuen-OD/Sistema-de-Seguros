@@ -145,14 +145,40 @@ describe('Users API (admin)', () => {
       expect(res.status).toBe(422)
     })
 
-    it('persists an ASSET_AUDIT scope (validated by Zod, no catalog lookup needed)', async () => {
+    it('persists a FIRE_EXTINGUISHER_AUDIT scope (único área que este endpoint gestiona)', async () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser())
       db.user.findUnique.mockResolvedValueOnce(null)
+      db.catalogItem.findMany.mockResolvedValue([{ label: 'Planta' }])
       db.user.create.mockResolvedValue(fakeUser)
       db.user.findUniqueOrThrow.mockResolvedValue({
         ...fakeUser,
-        auditScopes: [{ area: 'ASSET_AUDIT', scopeValue: 'tractor' }],
+        auditScopes: [{ area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue: 'Planta' }],
       })
+
+      const res = await request(app)
+        .post('/api/v1/users')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          name: 'Usuario Uno',
+          email: 'usuario@losodwyer.com',
+          role: 'USER',
+          password: 'Password1',
+          auditScope: [{ area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue: 'Planta' }],
+        })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.auditScope).toEqual([{ area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue: 'Planta' }])
+      expect(db.userAuditScope.createMany).toHaveBeenCalledWith({
+        data: [{ userId: fakeUser.id, area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue: 'Planta' }],
+      })
+    })
+
+    // ASSET_AUDIT/INSURANCE_AUDIT (Rodados/Seguros) ya no se gestionan desde
+    // el alta/edición de usuario — se asignan por activo individual desde
+    // .../assignments/:userId (ver insurance-audits.router.ts,
+    // asset-audits.router.ts). El schema los rechaza acá.
+    it('returns 422 when auditScope includes area ASSET_AUDIT (ya no soportada en este endpoint)', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser())
 
       const res = await request(app)
         .post('/api/v1/users')
@@ -165,11 +191,7 @@ describe('Users API (admin)', () => {
           auditScope: [{ area: 'ASSET_AUDIT', scopeValue: 'tractor' }],
         })
 
-      expect(res.status).toBe(201)
-      expect(res.body.data.auditScope).toEqual([{ area: 'ASSET_AUDIT', scopeValue: 'tractor' }])
-      expect(db.userAuditScope.createMany).toHaveBeenCalledWith({
-        data: [{ userId: fakeUser.id, area: 'ASSET_AUDIT', scopeValue: 'tractor' }],
-      })
+      expect(res.status).toBe(422)
     })
 
     it('returns 400 INVALID_REFERENCE when a FIRE_EXTINGUISHER_AUDIT scopeValue is not an active establishment', async () => {
@@ -205,8 +227,8 @@ describe('Users API (admin)', () => {
           role: 'USER',
           password: 'Password1',
           auditScope: [
-            { area: 'ASSET_AUDIT', scopeValue: 'tractor' },
-            { area: 'ASSET_AUDIT', scopeValue: 'tractor' },
+            { area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue: 'Planta' },
+            { area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue: 'Planta' },
           ],
         })
 
