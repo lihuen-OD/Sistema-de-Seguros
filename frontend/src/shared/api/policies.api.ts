@@ -11,6 +11,8 @@ interface BackendCoverage { id: string; name: string; description: string | null
 interface BackendPolicyAsset {
   id: string; code: string | null; name: string; assetType: string
   fixedAssetCode: string | null
+  fixedAsset?: { id: string; code: string | null; name: string } | null
+  allocations?: { percentage: number; costCenter: { id: string; code: string | null; name: string } | null }[]
 }
 interface BackendCirculationCard { id: string; fileUrl: string; name: string }
 interface BackendPolicyCoverage {
@@ -94,6 +96,10 @@ function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
     name: a.name,
     assetType: a.assetType,
     fixedAssetCode: a.fixedAssetCode,
+    fixedAssetName: a.fixedAsset?.name ?? null,
+    costCenters: (a.allocations ?? [])
+      .filter((alloc) => !!alloc.costCenter)
+      .map((alloc) => ({ name: alloc.costCenter!.name, code: alloc.costCenter!.code, percentage: alloc.percentage })),
   }
 }
 

@@ -355,8 +355,9 @@ export interface PolicyAsset {
   assetType: string
   fixedAssetCode?: string | null
   fixedAssetName?: string | null
-  costCenterName?: string | null
-  costCenterCode?: string | null
+  // Centro(s) de costo del activo (no de la línea de cobertura) — un activo
+  // puede repartirse entre varios por %, ver Asset.allocations.
+  costCenters?: { name: string; code: string | null; percentage: number }[]
 }
 
 // Línea de cobertura dentro de una póliza — un activo (o ninguno, "sin
@@ -733,11 +734,16 @@ export interface SelectOption {
   label: string
 }
 
+// Valor de celda para export a Excel/CSV — un número/boolean/Date real (no
+// una representación en texto) para que exceljs pueda darle formato numérico
+// de verdad (ver TableColumn.numeric / ExportPresetsButton.doExport).
+export type ExportCell = string | number | boolean | Date | null
+
 export interface TableColumn<T> {
   key: keyof T | string
   label: string
   render?: (value: unknown, row: T) => React.ReactNode
-  exportValue?: (row: T) => string  // plain string for CSV export; fallback: String(row[key])
+  exportValue?: (row: T) => ExportCell  // valor de celda para export; fallback: row[key] tal cual (o String(row[key]) si no es un primitivo exportable)
   sortValue?: (row: T) => string | number | null | undefined  // valor real para ordenar; fallback: row[key]
   className?: string
   headerClassName?: string
@@ -745,6 +751,10 @@ export interface TableColumn<T> {
   id?: string           // stable ID for column config (defaults to String(key))
   defaultVisible?: boolean  // shown by default when no saved config (default: true)
   hideable?: boolean    // can be hidden by user (default: true; set false for actions col)
+  // Da formato numérico (alineado a la derecha, separador de miles) a la
+  // columna en el .xlsx exportado — ver ExportPresetsButton.doExport. Sin
+  // esto el valor sale como texto plano y no se puede sumar/pivotear en Excel.
+  numeric?: boolean
 }
 
 export interface ExportPreset {

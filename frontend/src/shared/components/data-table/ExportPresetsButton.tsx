@@ -35,9 +35,16 @@ export function ExportPresetsButton<T>({
 
   async function doExport(columns: TableColumn<T>[]) {
     if (columns.length === 0) return
-    const rows = buildExportRows(filteredRows, columns)
+    const exportCols = columns.filter((c) => c.hideable !== false)
+    const rows = buildExportRows(filteredRows, exportCols)
+    const numericColumnIndexes = exportCols
+      .map((c, i) => (c.numeric ? i : -1))
+      .filter((i) => i >= 0)
     const date = new Date().toISOString().slice(0, 10)
-    await downloadXLSX(rows, `${filenamePrefix}-${date}.xlsx`)
+    await downloadXLSX(rows, `${filenamePrefix}-${date}.xlsx`, {
+      autoFilter: true,
+      ...(numericColumnIndexes.length > 0 && { numericColumnIndexes }),
+    })
     setOpen(false)
   }
 

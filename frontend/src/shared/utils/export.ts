@@ -1,4 +1,4 @@
-import type { TableColumn } from '../types'
+import type { TableColumn, ExportCell } from '../types'
 import { packIntoPages } from './pdfPagination'
 
 // ─── Excel (.xlsx) ────────────────────────────────────────────────────────────
@@ -7,7 +7,7 @@ import { packIntoPages } from './pdfPagination'
 // sin parche disponible vía npm) — se carga dinámicamente recién al
 // exportar, no en el chunk inicial de cada página de listado que usa
 // ExportPresetsButton.
-export type ExportCell = string | number | boolean | Date | null
+export type { ExportCell } from '../types'
 
 export interface XLSXHeaderGroup {
   label: string
@@ -152,14 +152,19 @@ export function downloadCSV(rows: string[][], filename: string): void {
   URL.revokeObjectURL(url)
 }
 
-export function buildExportRows<T>(rows: T[], columns: TableColumn<T>[]): string[][] {
+export function buildExportRows<T>(rows: T[], columns: TableColumn<T>[]): ExportCell[][] {
   const exportCols = columns.filter((c) => c.hideable !== false)
-  const header = exportCols.map((c) => c.label)
+  const header: ExportCell[] = exportCols.map((c) => c.label)
   const body = rows.map((row) =>
-    exportCols.map((col) => {
+    exportCols.map((col): ExportCell => {
       if (col.exportValue) return col.exportValue(row)
       const v = row[col.key as keyof T]
-      return v != null ? String(v) : ''
+      if (v == null) return ''
+      // Números/booleans/fechas ya "exportables" pasan tal cual (para que
+      // numericColumnIndexes tenga una celda numérica de verdad, no texto) —
+      // cualquier otro tipo (objetos, arrays) cae al String(v) de siempre.
+      if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string' || v instanceof Date) return v
+      return String(v)
     }),
   )
   return [header, ...body]

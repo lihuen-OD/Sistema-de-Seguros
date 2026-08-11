@@ -14,6 +14,7 @@ import {
   PlusCircle,
   Pencil,
   DollarSign,
+  Link2,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -99,6 +100,7 @@ export default function DocumentDetailPage() {
   // de la tabla de distribución — sin el módulo, ni se pide ni se muestran
   // esas columnas (la distribución en sí sigue siendo de Documentos).
   const canPolicies = hasModule(user, 'policies')
+  const canAssets = hasModule(user, 'assets')
 
   const { data: doc, isLoading: docLoading } = useQuery(documentQueries.detail(id!))
 
@@ -299,10 +301,21 @@ export default function DocumentDetailPage() {
       // líneas de la MISMA póliza se veían como "2 pólizas" repetidas.
       sortValue: (row) => row.asset?.name ?? '',
       render: (_v, row) => (
-        <span className="text-xs text-slate-600">
+        <span className="inline-flex items-center gap-1.5 text-xs text-slate-600">
           {row.asset
             ? row.asset.fixedAssetCode ? `${row.asset.name} (${row.asset.fixedAssetCode})` : row.asset.name
             : 'Sin activo asociado'}
+          {row.asset && canAssets && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); navigate(`/assets/${row.asset!.id}`) }}
+              title="Ver activo"
+              aria-label="Ver activo"
+              className="text-slate-400 hover:text-brand-600 transition-colors flex-shrink-0"
+            >
+              <Link2 size={12} />
+            </button>
+          )}
         </span>
       ),
     },

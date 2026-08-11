@@ -22,7 +22,17 @@ const COVERAGE_DETAIL_INCLUDE = {
   insuranceType: { include: { coverages: true } },
   company: { select: { id: true, name: true } },
   costCenter: { select: { id: true, name: true, code: true } },
-  asset: { select: { id: true, code: true, name: true, assetType: true, fixedAssetCode: true } },
+  // fixedAsset (Bien de Uso completo, no solo el código) y allocations
+  // (Centro de Costo del activo, puede repartirse en varios por %) — para
+  // que "Activos Cubiertos" en el detalle de póliza pueda mostrar ambos sin
+  // otro fetch (ver PolicyDetailPage.tsx).
+  asset: {
+    select: {
+      id: true, code: true, name: true, assetType: true, fixedAssetCode: true,
+      fixedAsset: { select: { id: true, code: true, name: true } },
+      allocations: { select: { percentage: true, costCenter: { select: { id: true, code: true, name: true } } } },
+    },
+  },
   attachments: {
     where: { isCirculationCard: true },
     select: { id: true, fileUrl: true, name: true },
