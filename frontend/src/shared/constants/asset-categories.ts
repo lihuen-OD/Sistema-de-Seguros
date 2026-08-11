@@ -1,6 +1,6 @@
 import {
   Bus, Car, Truck, Settings2, Layers, Wrench,
-  Building2, Landmark, Box, Cog, Network, Package, Bike,
+  Building2, Landmark, Box, Cog, Network, Package, Bike, LandPlot,
 } from 'lucide-react'
 import type { ElementType } from 'react'
 import { AUDITABLE_ASSET_CATEGORIES, type AssetCategory } from '../types'
@@ -43,6 +43,7 @@ export const CATEGORY_GROUPS: CategoryGroup[] = [
     items: [
       { key: 'edificio',        label: 'Edificio',        desc: 'Galpón, depósito, vivienda, oficinas',        icon: Building2, color: 'text-purple-600 bg-purple-50' },
       { key: 'establecimiento', label: 'Establecimiento', desc: 'Campo o predio con múltiples construcciones', icon: Landmark,  color: 'text-purple-600 bg-purple-50' },
+      { key: 'campo_terreno',   label: 'Campo / Terreno', desc: 'Campo o terreno rural — riego, forestación, etc.', icon: LandPlot, color: 'text-purple-600 bg-purple-50' },
     ],
   },
   {
@@ -66,7 +67,7 @@ export const CATEGORY_LABEL: Record<AssetCategory, string> = {
   vehiculo: 'Vehículo', camioneta: 'Camioneta', camion: 'Camión', moto: 'Moto',
   transporte_pasajeros: 'Transporte de pasajeros',
   tractor: 'Tractor', cosechadora: 'Cosechadora', pulverizadora: 'Pulverizadora', implemento: 'Implemento',
-  edificio: 'Edificio', establecimiento: 'Establecimiento',
+  edificio: 'Edificio', establecimiento: 'Establecimiento', campo_terreno: 'Campo / Terreno',
   equipo: 'Equipo', maquinaria: 'Maquinaria', infraestructura: 'Infraestructura',
   carga_animal: 'Carga Animal', carga_comun: 'Carga Común',
 }

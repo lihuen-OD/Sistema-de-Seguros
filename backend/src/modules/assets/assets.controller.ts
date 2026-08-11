@@ -29,9 +29,17 @@ export const assetsController = {
     res.json({ data: asset })
   }),
 
+  // DELETE = eliminación real (no reversible) — mismo criterio que
+  // policies.controller.ts. "Dar de baja" es un estado, no un delete, y vive
+  // en su propio endpoint (ver markAsDeBaja).
   remove: asyncHandler(async (req: Request<IdParam>, res: Response) => {
-    await assetsService.softDelete(req.params.id)
-    res.json({ data: { message: 'Activo desactivado correctamente' } })
+    await assetsService.hardDelete(req.params.id)
+    res.json({ data: { message: 'Activo eliminado correctamente' } })
+  }),
+
+  markAsDeBaja: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const asset = await assetsService.softDelete(req.params.id)
+    res.json({ data: asset })
   }),
 
   // Allocations

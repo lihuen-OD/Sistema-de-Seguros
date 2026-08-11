@@ -375,6 +375,39 @@ export const assetsService = {
     return { id }
   },
 
+  // Elimina el activo por completo (no es soft-delete) — a diferencia de
+  // policies.service.ts#hardDelete, acá no hay ninguna FK RESTRICT que
+  // resolver a mano: allocations/valueHistory/statusHistory/attachments/
+  // renewalProjectionOverrides/insuranceAudits (y sus adjuntos) se borran
+  // solos vía onDelete: Cascade; FireExtinguisher.assetId, Claim.assetId y
+  // PolicyAssetCoverage.assetId quedan en null vía onDelete: SetNull — esos
+  // matafuegos/siniestros/líneas de póliza NO se borran, solo pierden el
+  // vínculo con este activo (ver schema.prisma). Lo único que Postgres no
+  // sabe limpiar solo son los archivos en Cloudinary de los adjuntos
+  // cascadeados (propios y de las auditorías de seguros).
+  async hardDelete(id: string) {
+    const asset = await prisma.asset.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        attachments: { select: { cloudinaryPublicId: true } },
+        insuranceAudits: { select: { attachments: { select: { cloudinaryPublicId: true } } } },
+      },
+    })
+    if (!asset) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
+
+    const cloudinaryIds = [
+      ...asset.attachments.map((a) => a.cloudinaryPublicId),
+      ...asset.insuranceAudits.flatMap((ia) => ia.attachments.map((a) => a.cloudinaryPublicId)),
+    ].filter((cid): cid is string => !!cid)
+
+    // Cloudinary vive fuera de la transacción de Postgres — se limpia antes,
+    // best-effort, mismo criterio que policies.service.ts#hardDelete.
+    await Promise.all(cloudinaryIds.map((cid) => deleteFromCloudinary(cid).catch(() => undefined)))
+
+    await prisma.asset.delete({ where: { id } })
+  },
+
   // ── Allocations ─────────────────────────────────────────────────────────────
 
   async replaceAllocations(assetId: string, { allocations }: ReplaceAllocationsDTO) {

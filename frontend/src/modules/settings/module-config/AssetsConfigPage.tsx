@@ -75,6 +75,14 @@ export default function AssetsConfigPage() {
             addPlaceholder="Ej: Lote 3"
           />
         </SectionCard>
+
+        <SectionCard title="Uso del campo/terreno" noPadding>
+          <CatalogManager
+            category="asset_land_use"
+            title="Uso del campo/terreno"
+            addPlaceholder="Ej: Riego"
+          />
+        </SectionCard>
       </div>
     </PageContent>
   )

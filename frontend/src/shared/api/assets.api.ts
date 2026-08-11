@@ -204,7 +204,14 @@ export const assetsApi = {
     await apiClient.put(`/assets/${id}/allocations`, { allocations })
   },
 
+  // "Dar de baja" — el activo queda inactivo, se registra en el historial y
+  // se puede reactivar después. No borra nada.
   async softDelete(id: string): Promise<void> {
+    await apiClient.post(`/assets/${id}/de-baja`)
+  },
+
+  // Eliminación real y permanente — mismo criterio que policiesApi.hardDelete.
+  async hardDelete(id: string): Promise<void> {
     await apiClient.delete(`/assets/${id}`)
   },
 

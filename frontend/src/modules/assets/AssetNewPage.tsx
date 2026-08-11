@@ -50,7 +50,7 @@ const IS_AUDITABLE_CATEGORY = (c: AssetCategory | '') =>
 // mercadería, insumos) no. Ambas sí admiten Bien de Uso asociado.
 const IS_LIVESTOCK = (c: AssetCategory | '') => c === 'carga_animal'
 const IS_IMMOVABLE = (c: AssetCategory | '') =>
-  ['establecimiento', 'edificio', 'infraestructura'].includes(c as string)
+  ['establecimiento', 'edificio', 'infraestructura', 'campo_terreno'].includes(c as string)
 
 // ── Local form state ───────────────────────────────────────────────────────────
 
@@ -88,6 +88,10 @@ type FormState = {
   surfaceHa: string
   locality: string
   province: string
+  cadastralReference: string
+  landUse: string
+  irrigatedSurfaceHa: string
+  forestedSurfaceHa: string
   infraType: string
   infraCapacityTons: string
   infraContent: string
@@ -108,6 +112,7 @@ const EMPTY: FormState = {
   surfaceM2: '', address: '', constructionType: '', floors: '', constructionYear: '',
   buildingPurpose: '', mapsUrl: '',
   surfaceHa: '', locality: '', province: '',
+  cadastralReference: '', landUse: '', irrigatedSurfaceHa: '', forestedSurfaceHa: '',
   infraType: '', infraCapacityTons: '', infraContent: '',
   technicalSpec: '',
   productiveUnit: '', area: '', observations: '',
@@ -240,6 +245,7 @@ export default function AssetNewPage() {
   const { data: implementTypes = [] } = useQuery(catalogQueries.byCategory('asset_implement_type'))
   const { data: productiveUnits = [] } = useQuery(catalogQueries.byCategory('asset_productive_unit'))
   const { data: areas = [] } = useQuery(catalogQueries.byCategory('asset_area'))
+  const { data: landUses = [] } = useQuery(catalogQueries.byCategory('asset_land_use'))
 
   function set(field: keyof FormState) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -368,6 +374,18 @@ export default function AssetNewPage() {
         }),
       }
     }
+    if (category === 'campo_terreno') {
+      return {
+        ...(num(form.surfaceHa) !== undefined && { surfaceHa: num(form.surfaceHa) }),
+        ...(opt(form.province) && { province: form.province }),
+        ...(opt(form.locality) && { locality: form.locality.trim() }),
+        ...(opt(form.address) && { address: form.address.trim() }),
+        ...(opt(form.cadastralReference) && { cadastralReference: form.cadastralReference.trim() }),
+        ...(opt(form.landUse) && { landUse: form.landUse }),
+        ...(num(form.irrigatedSurfaceHa) !== undefined && { irrigatedSurfaceHa: num(form.irrigatedSurfaceHa) }),
+        ...(num(form.forestedSurfaceHa) !== undefined && { forestedSurfaceHa: num(form.forestedSurfaceHa) }),
+      }
+    }
     if (category === 'infraestructura') {
       return {
         ...(opt(form.infraType) && { infraType: form.infraType }),
@@ -445,6 +463,7 @@ export default function AssetNewPage() {
     IS_WHEELED(category) ? 'Ej: Toyota Hilux 4x4 Doble Cabina' :
     IS_AGRO(category) ? 'Ej: John Deere 8R 340' :
     category === 'establecimiento' ? 'Ej: Establecimiento La Esperanza' :
+    category === 'campo_terreno' ? 'Ej: Campo Los Álamos — Lote 12' :
     category === 'edificio' ? 'Ej: Galpón de almacenamiento Norte' :
     IS_LIVESTOCK(category) ? 'Ej: Carga porcina — Lote Norte 2024' :
     category === 'carga_comun' ? 'Ej: Cereal a granel — Acopio Sur 2026' :
@@ -745,6 +764,48 @@ export default function AssetNewPage() {
                   </div>
                   <div className="border-t border-slate-100 pt-5">
                     <SilosSection silos={silos} siloContents={siloContents} onAdd={addSilo} onRemove={removeSilo} onChange={updateSilo} />
+                  </div>
+                </div>
+              </SectionCard>
+            )}
+
+            {category === 'campo_terreno' && (
+              <SectionCard title="Datos del campo/terreno" subtitle="Superficie, ubicación y uso — riego, forestación, etc.">
+                <div className="space-y-6">
+                  <FormSection title="">
+                    <FormField label="Superficie total (ha)" required>
+                      <FormInput type="number" min={0} step="0.01" placeholder="Ej: 450" value={form.surfaceHa} onChange={set('surfaceHa')} />
+                    </FormField>
+                    <FormField label="Uso principal">
+                      <FormSelect value={form.landUse} onChange={set('landUse')}>
+                        <option value="">Seleccionar…</option>
+                        {landUses.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
+                      </FormSelect>
+                    </FormField>
+                    <FormField label="Provincia">
+                      <FormSelect value={form.province} onChange={set('province')}>
+                        <option value="">Seleccionar…</option>
+                        {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+                      </FormSelect>
+                    </FormField>
+                    <FormField label="Localidad / Partido">
+                      <FormInput placeholder="Ej: Trenque Lauquen" value={form.locality} onChange={set('locality')} />
+                    </FormField>
+                    <FormField label="Dirección / Paraje" fullWidth>
+                      <FormInput placeholder="Ej: Ruta Provincial 33 Km. 8" value={form.address} onChange={set('address')} />
+                    </FormField>
+                    <FormField label="Partida inmobiliaria / Nomenclatura catastral">
+                      <FormInput placeholder="Ej: Circ. II, Secc. B, Parc. 145" value={form.cadastralReference} onChange={set('cadastralReference')} />
+                    </FormField>
+                    <FormField label="Superficie bajo riego (ha)">
+                      <FormInput type="number" min={0} step="0.01" placeholder="Ej: 120" value={form.irrigatedSurfaceHa} onChange={set('irrigatedSurfaceHa')} />
+                    </FormField>
+                    <FormField label="Superficie forestada (ha)">
+                      <FormInput type="number" min={0} step="0.01" placeholder="Ej: 80" value={form.forestedSurfaceHa} onChange={set('forestedSurfaceHa')} />
+                    </FormField>
+                  </FormSection>
+                  <div className="border-t border-slate-100 pt-4">
+                    <MapSection mapsUrl={form.mapsUrl} onChange={(v) => setForm((p) => ({ ...p, mapsUrl: v }))} />
                   </div>
                 </div>
               </SectionCard>

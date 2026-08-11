@@ -9,6 +9,7 @@ export const ASSET_TYPES = [
   'Pulverizadora',
   'Implemento agrícola',
   'Establecimiento',
+  'Campo / Terreno',
   'Edificio',
   'Infraestructura',
   'Equipo',

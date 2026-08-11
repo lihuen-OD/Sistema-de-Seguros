@@ -47,6 +47,8 @@ type EditForm = {
   floors: string; constructionYear: string; buildingPurpose: string
   // Farm / property
   surfaceHa: string; locality: string; province: string
+  // Campo / Terreno
+  cadastralReference: string; landUse: string; irrigatedSurfaceHa: string; forestedSurfaceHa: string
   // Infrastructure
   infraType: string; infraCapacityTons: string; infraContent: string; technicalSpec: string
   // Common
@@ -60,6 +62,7 @@ const EMPTY_FORM: EditForm = {
   powerHp: '', cutWidth: '', tankCapacity: '', workWidth: '', implementType: '',
   surfaceM2: '', address: '', constructionType: '', floors: '', constructionYear: '', buildingPurpose: '',
   surfaceHa: '', locality: '', province: '',
+  cadastralReference: '', landUse: '', irrigatedSurfaceHa: '', forestedSurfaceHa: '',
   infraType: '', infraCapacityTons: '', infraContent: '', technicalSpec: '',
   productiveUnit: '', area: '', observations: '', mapsUrl: '',
 }
@@ -216,6 +219,7 @@ export default function AssetEditPage() {
   const { data: siloContents = [] } = useQuery(catalogQueries.byCategory('asset_silo_content'))
   const { data: productiveUnits = [] } = useQuery(catalogQueries.byCategory('asset_productive_unit'))
   const { data: areas = [] } = useQuery(catalogQueries.byCategory('asset_area'))
+  const { data: landUses = [] } = useQuery(catalogQueries.byCategory('asset_land_use'))
 
   useEffect(() => {
     if (!asset) return
@@ -251,10 +255,14 @@ export default function AssetEditPage() {
       floors: str(meta.floors),
       constructionYear: str(meta.constructionYear),
       address: str(meta.address),
-      // Establecimiento
+      // Establecimiento / Campo-Terreno
       surfaceHa: str(meta.surfaceHa),
       province: str(meta.province),
       locality: str(meta.locality),
+      cadastralReference: str(meta.cadastralReference),
+      landUse: str(meta.landUse),
+      irrigatedSurfaceHa: str(meta.irrigatedSurfaceHa),
+      forestedSurfaceHa: str(meta.forestedSurfaceHa),
       // Infraestructura
       infraType: str(meta.infraType),
       infraCapacityTons: str(meta.infraCapacityTons),
@@ -312,6 +320,7 @@ export default function AssetEditPage() {
   const isImplemento = assetCategory === 'implemento'
   const isEdificio = assetCategory === 'edificio'
   const isEstablecimiento = assetCategory === 'establecimiento'
+  const isCampoTerreno = assetCategory === 'campo_terreno'
   const isInfraestructura = assetCategory === 'infraestructura'
   // Solo la carga animal tiene especie/raza — la carga común no. Ambas sí
   // admiten Bien de Uso asociado.
@@ -463,6 +472,18 @@ export default function AssetEditPage() {
             ...(b.constructionYear && { constructionYear: parseInt(b.constructionYear, 10) }),
           })),
         }),
+      }
+    }
+    if (isCampoTerreno) {
+      return {
+        ...(num(form.surfaceHa) !== undefined && { surfaceHa: num(form.surfaceHa) }),
+        ...(opt(form.province) && { province: form.province }),
+        ...(opt(form.locality) && { locality: form.locality.trim() }),
+        ...(opt(form.address) && { address: form.address.trim() }),
+        ...(opt(form.cadastralReference) && { cadastralReference: form.cadastralReference.trim() }),
+        ...(opt(form.landUse) && { landUse: form.landUse }),
+        ...(num(form.irrigatedSurfaceHa) !== undefined && { irrigatedSurfaceHa: num(form.irrigatedSurfaceHa) }),
+        ...(num(form.forestedSurfaceHa) !== undefined && { forestedSurfaceHa: num(form.forestedSurfaceHa) }),
       }
     }
     if (isInfraestructura) {
@@ -832,6 +853,44 @@ export default function AssetEditPage() {
             </SectionCard>
           )}
 
+          {/* Campo / Terreno */}
+          {isCampoTerreno && (
+            <SectionCard title="Datos del campo/terreno" subtitle="Superficie, ubicación y uso — riego, forestación, etc.">
+              <FormSection title="">
+                <FormField label="Superficie total (ha)">
+                  <FormInput type="number" min={0} step="0.01" placeholder="Ej: 450" value={form.surfaceHa} onChange={set('surfaceHa')} />
+                </FormField>
+                <FormField label="Uso principal">
+                  <FormSelect value={form.landUse} onChange={set('landUse')}>
+                    <option value="">Seleccionar…</option>
+                    {landUses.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
+                  </FormSelect>
+                </FormField>
+                <FormField label="Provincia">
+                  <FormSelect value={form.province} onChange={set('province')}>
+                    <option value="">Seleccionar…</option>
+                    {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </FormSelect>
+                </FormField>
+                <FormField label="Localidad / Partido">
+                  <FormInput placeholder="Ej: Trenque Lauquen" value={form.locality} onChange={set('locality')} />
+                </FormField>
+                <FormField label="Dirección / Paraje" fullWidth>
+                  <FormInput placeholder="Ej: Ruta Provincial 33 Km. 8" value={form.address} onChange={set('address')} />
+                </FormField>
+                <FormField label="Partida inmobiliaria / Nomenclatura catastral">
+                  <FormInput placeholder="Ej: Circ. II, Secc. B, Parc. 145" value={form.cadastralReference} onChange={set('cadastralReference')} />
+                </FormField>
+                <FormField label="Superficie bajo riego (ha)">
+                  <FormInput type="number" min={0} step="0.01" placeholder="Ej: 120" value={form.irrigatedSurfaceHa} onChange={set('irrigatedSurfaceHa')} />
+                </FormField>
+                <FormField label="Superficie forestada (ha)">
+                  <FormInput type="number" min={0} step="0.01" placeholder="Ej: 80" value={form.forestedSurfaceHa} onChange={set('forestedSurfaceHa')} />
+                </FormField>
+              </FormSection>
+            </SectionCard>
+          )}
+
           {/* Infraestructura */}
           {isInfraestructura && (
             <SectionCard title="Especificaciones de infraestructura" subtitle="Tipo y características técnicas.">
@@ -1032,7 +1091,7 @@ export default function AssetEditPage() {
           </SectionCard>
 
           {/* 5. Ubicación y silos — solo para tipos con ubicación geográfica */}
-          {(isEdificio || isEstablecimiento || isInfraestructura) && (
+          {(isEdificio || isEstablecimiento || isCampoTerreno || isInfraestructura) && (
             <SectionCard
               title="Ubicación y silos"
               subtitle="Mapa del activo y registro de silos o celdas de almacenamiento."

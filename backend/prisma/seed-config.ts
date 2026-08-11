@@ -129,6 +129,16 @@ const CATALOGS: Record<string, string[]> = {
     'RRHH',
   ],
 
+  // ── Activos — Uso del campo/terreno ──────────────────────────────────────
+  asset_land_use: [
+    'Riego',
+    'Forestación',
+    'Ganadería',
+    'Agricultura de secano',
+    'Mixto',
+    'Otro',
+  ],
+
   // ── Matafuegos — Tipo ───────────────────────────────────────────────────
   fire_ext_type: [
     'Polvo seco ABC',
