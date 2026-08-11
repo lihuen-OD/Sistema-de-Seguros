@@ -12,11 +12,15 @@ import { policyQueries } from '../../../shared/api/policies.api'
 import { claimQueries } from '../../../shared/api/claims.api'
 import { documentQueries } from '../../../shared/api/documents.api'
 import { companyQueries } from '../../../shared/api/companies.api'
+import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import {
   computeFleetSummaries,
   computeInsuranceTypeSummaries,
   computeInsurerSummaries,
   computeProductiveUnitSummaries,
+  computeFixedAssetSummaries,
+  computeCostCenterSummaries,
+  buildPolicyExportRows,
   isPolicyIncludedInInsuranceDashboard,
   TERMINAL_CLAIM_STATUSES,
 } from '../../../shared/utils/insuranceDashboardCalc'
@@ -27,17 +31,23 @@ import { CompareAssetsView } from './CompareAssetsView'
 import { FleetRiskView } from './FleetRiskView'
 import { InsurersView } from './InsurersView'
 import { ProductiveUnitsView } from './ProductiveUnitsView'
+import { FixedAssetsView } from './FixedAssetsView'
+import { CostCentersView } from './CostCentersView'
 import { InsuranceTypesView } from './InsuranceTypesView'
+import { PolicyExportView } from './PolicyExportView'
 
-type Tab = 'single' | 'compare' | 'fleet' | 'productive-units' | 'insurance-types' | 'insurers'
+type Tab = 'single' | 'compare' | 'fleet' | 'productive-units' | 'fixed-assets' | 'cost-centers' | 'insurance-types' | 'insurers' | 'export'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'single', label: 'Un activo' },
   { key: 'compare', label: 'Comparar activos' },
   { key: 'fleet', label: 'Riesgo de la flota' },
   { key: 'productive-units', label: 'Unidades productivas' },
+  { key: 'fixed-assets', label: 'Bienes de uso' },
+  { key: 'cost-centers', label: 'Centros de costo' },
   { key: 'insurance-types', label: 'Tipos de seguro' },
   { key: 'insurers', label: 'Aseguradoras' },
+  { key: 'export', label: 'Planilla completa' },
 ]
 
 export default function InsuranceDashboardPage() {
@@ -82,6 +92,13 @@ export default function InsuranceDashboardPage() {
     isError: isErrorCompanies,
     isLoading: isLoadingCompanies,
   } = useQuery(companyQueries.list())
+  const {
+    data: costCenters = [],
+    isError: isErrorCostCenters,
+    isLoading: isLoadingCostCenters,
+  } = useQuery(costCenterQueries.list())
+  const costCentersById = useMemo(() => new Map(costCenters.map((cc) => [cc.id, { id: cc.id, name: cc.name }])), [costCenters])
+  const companiesById = useMemo(() => new Map(companies.map((c) => [c.id, { id: c.id, name: c.name }])), [companies])
 
   const companyOptions = useMemo(
     () =>
@@ -168,6 +185,18 @@ export default function InsuranceDashboardPage() {
     () => computeProductiveUnitSummaries(assets, policies, financialDocs, typeDefsByKey),
     [assets, policies, financialDocs, typeDefsByKey],
   )
+  const fixedAssetSummaries = useMemo(
+    () => computeFixedAssetSummaries(assets, policies, financialDocs, typeDefsByKey),
+    [assets, policies, financialDocs, typeDefsByKey],
+  )
+  const costCenterSummaries = useMemo(
+    () => computeCostCenterSummaries(assets, policies, financialDocs, typeDefsByKey, costCentersById),
+    [assets, policies, financialDocs, typeDefsByKey, costCentersById],
+  )
+  const exportRows = useMemo(
+    () => buildPolicyExportRows(assets, policies, financialDocs, typeDefsByKey, companiesById, costCentersById),
+    [assets, policies, financialDocs, typeDefsByKey, companiesById, costCentersById],
+  )
   const insuranceTypeSummaries = useMemo(
     () => computeInsuranceTypeSummaries(policies, claims, financialDocs, typeDefsByKey),
     [policies, claims, financialDocs, typeDefsByKey],
@@ -179,23 +208,31 @@ export default function InsuranceDashboardPage() {
     isErrorClaims ||
     isErrorDocs ||
     isErrorTypes ||
-    isErrorCompanies
+    isErrorCompanies ||
+    isErrorCostCenters
   const isLoading =
     isLoadingAssets ||
     isLoadingPolicies ||
     isLoadingClaims ||
     isLoadingDocs ||
     isLoadingTypes ||
-    isLoadingCompanies
+    isLoadingCompanies ||
+    isLoadingCostCenters
 
   const activeTabHasData =
     tab === 'productive-units'
       ? productiveUnitSummaries.length > 0
-      : tab === 'insurance-types'
-        ? insuranceTypeSummaries.length > 0
-        : tab === 'insurers'
-          ? insurerSummaries.length > 0
-          : summaries.length > 0
+      : tab === 'fixed-assets'
+        ? fixedAssetSummaries.length > 0
+        : tab === 'cost-centers'
+          ? costCenterSummaries.length > 0
+          : tab === 'insurance-types'
+            ? insuranceTypeSummaries.length > 0
+            : tab === 'insurers'
+              ? insurerSummaries.length > 0
+              : tab === 'export'
+                ? exportRows.length > 0
+                : summaries.length > 0
   const emptyDescription = filterCompanies.length > 0
     ? 'No hay información de seguros para las empresas seleccionadas en esta vista.'
     : 'No hay información disponible para construir esta vista.'
@@ -269,10 +306,17 @@ export default function InsuranceDashboardPage() {
           {tab === 'productive-units' && (
             <ProductiveUnitsView key={`productive-units:${scopeKey}`} summaries={productiveUnitSummaries} />
           )}
+          {tab === 'fixed-assets' && (
+            <FixedAssetsView key={`fixed-assets:${scopeKey}`} summaries={fixedAssetSummaries} />
+          )}
+          {tab === 'cost-centers' && (
+            <CostCentersView key={`cost-centers:${scopeKey}`} summaries={costCenterSummaries} />
+          )}
           {tab === 'insurance-types' && (
             <InsuranceTypesView key={`insurance-types:${scopeKey}`} summaries={insuranceTypeSummaries} />
           )}
           {tab === 'insurers' && <InsurersView key={`insurers:${scopeKey}`} summaries={insurerSummaries} />}
+          {tab === 'export' && <PolicyExportView key={`export:${scopeKey}`} rows={exportRows} />}
         </>
       )}
     </PageContent>

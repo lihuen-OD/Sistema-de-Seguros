@@ -12,6 +12,7 @@ import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { Modal } from '../../../shared/components/modals/Modal'
 import { FormField, FormInput, FormSelect } from '../../../shared/components/forms/FormSection'
 import { PasswordInput } from '../../../shared/components/forms/PasswordInput'
+import { CheckboxGroup } from '../../../shared/components/forms/CheckboxGroup'
 import { formatDate } from '../../../shared/utils/format'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import {
@@ -23,7 +24,8 @@ import {
   type UpdateUserInput,
 } from '../../../shared/api/users.api'
 import { accessProfileQueries } from '../../../shared/api/access-profiles.api'
-import type { Role, TableColumn } from '../../../shared/types'
+import { catalogQueries } from '../../../shared/api/catalogs.api'
+import type { Role, TableColumn, UserAuditScopeItem } from '../../../shared/types'
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Administrador',
@@ -52,12 +54,24 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
   const [accessProfileId, setAccessProfileId] = useState(user?.accessProfileId ?? '')
   const [password, setPassword] = useState('')
   const [isActive, setIsActive] = useState(user?.isActive ?? true)
+  const [fireExtScope, setFireExtScope] = useState<string[]>(
+    () => (user?.auditScope ?? []).filter((s) => s.area === 'FIRE_EXTINGUISHER_AUDIT').map((s) => s.scopeValue),
+  )
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({})
   const [apiError, setApiError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const { data: profiles = [] } = useQuery(accessProfileQueries.list())
   const activeProfiles = profiles.filter((p) => p.isActive || p.id === accessProfileId)
+
+  const selectedProfile = profiles.find((p) => p.id === accessProfileId)
+  // Alcance de auditoría: solo aplica a un USER cuyo perfil de acceso le da
+  // el módulo "de auditar" (coverage) de Matafuegos — el único que se sigue
+  // asignando por establecimiento acá. Rodados/Seguros (por categoría de
+  // activo) se reemplazaron por asignación de activo individual, gestionada
+  // desde la pestaña "Asignación" de cada auditoría, no desde este modal.
+  const showFireExtScope = role === 'USER' && (selectedProfile?.modules.includes('fire_extinguisher_audit_coverage') ?? false)
+  const { data: establishments = [] } = useQuery({ ...catalogQueries.byCategory('fire_ext_establishment'), enabled: showFireExtScope })
 
   function validate(): boolean {
     const e: typeof errors = {}
@@ -75,11 +89,24 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
     setSubmitting(true)
     setApiError('')
     const profileField = { accessProfileId: role === 'USER' ? (accessProfileId || null) : null }
+    // Solo se manda auditScope cuando esta pantalla efectivamente muestra (y
+    // por lo tanto puede editar) la sección de establecimientos — así un
+    // guardado que no la toca no pisa esa asignación. ASSET_AUDIT/
+    // INSURANCE_AUDIT nunca se tocan desde acá (ver comentario en
+    // showFireExtScope), así que jamás forman parte de este payload.
+    const scopeField = showFireExtScope
+      ? {
+          auditScope: [
+            ...(user?.auditScope ?? []).filter((s) => s.area !== 'FIRE_EXTINGUISHER_AUDIT'),
+            ...fireExtScope.map((scopeValue): UserAuditScopeItem => ({ area: 'FIRE_EXTINGUISHER_AUDIT', scopeValue })),
+          ],
+        }
+      : {}
     try {
       if (isEdit) {
-        await onSave({ name, email, role, isActive, ...profileField })
+        await onSave({ name, email, role, isActive, ...profileField, ...scopeField })
       } else {
-        await onSave({ name, email, role, password, ...profileField })
+        await onSave({ name, email, role, password, ...profileField, ...scopeField })
       }
     } catch (err) {
       setApiError(err instanceof Error ? err.message : 'Error al guardar')
@@ -92,12 +119,12 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
     <Modal
       open
       onClose={onClose}
-      size="sm"
+      size={showFireExtScope ? 'md' : 'sm'}
       icon={UsersIcon}
       title={isEdit ? 'Editar usuario' : 'Nuevo usuario'}
       description={isEdit ? user!.email : 'La contraseña que cargues es temporal — la persona la cambia en su primer login.'}
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4 max-h-[75vh] overflow-y-auto pr-1">
         <FormField label="Nombre" required error={errors.name} fullWidth>
           <FormInput value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </FormField>
@@ -121,6 +148,19 @@ function UserModal({ user, onClose, onSave }: UserModalProps) {
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </FormSelect>
+          </FormField>
+        )}
+
+        {showFireExtScope && (
+          <FormField label="Alcance de auditoría — Establecimientos" fullWidth>
+            <p className="text-xs text-slate-500 -mt-0.5 mb-1.5">
+              Establecimientos que esta persona puede auditar en Matafuegos. Sin ninguno tildado, no va a poder auditar ningún establecimiento.
+            </p>
+            <CheckboxGroup
+              sections={[{ label: 'Establecimientos', options: establishments.map((e) => ({ value: e.label, label: e.label })) }]}
+              value={fireExtScope}
+              onChange={setFireExtScope}
+            />
           </FormField>
         )}
 

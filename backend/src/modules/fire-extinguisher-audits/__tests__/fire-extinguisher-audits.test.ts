@@ -25,6 +25,17 @@ jest.mock('../../../config/database', () => ({
       findFirst: jest.fn(),
       delete: jest.fn(),
     },
+    auditComment: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    userAuditScope: {
+      findMany: jest.fn(),
+    },
     $transaction: jest.fn(),
   },
 }))
@@ -59,6 +70,7 @@ const fakeFireExt = {
   brand: 'Cesa',
   iramCertificateNumber: 'IRAM-12345',
   location: 'Planta baja',
+  establishment: 'PLANTA',
   isActive: true,
 }
 
@@ -75,7 +87,7 @@ const fakeAuditRow = {
   locationChangeReason: null,
   cleanliness: 'IMPECABLE',
   chargeFillStatus: 'CARGADO',
-  beaconPlateCondition: 'SANA',
+  mountingCondition: 'SANA',
   sealStatus: 'TIENE',
   ringStatus: 'TIENE',
   hoseNozzleCondition: 'SANA',
@@ -85,6 +97,8 @@ const fakeAuditRow = {
   updatedAt: BASE_DATE,
   proposedChanges: [] as unknown[],
   attachments: [] as unknown[],
+  // Usado por findById() para el chequeo de población — GET /:id pasa scope.
+  extinguisher: { establishment: 'PLANTA', assetId: null, asset: null },
 }
 
 const allFieldsOk = [
@@ -99,7 +113,7 @@ const allFieldsOk = [
 const validChecklist = {
   cleanliness: 'IMPECABLE',
   chargeFillStatus: 'CARGADO',
-  beaconPlateCondition: 'SANA',
+  mountingCondition: 'SANA',
   sealStatus: 'TIENE',
   ringStatus: 'TIENE',
   hoseNozzleCondition: 'SANA',
@@ -122,6 +136,7 @@ describe('Fire Extinguisher Audits API', () => {
     db.fireExtinguisherAudit.create.mockResolvedValue({ id: AUDIT_ID })
     db.fireExtinguisherAuditProposedChange.create.mockResolvedValue({})
     db.fireExtinguisherAudit.findUniqueOrThrow.mockResolvedValue(fakeAuditRow)
+    db.userAuditScope.findMany.mockResolvedValue([])
     // Soporta tanto $transaction(async (tx) => {...}) — usado por create() —
     // pasando `db` como `tx`, como $transaction([...]) en forma de array.
     db.$transaction.mockImplementation(async (arg: unknown) =>
@@ -220,10 +235,14 @@ describe('Fire Extinguisher Audits API', () => {
 
     it.each([
       ['ADMIN', 'ADMIN', undefined],
-      ['a USER with the fire_extinguisher_audit_coverage module', 'USER', ['fire_extinguisher_audit_coverage']],
+      ['a USER with the fire_extinguisher_audit_coverage module and PLANTA in scope', 'USER', ['fire_extinguisher_audit_coverage']],
     ] as const)('returns 201 for %s', async (_label, role, modules) => {
       if (role === 'USER') {
         db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [...modules!] }))
+        // El alcance asignado debe incluir el establecimiento del matafuego
+        // (PLANTA, ver fakeFireExt) — sin esto, un auditor no-ADMIN queda
+        // bloqueado por resolveAuditScope/isInScope.
+        db.userAuditScope.findMany.mockResolvedValueOnce([{ scopeValue: 'PLANTA' }])
       }
 
       const res = await request(app)
@@ -232,6 +251,18 @@ describe('Fire Extinguisher Audits API', () => {
         .send(validCreateBody)
 
       expect(res.status).toBe(201)
+    })
+
+    it('returns 404 when a USER auditor has no matching scope for the fire extinguisher\'s establishment', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['fire_extinguisher_audit_coverage'] }))
+      db.userAuditScope.findMany.mockResolvedValueOnce([{ scopeValue: 'TALLER' }]) // no incluye PLANTA
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits')
+        .set('Authorization', `Bearer ${userToken()}`)
+        .send(validCreateBody)
+
+      expect(res.status).toBe(404)
     })
 
     it('returns 422 when fireExtinguisherId is missing', async () => {
@@ -284,6 +315,37 @@ describe('Fire Extinguisher Audits API', () => {
       expect(res.status).toBe(400)
       expect(res.body.error.code).toBe('INACTIVE_FIRE_EXTINGUISHER')
     })
+
+    it('returns 400 ASSET_EXCLUDED_FROM_FIRE_EXTINGUISHER_AUDIT when linked to a vehicle/machinery asset', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue({
+        ...fakeFireExt,
+        assetId: 'a0000000-0000-0000-0000-000000000001',
+        asset: { assetType: 'Tractor' },
+      })
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validCreateBody)
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('ASSET_EXCLUDED_FROM_FIRE_EXTINGUISHER_AUDIT')
+    })
+
+    it('allows creating an audit for a fire extinguisher linked to a non-vehicle asset (e.g. a building)', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue({
+        ...fakeFireExt,
+        assetId: 'a0000000-0000-0000-0000-000000000002',
+        asset: { assetType: 'Edificio' },
+      })
+
+      const res = await request(app)
+        .post('/api/v1/fire-extinguisher-audits')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validCreateBody)
+
+      expect(res.status).toBe(201)
+    })
   })
 
   // ── GET /api/v1/fire-extinguisher-audits/:id ──────────────────────────────
@@ -322,7 +384,11 @@ describe('Fire Extinguisher Audits API', () => {
 
   describe('POST /api/v1/fire-extinguisher-audits/:id/attachments', () => {
     beforeEach(() => {
-      db.fireExtinguisherAudit.findUnique.mockResolvedValue({ id: AUDIT_ID, fireExtinguisherId: FE_ID })
+      db.fireExtinguisherAudit.findUnique.mockResolvedValue({
+        id: AUDIT_ID,
+        fireExtinguisherId: FE_ID,
+        extinguisher: { establishment: 'PLANTA', assetId: null, asset: null },
+      })
       db.fireExtinguisherAttachment.count.mockResolvedValue(0)
     })
 
@@ -392,6 +458,7 @@ describe('Fire Extinguisher Audits API', () => {
         id: ATTACHMENT_ID,
         auditId: AUDIT_ID,
         cloudinaryPublicId: 'fire-extinguisher-audits/abc',
+        extinguisher: { establishment: 'PLANTA', assetId: null, asset: null },
       })
       db.fireExtinguisherAttachment.delete.mockResolvedValue({})
       deleteFromCloudinary.mockResolvedValue(undefined)

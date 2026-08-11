@@ -2,7 +2,7 @@ import { X } from 'lucide-react'
 import { ChoiceGroup } from '../../../shared/components/forms/ChoiceGroup'
 import { FormField, FormInput, FormTextarea } from '../../../shared/components/forms/FormSection'
 import { FileDropzone } from '../../../shared/components/file-upload/FileDropzone'
-import { CHECKLIST_FIELDS } from './checklistConfig'
+import type { ChecklistFieldConfig } from './checklistConfig'
 
 export interface ExistingAuditPhoto {
   id: string
@@ -11,6 +11,7 @@ export interface ExistingAuditPhoto {
 }
 
 interface AuditStep4ChecklistProps {
+  fields: ChecklistFieldConfig[]
   checklist: Record<string, string>
   onChangeChecklist: (next: Record<string, string>) => void
   comments: string
@@ -25,6 +26,7 @@ interface AuditStep4ChecklistProps {
 }
 
 export function AuditStep4Checklist({
+  fields,
   checklist,
   onChangeChecklist,
   comments,
@@ -41,7 +43,7 @@ export function AuditStep4Checklist({
 
   return (
     <div className="space-y-5">
-      {CHECKLIST_FIELDS.map((field) => (
+      {fields.map((field) => (
         <FormField key={field.key} label={field.label} required={field.required}>
           {field.type === 'choice' ? (
             <ChoiceGroup

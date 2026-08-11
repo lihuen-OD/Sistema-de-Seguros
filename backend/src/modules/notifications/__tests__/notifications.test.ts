@@ -9,6 +9,7 @@ jest.mock('../../../config/database', () => ({
     fireExtinguisher: { findMany: jest.fn() },
     documentInstallment: { findMany: jest.fn() },
     assetAttachment: { findMany: jest.fn() },
+    insuranceAudit: { findMany: jest.fn() },
     notificationDismissal: { findMany: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
   },
 }))
@@ -61,9 +62,19 @@ function fakeAssetAttachment(id: string, expirationDate = daysFromNow(10)) {
   return { id, name: `${id}.pdf`, expirationDate, asset: { id: `asset-${id}`, name: 'Toyota Hilux' } }
 }
 
+function fakePendingCardAudit(id: string, requestedAt = daysFromNow(-1)) {
+  return {
+    id,
+    cardUpdateRequestedAt: requestedAt,
+    auditDate: requestedAt,
+    asset: { id: `asset-${id}`, name: 'Camioneta Hilux', code: `ROD-${id}` },
+  }
+}
+
 // Setup común: sin descartes previos, salvo que un test los sobreescriba.
 beforeEach(() => {
   db.user.findUnique.mockResolvedValue(mockDbUser())
+  db.insuranceAudit.findMany.mockResolvedValue([])
   db.notificationDismissal.findMany.mockResolvedValue([])
 })
 
@@ -134,8 +145,23 @@ describe('Notifications API', () => {
         overdueInstallments: 0,
         nearInstallments: 0,
         expiringAttachments: 0,
+        pendingCardUpdates: 0,
         hasAlerts: true,
       })
+    })
+
+    it('a USER con el módulo insurance_audits le llega el aviso de tarjeta pendiente', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['insurance_audits'] }))
+      mockAllCategories()
+      db.insuranceAudit.findMany.mockResolvedValue([fakePendingCardAudit('1')])
+
+      const res = await request(app)
+        .get('/api/v1/notifications')
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(200)
+      const categories = (res.body.data as any[]).map((i) => i.category)
+      expect(categories).toEqual(['insurance_card_pending'])
     })
 
     it('ADMIN sigue viendo todas las categorías sin filtrar', async () => {
@@ -182,8 +208,25 @@ describe('Notifications API', () => {
         overdueInstallments: 3,
         nearInstallments: 0,
         expiringAttachments: 1,
+        pendingCardUpdates: 0,
         hasAlerts: true,
       })
+    })
+
+    it('cuenta los avisos de tarjeta pendiente', async () => {
+      db.policy.findMany.mockResolvedValue([])
+      db.fireExtinguisher.findMany.mockResolvedValue([])
+      db.documentInstallment.findMany.mockResolvedValue([])
+      db.assetAttachment.findMany.mockResolvedValue([])
+      db.insuranceAudit.findMany.mockResolvedValue([fakePendingCardAudit('1'), fakePendingCardAudit('2')])
+
+      const res = await request(app)
+        .get('/api/v1/notifications/preview')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.pendingCardUpdates).toBe(2)
+      expect(res.body.data.hasAlerts).toBe(true)
     })
 
     it('hasAlerts es false cuando todos los conteos son cero', async () => {
@@ -320,6 +363,28 @@ describe('Notifications API', () => {
       // Ordenado por dueDate ascendente — el más vencido primero
       const dueDates = items.map((i) => i.dueDate)
       expect(dueDates).toEqual([...dueDates].sort())
+    })
+
+    it('mapea el aviso de tarjeta pendiente con título, subtítulo y entityType propios', async () => {
+      db.policy.findMany.mockResolvedValue([])
+      db.fireExtinguisher.findMany.mockResolvedValue([])
+      db.documentInstallment.findMany.mockResolvedValue([])
+      db.assetAttachment.findMany.mockResolvedValue([])
+      db.insuranceAudit.findMany.mockResolvedValue([fakePendingCardAudit('70000000-0000-0000-0000-000000000001')])
+
+      const res = await request(app)
+        .get('/api/v1/notifications')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.data[0]).toMatchObject({
+        category: 'insurance_card_pending',
+        title: 'ROD-70000000-0000-0000-0000-000000000001 — Camioneta Hilux',
+        subtitle: 'El auditor avisó que ya colocó la tarjeta de circulación',
+        entityType: 'InsuranceAudit',
+        entityId: '70000000-0000-0000-0000-000000000001',
+      })
     })
 
     it('marca un ítem como reviewed cuando coincide con un descarte del usuario', async () => {

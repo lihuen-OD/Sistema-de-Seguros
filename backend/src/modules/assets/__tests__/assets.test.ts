@@ -15,6 +15,7 @@ jest.mock('../../../config/database', () => ({
       findUniqueOrThrow: jest.fn(),
       create:           jest.fn(),
       update:           jest.fn(),
+      delete:           jest.fn(),
     },
     company: { findMany: jest.fn() },
     costCenter: { findMany: jest.fn() },
@@ -50,6 +51,7 @@ jest.mock('../../../config/cloudinary', () => ({
 }))
 
 import { prisma } from '../../../config/database'
+import { deleteFromCloudinary } from '../../../config/cloudinary'
 const db = prisma as any
 
 beforeEach(() => {
@@ -222,6 +224,38 @@ describe('Assets API', () => {
 
       expect(res.status).toBe(201)
       expect(res.body.data.name).toBe('Toyota Hilux')
+    })
+
+    it('passes fireExtinguisherAuditable/insuranceAuditable through to asset.create, defaulting to false when omitted', async () => {
+      db.company.findMany.mockResolvedValue([fakeCompany])
+      db.costCenter.findMany.mockResolvedValue([fakeCostCenter])
+      db.$queryRaw.mockResolvedValue([{ nextval: 1n }])
+      const createMock = jest.fn().mockResolvedValue(fakeAsset)
+      db.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          asset: { create: createMock },
+          assetAllocation: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+          assetStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        }),
+      )
+      db.asset.findUniqueOrThrow.mockResolvedValue(fakeAsset)
+
+      await request(app)
+        .post('/api/v1/assets')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ ...validAssetBody, fireExtinguisherAuditable: true, insuranceAuditable: true })
+
+      expect(createMock.mock.calls[0][0].data.fireExtinguisherAuditable).toBe(true)
+      expect(createMock.mock.calls[0][0].data.insuranceAuditable).toBe(true)
+
+      createMock.mockClear()
+      await request(app)
+        .post('/api/v1/assets')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validAssetBody)
+
+      expect(createMock.mock.calls[0][0].data.fireExtinguisherAuditable).toBe(false)
+      expect(createMock.mock.calls[0][0].data.insuranceAuditable).toBe(false)
     })
 
     it('returns 201 when CONTADOR creates an asset', async () => {
@@ -497,19 +531,37 @@ describe('Assets API', () => {
   // ── DELETE /api/v1/assets/:id ───────────────────────────────────────────────
 
   describe('DELETE /api/v1/assets/:id', () => {
-    it('returns 200 when ADMIN soft-deletes asset', async () => {
-      // softDelete() no consulta findUnique — llama directo a
-      // $transaction([asset.update(...), assetStatusHistory.create(...)]).
-      db.asset.update.mockResolvedValue({ ...fakeAsset, isActive: false })
-      db.assetStatusHistory.create.mockResolvedValue({})
-      db.$transaction.mockImplementation((arr: unknown[]) => Promise.all(arr))
+    it('permanently deletes the asset and cleans up its Cloudinary attachments (own + cascaded from insurance audits)', async () => {
+      db.asset.findUnique.mockResolvedValue({
+        id: ASSET_ID,
+        attachments: [{ cloudinaryPublicId: 'asset-file-1' }],
+        insuranceAudits: [{ attachments: [{ cloudinaryPublicId: 'audit-file-1' }, { cloudinaryPublicId: null }] }],
+      })
+      db.asset.delete.mockResolvedValue({ id: ASSET_ID })
+      ;(deleteFromCloudinary as jest.Mock).mockResolvedValue(undefined)
 
       const res = await request(app)
         .delete(`/api/v1/assets/${ASSET_ID}`)
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(200)
-      expect(db.asset.update.mock.calls[0][0].data.isActive).toBe(false)
+      expect(deleteFromCloudinary).toHaveBeenCalledWith('asset-file-1')
+      expect(deleteFromCloudinary).toHaveBeenCalledWith('audit-file-1')
+      expect(deleteFromCloudinary).toHaveBeenCalledTimes(2)
+      expect(db.asset.delete).toHaveBeenCalledWith({ where: { id: ASSET_ID } })
+    })
+
+    it('works when the asset has no attachments at all', async () => {
+      db.asset.findUnique.mockResolvedValue({ id: ASSET_ID, attachments: [], insuranceAudits: [] })
+      db.asset.delete.mockResolvedValue({ id: ASSET_ID })
+
+      const res = await request(app)
+        .delete(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(deleteFromCloudinary).not.toHaveBeenCalled()
+      expect(db.asset.delete).toHaveBeenCalledWith({ where: { id: ASSET_ID } })
     })
 
     it('returns 403 when a USER without the assets module tries to delete', async () => {
@@ -517,6 +569,46 @@ describe('Assets API', () => {
 
       const res = await request(app)
         .delete(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(403)
+    })
+
+    it('returns 404 when asset does not exist', async () => {
+      db.asset.findUnique.mockResolvedValue(null)
+
+      const res = await request(app)
+        .delete(`/api/v1/assets/${OTHER_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(404)
+      expect(db.asset.delete).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── POST /api/v1/assets/:id/de-baja ───────────────────────────────────────────
+
+  describe('POST /api/v1/assets/:id/de-baja', () => {
+    it('returns 200 when ADMIN gives the asset de baja', async () => {
+      // softDelete() no consulta findUnique — llama directo a
+      // $transaction([asset.update(...), assetStatusHistory.create(...)]).
+      db.asset.update.mockResolvedValue({ ...fakeAsset, isActive: false })
+      db.assetStatusHistory.create.mockResolvedValue({})
+      db.$transaction.mockImplementation((arr: unknown[]) => Promise.all(arr))
+
+      const res = await request(app)
+        .post(`/api/v1/assets/${ASSET_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.asset.update.mock.calls[0][0].data.isActive).toBe(false)
+    })
+
+    it('returns 403 when a USER without the assets module tries to give it de baja', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+      const res = await request(app)
+        .post(`/api/v1/assets/${ASSET_ID}/de-baja`)
         .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(403)
@@ -534,7 +626,7 @@ describe('Assets API', () => {
       db.$transaction.mockImplementation((arr: unknown[]) => Promise.all(arr))
 
       const res = await request(app)
-        .delete(`/api/v1/assets/${OTHER_ID}`)
+        .post(`/api/v1/assets/${OTHER_ID}/de-baja`)
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(404)

@@ -49,7 +49,7 @@ export function groupForAssetType(assetTypeLabel: string): string {
 // nada acá.
 
 const ADJUSTING_TYPES = ['CREDIT_NOTE', 'DEBIT_NOTE', 'ADJUSTMENT_ENTRY', 'ENDORSEMENT']
-const ACTIVE_POLICY_STATUSES: Policy['status'][] = ['vigente', 'proximo_vencer']
+export const ACTIVE_POLICY_STATUSES: Policy['status'][] = ['vigente', 'proximo_vencer']
 const DASHBOARD_POLICY_STATUSES: Policy['status'][] = ['vigente', 'proximo_vencer', 'vencida']
 
 /**
@@ -77,6 +77,10 @@ export interface PolicySummaryRow {
   insuredAmountUsd: number
   invoicedTotalUsd: number
   psaPercentage: number | null
+  /** Meses contratados (startDate → endDate) — la referencia exacta de monthlyRateUsd. */
+  termMonths: number
+  /** Facturado de esta póliza ÷ meses de vigencia contratados — "cuánto cuesta por mes", sin importar la duración del período. */
+  monthlyRateUsd: number | null
   isShared: boolean
 }
 
@@ -104,6 +108,8 @@ export interface AssetInsuranceSummary {
   /** Suma asegurada sobre valor a nuevo (o real si no hay valor a nuevo cargado) — "qué tan cubierto está". */
   coveragePct: number | null
   facturado12mUsd: number
+  /** Suma de la tasa mensual (ver PolicySummaryRow.monthlyRateUsd) de las pólizas activas — "cuánto cuesta por mes asegurar esto hoy", comparable entre activos sin importar cuántos meses dure cada póliza. null si no hay ninguna póliza activa. */
+  costoMensualUsd: number | null
   facturadoTotalUsd: number
   claimsCount: number
   claimsCostUsd: number
@@ -121,6 +127,16 @@ function daysUntil(dateStr: string): number {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return Math.round((target.getTime() - today.getTime()) / 86_400_000)
+}
+
+// Meses contratados de una póliza, a partir de la duración real en días (no
+// resta año/mes calendario) — así da un número correcto sin importar en qué
+// día del mes arranca/termina la vigencia (ej. 121 días ⇒ 4 meses, no 3 ni 5).
+export function policyTermMonths(startDate: string, endDate: string): number {
+  const start = new Date(startDate + 'T00:00:00')
+  const end = new Date(endDate + 'T00:00:00')
+  const days = (end.getTime() - start.getTime()) / 86_400_000
+  return Math.max(1, Math.round(days / 30.4375))
 }
 
 function monthLabel(monthKey: string): string {
@@ -258,6 +274,8 @@ export function computeFleetSummaries(
     const toRow = (l: { coverage: PolicyCoverage; policy: Policy }): PolicySummaryRow => {
       const invoicedTotalUsd = sumBuckets(buildInvoicedBucketsByCoverages(new Set([l.coverage.id]), financialDocs, typeDefsByKey))
       const psaPercentage = computePsaPercentage(l.coverage.insuredAmountUsd, invoicedTotalUsd)
+      const termMonths = policyTermMonths(l.policy.startDate, l.policy.endDate)
+      const monthlyRateUsd = invoicedTotalUsd > 0 ? invoicedTotalUsd / termMonths : null
       const distinctAssetIds = new Set(coveragesOf(l.policy).map((c) => c.assetId).filter((id): id is string => !!id))
       return {
         id: l.policy.id,
@@ -268,12 +286,20 @@ export function computeFleetSummaries(
         insuredAmountUsd: l.coverage.insuredAmountUsd,
         invoicedTotalUsd,
         psaPercentage,
+        termMonths,
+        monthlyRateUsd,
         isShared: distinctAssetIds.size > 1,
       }
     }
 
     const allPolicyRows = assetLines.map(toRow)
     const activePolicyRows = allPolicyRows.filter((r) => ACTIVE_POLICY_STATUSES.includes(r.status))
+    // Suma la tasa mensual de cada póliza activa (puede haber más de una a la
+    // vez, ej. casco + RC con vigencias distintas) — null si no hay ninguna
+    // activa, para distinguirlo de "cuesta $0/mes" en la tabla.
+    const costoMensualUsd = activePolicyRows.length > 0
+      ? activePolicyRows.reduce((sum, r) => sum + (r.monthlyRateUsd ?? 0), 0)
+      : null
     const hasSharedPolicy = assetLines.some((l) => new Set(coveragesOf(l.policy).map((c) => c.assetId).filter(Boolean)).size > 1)
 
     const upcoming = active
@@ -310,6 +336,7 @@ export function computeFleetSummaries(
       primaPctValor,
       coveragePct,
       facturado12mUsd,
+      costoMensualUsd,
       facturadoTotalUsd,
       claimsCount: assetClaims.length,
       claimsCostUsd,
@@ -470,6 +497,477 @@ export function computeProductiveUnitSummaries(
       }
     })
     .sort((a, b) => b.facturado12mUsd - a.facturado12mUsd || a.label.localeCompare(b.label, 'es'))
+}
+
+// ── Comparativa por Bien de Uso ──────────────────────────────────────────────
+
+export const UNASSIGNED_FIXED_ASSET_LABEL = 'Sin Bien de Uso asignado'
+export const SHARED_FIXED_ASSET_LABEL = 'Compartido entre Bienes de Uso'
+
+export interface FixedAssetInsuranceSummary {
+  id: string
+  label: string
+  kind: 'unit' | 'unassigned' | 'shared'
+  assetCount: number
+  insuredAssetCount: number
+  policyCount: number
+  facturado12mUsd: number
+  sharePct: number
+  spendPerAssetUsd: number
+  deviationFromAveragePct: number | null
+}
+
+interface MutableFixedAssetSummary {
+  label: string
+  kind: FixedAssetInsuranceSummary['kind']
+  assetIds: Set<string>
+  policyIds: Set<string>
+  facturado12mUsd: number
+}
+
+function fixedAssetLabel(asset: Asset): string {
+  return asset.fixedAsset?.name.trim() || UNASSIGNED_FIXED_ASSET_LABEL
+}
+
+/**
+ * Agrupa el gasto facturado de los últimos 12 meses por Bien de Uso —
+ * idéntico criterio que computeProductiveUnitSummaries (un activo tiene como
+ * mucho un Bien de Uso, así que no hace falta prorratear nada por activo;
+ * la única ambigüedad posible es una póliza que cubre activos de Bienes de
+ * Uso distintos, igual que ya pasa con Unidad Productiva).
+ */
+export function computeFixedAssetSummaries(
+  assets: Asset[],
+  policies: Policy[],
+  financialDocs: DocumentForFinancial[],
+  typeDefsByKey: TypeDirectionMap,
+): FixedAssetInsuranceSummary[] {
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]))
+  const dashboardPolicies = policies.filter(isPolicyIncludedInInsuranceDashboard)
+  const monthKeys = new Set(last12MonthKeys())
+  const insuredAssetIds = new Set(
+    dashboardPolicies
+      .filter((policy) => ACTIVE_POLICY_STATUSES.includes(policy.status))
+      .flatMap((policy) => coveragesOf(policy).map((c) => c.assetId))
+      .filter((assetId): assetId is string => !!assetId && assetById.has(assetId)),
+  )
+  const buckets = new Map<string, MutableFixedAssetSummary>()
+
+  const ensureBucket = (label: string, kind: FixedAssetInsuranceSummary['kind']): MutableFixedAssetSummary => {
+    const existing = buckets.get(label)
+    if (existing) return existing
+    const next: MutableFixedAssetSummary = { label, kind, assetIds: new Set(), policyIds: new Set(), facturado12mUsd: 0 }
+    buckets.set(label, next)
+    return next
+  }
+
+  for (const asset of assets) {
+    const label = fixedAssetLabel(asset)
+    ensureBucket(label, label === UNASSIGNED_FIXED_ASSET_LABEL ? 'unassigned' : 'unit').assetIds.add(asset.id)
+  }
+
+  for (const policy of dashboardPolicies) {
+    const coverages = coveragesOf(policy)
+    const linkedAssetIds = new Set(coverages.map((c) => c.assetId).filter((id): id is string => !!id))
+    const linkedAssets = [...linkedAssetIds].map((assetId) => assetById.get(assetId)).filter((asset): asset is Asset => asset != null)
+    if (linkedAssets.length === 0) continue
+
+    const linkedFixedAssets = new Set(linkedAssets.map(fixedAssetLabel))
+    const isShared = linkedFixedAssets.size > 1
+    const label = isShared ? SHARED_FIXED_ASSET_LABEL : [...linkedFixedAssets][0]
+    const kind: FixedAssetInsuranceSummary['kind'] = isShared ? 'shared' : label === UNASSIGNED_FIXED_ASSET_LABEL ? 'unassigned' : 'unit'
+    const bucket = ensureBucket(label, kind)
+
+    bucket.policyIds.add(policy.id)
+    linkedAssets.forEach((asset) => bucket.assetIds.add(asset.id))
+
+    const policyBuckets = buildInvoicedBucketsByCoverages(new Set(coverages.map((c) => c.id)), financialDocs, typeDefsByKey)
+    for (const [monthKey, amountUsd] of policyBuckets) {
+      if (monthKeys.has(monthKey)) bucket.facturado12mUsd += amountUsd
+    }
+  }
+
+  const totalSpend = [...buckets.values()].reduce((total, bucket) => total + bucket.facturado12mUsd, 0)
+  const averageSpendPerAsset = assets.length > 0 ? totalSpend / assets.length : 0
+
+  return [...buckets.values()]
+    .map((bucket): FixedAssetInsuranceSummary => {
+      const assetCount = bucket.assetIds.size
+      const spendPerAssetUsd = assetCount > 0 ? bucket.facturado12mUsd / assetCount : 0
+      return {
+        id: `${bucket.kind}:${normalizeKey(bucket.label).replace(/\s+/g, '-')}`,
+        label: bucket.label,
+        kind: bucket.kind,
+        assetCount,
+        insuredAssetCount: [...bucket.assetIds].filter((id) => insuredAssetIds.has(id)).length,
+        policyCount: bucket.policyIds.size,
+        facturado12mUsd: bucket.facturado12mUsd,
+        sharePct: totalSpend > 0 ? (bucket.facturado12mUsd / totalSpend) * 100 : 0,
+        spendPerAssetUsd,
+        deviationFromAveragePct: averageSpendPerAsset > 0 ? ((spendPerAssetUsd / averageSpendPerAsset) - 1) * 100 : null,
+      }
+    })
+    .sort((a, b) => b.facturado12mUsd - a.facturado12mUsd || a.label.localeCompare(b.label, 'es'))
+}
+
+// ── Comparativa por Centro de Costo ──────────────────────────────────────────
+
+export const UNASSIGNED_COST_CENTER_LABEL = 'Sin centro de costo asignado'
+
+export interface CostCenterInsuranceSummary {
+  id: string
+  label: string
+  kind: 'unit' | 'unassigned'
+  assetCount: number
+  insuredAssetCount: number
+  policyCount: number
+  facturado12mUsd: number
+  sharePct: number
+  spendPerAssetUsd: number
+  deviationFromAveragePct: number | null
+}
+
+interface MutableCostCenterSummary {
+  label: string
+  kind: CostCenterInsuranceSummary['kind']
+  assetIds: Set<string>
+  policyIds: Set<string>
+  facturado12mUsd: number
+}
+
+/**
+ * Agrupa el gasto facturado de los últimos 12 meses por Centro de Costo.
+ *
+ * A diferencia de Bien de Uso/Unidad Productiva (un valor por activo), un
+ * activo puede repartirse entre varios centros de costo por porcentaje
+ * (Asset.allocations) — acá el gasto de CADA activo se calcula una sola vez,
+ * a partir de sus propias líneas de cobertura (nunca de la póliza entera:
+ * cada línea ya sabe a qué activo pertenece, así que dos activos que
+ * comparten póliza nunca duplican el gasto del otro), y ese total se reparte
+ * entre sus centros de costo según ese mismo %. Las líneas "sin activo"
+ * (Accidentes Personales, etc.) ya traen su propio centro de costo y se
+ * suman aparte, sin prorrateo — no hay un activo del que repartir.
+ */
+export function computeCostCenterSummaries(
+  assets: Asset[],
+  policies: Policy[],
+  financialDocs: DocumentForFinancial[],
+  typeDefsByKey: TypeDirectionMap,
+  costCentersById: Map<string, { id: string; name: string }>,
+): CostCenterInsuranceSummary[] {
+  const dashboardPolicies = policies.filter(isPolicyIncludedInInsuranceDashboard)
+  const monthKeys = new Set(last12MonthKeys())
+
+  const coverageIdsByAsset = new Map<string, Set<string>>()
+  const policyIdsByAsset = new Map<string, Set<string>>()
+  const insuredAssetIds = new Set<string>()
+  for (const policy of dashboardPolicies) {
+    for (const coverage of coveragesOf(policy)) {
+      if (!coverage.assetId) continue
+      if (!coverageIdsByAsset.has(coverage.assetId)) coverageIdsByAsset.set(coverage.assetId, new Set())
+      coverageIdsByAsset.get(coverage.assetId)!.add(coverage.id)
+      if (!policyIdsByAsset.has(coverage.assetId)) policyIdsByAsset.set(coverage.assetId, new Set())
+      policyIdsByAsset.get(coverage.assetId)!.add(policy.id)
+      if (ACTIVE_POLICY_STATUSES.includes(policy.status)) insuredAssetIds.add(coverage.assetId)
+    }
+  }
+
+  const buckets = new Map<string, MutableCostCenterSummary>()
+  const ensureBucket = (label: string, kind: CostCenterInsuranceSummary['kind']): MutableCostCenterSummary => {
+    const existing = buckets.get(label)
+    if (existing) return existing
+    const next: MutableCostCenterSummary = { label, kind, assetIds: new Set(), policyIds: new Set(), facturado12mUsd: 0 }
+    buckets.set(label, next)
+    return next
+  }
+
+  for (const asset of assets) {
+    const allocations = (asset.allocations ?? []).filter((a) => costCentersById.has(a.costCenterId))
+    const assetPolicyIds = policyIdsByAsset.get(asset.id) ?? new Set<string>()
+    const assetCoverageIds = coverageIdsByAsset.get(asset.id)
+    const assetSpend = assetCoverageIds
+      ? sumBucketsInRange(buildInvoicedBucketsByCoverages(assetCoverageIds, financialDocs, typeDefsByKey), monthKeys)
+      : 0
+
+    if (allocations.length === 0) {
+      const bucket = ensureBucket(UNASSIGNED_COST_CENTER_LABEL, 'unassigned')
+      bucket.assetIds.add(asset.id)
+      assetPolicyIds.forEach((id) => bucket.policyIds.add(id))
+      bucket.facturado12mUsd += assetSpend
+      continue
+    }
+
+    for (const alloc of allocations) {
+      const costCenter = costCentersById.get(alloc.costCenterId)!
+      const bucket = ensureBucket(costCenter.name, 'unit')
+      bucket.assetIds.add(asset.id)
+      assetPolicyIds.forEach((id) => bucket.policyIds.add(id))
+      bucket.facturado12mUsd += assetSpend * (alloc.percentage / 100)
+    }
+  }
+
+  // Líneas "sin activo" — ya traen su propio centro de costo, sin activo del
+  // que prorratear (ver comentario de la función). Se resuelve por
+  // costCenterId contra costCentersById, no por coverage.costCenterName: ese
+  // campo solo viene poblado desde GET /policies/:id (detalle) — el listado
+  // que usa este dashboard (includeCoverages:true) únicamente manda el id.
+  for (const policy of dashboardPolicies) {
+    for (const coverage of coveragesOf(policy)) {
+      if (coverage.assetId) continue
+      const label = (coverage.costCenterId ? costCentersById.get(coverage.costCenterId)?.name : undefined)?.trim() || UNASSIGNED_COST_CENTER_LABEL
+      const bucket = ensureBucket(label, label === UNASSIGNED_COST_CENTER_LABEL ? 'unassigned' : 'unit')
+      bucket.policyIds.add(policy.id)
+      const coverageBuckets = buildInvoicedBucketsByCoverages(new Set([coverage.id]), financialDocs, typeDefsByKey)
+      for (const [monthKey, amountUsd] of coverageBuckets) {
+        if (monthKeys.has(monthKey)) bucket.facturado12mUsd += amountUsd
+      }
+    }
+  }
+
+  const totalSpend = [...buckets.values()].reduce((total, bucket) => total + bucket.facturado12mUsd, 0)
+  const averageSpendPerAsset = assets.length > 0 ? totalSpend / assets.length : 0
+
+  return [...buckets.values()]
+    .map((bucket): CostCenterInsuranceSummary => {
+      const assetCount = bucket.assetIds.size
+      const spendPerAssetUsd = assetCount > 0 ? bucket.facturado12mUsd / assetCount : 0
+      return {
+        id: `${bucket.kind}:${normalizeKey(bucket.label).replace(/\s+/g, '-')}`,
+        label: bucket.label,
+        kind: bucket.kind,
+        assetCount,
+        insuredAssetCount: [...bucket.assetIds].filter((id) => insuredAssetIds.has(id)).length,
+        policyCount: bucket.policyIds.size,
+        facturado12mUsd: bucket.facturado12mUsd,
+        sharePct: totalSpend > 0 ? (bucket.facturado12mUsd / totalSpend) * 100 : 0,
+        spendPerAssetUsd,
+        deviationFromAveragePct: averageSpendPerAsset > 0 ? ((spendPerAssetUsd / averageSpendPerAsset) - 1) * 100 : null,
+      }
+    })
+    .sort((a, b) => b.facturado12mUsd - a.facturado12mUsd || a.label.localeCompare(b.label, 'es'))
+}
+
+// ── Planilla completa (Pólizas × Activos × Documentos) ──────────────────────
+
+/**
+ * Una fila por documento facturado de cada línea póliza-activo (o por línea,
+ * si todavía no tiene documentos; o por póliza, si todavía no tiene
+ * líneas) — máximo detalle para exportar a Excel y armar tablas dinámicas
+ * propias. A diferencia de las demás funciones de este archivo, no agrega ni
+ * resume: devuelve filas crudas, sin formatear (fechas ISO, montos
+ * numéricos) — el formato para pantalla/export vive en PolicyExportView.
+ */
+export interface PolicyExportRow {
+  id: string
+  policyId: string
+  policyNumber: string
+  insuranceCompany: string
+  status: Policy['status']
+  startDate: string
+  endDate: string
+  /** Meses contratados (startDate → endDate) — ver policyTermMonths. */
+  termMonths: number
+  /** Total facturado histórico de TODA la póliza (todas sus líneas, ver
+   * computePolicyInvoicedTotal) dividido por termMonths — null si todavía no
+   * se facturó nada. Mismo criterio que PolicySummaryRow.monthlyRateUsd,
+   * pero a nivel póliza entera en vez de por línea de cobertura. */
+  monthlyEstimatedCostUsd: number | null
+  insuranceTypeName: string
+  insuredAmount: number
+  currency: 'ARS' | 'USD'
+  insuredAmountUsd: number
+  assetId: string | null
+  assetCode: string | null
+  assetName: string | null
+  assetType: string | null
+  fixedAssetName: string | null
+  costCenterLabel: string
+  costCenterNames: string[]
+  companyLabel: string
+  companyNames: string[]
+  documentId: string | null
+  documentType: string | null
+  documentNumber: string | null
+  issueDate: string | null
+  documentStatus: string | null
+  documentCurrency: string | null
+  allocatedAmount: number | null
+  allocationPercentage: number | null
+  documentTotalAmount: number | null
+}
+
+function allocationLabel<T extends { percentage: number }>(
+  allocations: T[],
+  resolveName: (alloc: T) => string | undefined,
+): string {
+  return allocations
+    .map((alloc) => {
+      const name = resolveName(alloc)
+      return name ? `${name} (${Math.round(alloc.percentage)}%)` : null
+    })
+    .filter((s): s is string => !!s)
+    .join(', ')
+}
+
+export function buildPolicyExportRows(
+  assets: Asset[],
+  policies: Policy[],
+  financialDocs: DocumentForFinancial[],
+  typeDefsByKey: TypeDirectionMap,
+  companiesById: Map<string, { id: string; name: string }>,
+  costCentersById: Map<string, { id: string; name: string }>,
+): PolicyExportRow[] {
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]))
+  const rows: PolicyExportRow[] = []
+
+  for (const policy of policies) {
+    const termMonths = policyTermMonths(policy.startDate, policy.endDate)
+    const { totalUsd: policyInvoicedTotalUsd } = computePolicyInvoicedTotal(policy.id, financialDocs, typeDefsByKey)
+    const monthlyEstimatedCostUsd = policyInvoicedTotalUsd > 0 ? +(policyInvoicedTotalUsd / termMonths).toFixed(2) : null
+
+    const base = {
+      policyId: policy.id,
+      policyNumber: policy.policyNumber,
+      insuranceCompany: policy.insuranceCompany,
+      status: policy.status,
+      startDate: policy.startDate,
+      endDate: policy.endDate,
+      termMonths,
+      monthlyEstimatedCostUsd,
+    }
+    const coverages = coveragesOf(policy)
+
+    if (coverages.length === 0) {
+      rows.push({
+        id: `${policy.id}:sin-cobertura`,
+        ...base,
+        insuranceTypeName: '',
+        insuredAmount: 0,
+        currency: 'ARS',
+        insuredAmountUsd: 0,
+        assetId: null,
+        assetCode: null,
+        assetName: null,
+        assetType: null,
+        fixedAssetName: null,
+        costCenterLabel: '',
+        costCenterNames: [],
+        companyLabel: '',
+        companyNames: [],
+        documentId: null,
+        documentType: null,
+        documentNumber: null,
+        issueDate: null,
+        documentStatus: null,
+        documentCurrency: null,
+        allocatedAmount: null,
+        allocationPercentage: null,
+        documentTotalAmount: null,
+      })
+      continue
+    }
+
+    for (const coverage of coverages) {
+      const asset = coverage.assetId ? assetById.get(coverage.assetId) : undefined
+
+      let assetCode: string | null = null
+      let assetName: string | null = null
+      let assetType: string | null = null
+      let fixedAssetName: string | null = null
+      let costCenterLabel = ''
+      let costCenterNames: string[] = []
+      let companyLabel = ''
+      let companyNames: string[] = []
+
+      if (coverage.assetId && asset) {
+        assetCode = asset.internalCode
+        assetName = asset.name
+        assetType = asset.assetType
+        fixedAssetName = asset.fixedAsset?.name ?? null
+        const allocations = asset.allocations ?? []
+        costCenterLabel = allocationLabel(allocations, (a) => costCentersById.get(a.costCenterId)?.name)
+        costCenterNames = [...new Set(allocations.map((a) => costCentersById.get(a.costCenterId)?.name).filter((n): n is string => !!n))]
+        companyLabel = allocationLabel(allocations, (a) => companiesById.get(a.companyId)?.name)
+        companyNames = [...new Set(allocations.map((a) => companiesById.get(a.companyId)?.name).filter((n): n is string => !!n))]
+      } else if (coverage.assetId) {
+        // Activo fuera del scope cargado en este dashboard (inactivo, o más
+        // allá del cap de assetQueries.list) — mismo límite conocido que ya
+        // tienen las otras 8 pestañas, no se resuelve Bien de Uso/Centro de
+        // Costo para este caso.
+        assetName = 'Activo no disponible'
+      } else {
+        const companyName = coverage.companyId ? companiesById.get(coverage.companyId)?.name : undefined
+        const costCenterName = coverage.costCenterId ? costCentersById.get(coverage.costCenterId)?.name : undefined
+        companyLabel = companyName ?? ''
+        companyNames = companyName ? [companyName] : []
+        costCenterLabel = costCenterName ?? ''
+        costCenterNames = costCenterName ? [costCenterName] : []
+      }
+
+      const coverageBase = {
+        ...base,
+        insuranceTypeName: coverage.insuranceType,
+        insuredAmount: coverage.insuredAmount,
+        currency: coverage.currency,
+        insuredAmountUsd: coverage.insuredAmountUsd,
+        assetId: coverage.assetId,
+        assetCode,
+        assetName,
+        assetType,
+        fixedAssetName,
+        costCenterLabel,
+        costCenterNames,
+        companyLabel,
+        companyNames,
+      }
+
+      const coverageDocs = financialDocs.flatMap((doc) =>
+        doc.allocations
+          .filter((alloc) => alloc.policyAssetCoverageId === coverage.id)
+          .map((alloc) => ({ doc, alloc })),
+      )
+
+      if (coverageDocs.length === 0) {
+        rows.push({
+          id: `${coverage.id}:sin-documentos`,
+          ...coverageBase,
+          documentId: null,
+          documentType: null,
+          documentNumber: null,
+          issueDate: null,
+          documentStatus: null,
+          documentCurrency: null,
+          allocatedAmount: null,
+          allocationPercentage: null,
+          documentTotalAmount: null,
+        })
+        continue
+      }
+
+      for (const { doc, alloc } of coverageDocs) {
+        rows.push({
+          id: alloc.id,
+          ...coverageBase,
+          documentId: doc.id,
+          documentType: doc.documentType,
+          documentNumber: doc.documentNumber,
+          issueDate: doc.issueDate,
+          documentStatus: doc.documentStatus,
+          documentCurrency: doc.currency,
+          allocatedAmount: alloc.allocatedAmount,
+          allocationPercentage: alloc.allocationPercentage,
+          documentTotalAmount: doc.totalAmount,
+        })
+      }
+    }
+  }
+
+  return rows.sort(
+    (a, b) =>
+      a.policyNumber.localeCompare(b.policyNumber, 'es', { numeric: true }) ||
+      (a.assetName ?? '').localeCompare(b.assetName ?? '', 'es') ||
+      (b.issueDate ?? '').localeCompare(a.issueDate ?? ''),
+  )
 }
 
 // ── Comparativa por tipo de seguro ──────────────────────────────────────────

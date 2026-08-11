@@ -24,6 +24,20 @@ export default {
           900: '#0D210F',
         },
       },
+      keyframes: {
+        // Flip de moneda en KpiCard — la opacidad cae a 0 justo en el punto
+        // medio (rotateX 90deg), momento en el que se cambia el contenido
+        // (ver KpiCard), así se evita el artefacto de ver el texto "espejado"
+        // propio de rotar un elemento sin dos caras reales.
+        'flip-value': {
+          '0%': { transform: 'rotateX(0deg)', opacity: '1' },
+          '50%': { transform: 'rotateX(90deg)', opacity: '0' },
+          '100%': { transform: 'rotateX(0deg)', opacity: '1' },
+        },
+      },
+      animation: {
+        'flip-value': 'flip-value 400ms ease-in-out',
+      },
     },
   },
   plugins: [],

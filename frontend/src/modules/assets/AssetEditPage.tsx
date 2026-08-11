@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save, X, MapPin, Hash, Tag } from 'lucide-react'
+import { Save, X, MapPin, Hash, Tag, ClipboardCheck } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -47,6 +47,8 @@ type EditForm = {
   floors: string; constructionYear: string; buildingPurpose: string
   // Farm / property
   surfaceHa: string; locality: string; province: string
+  // Campo / Terreno
+  cadastralReference: string; landUse: string; irrigatedSurfaceHa: string; forestedSurfaceHa: string
   // Infrastructure
   infraType: string; infraCapacityTons: string; infraContent: string; technicalSpec: string
   // Common
@@ -60,6 +62,7 @@ const EMPTY_FORM: EditForm = {
   powerHp: '', cutWidth: '', tankCapacity: '', workWidth: '', implementType: '',
   surfaceM2: '', address: '', constructionType: '', floors: '', constructionYear: '', buildingPurpose: '',
   surfaceHa: '', locality: '', province: '',
+  cadastralReference: '', landUse: '', irrigatedSurfaceHa: '', forestedSurfaceHa: '',
   infraType: '', infraCapacityTons: '', infraContent: '', technicalSpec: '',
   productiveUnit: '', area: '', observations: '', mapsUrl: '',
 }
@@ -164,6 +167,8 @@ export default function AssetEditPage() {
   const [dischargeDate, setDischargeDate] = useState('')
   const [saleDate, setSaleDate] = useState('')
   const [reactivationDate, setReactivationDate] = useState('')
+  const [fireExtinguisherAuditable, setFireExtinguisherAuditable] = useState(false)
+  const [insuranceAuditable, setInsuranceAuditable] = useState(false)
   const [allocations, setAllocations] = useState<AssetAllocation[]>([
     { id: 'alloc-init', companyId: '', costCenterId: '', percentage: 100 },
   ])
@@ -214,6 +219,7 @@ export default function AssetEditPage() {
   const { data: siloContents = [] } = useQuery(catalogQueries.byCategory('asset_silo_content'))
   const { data: productiveUnits = [] } = useQuery(catalogQueries.byCategory('asset_productive_unit'))
   const { data: areas = [] } = useQuery(catalogQueries.byCategory('asset_area'))
+  const { data: landUses = [] } = useQuery(catalogQueries.byCategory('asset_land_use'))
 
   useEffect(() => {
     if (!asset) return
@@ -249,10 +255,14 @@ export default function AssetEditPage() {
       floors: str(meta.floors),
       constructionYear: str(meta.constructionYear),
       address: str(meta.address),
-      // Establecimiento
+      // Establecimiento / Campo-Terreno
       surfaceHa: str(meta.surfaceHa),
       province: str(meta.province),
       locality: str(meta.locality),
+      cadastralReference: str(meta.cadastralReference),
+      landUse: str(meta.landUse),
+      irrigatedSurfaceHa: str(meta.irrigatedSurfaceHa),
+      forestedSurfaceHa: str(meta.forestedSurfaceHa),
       // Infraestructura
       infraType: str(meta.infraType),
       infraCapacityTons: str(meta.infraCapacityTons),
@@ -276,6 +286,8 @@ export default function AssetEditPage() {
     setValuationDate(asset.valuationDate ?? '')
     setDischargeDate(asset.dischargeDate ?? '')
     setSaleDate(asset.saleDate ?? '')
+    setFireExtinguisherAuditable(asset.fireExtinguisherAuditable ?? false)
+    setInsuranceAuditable(asset.insuranceAuditable ?? false)
     if (asset.allocations && asset.allocations.length > 0) {
       setAllocations(asset.allocations)
     } else {
@@ -308,11 +320,20 @@ export default function AssetEditPage() {
   const isImplemento = assetCategory === 'implemento'
   const isEdificio = assetCategory === 'edificio'
   const isEstablecimiento = assetCategory === 'establecimiento'
+  const isCampoTerreno = assetCategory === 'campo_terreno'
   const isInfraestructura = assetCategory === 'infraestructura'
   // Solo la carga animal tiene especie/raza — la carga común no. Ambas sí
   // admiten Bien de Uso asociado.
   const isLivestock = assetCategory === 'carga_animal'
   const isEquipoMaq = ['equipo', 'maquinaria'].includes(assetCategory ?? '')
+  // Categorías elegibles para la futura auditoría de activos — las mismas
+  // que se excluyen de la auditoría de matafuegos (ver
+  // asset-type-classification.ts en el backend). "moto" queda afuera a
+  // propósito: no lleva matafuego, nunca va a entrar en ese circuito.
+  const isAuditableCategory = [
+    'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
+    'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',
+  ].includes(assetCategory ?? '')
   const isSiloInfra = isInfraestructura && form.infraType === 'Silo'
 
   // ── Early returns ──────────────────────────────────────────────────────────
@@ -453,6 +474,18 @@ export default function AssetEditPage() {
         }),
       }
     }
+    if (isCampoTerreno) {
+      return {
+        ...(num(form.surfaceHa) !== undefined && { surfaceHa: num(form.surfaceHa) }),
+        ...(opt(form.province) && { province: form.province }),
+        ...(opt(form.locality) && { locality: form.locality.trim() }),
+        ...(opt(form.address) && { address: form.address.trim() }),
+        ...(opt(form.cadastralReference) && { cadastralReference: form.cadastralReference.trim() }),
+        ...(opt(form.landUse) && { landUse: form.landUse }),
+        ...(num(form.irrigatedSurfaceHa) !== undefined && { irrigatedSurfaceHa: num(form.irrigatedSurfaceHa) }),
+        ...(num(form.forestedSurfaceHa) !== undefined && { forestedSurfaceHa: num(form.forestedSurfaceHa) }),
+      }
+    }
     if (isInfraestructura) {
       return {
         ...(opt(form.infraType) && { infraType: form.infraType }),
@@ -497,6 +530,8 @@ export default function AssetEditPage() {
           name: form.name.trim(),
           assetType: form.assetType.trim(),
           status: form.status,
+          fireExtinguisherAuditable,
+          insuranceAuditable,
           fixedAssetId: form.fixedAssetId?.trim() || undefined,
           brand: form.brand.trim() || undefined,
           model: form.model.trim() || undefined,
@@ -608,6 +643,46 @@ export default function AssetEditPage() {
               {form.status === 'activo' && asset.status !== 'activo' && (
                 <FormField label="Fecha de reactivación">
                   <FormInput type="date" value={reactivationDate} onChange={(e) => setReactivationDate(e.target.value)} />
+                </FormField>
+              )}
+              {isAuditableCategory && (
+                <FormField label="Auditorías" fullWidth>
+                  <div className="space-y-2.5">
+                    <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={fireExtinguisherAuditable}
+                        onChange={(e) => setFireExtinguisherAuditable(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                          <ClipboardCheck size={14} className="text-slate-400" />
+                          Incluir en Auditoría de Rodados
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Habilita este activo para la Auditoría de Rodados, que verifica el matafuego montado en el vehículo.
+                        </p>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={insuranceAuditable}
+                        onChange={(e) => setInsuranceAuditable(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                          <ClipboardCheck size={14} className="text-slate-400" />
+                          Incluir en Auditoría de Seguros
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Habilita este activo para la Auditoría de Seguros, que verifica la tarjeta de circulación.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
                 </FormField>
               )}
             </FormSection>
@@ -773,6 +848,44 @@ export default function AssetEditPage() {
                 </FormField>
                 <FormField label="Dirección / Ubicación" fullWidth>
                   <FormInput placeholder="Ej: Ruta Provincial 70 Km. 12" value={form.address} onChange={set('address')} />
+                </FormField>
+              </FormSection>
+            </SectionCard>
+          )}
+
+          {/* Campo / Terreno */}
+          {isCampoTerreno && (
+            <SectionCard title="Datos del campo/terreno" subtitle="Superficie, ubicación y uso — riego, forestación, etc.">
+              <FormSection title="">
+                <FormField label="Superficie total (ha)">
+                  <FormInput type="number" min={0} step="0.01" placeholder="Ej: 450" value={form.surfaceHa} onChange={set('surfaceHa')} />
+                </FormField>
+                <FormField label="Uso principal">
+                  <FormSelect value={form.landUse} onChange={set('landUse')}>
+                    <option value="">Seleccionar…</option>
+                    {landUses.map((u) => <option key={u.id} value={u.label}>{u.label}</option>)}
+                  </FormSelect>
+                </FormField>
+                <FormField label="Provincia">
+                  <FormSelect value={form.province} onChange={set('province')}>
+                    <option value="">Seleccionar…</option>
+                    {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </FormSelect>
+                </FormField>
+                <FormField label="Localidad / Partido">
+                  <FormInput placeholder="Ej: Trenque Lauquen" value={form.locality} onChange={set('locality')} />
+                </FormField>
+                <FormField label="Dirección / Paraje" fullWidth>
+                  <FormInput placeholder="Ej: Ruta Provincial 33 Km. 8" value={form.address} onChange={set('address')} />
+                </FormField>
+                <FormField label="Partida inmobiliaria / Nomenclatura catastral">
+                  <FormInput placeholder="Ej: Circ. II, Secc. B, Parc. 145" value={form.cadastralReference} onChange={set('cadastralReference')} />
+                </FormField>
+                <FormField label="Superficie bajo riego (ha)">
+                  <FormInput type="number" min={0} step="0.01" placeholder="Ej: 120" value={form.irrigatedSurfaceHa} onChange={set('irrigatedSurfaceHa')} />
+                </FormField>
+                <FormField label="Superficie forestada (ha)">
+                  <FormInput type="number" min={0} step="0.01" placeholder="Ej: 80" value={form.forestedSurfaceHa} onChange={set('forestedSurfaceHa')} />
                 </FormField>
               </FormSection>
             </SectionCard>
@@ -978,7 +1091,7 @@ export default function AssetEditPage() {
           </SectionCard>
 
           {/* 5. Ubicación y silos — solo para tipos con ubicación geográfica */}
-          {(isEdificio || isEstablecimiento || isInfraestructura) && (
+          {(isEdificio || isEstablecimiento || isCampoTerreno || isInfraestructura) && (
             <SectionCard
               title="Ubicación y silos"
               subtitle="Mapa del activo y registro de silos o celdas de almacenamiento."

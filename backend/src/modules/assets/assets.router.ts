@@ -19,7 +19,7 @@ export const assetsRouter = Router()
 assetsRouter.use(authMiddleware)
 
 // CRUD principal
-assetsRouter.get('/', requireModule('assets'), validateQuery(ListAssetsQuerySchema), assetsController.list)
+assetsRouter.get('/', requireModule('assets', 'renewal_projections', 'renewal_projections_economic'), validateQuery(ListAssetsQuerySchema), assetsController.list)
 assetsRouter.post(
   '/',
   requireModule('assets'),
@@ -34,6 +34,7 @@ assetsRouter.put(
   assetsController.update,
 )
 assetsRouter.delete('/:id', requireModule('assets'), assetsController.remove)
+assetsRouter.post('/:id/de-baja', requireModule('assets'), assetsController.markAsDeBaja)
 
 // Allocations
 assetsRouter.put(

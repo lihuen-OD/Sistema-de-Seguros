@@ -12,6 +12,8 @@ import {
   ListFireExtinguisherAuditsQuerySchema,
   CoverageQuerySchema,
   AuditDashboardQuerySchema,
+  AuditorProgressQuerySchema,
+  AddCommentSchema,
 } from './fire-extinguisher-audits.schemas'
 import { fireExtinguisherAuditsController } from './fire-extinguisher-audits.controller'
 
@@ -27,11 +29,31 @@ fireExtinguisherAuditsRouter.get('/', requireModule(...AUDITS_SHARED_READ_MODULE
 
 // Antes de "/:id" — si no, Express interpreta "coverage"/"findings-report" como un :id.
 fireExtinguisherAuditsRouter.get('/coverage', requireModule(...AUDITS_SHARED_READ_MODULES), validateQuery(CoverageQuerySchema), fireExtinguisherAuditsController.coverage)
+
+// Sección "Comentarios" de Cobertura — leer, agregar uno suelto, y marcar
+// como visto (mismo gate que coverage: auditor y revisor, ambos leen/escriben).
+fireExtinguisherAuditsRouter.get('/comments', requireModule(...AUDITS_SHARED_READ_MODULES), validateQuery(CoverageQuerySchema), fireExtinguisherAuditsController.comments)
+fireExtinguisherAuditsRouter.post('/comments', requireModule(...AUDITS_SHARED_READ_MODULES), validate(AddCommentSchema), fireExtinguisherAuditsController.addComment)
+fireExtinguisherAuditsRouter.post(
+  '/comments/:id/mark-seen',
+  requireModule(...AUDITS_SHARED_READ_MODULES),
+  fireExtinguisherAuditsController.markCommentSeen,
+)
 fireExtinguisherAuditsRouter.get(
   '/audit-dashboard',
   requireModule('fire_extinguisher_audits'),
   validateQuery(AuditDashboardQuerySchema),
   fireExtinguisherAuditsController.auditDashboard,
+)
+
+// Progreso por auditor — vista de revisor/admin sobre el trabajo de otros,
+// mismo gate que el dashboard general (no `_coverage`: un auditor no debe
+// ver el detalle de asignación/avance de sus compañeros).
+fireExtinguisherAuditsRouter.get(
+  '/auditor-progress',
+  requireModule('fire_extinguisher_audits'),
+  validateQuery(AuditorProgressQuerySchema),
+  fireExtinguisherAuditsController.auditorProgress,
 )
 
 fireExtinguisherAuditsRouter.post(

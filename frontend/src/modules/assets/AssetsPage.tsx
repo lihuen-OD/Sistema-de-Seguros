@@ -18,6 +18,9 @@ import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../sha
 import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
 import { companyQueries } from '../../shared/api/companies.api'
 import { costCenterQueries } from '../../shared/api/cost-centers.api'
+import { claimKeys } from '../../shared/api/claims.api'
+import { policyKeys } from '../../shared/api/policies.api'
+import { fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { ASSET_TYPES, ASSET_STATUS_LABELS } from '../../shared/constants'
@@ -35,24 +38,38 @@ export default function AssetsPage() {
   const [filterType, setFilterType] = useState<string[]>([])
   const [filterCompany, setFilterCompany] = useState<string[]>([])
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deBajaId, setDeBajaId] = useState<string | null>(null)
 
   const { data: allAssets = [], isLoading, isError } = useQuery(assetQueries.list())
   const { data: allCompanies = [] } = useQuery(companyQueries.list())
   const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
-  async function handleDelete(id: string) {
+  async function handleDeBaja(id: string) {
     await assetsApi.softDelete(id)
     queryClient.invalidateQueries({ queryKey: assetKeys.all })
+    setDeBajaId(null)
+  }
+
+  async function handleDelete(id: string) {
+    await assetsApi.hardDelete(id)
+    queryClient.invalidateQueries({ queryKey: assetKeys.all })
+    // Eliminar el activo desvincula (sin borrarlos) los siniestros, líneas de
+    // póliza y matafuegos que lo referenciaban — sin esto, esas pantallas
+    // seguían mostrando el vínculo viejo si ya estaban cacheadas.
+    queryClient.invalidateQueries({ queryKey: claimKeys.all })
+    queryClient.invalidateQueries({ queryKey: policyKeys.all })
+    queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
     setDeleteId(null)
   }
 
   const filtered = useMemo(() => {
     return allAssets.filter((a) => {
+      const q = search.trim().toLowerCase()
       const matchSearch =
-        !search ||
-        a.name.toLowerCase().includes(search.toLowerCase()) ||
-        a.internalCode.toLowerCase().includes(search.toLowerCase()) ||
-        a.brand.toLowerCase().includes(search.toLowerCase())
+        !q ||
+        [a.name, a.internalCode, a.brand, a.model, a.assetType, a.serialNumber, a.plate, a.chassisNumber, a.engineNumber]
+          .filter(Boolean)
+          .some((v) => v!.toLowerCase().includes(q))
       const matchStatus = filterStatus.length === 0 || filterStatus.includes(a.status)
       const matchType = filterType.length === 0 || filterType.includes(a.assetType)
       const matchCompany = filterCompany.length === 0 || filterCompany.includes(a.companyId)
@@ -368,16 +385,24 @@ export default function AssetsPage() {
             <Eye size={15} />
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            onClick={(e) => { e.stopPropagation(); setDeBajaId(row.id) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
             title="Dar de baja"
             aria-label="Dar de baja"
+          >
+            <Archive size={15} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            title="Eliminar activo"
+            aria-label="Eliminar activo"
           >
             <Trash2 size={15} />
           </button>
         </div>
       ),
-      className: 'w-20',
+      className: 'w-28',
     },
   ], [companyNameById, costCenterById, navigate])
 
@@ -413,7 +438,7 @@ export default function AssetsPage() {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder="Buscar por código, nombre o marca…"
+            placeholder="Buscar por código, nombre, marca, modelo, tipo, patente, chasis, motor o N° de serie…"
             className="w-full sm:w-72"
           />
           <MultiSelectFilter label="Estado" options={STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
@@ -453,11 +478,19 @@ export default function AssetsPage() {
       </SectionCard>
       <ConfirmDialog
         open={deleteId !== null}
-        title="Dar de baja"
-        description={`¿Dar de baja a "${allAssets.find((a) => a.id === deleteId)?.name ?? 'este activo'}"? El activo quedará inactivo y se registrará en el historial.`}
-        confirmLabel="Dar de baja"
+        title="Eliminar activo"
+        description={`¿Eliminar el activo "${allAssets.find((a) => a.id === deleteId)?.name ?? ''}" de forma permanente? Esta acción no se puede deshacer. Se van a eliminar sus imputaciones, historial de valuación, adjuntos y auditorías de seguros, y se va a desvincular (sin borrarlos) de los siniestros, matafuegos y líneas de póliza que lo referencian — esos registros quedan, pero sin este activo asociado.`}
+        confirmLabel="Eliminar definitivamente"
         onConfirm={() => deleteId && handleDelete(deleteId)}
         onCancel={() => setDeleteId(null)}
+      />
+      <ConfirmDialog
+        open={deBajaId !== null}
+        title="Dar de baja"
+        description={`¿Dar de baja a "${allAssets.find((a) => a.id === deBajaId)?.name ?? 'este activo'}"? El activo quedará inactivo y se registrará en el historial. Podés reactivarlo más adelante.`}
+        confirmLabel="Dar de baja"
+        onConfirm={() => deBajaId && handleDeBaja(deBajaId)}
+        onCancel={() => setDeBajaId(null)}
       />
     </PageContent>
   )

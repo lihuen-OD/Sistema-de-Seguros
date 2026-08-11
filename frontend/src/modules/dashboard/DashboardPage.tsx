@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import {
   Package, ShieldCheck, AlertTriangle, Clock,
-  FileText, Flame, TrendingUp, CheckCircle2, ArrowRight, X,
+  FileText, Flame, TrendingUp, CheckCircle2, ArrowRight, X, ArrowLeftRight,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -18,7 +18,7 @@ import { ChartCard } from '../../shared/components/cards/ChartCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
-import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils/format'
+import { formatCurrencyCompact, formatCurrencyInteger, formatDate, daysUntil } from '../../shared/utils/format'
 import { ASSET_TYPES } from '../../shared/constants'
 import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
@@ -27,7 +27,6 @@ import { fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api
 import { companyQueries } from '../../shared/api/companies.api'
 import { costCenterQueries } from '../../shared/api/cost-centers.api'
 import { producerQueries } from '../../shared/api/producers.api'
-import { dashboardQueries } from '../../shared/api/dashboard.api'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
@@ -40,6 +39,13 @@ export default function DashboardPage() {
   const [filterCompanies, setFilterCompanies] = useState<string[]>([])
   const [filterCostCenter, setFilterCostCenter] = useState('')
   const [filterAssetType, setFilterAssetType] = useState('')
+  const [costMode, setCostMode] = useState<'vencimientos' | 'facturacion'>('vencimientos')
+  const [costModeSpin, setCostModeSpin] = useState(0)
+
+  function toggleCostMode() {
+    setCostModeSpin((d) => d + 180)
+    setCostMode((m) => (m === 'vencimientos' ? 'facturacion' : 'vencimientos'))
+  }
 
   const activeFilterCount =
     Number(filterCompanies.length > 0) +
@@ -66,7 +72,6 @@ export default function DashboardPage() {
   const { data: allCompanies = [] } = useQuery(companyQueries.list())
   const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
   const { data: allProducers = [] } = useQuery(producerQueries.list())
-  const { data: charts } = useQuery(dashboardQueries.charts(new Date().getFullYear()))
 
   const taskQueries = useQueries({
     queries: allProducers.map((p) => producerQueries.tasks(p.id)),
@@ -385,26 +390,81 @@ export default function DashboardPage() {
   ]
 
   // ── Monthly cost trend ────────────────────────────────────────────
-  const filteredMonthlyData = useMemo(() => {
-    const currentYear = String(new Date().getFullYear())
-    const totals = Array.from({ length: 12 }, () => ({ costoArs: 0, costoUsd: 0 }))
+  // Único cálculo (antes había uno server-side para "sin filtros" y otro
+  // client-side para "con filtros" — desincronizados entre sí, ver
+  // investigación previa). Ahora siempre se calcula acá, con ratio 1 para
+  // todos los documentos cuando no hay filtros de alcance activos (mismo
+  // criterio que documentScopeRatioById).
+  function emptyMonthlyPoints() {
+    return MONTH_ABBR.map((mes) => ({ mes, arsPaid: 0, arsPending: 0, usdPaid: 0, usdPending: 0 }))
+  }
+  const isPaidStatus = (status: string) => status === 'PAID'
 
+  // Vencimientos: cada cuota cuenta en el mes de su propio vencimiento.
+  const costByDueDate = useMemo(() => {
+    const points = emptyMonthlyPoints()
+    const currentYear = String(new Date().getFullYear())
     for (const installment of allInstallments) {
       if (!installment.dueDate.startsWith(`${currentYear}-`)) continue
       const monthIndex = Number(installment.dueDate.slice(5, 7)) - 1
       if (monthIndex < 0 || monthIndex > 11) continue
-      totals[monthIndex].costoArs += installment.amountArs ?? 0
-      totals[monthIndex].costoUsd += installment.amountUsd ?? 0
+      const point = points[monthIndex]
+      if (isPaidStatus(installment.paymentStatus)) {
+        point.arsPaid += installment.amountArs ?? 0
+        point.usdPaid += installment.amountUsd ?? 0
+      } else {
+        point.arsPending += installment.amountArs ?? 0
+        point.usdPending += installment.amountUsd ?? 0
+      }
     }
-
-    return totals.map((total, monthIndex) => ({
-      mes: MONTH_ABBR[monthIndex],
-      ...total,
-    }))
+    return points
   }, [allInstallments])
-  const monthlyData = hasScopeFilters
-    ? filteredMonthlyData
-    : charts?.costEvolution ?? []
+
+  // Facturación: cada factura (documentType INVOICE — el único tipo con
+  // cuotas propias) cuenta entera en el mes de su propia emisión, repartida
+  // pagado/pendiente según sus cuotas. Si no tiene ninguna cuota cargada, se
+  // usa el total y el estado de pago del documento — así no queda invisible
+  // en este gráfico (a diferencia de sumar solo cuotas).
+  const costByIssueDate = useMemo(() => {
+    const points = emptyMonthlyPoints()
+    const currentYear = String(new Date().getFullYear())
+    for (const document of filteredFinancialDocs) {
+      if (document.documentType !== 'INVOICE') continue
+      if (!document.issueDate.startsWith(`${currentYear}-`)) continue
+      const monthIndex = Number(document.issueDate.slice(5, 7)) - 1
+      if (monthIndex < 0 || monthIndex > 11) continue
+      const ratio = documentScopeRatioById.get(document.id) ?? 0
+      if (ratio === 0) continue
+      const point = points[monthIndex]
+
+      if (document.installments.length > 0) {
+        for (const installment of document.installments) {
+          const ars = (installment.amountArs ?? 0) * ratio
+          const usd = (installment.amountUsd ?? 0) * ratio
+          if (isPaidStatus(installment.paymentStatus)) {
+            point.arsPaid += ars
+            point.usdPaid += usd
+          } else {
+            point.arsPending += ars
+            point.usdPending += usd
+          }
+        }
+      } else {
+        const ars = (document.totalAmountArs ?? 0) * ratio
+        const usd = (document.totalAmountUsd ?? 0) * ratio
+        if (isPaidStatus(document.paymentStatus)) {
+          point.arsPaid += ars
+          point.usdPaid += usd
+        } else {
+          point.arsPending += ars
+          point.usdPending += usd
+        }
+      }
+    }
+    return points
+  }, [filteredFinancialDocs, documentScopeRatioById])
+
+  const monthlyData = costMode === 'vencimientos' ? costByDueDate : costByIssueDate
 
   // ── Upcoming policy expirations ───────────────────────────────────
   const upcomingPolicies = filteredPolicies
@@ -503,16 +563,16 @@ export default function DashboardPage() {
       <MetricGrid cols={4} className="mb-5">
         <KpiCard
           label="Valor Patrimonial"
-          value={formatCurrencyCompact(totalPatrimonialUsd, 'USD')}
-          description={`${formatCurrencyCompact(totalPatrimonialArs, 'ARS')} · ${activeAssets.length} activos activos`}
+          currency={{ ars: totalPatrimonialArs, usd: totalPatrimonialUsd, primary: 'usd' }}
+          description={`${activeAssets.length} activos activos`}
           icon={Package}
           variant="info"
           onClick={() => navigate('/assets')}
         />
         <KpiCard
           label="Suma Asegurada"
-          value={formatCurrencyCompact(totalInsuredArs, 'ARS')}
-          description={`${formatCurrencyCompact(totalInsuredUsd, 'USD')} · ${vigentePolicies.length} pólizas vigentes`}
+          currency={{ ars: totalInsuredArs, usd: totalInsuredUsd, primary: 'ars' }}
+          description={`${vigentePolicies.length} pólizas vigentes`}
           icon={ShieldCheck}
           variant="success"
           onClick={() => navigate('/insurance/policies')}
@@ -527,8 +587,8 @@ export default function DashboardPage() {
         />
         <KpiCard
           label="Facturas Pendientes"
-          value={formatCurrencyCompact(pendingTotalArs, 'ARS')}
-          description={`${formatCurrencyCompact(pendingTotalUsd, 'USD')} · ${pendingDocs.length} documentos`}
+          currency={{ ars: pendingTotalArs, usd: pendingTotalUsd, primary: 'ars' }}
+          description={`${pendingDocs.length} documentos`}
           icon={FileText}
           variant={pendingDocs.length > 0 ? 'warning' : 'default'}
           onClick={() => navigate('/insurance/documents')}
@@ -539,8 +599,8 @@ export default function DashboardPage() {
       <MetricGrid cols={4} className="mb-6">
         <KpiCard
           label="Cuotas Pendientes"
-          value={formatCurrencyCompact(pendingInstallmentsTotalArs, 'ARS')}
-          description={`${formatCurrencyCompact(pendingInstallmentsTotalUsd, 'USD')} · ${pendingInstallments.length} cuotas`}
+          currency={{ ars: pendingInstallmentsTotalArs, usd: pendingInstallmentsTotalUsd, primary: 'ars' }}
+          description={`${pendingInstallments.length} cuotas`}
           icon={Clock}
           variant={pendingInstallments.length > 10 ? 'warning' : 'default'}
           onClick={() => navigate('/insurance/financial-analysis')}
@@ -576,7 +636,25 @@ export default function DashboardPage() {
         {/* Monthly cost */}
         <ChartCard
           title="Evolución de Costos"
-          subtitle="Facturación mensual — ARS y USD"
+          subtitle={
+            costMode === 'vencimientos'
+              ? 'Cuotas por fecha de vencimiento — ARS y USD'
+              : 'Facturas por fecha de emisión — ARS y USD'
+          }
+          actions={
+            <button
+              type="button"
+              onClick={toggleCostMode}
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-full px-3 py-1.5 transition-colors"
+            >
+              <ArrowLeftRight
+                size={12}
+                className="transition-transform duration-300"
+                style={{ transform: `rotate(${costModeSpin}deg)` }}
+              />
+              Ver por {costMode === 'vencimientos' ? 'facturación' : 'vencimiento'}
+            </button>
+          }
           className="lg:col-span-2"
           height={260}
         >
@@ -591,15 +669,14 @@ export default function DashboardPage() {
                 tickFormatter={(v) => `${(v / 1_000_000).toFixed(1)}M`}
               />
               <Tooltip
-                formatter={(v: number, name: string) => [
-                  `${name === 'costoUsd' ? 'US$' : 'AR$'} ${(v / 1_000_000).toFixed(2).replace('.', ',')}M`,
-                  name === 'costoUsd' ? 'Costo USD' : 'Costo ARS',
-                ]}
+                formatter={(v: number, name: string) => [formatCurrencyInteger(v, name.includes('USD') ? 'USD' : 'ARS'), name]}
                 contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-              <Bar dataKey="costoArs" name="ARS" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="costoUsd" name="USD" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="arsPaid" stackId="ars" name="ARS pagado" fill="#1d4ed8" />
+              <Bar dataKey="arsPending" stackId="ars" name="ARS pendiente" fill="#93c5fd" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="usdPaid" stackId="usd" name="USD pagado" fill="#047857" />
+              <Bar dataKey="usdPending" stackId="usd" name="USD pendiente" fill="#6ee7b7" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>

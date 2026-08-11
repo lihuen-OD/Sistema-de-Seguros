@@ -23,7 +23,6 @@ import { policyQueries } from '../../../shared/api/policies.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
-import { ExchangeRateBar } from '../../../shared/components/exchange-rate/ExchangeRateBar'
 import { resolveDocumentPaymentMethod } from '../../../shared/utils/documentPaymentMethod'
 import type { Currency, Policy, Asset, Company, CostCenter, AccountingDocument, DocumentPolicyAllocation } from '../../../shared/types'
 
@@ -651,10 +650,6 @@ export default function EconomicAnalysisPage() {
         title="Análisis Económico"
         subtitle="Costos por fecha de factura/documento"
       />
-
-      <div className="mb-5">
-        <ExchangeRateBar />
-      </div>
 
       {/* Controls */}
       <div className="space-y-3 mb-6">

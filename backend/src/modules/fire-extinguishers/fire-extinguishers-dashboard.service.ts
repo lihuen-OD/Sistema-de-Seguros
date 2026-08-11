@@ -1,6 +1,7 @@
 import { prisma } from '../../config/database'
 import { currentYearMonth } from '../../shared/utils/dates'
 import { computeFireExtinguisherStatus, buildFireExtinguisherStatusFilter } from './fire-extinguishers.expiration'
+import { classifyAssetType } from './asset-type-classification'
 import { catalogsService } from '../catalogs/catalogs.service'
 
 interface StatusBucket {
@@ -17,43 +18,6 @@ interface LocationTypeBucket extends StatusBucket {
 
 function emptyBucket(): StatusBucket {
   return { total: 0, vigente: 0, proximo_vencer: 0, vencido: 0, sin_fecha: 0 }
-}
-
-// ── Cobertura de matafuegos en Vehículos y Maquinaria ───────────────────────────
-// `assetType` es un string libre (ver ASSET_TYPES en el frontend), sin enum ni
-// catálogo en el backend — se normaliza (sin acentos, sin espacios/guiones) para
-// reconocer tanto las etiquetas canónicas ("Vehículo", "Implemento agrícola")
-// como valores legacy cargados antes de existir el catálogo de categorías
-// ("vehiculo", "maquinaria_agricola"). "Maquinaria" incluye toda la maquinaria
-// agrícola (tractor, cosechadora, pulverizadora, implemento), no solo el tipo
-// literal "Maquinaria" — es como se agrupan en CATEGORY_GROUPS del frontend.
-// "moto" queda afuera a propósito: las motos no llevan matafuego, así que no
-// corresponde que aparezcan acá como "sin matafuego".
-const VEHICLE_TYPE_KEYS = new Set(['vehiculo', 'camioneta', 'camion', 'transportedepasajeros'])
-const MACHINERY_TYPE_KEYS = new Set([
-  'maquinaria',
-  'maquinariaagricola',
-  'tractor',
-  'cosechadora',
-  'pulverizadora',
-  'implemento',
-  'implementoagricola',
-])
-
-const ASSET_TYPE_ACCENTS: Record<string, string> = { á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u', ü: 'u', ñ: 'n' }
-
-function normalizeAssetType(assetType: string): string {
-  const lower = assetType.toLowerCase()
-  let result = ''
-  for (const ch of lower) result += ASSET_TYPE_ACCENTS[ch] ?? ch
-  return result.replace(/[^a-z0-9]/g, '')
-}
-
-function classifyAssetType(assetType: string): 'vehiculo' | 'maquinaria' | null {
-  const normalized = normalizeAssetType(assetType)
-  if (VEHICLE_TYPE_KEYS.has(normalized)) return 'vehiculo'
-  if (MACHINERY_TYPE_KEYS.has(normalized)) return 'maquinaria'
-  return null
 }
 
 interface VehicleMachineryItem {
@@ -126,8 +90,13 @@ export const fireExtinguishersDashboardService = {
         where: { isActive: true },
         orderBy: { _count: { type: 'desc' } },
       }),
+      // Sin filtrar por status — mismo criterio que getCoverage()/getAuditDashboard()
+      // en fire-extinguisher-audits.service.ts: un matafuego con solo una
+      // auditoría RECHAZADA todavía sin recorregir cuenta como "auditado este
+      // período" acá también, igual que ya contaba si esa auditoría estaba en
+      // NEEDS_CORRECTION.
       prisma.fireExtinguisherAudit.findMany({
-        where: { auditPeriod: currentPeriod, status: { not: 'REJECTED' } },
+        where: { auditPeriod: currentPeriod },
         select: { fireExtinguisherId: true },
         distinct: ['fireExtinguisherId'],
       }),
@@ -183,9 +152,6 @@ export const fireExtinguishersDashboardService = {
 
     const byType = byTypeRaw.map((row) => ({ type: row.type, count: row._count._all }))
 
-    const auditedThisPeriod = auditedRows.length
-    const coveragePercent = totalActive > 0 ? Math.round((auditedThisPeriod / totalActive) * 100) : 0
-
     const recentAudits = recentAuditsRaw.map((a) => ({
       id: a.id,
       extinguisherCode: a.extinguisher.code,
@@ -195,11 +161,18 @@ export const fireExtinguishersDashboardService = {
       createdAt: a.createdAt,
     }))
 
+    // Matafuegos vinculados a un vehículo/maquinaria — excluidos de la
+    // auditoría de matafuegos (no de este dashboard: `totals.total` sigue
+    // siendo TODO activo, sin filtrar). Se derivan de vehicleMachineryAssets
+    // en vez de agregar una query nueva.
+    const excludedFeIds = new Set<string>()
     const vehiculos = emptyVehicleMachineryGroup()
     const maquinaria = emptyVehicleMachineryGroup()
     for (const asset of vehicleMachineryAssets) {
       const category = classifyAssetType(asset.assetType)
       if (!category) continue
+
+      for (const fe of asset.fireExtinguishers) excludedFeIds.add(fe.id)
 
       const group = category === 'vehiculo' ? vehiculos : maquinaria
       const fireExtinguishers = asset.fireExtinguishers.map((fe) => ({
@@ -222,6 +195,11 @@ export const fireExtinguishersDashboardService = {
     vehiculos.items = sortVehicleMachineryItems(vehiculos.items)
     maquinaria.items = sortVehicleMachineryItems(maquinaria.items)
 
+    const auditApplicableActive = Math.max(0, totalActive - excludedFeIds.size)
+    const auditedThisPeriod = auditedRows.filter((r) => !excludedFeIds.has(r.fireExtinguisherId)).length
+    const coveragePercent =
+      auditApplicableActive > 0 ? Math.round((auditedThisPeriod / auditApplicableActive) * 100) : 0
+
     return {
       totals: {
         total: totalActive,
@@ -234,7 +212,7 @@ export const fireExtinguishersDashboardService = {
       byType,
       audits: {
         currentPeriod,
-        totalActive,
+        totalActive: auditApplicableActive,
         auditedThisPeriod,
         coveragePercent,
         pendingReview,

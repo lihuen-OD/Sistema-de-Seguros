@@ -8,6 +8,7 @@ export interface NotificationsPreview {
   overdueInstallments: number
   nearInstallments: number
   expiringAttachments: number
+  pendingCardUpdates: number
   hasAlerts: boolean
 }
 
@@ -19,6 +20,7 @@ export type NotificationCategory =
   | 'installment_overdue'
   | 'installment_near'
   | 'asset_attachment'
+  | 'insurance_card_pending'
 
 // Mismo mapeo que CATEGORY_MODULE en el backend (notifications.service.ts) —
 // acá es solo para no ofrecer, como opción de filtro, una categoría de un
@@ -30,6 +32,7 @@ export const NOTIFICATION_CATEGORY_MODULE: Record<NotificationCategory, ModuleKe
   installment_overdue: 'documents',
   installment_near: 'documents',
   asset_attachment: 'assets',
+  insurance_card_pending: 'insurance_audits',
 }
 
 export interface NotificationItem {
@@ -39,7 +42,7 @@ export interface NotificationItem {
   title: string
   subtitle: string | null
   dueDate: string
-  entityType: 'Policy' | 'FireExtinguisher' | 'AccountingDocument' | 'Asset'
+  entityType: 'Policy' | 'FireExtinguisher' | 'AccountingDocument' | 'Asset' | 'InsuranceAudit'
   entityId: string
   reviewed: boolean
 }

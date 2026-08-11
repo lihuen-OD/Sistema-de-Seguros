@@ -24,6 +24,14 @@ const PROFILES = [
   { name: 'Siniestros', modules: ['claims'] },
   { name: 'Auditor de Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audit_coverage'] },
   { name: 'Revisor de Auditorías de Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits'] },
+  // "Auditoría de Activos" audita los matafuegos montados en vehículos/
+  // maquinaria (reutiliza fire-extinguisher-audits.service.ts con
+  // population: 'ASSET') — por eso necesita el módulo `fire_extinguishers`
+  // (ficha del matafuego), no `assets`.
+  { name: 'Auditor de Activos', modules: ['fire_extinguishers', 'asset_audit_coverage'] },
+  { name: 'Revisor de Auditorías de Activos', modules: ['fire_extinguishers', 'asset_audits', 'asset_audit_dashboard'] },
+  { name: 'Auditor de Seguros', modules: ['assets', 'insurance_audit_coverage'] },
+  { name: 'Revisor de Auditorías de Seguros', modules: ['assets', 'insurance_audits', 'insurance_audit_dashboard'] },
 ]
 
 async function main() {

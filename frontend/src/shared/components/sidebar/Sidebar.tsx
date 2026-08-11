@@ -6,6 +6,7 @@ import {
   FileText,
   BarChart2,
   TrendingUp,
+  CalendarClock,
   Users,
   Flame,
   Building2,
@@ -24,6 +25,7 @@ import {
   Bell,
   UserCog,
   KeyRound,
+  Tractor,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useCurrentUser } from '../../../app/auth/AuthContext'
@@ -37,6 +39,8 @@ interface NavItem {
   label: string
   to: string
   icon: React.ElementType
+  /** Ítem hijo visual (indentado, ícono más chico) — hoy solo lo usa Proyección de Renovaciones. */
+  isChild?: boolean
 }
 
 interface NavGroup {
@@ -63,7 +67,21 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Matafuegos', to: '/fire-extinguishers', icon: Flame },
       { label: 'Auditoría de Matafuegos', to: '/fire-extinguishers/audits', icon: ClipboardCheck },
+      // Audita matafuegos montados en vehículos/maquinaria (no el vehículo en
+      // sí) — mismo motor que "Auditoría de Matafuegos", por eso vive en este
+      // mismo grupo en vez de tener su propia sección, junto al otro ítem de
+      // auditoría. Sin ítem de dashboard propio: el informe se ve desde el
+      // botón "Ver informe de auditoría" dentro de la pantalla, igual que en
+      // Matafuegos.
+      { label: 'Auditoría de Rodados', to: '/asset-audits', icon: Tractor },
       { label: 'Dashboard de Matafuegos', to: '/fire-extinguishers/dashboard', icon: BarChart3 },
+    ],
+  },
+  {
+    label: 'Auditoría de Seguros',
+    items: [
+      { label: 'Auditorías', to: '/insurance-audits', icon: ClipboardCheck },
+      { label: 'Dashboard de Auditoría', to: '/insurance-audits/dashboard', icon: BarChart3 },
     ],
   },
   {
@@ -73,7 +91,12 @@ const navGroups: NavGroup[] = [
       { label: 'Documentos', to: '/insurance/documents', icon: FileText },
       { label: 'Siniestros', to: '/claims', icon: ShieldAlert },
       { label: 'Análisis Financiero', to: '/insurance/financial-analysis', icon: BarChart2 },
+      // Dos páginas separadas, cada una hija de su propio análisis — calculan
+      // lo real por cuota (Financiero) y por documento (Económico), así que
+      // NUNCA comparten route ni overrides (ver useRenewalProjectionData).
+      { label: 'Proyección de Renovaciones', to: '/insurance/financial-analysis/renewal-projections', icon: CalendarClock, isChild: true },
       { label: 'Análisis Económico', to: '/insurance/economic-analysis', icon: TrendingUp },
+      { label: 'Proyección de Renovaciones', to: '/insurance/economic-analysis/renewal-projections', icon: CalendarClock, isChild: true },
       { label: 'Dashboard de Seguros', to: '/insurance/dashboard', icon: Gauge },
     ],
   },
@@ -161,22 +184,23 @@ export function Sidebar({ onClose }: SidebarProps) {
               {group.label}
             </p>
             <ul className="space-y-0.5">
-              {group.items.map((item) => {
+              {group.items.map((item, itemIndex) => {
                 const Icon = item.icon
                 const isActive = item.to === activeTo
                 return (
-                  <li key={item.to}>
+                  <li key={`${item.to}-${itemIndex}`}>
                     <NavLink
                       to={item.to}
                       onClick={onClose}
                       className={clsx(
-                        'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150',
+                        'flex items-center gap-2.5 rounded-lg text-sm font-medium transition-all duration-150',
+                        item.isChild ? 'ml-3 pl-2.5 pr-2 py-1.5 border-l-2' : 'px-3 py-2',
                         isActive
-                          ? 'bg-brand-600 text-white'
-                          : 'text-slate-400 hover:text-slate-100 hover:bg-brand-800',
+                          ? clsx('bg-brand-600 text-white', item.isChild && 'border-brand-400')
+                          : clsx('text-slate-400 hover:text-slate-100 hover:bg-brand-800', item.isChild && 'border-brand-800'),
                       )}
                     >
-                      <Icon size={16} className="flex-shrink-0" />
+                      <Icon size={item.isChild ? 14 : 16} className="flex-shrink-0" />
                       <span className="truncate">{item.label}</span>
                     </NavLink>
                   </li>

@@ -9,9 +9,11 @@ export type Role = 'ADMIN' | 'USER'
 export const MODULE_KEYS = [
   'dashboard',
   'assets',
-  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'insurance_dashboard',
+  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
+  'asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard',
+  'insurance_audits', 'insurance_audit_coverage', 'insurance_audit_dashboard',
   'producers', 'tasks',
   'companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config',
 ] as const
@@ -25,12 +27,20 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   documents: 'Documentos',
   financial_analysis: 'Análisis Financiero',
   economic_analysis: 'Análisis Económico',
+  renewal_projections: 'Proyección de Renovaciones (Financiero)',
+  renewal_projections_economic: 'Proyección de Renovaciones (Económico)',
   insurance_dashboard: 'Dashboard de Seguros',
   claims: 'Siniestros',
   fire_extinguishers: 'Matafuegos',
   fire_extinguisher_audits: 'Auditoría de Matafuegos',
   fire_extinguisher_audit_coverage: 'Cobertura de Matafuegos',
   fire_extinguisher_dashboard: 'Dashboard de Matafuegos',
+  asset_audits: 'Auditoría de Rodados',
+  asset_audit_coverage: 'Cobertura de Auditoría de Rodados',
+  asset_audit_dashboard: 'Dashboard de Auditoría de Rodados',
+  insurance_audits: 'Auditoría de Seguros',
+  insurance_audit_coverage: 'Cobertura de Auditoría de Seguros',
+  insurance_audit_dashboard: 'Dashboard de Auditoría de Seguros',
   producers: 'Productores',
   tasks: 'Tareas',
   companies: 'Empresas',
@@ -50,11 +60,26 @@ export interface ModuleGroup {
 export const MODULE_GROUPS: ModuleGroup[] = [
   { label: 'Principal', modules: ['dashboard'] },
   { label: 'Patrimonio', modules: ['assets'] },
-  { label: 'Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard'] },
-  { label: 'Seguros', modules: ['policies', 'documents', 'financial_analysis', 'economic_analysis', 'insurance_dashboard', 'claims'] },
+  // "Auditoría de Rodados" (matafuegos montados en vehículos/maquinaria) vive
+  // en este mismo grupo — mismo motor que "Auditoría de Matafuegos", mismo
+  // criterio que el sidebar (ver Sidebar.tsx).
+  { label: 'Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard', 'asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard'] },
+  { label: 'Auditoría de Seguros', modules: ['insurance_audits', 'insurance_audit_coverage', 'insurance_audit_dashboard'] },
+  { label: 'Seguros', modules: ['policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard', 'claims'] },
   { label: 'Operaciones', modules: ['producers', 'tasks'] },
   { label: 'Configuración', modules: ['companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config'] },
 ]
+
+// ─── Alcance de auditoría ──────────────────────────────────────────────────────
+// Mismo listado que el backend (backend/src/shared/types/index.ts) — duplicado
+// a propósito, igual que MODULE_KEYS.
+export const AUDIT_SCOPE_AREAS = ['FIRE_EXTINGUISHER_AUDIT', 'ASSET_AUDIT', 'INSURANCE_AUDIT'] as const
+export type AuditScopeArea = typeof AUDIT_SCOPE_AREAS[number]
+
+export interface UserAuditScopeItem {
+  area: AuditScopeArea
+  scopeValue: string
+}
 
 // ─── Status types ────────────────────────────────────────────────────────────
 
@@ -164,9 +189,18 @@ export interface ClaimEvent {
 export type AssetCategory =
   | 'vehiculo' | 'camioneta' | 'camion' | 'moto' | 'transporte_pasajeros'
   | 'tractor' | 'cosechadora' | 'pulverizadora' | 'implemento'
-  | 'edificio' | 'establecimiento'
+  | 'edificio' | 'establecimiento' | 'campo_terreno'
   | 'equipo' | 'maquinaria' | 'infraestructura'
   | 'carga_animal' | 'carga_comun'
+
+// Subconjunto de AssetCategory habilitado para Asset.fireExtinguisherAuditable/
+// insuranceAuditable (ver IS_AUDITABLE_CATEGORY en modules/assets/AssetNewPage.tsx)
+// — mismo listado que AUDITABLE_ASSET_CATEGORIES del backend, usado como
+// scopeValue en UserAuditScope para las áreas ASSET_AUDIT/INSURANCE_AUDIT.
+export const AUDITABLE_ASSET_CATEGORIES: AssetCategory[] = [
+  'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
+  'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',
+]
 
 export type Currency = 'ARS' | 'USD'
 
@@ -281,6 +315,10 @@ export interface Asset {
   attachmentsCount?: number
   dischargeDate?: string | null
   saleDate?: string | null
+  /** Habilita el activo para la Auditoría de Rodados (matafuego montado en el vehículo) */
+  fireExtinguisherAuditable: boolean
+  /** Habilita el activo para la Auditoría de Seguros (tarjeta de circulación) */
+  insuranceAuditable: boolean
   createdAt: string
   updatedAt: string
 }
@@ -317,8 +355,9 @@ export interface PolicyAsset {
   assetType: string
   fixedAssetCode?: string | null
   fixedAssetName?: string | null
-  costCenterName?: string | null
-  costCenterCode?: string | null
+  // Centro(s) de costo del activo (no de la línea de cobertura) — un activo
+  // puede repartirse entre varios por %, ver Asset.allocations.
+  costCenters?: { name: string; code: string | null; percentage: number }[]
 }
 
 // Línea de cobertura dentro de una póliza — un activo (o ninguno, "sin
@@ -555,6 +594,10 @@ export interface FireExtinguisher {
   observations: string
   createdAt: string
   updatedAt: string
+  // Poblado solo cuando associatedAssetId apunta a un vehículo/maquinaria
+  // (ver fire-extinguishers.service.ts#findById) — usado por Auditoría de
+  // Activos para mostrar a qué activo pertenece este matafuego.
+  asset?: { id: string; name: string; assetType: string; code: string | null } | null
 }
 
 export interface AssetStatusHistory {
@@ -691,11 +734,16 @@ export interface SelectOption {
   label: string
 }
 
+// Valor de celda para export a Excel/CSV — un número/boolean/Date real (no
+// una representación en texto) para que exceljs pueda darle formato numérico
+// de verdad (ver TableColumn.numeric / ExportPresetsButton.doExport).
+export type ExportCell = string | number | boolean | Date | null
+
 export interface TableColumn<T> {
   key: keyof T | string
   label: string
   render?: (value: unknown, row: T) => React.ReactNode
-  exportValue?: (row: T) => string  // plain string for CSV export; fallback: String(row[key])
+  exportValue?: (row: T) => ExportCell  // valor de celda para export; fallback: row[key] tal cual (o String(row[key]) si no es un primitivo exportable)
   sortValue?: (row: T) => string | number | null | undefined  // valor real para ordenar; fallback: row[key]
   className?: string
   headerClassName?: string
@@ -703,6 +751,10 @@ export interface TableColumn<T> {
   id?: string           // stable ID for column config (defaults to String(key))
   defaultVisible?: boolean  // shown by default when no saved config (default: true)
   hideable?: boolean    // can be hidden by user (default: true; set false for actions col)
+  // Da formato numérico (alineado a la derecha, separador de miles) a la
+  // columna en el .xlsx exportado — ver ExportPresetsButton.doExport. Sin
+  // esto el valor sale como texto plano y no se puede sumar/pivotear en Excel.
+  numeric?: boolean
 }
 
 export interface ExportPreset {

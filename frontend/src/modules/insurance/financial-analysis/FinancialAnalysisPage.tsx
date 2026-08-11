@@ -23,7 +23,6 @@ import { policyQueries } from '../../../shared/api/policies.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
-import { ExchangeRateBar } from '../../../shared/components/exchange-rate/ExchangeRateBar'
 import {
   normalizePaymentMethod,
   resolveDocumentPaymentMethod,
@@ -139,15 +138,18 @@ function getRows(
 
 interface CellData { paid: number; pending: number }
 type MatrixData = Map<string, Map<string, CellData>>
-type PaymentMethodMatrix = Map<string, Map<string, Map<string, number>>>
+type PaymentMethodMatrix = Map<string, Map<string, Map<string, CellData>>>
 
 interface FinancialMatrixResult {
   matrix: MatrixData
   paymentMethods: PaymentMethodMatrix
 }
 
+// Siempre por fecha de vencimiento, esté pagada o no — el Análisis
+// Financiero quiere ver cada cuota en el período que le correspondía vencer,
+// no en el período en que se terminó pagando.
 function getInstallmentEffectiveDate(inst: Installment): string {
-  return inst.paymentStatus === 'PAID' ? (inst.paidAt ?? inst.dueDate) : inst.dueDate
+  return inst.dueDate
 }
 
 function buildMatrixData(
@@ -175,13 +177,11 @@ function buildMatrixData(
       : effectiveDate.substring(0, 7)
     const amount = pickAmount(inst, displayCurrency)
     const isPaid = inst.paymentStatus === 'PAID'
-    const paymentMethod = isPaid
-      ? (
-          normalizePaymentMethod(inst.paymentMethod)
-          || documentPaymentMethods.get(inst.accountingDocumentId)
-          || 'Sin especificar'
-        )
-      : 'Pendiente'
+    const paymentMethod = (
+      normalizePaymentMethod(inst.paymentMethod)
+      || documentPaymentMethods.get(inst.accountingDocumentId)
+      || 'Sin especificar'
+    )
     const contexts = allocationContexts.get(inst.accountingDocumentId) ?? []
 
     // Se acumula una vez POR LÍNEA DE ASIGNACIÓN (no por fila deduplicada) —
@@ -212,7 +212,10 @@ function buildMatrixData(
         const companyMethods = paymentMethods.get(rowId)!
         if (!companyMethods.has(paymentMethod)) companyMethods.set(paymentMethod, new Map())
         const methodPeriods = companyMethods.get(paymentMethod)!
-        methodPeriods.set(key, (methodPeriods.get(key) ?? 0) + splitAmount)
+        const methodCell = methodPeriods.get(key) ?? { paid: 0, pending: 0 }
+        if (isPaid) methodCell.paid += splitAmount
+        else methodCell.pending += splitAmount
+        methodPeriods.set(key, methodCell)
       }
     })
   })
@@ -388,30 +391,45 @@ export default function FinancialAnalysisPage() {
     return { paid, pending }
   }
 
-  function getCompanyPaymentAmount(companyId: string, paymentMethod: string, colKey: string): number {
+  function getCompanyPaymentAmount(companyId: string, paymentMethod: string, colKey: string): CellData {
     const methodPeriods = companyPaymentMatrix.get(companyId)?.get(paymentMethod)
-    if (!methodPeriods) return 0
-    if (colPeriod === 'mes' || colPeriod === 'semana') return methodPeriods.get(colKey) ?? 0
+    if (!methodPeriods) return { paid: 0, pending: 0 }
+    if (colPeriod === 'mes' || colPeriod === 'semana') {
+      return methodPeriods.get(colKey) ?? { paid: 0, pending: 0 }
+    }
     const quarter = quarters.find((q) => q.key === colKey)
-    return quarter?.months.reduce((sum, month) => sum + (methodPeriods.get(month) ?? 0), 0) ?? 0
+    return quarter?.months.reduce<CellData>((total, month) => {
+      const cell = methodPeriods.get(month)
+      if (cell) {
+        total.paid += cell.paid
+        total.pending += cell.pending
+      }
+      return total
+    }, { paid: 0, pending: 0 }) ?? { paid: 0, pending: 0 }
   }
 
   function getCompanyPaymentMethods(companyId: string): string[] {
     const methods = [...(companyPaymentMatrix.get(companyId)?.keys() ?? [])]
-      .filter((method) => columns.some((col) => getCompanyPaymentAmount(companyId, method, col.key) !== 0))
+      .filter((method) => columns.some((col) => {
+        const cell = getCompanyPaymentAmount(companyId, method, col.key)
+        return cell.paid !== 0 || cell.pending !== 0
+      }))
     return methods.sort((a, b) => {
-      if (a === 'Pendiente') return 1
-      if (b === 'Pendiente') return -1
       if (a === 'Sin especificar') return 1
       if (b === 'Sin especificar') return -1
       return a.localeCompare(b, 'es')
     })
   }
 
-  function getCompanyPaymentTotal(companyId: string, paymentMethod: string): number {
+  function getCompanyPaymentTotal(companyId: string, paymentMethod: string): CellData {
     return columns.reduce(
-      (sum, col) => sum + getCompanyPaymentAmount(companyId, paymentMethod, col.key),
-      0,
+      (total, col) => {
+        const cell = getCompanyPaymentAmount(companyId, paymentMethod, col.key)
+        total.paid += cell.paid
+        total.pending += cell.pending
+        return total
+      },
+      { paid: 0, pending: 0 },
     )
   }
 
@@ -458,8 +476,14 @@ export default function FinancialAnalysisPage() {
           dataRows.push([
             row.label,
             method,
-            ...columns.map((col) => getCompanyPaymentAmount(row.id, method, col.key)),
-            getCompanyPaymentTotal(row.id, method),
+            ...columns.map((col) => {
+              const cell = getCompanyPaymentAmount(row.id, method, col.key)
+              return cell.paid + cell.pending
+            }),
+            (() => {
+              const total = getCompanyPaymentTotal(row.id, method)
+              return total.paid + total.pending
+            })(),
           ])
         })
         totalRowIndexes.push(dataRows.length + 1)
@@ -535,12 +559,16 @@ export default function FinancialAnalysisPage() {
       if (grouping === 'empresa') {
         rows.forEach((row) => {
           getCompanyPaymentMethods(row.id).forEach((method) => {
+            const methodTotal = getCompanyPaymentTotal(row.id, method)
             pdfRows.push({
               cells: [
                 row.label,
                 method,
-                ...columns.map((col) => fmtNumber(getCompanyPaymentAmount(row.id, method, col.key))),
-                fmtNumber(getCompanyPaymentTotal(row.id, method)),
+                ...columns.map((col) => {
+                  const cell = getCompanyPaymentAmount(row.id, method, col.key)
+                  return fmtNumber(cell.paid + cell.pending)
+                }),
+                fmtNumber(methodTotal.paid + methodTotal.pending),
               ],
             })
           })
@@ -645,10 +673,6 @@ export default function FinancialAnalysisPage() {
         title="Análisis Financiero"
         subtitle="Flujo de cuotas y vencimientos por período"
       />
-
-      <div className="mb-5">
-        <ExchangeRateBar />
-      </div>
 
       {/* Controls */}
       <div className="space-y-3 mb-6">
@@ -859,7 +883,6 @@ export default function FinancialAnalysisPage() {
                 const rowTotals = getRowTotals(row.id)
                 const detailRows = methods.map((method, index) => {
                   const methodTotal = getCompanyPaymentTotal(row.id, method)
-                  const isPending = method === 'Pendiente'
                   return (
                     <tr key={`${row.id}-${method}`}>
                       {index === 0 && (
@@ -873,29 +896,43 @@ export default function FinancialAnalysisPage() {
                           </span>
                         </td>
                       )}
-                      <td className={`text-xs font-medium ${isPending ? 'text-red-600' : 'text-slate-700'}`}>
+                      <td className="text-xs font-medium text-slate-700">
                         {method}
                       </td>
                       {columns.map((col) => {
-                        const amount = getCompanyPaymentAmount(row.id, method, col.key)
+                        const cell = getCompanyPaymentAmount(row.id, method, col.key)
+                        const hasPaid = cell.paid !== 0
+                        const hasPending = cell.pending !== 0
                         return (
-                          <td key={col.key} className="text-right tabular-nums">
-                            {amount !== 0 ? (
-                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                                isPending ? 'text-red-600 bg-red-50' : 'text-emerald-700 bg-emerald-50'
-                              }`}>
-                                {fmtCell(amount)}
-                              </span>
+                          <td key={col.key} className="text-right align-top p-0 tabular-nums">
+                            {hasPaid || hasPending ? (
+                              <div className="flex flex-col gap-px py-2 px-3">
+                                {hasPaid && (
+                                  <span className="text-xs font-medium text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5">
+                                    {fmtCell(cell.paid)}
+                                  </span>
+                                )}
+                                {hasPending && (
+                                  <span className="text-xs font-medium text-red-600 bg-red-50 rounded px-1.5 py-0.5">
+                                    {fmtCell(cell.pending)}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-slate-300 text-xs">—</span>
                             )}
                           </td>
                         )
                       })}
-                      <td className="text-right bg-slate-50/80 tabular-nums">
-                        <span className={`text-xs font-semibold ${isPending ? 'text-red-600' : 'text-slate-800'}`}>
-                          {fmtCell(methodTotal)}
-                        </span>
+                      <td className="text-right bg-slate-50/80 align-top p-0 tabular-nums">
+                        <div className="flex flex-col gap-px py-2 px-3">
+                          {methodTotal.paid !== 0 && (
+                            <span className="text-xs font-semibold text-emerald-700">{fmtCell(methodTotal.paid)}</span>
+                          )}
+                          {methodTotal.pending !== 0 && (
+                            <span className="text-xs font-semibold text-red-600">{fmtCell(methodTotal.pending)}</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

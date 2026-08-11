@@ -207,6 +207,37 @@ describe('GET /api/v1/fire-extinguishers/dashboard/summary', () => {
     })
   })
 
+  it('excludes vehicle/machinery-linked units from audit coverage, but keeps them in totals.total', async () => {
+    db.fireExtinguisher.count.mockResolvedValueOnce(5) // total activo, sin filtrar
+    // Un Tractor con 2 matafuegos vinculados — deben restarse del denominador
+    // de auditoría, pero no de totals.total (regla: no tocar el módulo
+    // principal de Matafuegos).
+    db.asset.findMany.mockResolvedValue([
+      {
+        id: 'a1', code: 'MAQ-001', name: 'Tractor John Deere', assetType: 'Tractor',
+        fireExtinguishers: [
+          { id: 'fe-excluded-1', code: 'MAT-MAQ001-A', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024, hydraulicTestExpirationDate: null },
+          { id: 'fe-excluded-2', code: 'MAT-MAQ001-B', expirationDate: new Date('2030-01-01'), manufacturingYear: 2024, hydraulicTestExpirationDate: null },
+        ],
+      },
+    ])
+    db.fireExtinguisherAudit.findMany.mockImplementation((args: any) =>
+      args?.distinct
+        ? Promise.resolve([{ fireExtinguisherId: 'fe-excluded-1' }, { fireExtinguisherId: 'fe-not-excluded' }])
+        : Promise.resolve([]),
+    )
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguishers/dashboard/summary')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.totals.total).toBe(5)
+    expect(res.body.data.audits.totalActive).toBe(3) // 5 - 2 excluidos
+    expect(res.body.data.audits.auditedThisPeriod).toBe(1) // fe-excluded-1 no cuenta
+    expect(res.body.data.audits.coveragePercent).toBe(33) // round(1/3 * 100)
+  })
+
   it('returns recentAudits with the expected shape', async () => {
     db.fireExtinguisherAudit.findMany.mockImplementation((args: any) =>
       args?.distinct

@@ -19,6 +19,8 @@ export const ROUTES = {
 
   FINANCIAL_ANALYSIS: '/insurance/financial-analysis',
   ECONOMIC_ANALYSIS: '/insurance/economic-analysis',
+  RENEWAL_PROJECTIONS_FINANCIAL: '/insurance/financial-analysis/renewal-projections',
+  RENEWAL_PROJECTIONS_ECONOMIC: '/insurance/economic-analysis/renewal-projections',
   INSURANCE_DASHBOARD: '/insurance/dashboard',
 
   PRODUCERS: '/producers',
@@ -40,6 +42,18 @@ export const ROUTES = {
   FIRE_EXTINGUISHERS_AUDIT_FINDINGS_REPORT: '/fire-extinguishers/audits/findings-report',
   FIRE_EXTINGUISHERS_AUDIT_DETAIL: (id: string) => `/fire-extinguishers/audits/${id}`,
   FIRE_EXTINGUISHERS_AUDIT_EDIT: (id: string) => `/fire-extinguishers/audits/${id}/edit`,
+
+  ASSET_AUDITS: '/asset-audits',
+  ASSET_AUDITS_NEW: '/asset-audits/new',
+  ASSET_AUDITS_DASHBOARD: '/asset-audits/dashboard',
+  ASSET_AUDITS_DETAIL: (id: string) => `/asset-audits/${id}`,
+  ASSET_AUDITS_EDIT: (id: string) => `/asset-audits/${id}/edit`,
+
+  INSURANCE_AUDITS: '/insurance-audits',
+  INSURANCE_AUDITS_NEW: '/insurance-audits/new',
+  INSURANCE_AUDITS_DASHBOARD: '/insurance-audits/dashboard',
+  INSURANCE_AUDITS_DETAIL: (id: string) => `/insurance-audits/${id}`,
+  INSURANCE_AUDITS_EDIT: (id: string) => `/insurance-audits/${id}/edit`,
 
   TASKS_DETAIL: (id: string) => `/tasks/${id}`,
 

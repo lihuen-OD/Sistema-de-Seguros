@@ -32,7 +32,7 @@ interface BackendAsset {
   location: string | null; mapsUrl: string | null
   productiveUnit: string | null; area: string | null
   description: string | null; metadata: Record<string, unknown> | null
-  isActive: boolean; createdAt: string; updatedAt: string
+  isActive: boolean; fireExtinguisherAuditable: boolean; insuranceAuditable: boolean; createdAt: string; updatedAt: string
   allocations: BackendAllocation[]
   valueHistory?: BackendValueHistory[]
   _count?: { attachments: number; fireExtinguishers: number }
@@ -115,6 +115,8 @@ function mapAsset(b: BackendAsset): Asset {
     attachmentsCount: b._count?.attachments ?? 0,
     dischargeDate: b.dischargeDate ? b.dischargeDate.slice(0, 10) : null,
     saleDate: b.saleDate ? b.saleDate.slice(0, 10) : null,
+    fireExtinguisherAuditable: b.fireExtinguisherAuditable,
+    insuranceAuditable: b.insuranceAuditable,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   }
@@ -155,6 +157,8 @@ export interface AssetCreateInput {
   name: string
   assetType: string
   status?: string
+  fireExtinguisherAuditable?: boolean
+  insuranceAuditable?: boolean
   fixedAssetId?: string | null
   brand?: string
   model?: string
@@ -200,7 +204,14 @@ export const assetsApi = {
     await apiClient.put(`/assets/${id}/allocations`, { allocations })
   },
 
+  // "Dar de baja" — el activo queda inactivo, se registra en el historial y
+  // se puede reactivar después. No borra nada.
   async softDelete(id: string): Promise<void> {
+    await apiClient.post(`/assets/${id}/de-baja`)
+  },
+
+  // Eliminación real y permanente — mismo criterio que policiesApi.hardDelete.
+  async hardDelete(id: string): Promise<void> {
     await apiClient.delete(`/assets/${id}`)
   },
 

@@ -1,4 +1,4 @@
-import type { TableColumn } from '../types'
+import type { TableColumn, ExportCell } from '../types'
 import { packIntoPages } from './pdfPagination'
 
 // ─── Excel (.xlsx) ────────────────────────────────────────────────────────────
@@ -7,13 +7,28 @@ import { packIntoPages } from './pdfPagination'
 // sin parche disponible vía npm) — se carga dinámicamente recién al
 // exportar, no en el chunk inicial de cada página de listado que usa
 // ExportPresetsButton.
-export type ExportCell = string | number | boolean | Date | null
+export type { ExportCell } from '../types'
+
+export interface XLSXHeaderGroup {
+  label: string
+  colSpan: number
+  /** 2 combina verticalmente con la fila de subtítulos (col. que no se agrupa
+   * pero solo debe nombrarse una vez, ej. "Activo"). Default 1. */
+  rowSpan?: number
+}
 
 export interface XLSXExportOptions {
   autoFilter?: boolean
   numericColumnIndexes?: number[]
   numberFormat?: string
   totalRowIndexes?: number[]
+  /**
+   * Encabezado combinado en dos filas en vez de una sola fila plana — cada
+   * grupo ocupa `colSpan` columnas con una celda combinada arriba (ej. un
+   * mes agrupando sus campos de detalle) en vez de repetir la etiqueta del
+   * grupo en cada columna. `rows[0]` pasa a ser la segunda fila (subtítulos).
+   */
+  headerGroups?: XLSXHeaderGroup[]
 }
 
 export async function downloadXLSX(
@@ -26,19 +41,47 @@ export async function downloadXLSX(
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet('Datos')
 
-  sheet.addRows(rows)
+  const headerRowCount = options.headerGroups ? 2 : 1
+  let sheetRows = rows
+  if (options.headerGroups) {
+    const superHeader: ExportCell[] = []
+    for (const group of options.headerGroups) {
+      superHeader.push(group.label)
+      for (let i = 1; i < group.colSpan; i++) superHeader.push(null)
+    }
+    sheetRows = [superHeader, ...rows]
+  }
 
-  const headerRow = sheet.getRow(1)
-  const hasMultilineHeader = rows[0].some((cell) => String(cell ?? '').includes('\n'))
-  headerRow.height = hasMultilineHeader ? 34 : 22
-  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } }
-  headerRow.alignment = { vertical: 'middle', wrapText: hasMultilineHeader }
+  sheet.addRows(sheetRows)
+
+  const hasMultilineHeader = sheetRows
+    .slice(0, headerRowCount)
+    .some((row) => row.some((cell) => String(cell ?? '').includes('\n')))
+  for (let r = 1; r <= headerRowCount; r++) {
+    const headerRow = sheet.getRow(r)
+    headerRow.height = hasMultilineHeader ? 34 : 22
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } }
+    headerRow.alignment = options.headerGroups
+      ? { vertical: 'middle', horizontal: 'center', wrapText: hasMultilineHeader }
+      : { vertical: 'middle', wrapText: hasMultilineHeader }
+  }
+
+  if (options.headerGroups) {
+    let col = 1
+    for (const group of options.headerGroups) {
+      const rowSpan = group.rowSpan ?? 1
+      if (group.colSpan > 1 || rowSpan > 1) {
+        sheet.mergeCells(1, col, rowSpan, col + group.colSpan - 1)
+      }
+      col += group.colSpan
+    }
+  }
 
   if (options.autoFilter && rows[0]?.length) {
     sheet.autoFilter = {
-      from: { row: 1, column: 1 },
-      to: { row: 1, column: rows[0].length },
+      from: { row: headerRowCount, column: 1 },
+      to: { row: headerRowCount, column: rows[0].length },
     }
   }
 
@@ -49,26 +92,28 @@ export async function downloadXLSX(
   })
 
   options.totalRowIndexes?.forEach((rowIndex) => {
-    const row = sheet.getRow(rowIndex + 1)
+    const row = sheet.getRow(rowIndex + headerRowCount)
     row.font = { bold: true, color: { argb: 'FF0F172A' } }
     row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }
   })
 
-  // Auto column widths capped at 60 chars. Nota (verificado con Playwright
-  // contra el bundle real del navegador): el build de exceljs para browser
-  // (dist/exceljs.min.js, resuelto vía su campo "browser" de package.json —
-  // no el mismo código que corre en Node) descarta el ancho seteado en la
-  // primera columna sin importar el método usado (columns=[...] en bloque o
-  // getColumn().width uno por uno). Es cosmético — esa columna queda con el
-  // ancho default de Excel en vez del autoajustado, el resto de las columnas
-  // y todos los datos se exportan bien.
-  rows[0].forEach((_, colIdx) => {
-    const width = Math.min(60, Math.max(...rows.map((row) => String(row[colIdx] ?? '').length), 8) + 2)
+  // Auto column widths capped at 60 chars — recorre sheetRows (incluye la
+  // fila de grupo combinada, si existe) para no subestimar el ancho de una
+  // columna cuya única etiqueta visible vive en esa fila combinada. Nota
+  // (verificado con Playwright contra el bundle real del navegador): el
+  // build de exceljs para browser (dist/exceljs.min.js, resuelto vía su
+  // campo "browser" de package.json — no el mismo código que corre en Node)
+  // descarta el ancho seteado en la primera columna sin importar el método
+  // usado (columns=[...] en bloque o getColumn().width uno por uno). Es
+  // cosmético — esa columna queda con el ancho default de Excel en vez del
+  // autoajustado, el resto de las columnas y todos los datos se exportan bien.
+  sheetRows[0].forEach((_, colIdx) => {
+    const width = Math.min(60, Math.max(...sheetRows.map((row) => String(row[colIdx] ?? '').length), 8) + 2)
     sheet.getColumn(colIdx + 1).width = width
   })
 
-  // Freeze header row
-  sheet.views = [{ state: 'frozen', ySplit: 1 }]
+  // Freeze header row(s)
+  sheet.views = [{ state: 'frozen', ySplit: headerRowCount }]
 
   const buffer = await workbook.xlsx.writeBuffer()
   const blob = new Blob([buffer], {
@@ -107,14 +152,19 @@ export function downloadCSV(rows: string[][], filename: string): void {
   URL.revokeObjectURL(url)
 }
 
-export function buildExportRows<T>(rows: T[], columns: TableColumn<T>[]): string[][] {
+export function buildExportRows<T>(rows: T[], columns: TableColumn<T>[]): ExportCell[][] {
   const exportCols = columns.filter((c) => c.hideable !== false)
-  const header = exportCols.map((c) => c.label)
+  const header: ExportCell[] = exportCols.map((c) => c.label)
   const body = rows.map((row) =>
-    exportCols.map((col) => {
+    exportCols.map((col): ExportCell => {
       if (col.exportValue) return col.exportValue(row)
       const v = row[col.key as keyof T]
-      return v != null ? String(v) : ''
+      if (v == null) return ''
+      // Números/booleans/fechas ya "exportables" pasan tal cual (para que
+      // numericColumnIndexes tenga una celda numérica de verdad, no texto) —
+      // cualquier otro tipo (objetos, arrays) cae al String(v) de siempre.
+      if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string' || v instanceof Date) return v
+      return String(v)
     }),
   )
   return [header, ...body]

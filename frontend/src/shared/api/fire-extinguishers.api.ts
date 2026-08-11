@@ -23,6 +23,7 @@ interface BackendExtinguisher {
   iramCertificateNumber?: string | null
   isActive: boolean; createdAt: string; updatedAt: string
   history?: BackendHistory[]
+  asset?: { id: string; name: string; assetType: string; code: string | null } | null
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
 
@@ -70,6 +71,7 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
     observations: b.observations,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
+    asset: b.asset ?? null,
   }
 }
 
@@ -87,7 +89,7 @@ export interface RechargeInput {
 }
 
 export const fireExtinguishersApi = {
-  async findAll(filters?: { assetId?: string; isActive?: boolean; unassigned?: boolean }): Promise<FireExtinguisher[]> {
+  async findAll(filters?: { assetId?: string; isActive?: boolean; unassigned?: boolean; excludeVehicleMachinery?: boolean }): Promise<FireExtinguisher[]> {
     const res = await apiClient.get<Paginated<BackendExtinguisher>>('/fire-extinguishers', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapExtinguisher)
   },

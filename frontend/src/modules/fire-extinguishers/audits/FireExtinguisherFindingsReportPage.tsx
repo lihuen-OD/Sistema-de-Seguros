@@ -72,6 +72,7 @@ export default function FireExtinguisherFindingsReportPage() {
   const [selectedSectors, setSelectedSectors] = useState<Set<string>>(new Set())
 
   const { data, isLoading } = useQuery(fireExtinguisherAuditQueries.auditDashboard(period))
+  const { data: progress } = useQuery(fireExtinguisherAuditQueries.auditorProgress(period))
 
   // Cada vez que cambian los datos (nuevo período, refetch), por defecto se
   // seleccionan todos los sectores — descargar sin tocar nada da el informe
@@ -253,6 +254,27 @@ export default function FireExtinguisherFindingsReportPage() {
               ))}
             </div>
           </SectionCard>
+
+          {progress && progress.auditors.length > 0 && (
+            <SectionCard
+              title="Progreso por auditor"
+              subtitle="Matafuegos auditados este período dentro del alcance asignado a cada persona"
+            >
+              <div className="space-y-3">
+                {progress.auditors.map((a) => (
+                  <div key={a.userId} className="flex items-center gap-3">
+                    <LevelBar
+                      label={a.name}
+                      level={a.completionRate}
+                    />
+                    <span className="flex-shrink-0 text-xs text-slate-400 tabular-nums w-24 text-right">
+                      {a.assigned > 0 ? `${a.completed} / ${a.assigned}` : 'Sin asignar'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
 
           <div className="space-y-4">
             {establishments.map((est) => (

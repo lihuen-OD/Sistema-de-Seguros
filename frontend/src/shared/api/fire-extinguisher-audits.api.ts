@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import { fireExtinguisherLabel } from '../utils/format'
 
 // ── Contrato (ver plan de Fase 3 — reconciliado entre backend y frontend) ──────
 
@@ -16,7 +17,7 @@ export type LocationReview =
 export interface AuditChecklistInput {
   cleanliness: string
   chargeFillStatus: string
-  beaconPlateCondition: string
+  mountingCondition: string
   sealStatus: string
   ringStatus: string
   hoseNozzleCondition: string
@@ -101,6 +102,7 @@ export interface FireExtinguisherAuditListItem {
     establishment: string | null
     associatedLocationType: string
     location: string | null
+    asset: { id: string; code: string | null; name: string; assetType: string } | null
   } | null
 }
 
@@ -130,6 +132,11 @@ export interface FireExtinguisherCoverageItem {
   establishment: string | null
   associatedLocationType: string
   location: string | null
+  // Poblados solo del lado Activos (matafuego vinculado a un vehículo/
+  // maquinaria) — null del lado Matafuegos (edificio). Ver
+  // fire-extinguisher-audits.population.ts en el backend.
+  asset: { id: string; code: string | null; name: string; assetType: string } | null
+  category: string | null
   audited: boolean
   auditId: string | null
   auditStatus: FireExtinguisherAuditStatus | null
@@ -143,7 +150,7 @@ export interface FireExtinguisherCoverageItem {
 export type AuditControlPointKey =
   | 'cleanliness'
   | 'chargeFillStatus'
-  | 'beaconPlateCondition'
+  | 'mountingCondition'
   | 'sealStatus'
   | 'ringStatus'
   | 'hoseNozzleCondition'
@@ -185,8 +192,42 @@ export interface AuditDashboard {
   sectors: AuditDashboardSector[]
 }
 
+// ── Progreso por auditor ─────────────────────────────────────────────────────────
+
+export interface AuditorProgress {
+  userId: string
+  name: string
+  email: string
+  assignedEstablishments: string[]
+  assigned: number
+  completed: number
+  pending: number
+  completionRate: number | null
+}
+
+export interface AuditorProgressReport {
+  period: string
+  auditors: AuditorProgress[]
+}
+
 export interface FireExtinguisherAuditListFilters {
   fireExtinguisherId?: string
+}
+
+// ── Comentarios de Cobertura (feed compartido — ver AuditCommentsPanel.tsx) ────
+
+export type FireExtinguisherAuditCommentSource = 'AUDITOR_NOTE' | 'REVIEW_DECISION' | 'MANUAL'
+
+export interface FireExtinguisherAuditCommentItem {
+  id: string
+  source: FireExtinguisherAuditCommentSource
+  auditStatus: FireExtinguisherAuditStatus | null
+  body: string
+  authorEmail: string
+  createdAt: string
+  seenAt: string | null
+  seenByEmail: string | null
+  target: { id: string; label: string; sublabel: string | null }
 }
 
 export const fireExtinguisherAuditKeys = {
@@ -260,6 +301,36 @@ export const fireExtinguisherAuditsApi = {
     })
     return res.data.data
   },
+
+  async getAuditorProgress(period: string): Promise<AuditorProgressReport> {
+    const res = await apiClient.get<{ data: AuditorProgressReport }>('/fire-extinguisher-audits/auditor-progress', {
+      params: { period },
+    })
+    return res.data.data
+  },
+
+  async getComments(period: string): Promise<FireExtinguisherAuditCommentItem[]> {
+    type RawComment = Omit<FireExtinguisherAuditCommentItem, 'target'> & {
+      target: { id: string; code: string; cylinderNumber: string | null; location: string | null; establishment: string | null; assetName: string | null }
+    }
+    const res = await apiClient.get<{ data: RawComment[] }>('/fire-extinguisher-audits/comments', { params: { period } })
+    return res.data.data.map((c) => ({
+      ...c,
+      target: {
+        id: c.target.id,
+        label: fireExtinguisherLabel(c.target.cylinderNumber, c.target.location, c.target.code),
+        sublabel: c.target.establishment ?? c.target.assetName ?? null,
+      },
+    }))
+  },
+
+  async addComment(targetId: string, body: string): Promise<void> {
+    await apiClient.post('/fire-extinguisher-audits/comments', { targetId, body })
+  },
+
+  async markCommentSeen(id: string): Promise<void> {
+    await apiClient.post(`/fire-extinguisher-audits/comments/${id}/mark-seen`)
+  },
 }
 
 // ── Query options (categoría B — semi-dinámico) ──────────────────────────────────
@@ -289,6 +360,18 @@ export const fireExtinguisherAuditQueries = {
     queryOptions({
       queryKey: [...fireExtinguisherAuditKeys.all, 'audit-dashboard', period, establishment ?? null] as const,
       queryFn: () => fireExtinguisherAuditsApi.getAuditDashboard(period, establishment),
+      staleTime: 60 * 1000,
+    }),
+  auditorProgress: (period: string) =>
+    queryOptions({
+      queryKey: [...fireExtinguisherAuditKeys.all, 'auditor-progress', period] as const,
+      queryFn: () => fireExtinguisherAuditsApi.getAuditorProgress(period),
+      staleTime: 60 * 1000,
+    }),
+  comments: (period: string) =>
+    queryOptions({
+      queryKey: [...fireExtinguisherAuditKeys.all, 'comments', period] as const,
+      queryFn: () => fireExtinguisherAuditsApi.getComments(period),
       staleTime: 60 * 1000,
     }),
 }

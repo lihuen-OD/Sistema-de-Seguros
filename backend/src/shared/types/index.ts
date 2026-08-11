@@ -15,9 +15,11 @@ export type Role = 'ADMIN' | 'USER'
 export const MODULE_KEYS = [
   'dashboard',
   'assets',
-  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'insurance_dashboard',
+  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
+  'asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard',
+  'insurance_audits', 'insurance_audit_coverage', 'insurance_audit_dashboard',
   'producers', 'tasks',
   'companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config',
 ] as const
@@ -43,6 +45,26 @@ export interface RequestUser {
   role: Role
   modules: ModuleKey[] // [] si role === 'ADMIN' (bypass total) o si no tiene perfil asignado
 }
+
+// ─── Alcance de auditoría ──────────────────────────────────────────────────────
+
+// A qué dominio de auditoría pertenece una fila de UserAuditScope. No es un
+// ModuleKey — el módulo sigue resolviendo "puede entrar a la pantalla",
+// mientras que el área resuelve "cuáles establecimientos/categorías puede
+// operar dentro de esa pantalla" (ver resolveAuditScope).
+export const AUDIT_SCOPE_AREAS = ['FIRE_EXTINGUISHER_AUDIT', 'ASSET_AUDIT', 'INSURANCE_AUDIT'] as const
+export type AuditScopeArea = typeof AUDIT_SCOPE_AREAS[number]
+
+// Espejo de AssetCategory (frontend/src/shared/types/index.ts), filtrado a las
+// categorías que Asset.fireExtinguisherAuditable/insuranceAuditable habilitan
+// hoy (ver IS_AUDITABLE_CATEGORY en frontend/src/modules/assets/AssetNewPage.tsx)
+// — mismo patrón de duplicación FE/BE ya usado para MODULE_KEYS, porque el
+// backend no tiene enum/catálogo propio de categoría de activo.
+export const AUDITABLE_ASSET_CATEGORIES = [
+  'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
+  'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',
+] as const
+export type AuditableAssetCategory = typeof AUDITABLE_ASSET_CATEGORIES[number]
 
 // Augment Express Request para que req.user esté tipado globalmente
 declare global {

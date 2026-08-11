@@ -9,6 +9,7 @@ import {
 import { useCurrentUser } from '../../app/auth/AuthContext'
 import { hasModule } from '../../app/auth/roleScope'
 import { AssetPhotoGallery } from '../../shared/components/photos/AssetPhotoGallery'
+import { FileViewDownloadButtons } from '../../shared/components/file-viewer/FileViewDownloadButtons'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
@@ -444,24 +445,25 @@ export default function AssetDetailPage() {
       label: 'Estado',
       sortable: true,
       sortValue: (row) => POLICY_STATUS_SORT_ORDER[row.status] ?? 99,
-      render: (v, row) => (
-        <div className="flex items-center gap-2">
-          <StatusPill status={v as string} size="sm" />
-          {row.assetCoverage?.circulationCardAttachment?.fileUrl && (
-            <a
-              href={row.assetCoverage.circulationCardAttachment.fileUrl}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title="Ver tarjeta de circulación"
-              className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline whitespace-nowrap"
-            >
-              <IdCard size={12} />
-              Documento
-            </a>
-          )}
-        </div>
-      ),
+      render: (v, row) => {
+        const circulationCard = row.assetCoverage?.circulationCardAttachment
+        const coverageId = row.assetCoverage?.id
+        return (
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <StatusPill status={v as string} size="sm" />
+            {circulationCard && coverageId && (
+              <div className="flex items-center gap-1">
+                <IdCard size={12} className="text-slate-400" />
+                <FileViewDownloadButtons
+                  fetchUrl={`/policies/${row.id}/coverages/${coverageId}/attachments/${circulationCard.id}/download`}
+                  name={circulationCard.name}
+                  className="flex items-center gap-0.5"
+                />
+              </div>
+            )}
+          </div>
+        )
+      },
     },
   ]
 

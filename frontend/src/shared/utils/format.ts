@@ -19,6 +19,17 @@ export function formatCurrencyCompact(value: number, currency: string = 'ARS'): 
   return `${sign}${prefix} ${abs.toFixed(0)}`
 }
 
+/**
+ * Igual que formatCurrencyFull pero sin decimales — para KPIs de montos
+ * grandes donde los centavos no aportan nada y solo agregan ruido visual.
+ * El desborde en cards angostas se resuelve con truncate + tooltip (ver
+ * KpiCard), no abreviando el número.
+ */
+export function formatCurrencyInteger(value: number, currency: string = 'ARS'): string {
+  const prefix = currency === 'ARS' ? 'AR$' : 'US$'
+  return `${prefix} ${Math.round(value).toLocaleString('es-AR')}`
+}
+
 export function formatCurrencyFull(value: number, currency: string = 'ARS'): string {
   const prefix = currency === 'ARS' ? 'AR$' : 'US$'
   return `${prefix} ${value.toLocaleString('es-AR', {

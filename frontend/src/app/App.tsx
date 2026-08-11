@@ -37,6 +37,8 @@ const DocumentFichaPage = lazy(() => import('../modules/insurance/accounting-doc
 // Insurance — Analysis
 const FinancialAnalysisPage = lazy(() => import('../modules/insurance/financial-analysis/FinancialAnalysisPage'))
 const EconomicAnalysisPage = lazy(() => import('../modules/insurance/economic-analysis/EconomicAnalysisPage'))
+const RenewalProjectionsFinancialPage = lazy(() => import('../modules/insurance/renewal-projections/RenewalProjectionsFinancialPage'))
+const RenewalProjectionsEconomicPage = lazy(() => import('../modules/insurance/renewal-projections/RenewalProjectionsEconomicPage'))
 const InsuranceDashboardPage = lazy(() => import('../modules/insurance/insurance-dashboard/InsuranceDashboardPage'))
 
 // Producers
@@ -69,6 +71,18 @@ const FireExtinguisherAuditsQueuePage = lazy(() => import('../modules/fire-extin
 const FireExtinguisherFindingsReportPage = lazy(() => import('../modules/fire-extinguishers/audits/FireExtinguisherFindingsReportPage'))
 const FireExtinguisherDashboardPage = lazy(() => import('../modules/fire-extinguishers/FireExtinguisherDashboardPage'))
 const FireExtinguisherAuditDetailPage = lazy(() => import('../modules/fire-extinguishers/audits/FireExtinguisherAuditDetailPage'))
+
+// Asset Audits (Auditoría de Activos)
+const AssetAuditsQueuePage = lazy(() => import('../modules/asset-audits/AssetAuditsQueuePage'))
+const AssetAuditNewPage = lazy(() => import('../modules/asset-audits/AssetAuditNewPage'))
+const AssetAuditDetailPage = lazy(() => import('../modules/asset-audits/AssetAuditDetailPage'))
+const AssetAuditDashboardPage = lazy(() => import('../modules/asset-audits/AssetAuditDashboardPage'))
+
+// Insurance Audits (Auditoría de Seguros)
+const InsuranceAuditsQueuePage = lazy(() => import('../modules/insurance-audits/InsuranceAuditsQueuePage'))
+const InsuranceAuditNewPage = lazy(() => import('../modules/insurance-audits/InsuranceAuditNewPage'))
+const InsuranceAuditDetailPage = lazy(() => import('../modules/insurance-audits/InsuranceAuditDetailPage'))
+const InsuranceAuditDashboardPage = lazy(() => import('../modules/insurance-audits/InsuranceAuditDashboardPage'))
 
 // Settings
 const CompaniesPage = lazy(() => import('../modules/settings/companies/CompaniesPage'))
@@ -137,7 +151,9 @@ export default function App() {
 
           {/* Analysis */}
           <Route path="/insurance/financial-analysis" element={<FinancialAnalysisPage />} />
+          <Route path="/insurance/financial-analysis/renewal-projections" element={<RenewalProjectionsFinancialPage />} />
           <Route path="/insurance/economic-analysis" element={<EconomicAnalysisPage />} />
+          <Route path="/insurance/economic-analysis/renewal-projections" element={<RenewalProjectionsEconomicPage />} />
           <Route path="/insurance/dashboard" element={<InsuranceDashboardPage />} />
 
           {/* Producers */}
@@ -171,6 +187,20 @@ export default function App() {
           <Route path="/fire-extinguishers/:id" element={<FireExtinguisherDetailPage />} />
           <Route path="/fire-extinguishers/:id/edit" element={<FireExtinguisherEditPage />} />
           <Route path="/fire-extinguishers/:id/ficha" element={<FireExtinguisherFichaPage />} />
+
+          {/* Asset Audits (Auditoría de Activos) */}
+          <Route path="/asset-audits" element={<AssetAuditsQueuePage />} />
+          <Route path="/asset-audits/new" element={<AssetAuditNewPage />} />
+          <Route path="/asset-audits/dashboard" element={<AssetAuditDashboardPage />} />
+          <Route path="/asset-audits/:id/edit" element={<AssetAuditNewPage />} />
+          <Route path="/asset-audits/:id" element={<AssetAuditDetailPage />} />
+
+          {/* Insurance Audits (Auditoría de Seguros) */}
+          <Route path="/insurance-audits" element={<InsuranceAuditsQueuePage />} />
+          <Route path="/insurance-audits/new" element={<InsuranceAuditNewPage />} />
+          <Route path="/insurance-audits/dashboard" element={<InsuranceAuditDashboardPage />} />
+          <Route path="/insurance-audits/:id/edit" element={<InsuranceAuditNewPage />} />
+          <Route path="/insurance-audits/:id" element={<InsuranceAuditDetailPage />} />
 
           {/* Settings */}
           <Route path="/settings/companies" element={<CompaniesPage />} />

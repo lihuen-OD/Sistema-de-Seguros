@@ -14,6 +14,7 @@ export type NotificationCategory =
   | 'installment_overdue'
   | 'installment_near'
   | 'asset_attachment'
+  | 'insurance_card_pending'
 
 // A qué módulo pertenece cada categoría — un usuario sin ADMIN solo ve las
 // notificaciones de los módulos que ya tiene habilitados.
@@ -23,6 +24,8 @@ const CATEGORY_MODULE: Record<NotificationCategory, ModuleKey> = {
   installment_overdue: 'documents',
   installment_near: 'documents',
   asset_attachment: 'assets',
+  // Solo el revisor (quien puede confirmar) necesita ver este aviso.
+  insurance_card_pending: 'insurance_audits',
 }
 
 export interface NotificationItem {
@@ -32,7 +35,7 @@ export interface NotificationItem {
   title: string
   subtitle: string | null
   dueDate: string
-  entityType: 'Policy' | 'FireExtinguisher' | 'AccountingDocument' | 'Asset'
+  entityType: 'Policy' | 'FireExtinguisher' | 'AccountingDocument' | 'Asset' | 'InsuranceAudit'
   entityId: string
   reviewed: boolean
 }
@@ -55,6 +58,7 @@ export const notificationsService = {
     const overdueInstallments = countBy('installment_overdue')
     const nearInstallments = countBy('installment_near')
     const expiringAttachments = countBy('asset_attachment')
+    const pendingCardUpdates = countBy('insurance_card_pending')
 
     return {
       expiringPolicies,
@@ -62,6 +66,7 @@ export const notificationsService = {
       overdueInstallments,
       nearInstallments,
       expiringAttachments,
+      pendingCardUpdates,
       hasAlerts: pending.length > 0,
     }
   },
@@ -81,7 +86,7 @@ export const notificationsService = {
     // más adjuntos vencen en la ventana de 30 días).
     const ITEM_CAP = 200
 
-    const [policies, extinguishers, overdueInstallments, nearInstallments, assetAttachments, dismissals] =
+    const [policies, extinguishers, overdueInstallments, nearInstallments, assetAttachments, pendingCardAudits, dismissals] =
       await Promise.all([
         prisma.policy.findMany({
           where: { isActive: true, endDate: { gte: today, lte: in30Days } },
@@ -128,6 +133,14 @@ export const notificationsService = {
           where: { expirationDate: { lte: in30Days } },
           include: { asset: { select: { id: true, name: true } } },
           orderBy: { expirationDate: 'asc' },
+          take: ITEM_CAP,
+        }),
+        // El auditor avisó que ya colocó la tarjeta — falta que el revisor lo
+        // confirme (ver insurance-audits.service.ts#requestCardUpdate).
+        prisma.insuranceAudit.findMany({
+          where: { cardUpdateRequested: true },
+          include: { asset: { select: { id: true, name: true, code: true } } },
+          orderBy: { cardUpdateRequestedAt: 'asc' },
           take: ITEM_CAP,
         }),
         // Sin `where: { userId }` a propósito — "revisado" es compartido: si
@@ -207,6 +220,20 @@ export const notificationsService = {
         entityId: a.asset.id,
         reviewed: isReviewed(`asset_attachment:${a.id}`, toDateStr(a.expirationDate)),
       })),
+      ...pendingCardAudits.map((audit): NotificationItem => {
+        const dueDate = toDateStr(audit.cardUpdateRequestedAt ?? audit.auditDate)
+        return {
+          id: `insurance_card_pending:${audit.id}`,
+          category: 'insurance_card_pending',
+          severity: 'vencido',
+          title: audit.asset.code ? `${audit.asset.code} — ${audit.asset.name}` : audit.asset.name,
+          subtitle: 'El auditor avisó que ya colocó la tarjeta de circulación',
+          dueDate,
+          entityType: 'InsuranceAudit',
+          entityId: audit.id,
+          reviewed: isReviewed(`insurance_card_pending:${audit.id}`, dueDate),
+        }
+      }),
     ]
 
     // ADMIN ve todo — el resto solo ve categorías de módulos que ya tiene

@@ -9,6 +9,7 @@ import {
   buildFireExtinguisherStatusFilter,
   manufacturingExpirationYear,
 } from './fire-extinguishers.expiration'
+import { classifyAssetType } from './asset-type-classification'
 import type {
   CreateFireExtinguisherDTO,
   UpdateFireExtinguisherDTO,
@@ -251,6 +252,11 @@ export const fireExtinguishersService = {
     if (query.establishment) where.establishment = query.establishment
     if (query.unassigned) where.assetId = null
     else if (query.assetId) where.assetId = query.assetId
+    else if (query.excludeVehicleMachinery) {
+      const assets = await prisma.asset.findMany({ where: { isActive: true }, select: { id: true, assetType: true } })
+      const excludedAssetIds = assets.filter((a) => classifyAssetType(a.assetType) !== null).map((a) => a.id)
+      if (excludedAssetIds.length > 0) where.assetId = { notIn: excludedAssetIds }
+    }
     if (query.status) Object.assign(where, buildFireExtinguisherStatusFilter(query.status))
     if (query.search) {
       where.OR = [
@@ -286,7 +292,7 @@ export const fireExtinguishersService = {
     const fe = await prisma.fireExtinguisher.findUnique({
       where: { id },
       include: {
-        asset: { select: { id: true, name: true } },
+        asset: { select: { id: true, name: true, assetType: true, code: true } },
         history: { orderBy: { date: 'desc' }, take: 100 },
       },
     })

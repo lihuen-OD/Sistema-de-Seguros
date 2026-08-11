@@ -121,6 +121,23 @@ export function CompareAssetsView({ summaries }: CompareAssetsViewProps) {
       render: (v) => formatCurrencyCompact(v as number, 'USD'),
     },
     {
+      id: 'costoMensualUsd', key: 'costoMensualUsd', label: 'Costo mensual', sortable: true,
+      headerClassName: 'text-right', className: 'text-right tabular-nums',
+      render: (v, row) => {
+        if (v == null) return '—'
+        // Meses de referencia — uno por póliza activa (puede haber más de una
+        // a la vez, ej. casco + RC con vigencias distintas), para que se vea
+        // sobre qué base exacta se calculó el costo mensual.
+        const terms = row.activePolicies.map((p) => `${p.termMonths}m`).join(' + ')
+        return (
+          <div className="flex flex-col items-end leading-tight">
+            <span className="font-semibold text-slate-800">{formatCurrencyCompact(v as number, 'USD')}/mes</span>
+            <span className="text-[11px] text-slate-400">{terms}</span>
+          </div>
+        )
+      },
+    },
+    {
       id: 'claimsCount', key: 'claimsCount', label: 'Siniestros', sortable: true,
       headerClassName: 'text-right', className: 'text-right tabular-nums',
     },
