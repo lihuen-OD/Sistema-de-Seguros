@@ -10,6 +10,7 @@ import { PolicySelector, createEmptyPolicyRow, type PolicyAllocationRow } from '
 import { InstallmentsEditor, createInitialInstallmentRows, type InstallmentRowData } from '../components/InstallmentsEditor'
 import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
+import { EmailChipField } from '../components/EmailChipField'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
@@ -62,7 +63,11 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   const [installmentRows, setInstallmentRows] = useState<InstallmentRowData[]>(createInitialInstallmentRows())
   const [installmentsInitialized, setInstallmentsInitialized] = useState(!isEdit)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
-  const [emailTo, setEmailTo] = useState('')
+  const [emailTo, setEmailTo] = useState<string[]>([])
+  const [emailCc, setEmailCc] = useState<string[]>([])
+  const [emailBcc, setEmailBcc] = useState<string[]>([])
+  const [showCc, setShowCc] = useState(false)
+  const [showBcc, setShowBcc] = useState(false)
   const [emailSubjectEdit, setEmailSubjectEdit] = useState('')
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'skipped'>('idle')
 
@@ -274,18 +279,28 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   }
 
   const handleSendEmail = async () => {
-    if (!emailTo.trim() || !savedDocId || emailStatus === 'sending') return
+    if (emailTo.length === 0 || !savedDocId || emailStatus === 'sending') return
     setEmailStatus('sending')
     try {
       const result = await documentsApi.sendEmail(savedDocId, {
-        to: [emailTo.trim()],
+        to: emailTo,
+        cc: emailCc.length > 0 ? emailCc : undefined,
+        bcc: emailBcc.length > 0 ? emailBcc : undefined,
         subject: emailSubjectEdit || undefined,
       })
       if (result.status === 'SKIPPED') {
         setEmailStatus('skipped')
       } else {
         setEmailStatus('sent')
-        setTimeout(() => { setEmailModalOpen(false); setEmailStatus('idle'); setEmailTo('') }, 1800)
+        setTimeout(() => {
+          setEmailModalOpen(false)
+          setEmailStatus('idle')
+          setEmailTo([])
+          setEmailCc([])
+          setEmailBcc([])
+          setShowCc(false)
+          setShowBcc(false)
+        }, 1800)
       }
     } catch {
       // El toast de error ya lo muestra el interceptor de apiClient.
@@ -486,10 +501,31 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
             ) : (
               <div className="px-6 py-5 space-y-4">
                 <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1">Para <span className="text-red-500">*</span></label>
-                  <input type="email" placeholder="destinatario@ejemplo.com" value={emailTo} onChange={(e) => setEmailTo(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-slate-600">Para <span className="text-red-500">*</span></label>
+                    <div className="flex items-center gap-2.5">
+                      {!showCc && (
+                        <button type="button" onClick={() => setShowCc(true)} className="text-xs text-slate-400 hover:text-brand-600 transition-colors">Cc</button>
+                      )}
+                      {!showBcc && (
+                        <button type="button" onClick={() => setShowBcc(true)} className="text-xs text-slate-400 hover:text-brand-600 transition-colors">Cco</button>
+                      )}
+                    </div>
+                  </div>
+                  <EmailChipField emails={emailTo} onChange={setEmailTo} placeholder="destinatario@ejemplo.com" autoFocus />
                 </div>
+                {showCc && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 block mb-1">Cc</label>
+                    <EmailChipField emails={emailCc} onChange={setEmailCc} placeholder="cc@ejemplo.com" />
+                  </div>
+                )}
+                {showBcc && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 block mb-1">Cco</label>
+                    <EmailChipField emails={emailBcc} onChange={setEmailBcc} placeholder="cco@ejemplo.com" />
+                  </div>
+                )}
                 <div>
                   <label className="text-xs font-medium text-slate-600 block mb-1">Asunto</label>
                   <input type="text" value={emailSubjectEdit} onChange={(e) => setEmailSubjectEdit(e.target.value)}
@@ -540,7 +576,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pt-1">
-                  <button type="button" onClick={handleSendEmail} disabled={!emailTo.trim() || emailStatus === 'sending'}
+                  <button type="button" onClick={handleSendEmail} disabled={emailTo.length === 0 || emailStatus === 'sending'}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                     <Mail size={14} /> {emailStatus === 'sending' ? 'Enviando…' : 'Enviar'}
                   </button>
