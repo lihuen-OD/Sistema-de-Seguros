@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ShieldAlert, Clock, CheckCircle2, XCircle, FileSearch,
+  ShieldAlert, Clock, CheckCircle2,
   ArrowUpRight, Pencil, ArrowLeft, Package, ShieldCheck,
-  Calendar, DollarSign, AlertTriangle, ArrowLeftRight,
+  DollarSign, AlertTriangle, ArrowLeftRight,
   PlusCircle, ArrowRight, MessageSquare, Paperclip, Edit2,
-  TrendingDown, Percent, FileText, ImageIcon, Download, Trash2, FileDown, Receipt,
+  TrendingDown, Percent, FileText, ImageIcon, Download, FileDown, Receipt,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'

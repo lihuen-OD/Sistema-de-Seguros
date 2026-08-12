@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Mail, CheckCircle2, ArrowLeftRight, X, Info } from 'lucide-react'
 import { PageContent } from '../../../../shared/components/page-header/PageContent'
@@ -41,7 +40,6 @@ interface FormState {
 type FormErrors = Partial<Record<keyof FormState | 'policies', string>>
 
 export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: DocumentoFacturaFormProps) {
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isEdit = !!initialDoc
 

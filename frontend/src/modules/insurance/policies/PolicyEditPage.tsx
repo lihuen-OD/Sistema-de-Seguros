@@ -26,7 +26,7 @@ import { catalogQueries } from '../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { buildAssetSearchKeywords } from '../../../shared/utils/assetSearch'
 import { CURRENCY_OPTIONS } from '../../../shared/constants'
-import type { Policy, PolicyCoverage } from '../../../shared/types'
+import type { PolicyCoverage } from '../../../shared/types'
 import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
 
 type AssociationType = 'activo' | 'sin_activo'

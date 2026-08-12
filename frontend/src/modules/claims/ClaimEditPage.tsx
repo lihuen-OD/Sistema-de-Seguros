@@ -11,6 +11,7 @@ import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
 import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
+import { computeEquivalent } from '../../shared/utils/currency'
 import { ROUTES } from '../../app/routes'
 import { CURRENCY_OPTIONS } from '../../shared/constants'
 import type { ClaimAttachment, ClaimOwnershipType, Currency } from '../../shared/types'
@@ -128,16 +129,10 @@ export default function ClaimEditPage() {
   // ir ANTES de los early return de abajo (isLoading / isError) — un hook
   // nunca puede quedar después de un return condicional.
   const equivalentPrefix = currency === 'USD' ? 'AR$' : 'US$'
-  function computeEquivalent(rawAmount: string): string {
-    const amount = parseFloat(rawAmount)
-    const rate = parseFloat(exchangeRate)
-    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
-    return currency === 'USD' ? (amount * rate).toFixed(2) : (amount / rate).toFixed(2)
-  }
-  const equivalentClaimed = useMemo(() => computeEquivalent(claimedAmount), [claimedAmount, exchangeRate, currency])
-  const equivalentReal = useMemo(() => computeEquivalent(realAmount), [realAmount, exchangeRate, currency])
-  const equivalentSettled = useMemo(() => computeEquivalent(settledAmount), [settledAmount, exchangeRate, currency])
-  const equivalentDeductible = useMemo(() => computeEquivalent(deductible), [deductible, exchangeRate, currency])
+  const equivalentClaimed = useMemo(() => computeEquivalent(claimedAmount, currency, exchangeRate), [claimedAmount, exchangeRate, currency])
+  const equivalentReal = useMemo(() => computeEquivalent(realAmount, currency, exchangeRate), [realAmount, exchangeRate, currency])
+  const equivalentSettled = useMemo(() => computeEquivalent(settledAmount, currency, exchangeRate), [settledAmount, exchangeRate, currency])
+  const equivalentDeductible = useMemo(() => computeEquivalent(deductible, currency, exchangeRate), [deductible, exchangeRate, currency])
   function formatEquivalent(value: string): string {
     return value
       ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

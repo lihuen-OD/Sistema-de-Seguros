@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Save, X, Plus, MapPin, Hash, ClipboardCheck,
+  Save, X, MapPin, Hash, ClipboardCheck,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -14,7 +14,6 @@ import {
 import { AttachmentListEditor } from '../../shared/components/file-upload/AttachmentListEditor'
 import { assetsApi, assetKeys } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
-import type { CatalogItem } from '../../shared/api/catalogs.api'
 import {
   PROVINCES, CURRENCY_OPTIONS,
 } from '../../shared/constants'
@@ -24,13 +23,15 @@ import {
 import { exchangeRateQueries } from '../../shared/api/exchange-rate.api'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
+import { computeEquivalent } from '../../shared/utils/currency'
+import { buildMetadata } from '../../shared/utils/assetMetadata'
 import { CategoryPicker } from './components/CategoryPicker'
 import { BienDeUsoField } from './components/BienDeUsoField'
 import { AllocationEditor } from './components/AllocationEditor'
 import { SilosSection } from './components/SilosSection'
 import { EstBuildingsSection } from './components/EstBuildingsSection'
 import type { EstBuilding } from './components/EstBuildingsSection'
-import type { AssetCategory, AssetAttachment, AssetAllocation, Silo } from '../../shared/types'
+import type { AssetCategory, AssetAttachment, AssetAllocation, Silo, Currency } from '../../shared/types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -53,8 +54,6 @@ const IS_INSURANCE_AUDITABLE_CATEGORY = (c: AssetCategory | '') =>
 // Solo la carga animal tiene especie/raza — la carga común (granos,
 // mercadería, insumos) no. Ambas sí admiten Bien de Uso asociado.
 const IS_LIVESTOCK = (c: AssetCategory | '') => c === 'carga_animal'
-const IS_IMMOVABLE = (c: AssetCategory | '') =>
-  ['establecimiento', 'edificio', 'infraestructura', 'campo_terreno'].includes(c as string)
 
 // ── Local form state ───────────────────────────────────────────────────────────
 
@@ -221,18 +220,12 @@ export default function AssetNewPage() {
   // cierra y persiste ambos montos al guardar (ver computeDualAmounts).
   const equivalentCurrencyLabel = form.currency === 'ARS' ? 'USD' : 'ARS'
   const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
-  function computeEquivalent(rawAmount: string): string {
-    const amount = parseFloat(rawAmount)
-    const rate = parseFloat(form.exchangeRate)
-    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
-    return form.currency === 'ARS' ? (amount / rate).toFixed(2) : (amount * rate).toFixed(2)
-  }
   const equivalentReal = useMemo(
-    () => computeEquivalent(form.patrimonialValueUsd),
+    () => computeEquivalent(form.patrimonialValueUsd, form.currency as Currency, form.exchangeRate),
     [form.patrimonialValueUsd, form.exchangeRate, form.currency],
   )
   const equivalentNew = useMemo(
-    () => computeEquivalent(form.patrimonialValueNew),
+    () => computeEquivalent(form.patrimonialValueNew, form.currency as Currency, form.exchangeRate),
     [form.patrimonialValueNew, form.exchangeRate, form.currency],
   )
   function formatEquivalent(value: string): string {
@@ -317,98 +310,6 @@ export default function AssetNewPage() {
     setSilos((prev) => prev.map((s) => s.id === id ? { ...s, [field]: value } : s))
   }
 
-  function buildMetadata(): Record<string, unknown> {
-    const opt = (v: string) => v.trim() || undefined
-    const num = (v: string) => v ? parseFloat(v) : undefined
-    const int = (v: string) => v ? parseInt(v, 10) : undefined
-
-    if (['vehiculo', 'camioneta', 'camion', 'moto', 'transporte_pasajeros'].includes(category)) {
-      return {
-        ...(opt(form.chassisNumber) && { chassisNumber: form.chassisNumber.trim() }),
-        ...(opt(form.plate) && { plate: form.plate.trim() }),
-        ...(opt(form.engineNumber) && { engineNumber: form.engineNumber.trim() }),
-        ...(opt(form.color) && { color: form.color.trim() }),
-        ...(opt(form.fuelType) && { fuelType: form.fuelType }),
-      }
-    }
-    if (['tractor', 'cosechadora', 'pulverizadora'].includes(category)) {
-      return {
-        ...(opt(form.plate) && { plate: form.plate.trim() }),
-        ...(opt(form.engineNumber) && { engineNumber: form.engineNumber.trim() }),
-        ...(num(form.powerHp) !== undefined && { powerHp: num(form.powerHp) }),
-        ...(num(form.cutWidth) !== undefined && { cutWidth: num(form.cutWidth) }),
-        ...(num(form.tankCapacity) !== undefined && { tankCapacity: num(form.tankCapacity) }),
-        ...(num(form.workWidth) !== undefined && { workWidth: num(form.workWidth) }),
-      }
-    }
-    if (category === 'implemento') {
-      return {
-        ...(opt(form.plate) && { plate: form.plate.trim() }),
-        ...(opt(form.implementType) && { implementType: form.implementType }),
-        ...(num(form.workWidth) !== undefined && { workWidth: num(form.workWidth) }),
-      }
-    }
-    if (category === 'edificio') {
-      return {
-        ...(num(form.surfaceM2) !== undefined && { surfaceM2: num(form.surfaceM2) }),
-        ...(opt(form.buildingPurpose) && { buildingPurpose: form.buildingPurpose }),
-        ...(opt(form.constructionType) && { constructionType: form.constructionType.trim() }),
-        ...(int(form.floors) !== undefined && { floors: int(form.floors) }),
-        ...(int(form.constructionYear) !== undefined && { constructionYear: int(form.constructionYear) }),
-        ...(opt(form.address) && { address: form.address.trim() }),
-      }
-    }
-    if (category === 'establecimiento') {
-      return {
-        ...(num(form.surfaceHa) !== undefined && { surfaceHa: num(form.surfaceHa) }),
-        ...(opt(form.province) && { province: form.province }),
-        ...(opt(form.locality) && { locality: form.locality.trim() }),
-        ...(opt(form.address) && { address: form.address.trim() }),
-        ...(buildings.length > 0 && {
-          buildings: buildings.map((b) => ({
-            name: b.name,
-            ...(b.surfaceM2 && { surfaceM2: parseFloat(b.surfaceM2) }),
-            ...(b.purpose && { purpose: b.purpose }),
-            ...(b.constructionType && { constructionType: b.constructionType }),
-            ...(b.constructionYear && { constructionYear: parseInt(b.constructionYear, 10) }),
-          })),
-        }),
-        ...(silos.length > 0 && {
-          silos: silos.map((s) => ({ capacityTons: s.capacityTons, content: s.content })),
-        }),
-      }
-    }
-    if (category === 'campo_terreno') {
-      return {
-        ...(num(form.surfaceHa) !== undefined && { surfaceHa: num(form.surfaceHa) }),
-        ...(opt(form.province) && { province: form.province }),
-        ...(opt(form.locality) && { locality: form.locality.trim() }),
-        ...(opt(form.address) && { address: form.address.trim() }),
-        ...(opt(form.cadastralReference) && { cadastralReference: form.cadastralReference.trim() }),
-        ...(opt(form.landUse) && { landUse: form.landUse }),
-        ...(num(form.irrigatedSurfaceHa) !== undefined && { irrigatedSurfaceHa: num(form.irrigatedSurfaceHa) }),
-        ...(num(form.forestedSurfaceHa) !== undefined && { forestedSurfaceHa: num(form.forestedSurfaceHa) }),
-      }
-    }
-    if (category === 'infraestructura') {
-      return {
-        ...(opt(form.infraType) && { infraType: form.infraType }),
-        ...(num(form.infraCapacityTons) !== undefined && { infraCapacityTons: num(form.infraCapacityTons) }),
-        ...(opt(form.infraContent) && { infraContent: form.infraContent }),
-        ...(opt(form.technicalSpec) && { technicalSpec: form.technicalSpec.trim() }),
-        ...(silos.length > 0 && {
-          silos: silos.map((s) => ({ capacityTons: s.capacityTons, content: s.content })),
-        }),
-      }
-    }
-    if (['equipo', 'maquinaria'].includes(category)) {
-      return {
-        ...(opt(form.technicalSpec) && { technicalSpec: form.technicalSpec.trim() }),
-      }
-    }
-    return {}
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!category) return
@@ -416,7 +317,7 @@ export default function AssetNewPage() {
 
     setSubmitting(true)
     try {
-      const metadata = buildMetadata()
+      const metadata = buildMetadata(category, form, buildings, silos)
 
       const newAsset = await assetsApi.create({
         name: form.name.trim(),

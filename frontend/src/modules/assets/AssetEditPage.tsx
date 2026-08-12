@@ -17,6 +17,8 @@ import { ASSET_STATUS_LABELS, PROVINCES, CURRENCY_OPTIONS } from '../../shared/c
 import { LABEL_TO_CATEGORY } from '../../shared/constants/asset-categories'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
+import { computeEquivalent } from '../../shared/utils/currency'
+import { buildMetadata } from '../../shared/utils/assetMetadata'
 import { BienDeUsoField } from './components/BienDeUsoField'
 import { AllocationEditor } from './components/AllocationEditor'
 import { SilosSection } from './components/SilosSection'
@@ -178,18 +180,12 @@ export default function AssetEditPage() {
   // cierra y persiste ambos montos al guardar (ver computeDualAmounts).
   const equivalentCurrencyLabel = currency === 'ARS' ? 'USD' : 'ARS'
   const equivalentPrefix = currency === 'ARS' ? 'US$' : 'AR$'
-  function computeEquivalent(rawAmount: string): string {
-    const amount = parseFloat(rawAmount)
-    const rate = parseFloat(exchangeRate)
-    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
-    return currency === 'ARS' ? (amount / rate).toFixed(2) : (amount * rate).toFixed(2)
-  }
   const equivalentReal = useMemo(
-    () => computeEquivalent(patrimonialValueUsd),
+    () => computeEquivalent(patrimonialValueUsd, currency, exchangeRate),
     [patrimonialValueUsd, exchangeRate, currency],
   )
   const equivalentNew = useMemo(
-    () => computeEquivalent(patrimonialValueNew),
+    () => computeEquivalent(patrimonialValueNew, currency, exchangeRate),
     [patrimonialValueNew, exchangeRate, currency],
   )
   // Los campos de valor de acá arriba solo sirven para cargar la PRIMERA
@@ -417,98 +413,6 @@ export default function AssetEditPage() {
     setBuildings((prev) => prev.map((b) => b.id === bid ? { ...b, [field]: value } : b))
   }
 
-  function buildMetadata(): Record<string, unknown> {
-    const opt = (v: string) => v.trim() || undefined
-    const num = (v: string) => v ? parseFloat(v) : undefined
-    const int = (v: string) => v ? parseInt(v, 10) : undefined
-
-    if (isWheeled) {
-      return {
-        ...(opt(form.chassisNumber) && { chassisNumber: form.chassisNumber.trim() }),
-        ...(opt(form.plate) && { plate: form.plate.trim() }),
-        ...(opt(form.engineNumber) && { engineNumber: form.engineNumber.trim() }),
-        ...(opt(form.color) && { color: form.color.trim() }),
-        ...(opt(form.fuelType) && { fuelType: form.fuelType }),
-      }
-    }
-    if (isAgroMachine) {
-      return {
-        ...(opt(form.plate) && { plate: form.plate.trim() }),
-        ...(opt(form.engineNumber) && { engineNumber: form.engineNumber.trim() }),
-        ...(num(form.powerHp) !== undefined && { powerHp: num(form.powerHp) }),
-        ...(num(form.cutWidth) !== undefined && { cutWidth: num(form.cutWidth) }),
-        ...(num(form.tankCapacity) !== undefined && { tankCapacity: num(form.tankCapacity) }),
-        ...(num(form.workWidth) !== undefined && { workWidth: num(form.workWidth) }),
-      }
-    }
-    if (isImplemento) {
-      return {
-        ...(opt(form.plate) && { plate: form.plate.trim() }),
-        ...(opt(form.implementType) && { implementType: form.implementType }),
-        ...(num(form.workWidth) !== undefined && { workWidth: num(form.workWidth) }),
-      }
-    }
-    if (isEdificio) {
-      return {
-        ...(num(form.surfaceM2) !== undefined && { surfaceM2: num(form.surfaceM2) }),
-        ...(opt(form.buildingPurpose) && { buildingPurpose: form.buildingPurpose }),
-        ...(opt(form.constructionType) && { constructionType: form.constructionType.trim() }),
-        ...(int(form.floors) !== undefined && { floors: int(form.floors) }),
-        ...(int(form.constructionYear) !== undefined && { constructionYear: int(form.constructionYear) }),
-        ...(opt(form.address) && { address: form.address.trim() }),
-      }
-    }
-    if (isEstablecimiento) {
-      return {
-        ...(num(form.surfaceHa) !== undefined && { surfaceHa: num(form.surfaceHa) }),
-        ...(opt(form.province) && { province: form.province }),
-        ...(opt(form.locality) && { locality: form.locality.trim() }),
-        ...(opt(form.address) && { address: form.address.trim() }),
-        ...(silos.length > 0 && {
-          silos: silos.map((s) => ({ capacityTons: s.capacityTons, content: s.content })),
-        }),
-        ...(buildings.length > 0 && {
-          buildings: buildings.map((b) => ({
-            name: b.name,
-            ...(b.surfaceM2 && { surfaceM2: parseFloat(b.surfaceM2) }),
-            ...(b.purpose && { purpose: b.purpose }),
-            ...(b.constructionType && { constructionType: b.constructionType }),
-            ...(b.constructionYear && { constructionYear: parseInt(b.constructionYear, 10) }),
-          })),
-        }),
-      }
-    }
-    if (isCampoTerreno) {
-      return {
-        ...(num(form.surfaceHa) !== undefined && { surfaceHa: num(form.surfaceHa) }),
-        ...(opt(form.province) && { province: form.province }),
-        ...(opt(form.locality) && { locality: form.locality.trim() }),
-        ...(opt(form.address) && { address: form.address.trim() }),
-        ...(opt(form.cadastralReference) && { cadastralReference: form.cadastralReference.trim() }),
-        ...(opt(form.landUse) && { landUse: form.landUse }),
-        ...(num(form.irrigatedSurfaceHa) !== undefined && { irrigatedSurfaceHa: num(form.irrigatedSurfaceHa) }),
-        ...(num(form.forestedSurfaceHa) !== undefined && { forestedSurfaceHa: num(form.forestedSurfaceHa) }),
-      }
-    }
-    if (isInfraestructura) {
-      return {
-        ...(opt(form.infraType) && { infraType: form.infraType }),
-        ...(num(form.infraCapacityTons) !== undefined && { infraCapacityTons: num(form.infraCapacityTons) }),
-        ...(opt(form.infraContent) && { infraContent: form.infraContent }),
-        ...(opt(form.technicalSpec) && { technicalSpec: form.technicalSpec.trim() }),
-        ...(silos.length > 0 && {
-          silos: silos.map((s) => ({ capacityTons: s.capacityTons, content: s.content })),
-        }),
-      }
-    }
-    if (isEquipoMaq) {
-      return {
-        ...(opt(form.technicalSpec) && { technicalSpec: form.technicalSpec.trim() }),
-      }
-    }
-    return {}
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!asset) return
@@ -516,7 +420,7 @@ export default function AssetEditPage() {
 
     setSubmitting(true)
     try {
-      const metadata = buildMetadata()
+      const metadata = buildMetadata(assetCategory ?? '', form, buildings, silos)
       const validAllocations = allocations.filter((a) => a.companyId && a.costCenterId)
       const existingIds = new Set(existingAttachments.map((a) => a.id))
       const currentIds = new Set(attachments.filter((a) => !a.pendingFile).map((a) => a.id))

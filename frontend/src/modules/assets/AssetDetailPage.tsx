@@ -15,6 +15,7 @@ import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
+import { SummaryRow } from '../../shared/components/cards/SummaryRow'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatCurrencyCompact, formatPercent, formatDate } from '../../shared/utils/format'
@@ -1106,11 +1107,3 @@ function InfoRow({ label, value, icon: Icon, mono }: {
   )
 }
 
-function SummaryRow({ label, value, color = 'text-slate-800' }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-sm text-slate-500">{label}</span>
-      <span className={`text-sm font-semibold ${color}`}>{value}</span>
-    </div>
-  )
-}
