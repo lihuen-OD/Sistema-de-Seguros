@@ -852,6 +852,93 @@ describe('Documents API', () => {
         }),
       )
     })
+
+    // documentNumber dejó de ser inmutable — se puede corregir un typo
+    // después del alta (ver useDuplicateDocumentNumberCheck en el frontend).
+    it('allows correcting the documentNumber', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
+      db.accountingDocument.findFirst.mockResolvedValue(null) // sin duplicado
+      db.accountingDocument.update.mockResolvedValue({
+        ...fakeDocument,
+        documentNumber: 'FAC-2026-002',
+        installments: [],
+        allocations: [],
+        attachments: [],
+      })
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ documentNumber: 'FAC-2026-002' })
+
+      expect(res.status).toBe(200)
+      expect(db.accountingDocument.update.mock.calls[0][0].data.documentNumber).toBe('FAC-2026-002')
+    })
+
+    it('returns 409 when the corrected documentNumber collides with another document of the same type + company', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
+      db.accountingDocument.findFirst.mockResolvedValue({ id: OTHER_ID }) // duplicado de otro documento
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ documentNumber: 'FAC-2026-999' })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('CONFLICT')
+      expect(db.accountingDocument.update).not.toHaveBeenCalled()
+    })
+
+    it('does not treat the document as a duplicate of itself when documentNumber is left unchanged', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
+      db.accountingDocument.findFirst.mockResolvedValue(null) // excluye el propio id (ver where: { id: { not: id } })
+      db.accountingDocument.update.mockResolvedValue({
+        ...fakeDocument,
+        netAmount: 2000,
+        installments: [],
+        allocations: [],
+        attachments: [],
+      })
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ netAmount: 2000 })
+
+      expect(res.status).toBe(200)
+      expect(db.accountingDocument.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: { not: DOC_ID }, documentNumber: fakeDocument.documentNumber }),
+        }),
+      )
+    })
+  })
+
+  describe('GET /api/v1/documents/check-number', () => {
+    it('excludes the given document id from the duplicate check', async () => {
+      db.accountingDocument.findFirst.mockResolvedValue(null)
+
+      const res = await request(app)
+        .get(`/api/v1/documents/check-number?documentNumber=FAC-2026-001&documentType=INVOICE&insuranceCompany=MAPFRE&excludeId=${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.exists).toBe(false)
+      expect(db.accountingDocument.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: { not: DOC_ID } }) }),
+      )
+    })
+
+    it('reports exists=true when another document already has that number', async () => {
+      db.accountingDocument.findFirst.mockResolvedValue({ id: OTHER_ID })
+
+      const res = await request(app)
+        .get('/api/v1/documents/check-number?documentNumber=FAC-2026-001&documentType=INVOICE&insuranceCompany=MAPFRE')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.exists).toBe(true)
+    })
   })
 
   describe('GET /api/v1/documents/financial', () => {

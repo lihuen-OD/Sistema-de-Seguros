@@ -32,7 +32,7 @@ export const documentsController = {
   }),
 
   checkNumber: asyncHandler(async (req: Request, res: Response) => {
-    const { documentNumber, documentType, insuranceCompany } = req.query as unknown as CheckDocumentNumberQueryDTO
+    const { documentNumber, documentType, insuranceCompany, excludeId } = req.query as unknown as CheckDocumentNumberQueryDTO
     if (!documentNumber?.trim()) {
       res.json({ data: { exists: false } })
       return
@@ -41,6 +41,7 @@ export const documentsController = {
       documentNumber.trim(),
       documentType,
       insuranceCompany,
+      excludeId,
     )
     res.json({ data: result })
   }),

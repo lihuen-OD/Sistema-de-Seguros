@@ -458,6 +458,7 @@ export interface AccountingDocument {
   endorsementType?: string | null
   endorsementEffectiveDate?: string | null
   policyIds: string[]
+  allocations?: DocumentPolicyAllocation[]
   attachmentsCount?: number
   createdAt: string
   updatedAt: string

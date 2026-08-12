@@ -57,7 +57,7 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
   const [allocationsInitialized, setAllocationsInitialized] = useState(!isEdit)
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
-  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'ADJUSTMENT_ENTRY', form.insuranceCompany)
+  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, true, 'ADJUSTMENT_ENTRY', form.insuranceCompany, initialDoc?.id)
 
   const { data: allDocuments = [] } = useQuery(documentQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
@@ -153,6 +153,7 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
   const updateMutation = useMutation({
     mutationFn: async (docId: string) => {
       await documentsApi.update(docId, {
+        documentNumber: form.documentNumber.trim(),
         issueDate: form.issueDate,
         netAmount: amount,
         currency: linkedDocument?.currency,
@@ -206,25 +207,18 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
               </FormSelect>
             </FormField>
 
-            {isEdit ? (
-              <FormField label="N° de Ajuste">
-                <FormInput value={form.documentNumber} readOnly disabled className="bg-slate-50 text-slate-500 cursor-not-allowed" />
-                <p className="text-xs text-slate-400 mt-1">El número de documento no puede modificarse.</p>
-              </FormField>
-            ) : (
-              <FormField label="N° de Ajuste" required error={errors.documentNumber}>
-                <FormInput placeholder="Ej: 0001-00001234-AJ1" value={form.documentNumber} onChange={set('documentNumber')} required />
-                {dupChecking && <p className="mt-1 text-xs text-slate-400">Verificando número…</p>}
-                {!dupChecking && dupWarning && (
-                  <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                    <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-800 leading-snug">
-                      Ya existe un documento con el número <strong>{form.documentNumber.trim()}</strong>.
-                    </p>
-                  </div>
-                )}
-              </FormField>
-            )}
+            <FormField label="N° de Ajuste" required error={errors.documentNumber}>
+              <FormInput placeholder="Ej: 0001-00001234-AJ1" value={form.documentNumber} onChange={set('documentNumber')} required />
+              {dupChecking && <p className="mt-1 text-xs text-slate-400">Verificando número…</p>}
+              {!dupChecking && dupWarning && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 leading-snug">
+                    Ya existe un documento con el número <strong>{form.documentNumber.trim()}</strong>.
+                  </p>
+                </div>
+              )}
+            </FormField>
 
             <FormField label="Fecha de Emisión" required error={errors.issueDate}>
               <FormInput type="date" value={form.issueDate} onChange={set('issueDate')} required />

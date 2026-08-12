@@ -716,7 +716,7 @@ function FacturaCard({
   typeDefsByKey: TypeDirectionMap
   onInstallmentUpdate: (docId: string, instId: string, updates: InstallmentUpdate) => void
 }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const currency = factura.currency === 'USD' ? 'US$' : 'AR$'
 
   // Un NC/ND/Refacturación vinculado podría, en teoría, haberse cargado en
@@ -962,7 +962,7 @@ function StandaloneDocCard({
   installments: Installment[]
   onInstallmentUpdate: (docId: string, instId: string, updates: InstallmentUpdate) => void
 }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const currency = doc.currency === 'USD' ? 'US$' : 'AR$'
   const isNC = doc.documentType === 'CREDIT_NOTE'
   const today = new Date().toISOString().slice(0, 10)

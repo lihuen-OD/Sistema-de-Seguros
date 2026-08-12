@@ -65,7 +65,13 @@ const ALLOCATION_COVERAGE_SELECT = {
 
 const DOCUMENT_LIST_INCLUDE = {
   _count: { select: { installments: true, allocations: true, attachments: true } },
-  allocations: { select: { policyAssetCoverage: { select: { policyId: true } } } },
+  allocations: {
+    select: {
+      id: true, accountingDocumentId: true, policyAssetCoverageId: true,
+      allocatedAmount: true, allocationPercentage: true,
+      policyAssetCoverage: { select: { policyId: true, assetId: true } },
+    },
+  },
 }
 
 const DOCUMENT_DETAIL_INCLUDE = {
@@ -217,7 +223,15 @@ export const documentsService = {
     return buildPaginatedResponse(
       rawData.map((doc) => ({
         ...withTotalAmount(doc),
-        allocations: doc.allocations.map((a) => ({ policyId: a.policyAssetCoverage.policyId })),
+        allocations: doc.allocations.map((a) => ({
+          id: a.id,
+          accountingDocumentId: a.accountingDocumentId,
+          policyAssetCoverageId: a.policyAssetCoverageId,
+          policyId: a.policyAssetCoverage.policyId,
+          assetId: a.policyAssetCoverage.assetId,
+          allocatedAmount: a.allocatedAmount,
+          allocationPercentage: a.allocationPercentage,
+        })),
       })),
       total,
       { page, limit },
@@ -415,6 +429,32 @@ export const documentsService = {
     const typeDef = getDocumentTypeDef(effectiveType)
     if (!typeDef) throw new AppError(400, 'Tipo de documento inválido', 'BAD_REQUEST')
 
+    const effectiveDocumentNumber = docData.documentNumber ?? existing.documentNumber
+    const effectiveInsuranceCompany =
+      docData.insuranceCompany !== undefined ? docData.insuranceCompany : existing.insuranceCompany
+
+    // Mismo pre-chequeo que create() (ver comentario ahí) — el número de
+    // documento dejó de ser inmutable (puede corregirse un typo después del
+    // alta), así que el duplicado tipo+compañía+número hay que revalidarlo
+    // acá también. Excluye el propio id: comparar el documento contra sí
+    // mismo con estos mismos valores nunca es un conflicto real.
+    const duplicateOnUpdate = await prisma.accountingDocument.findFirst({
+      where: {
+        id: { not: id },
+        documentNumber: effectiveDocumentNumber,
+        documentType: effectiveType,
+        insuranceCompany: effectiveInsuranceCompany ?? null,
+      },
+      select: { id: true },
+    })
+    if (duplicateOnUpdate) {
+      throw new AppError(
+        409,
+        'Ya existe un documento del mismo tipo y compañía con ese número',
+        'CONFLICT',
+      )
+    }
+
     const effectiveLinkedId =
       docData.linkedDocumentId !== undefined ? docData.linkedDocumentId : existing.linkedDocumentId
     const effectiveAdjustmentReason =
@@ -474,46 +514,60 @@ export const documentsService = {
       effectiveExchangeRate,
     )
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const doc = await tx.accountingDocument.update({
-        where: { id },
-        data: {
-          ...docData,
-          currency: effectiveCurrency,
-          exchangeRate: effectiveExchangeRate,
-          paymentMethod: effectivePaymentMethod,
-          relationType: typeDef.relationType ?? null,
-          ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
-          totalAmountArs: effectiveTotalAmountArs,
-          totalAmountUsd: effectiveTotalAmountUsd,
-        },
-        include: DOCUMENT_DETAIL_INCLUDE,
+    let updated
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        const doc = await tx.accountingDocument.update({
+          where: { id },
+          data: {
+            ...docData,
+            currency: effectiveCurrency,
+            exchangeRate: effectiveExchangeRate,
+            paymentMethod: effectivePaymentMethod,
+            relationType: typeDef.relationType ?? null,
+            ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
+            totalAmountArs: effectiveTotalAmountArs,
+            totalAmountUsd: effectiveTotalAmountUsd,
+          },
+          include: DOCUMENT_DETAIL_INCLUDE,
+        })
+
+        await this.recordAudit(id, {
+          action: 'UPDATE',
+          description: 'Documento actualizado',
+          previousData: {
+            documentNumber: existing.documentNumber,
+            documentType: existing.documentType,
+            linkedDocumentId: existing.linkedDocumentId,
+            paymentMethod: existing.paymentMethod,
+            netAmount: existing.netAmount,
+            vatAmount: existing.vatAmount,
+            otherTaxesAmount: existing.otherTaxesAmount,
+          },
+          newData: {
+            documentNumber: doc.documentNumber,
+            documentType: doc.documentType,
+            linkedDocumentId: doc.linkedDocumentId,
+            paymentMethod: doc.paymentMethod,
+            netAmount: doc.netAmount,
+            vatAmount: doc.vatAmount,
+            otherTaxesAmount: doc.otherTaxesAmount,
+          },
+          performedBy,
+        }, tx)
+
+        return doc
       })
-
-      await this.recordAudit(id, {
-        action: 'UPDATE',
-        description: 'Documento actualizado',
-        previousData: {
-          documentType: existing.documentType,
-          linkedDocumentId: existing.linkedDocumentId,
-          paymentMethod: existing.paymentMethod,
-          netAmount: existing.netAmount,
-          vatAmount: existing.vatAmount,
-          otherTaxesAmount: existing.otherTaxesAmount,
-        },
-        newData: {
-          documentType: doc.documentType,
-          linkedDocumentId: doc.linkedDocumentId,
-          paymentMethod: doc.paymentMethod,
-          netAmount: doc.netAmount,
-          vatAmount: doc.vatAmount,
-          otherTaxesAmount: doc.otherTaxesAmount,
-        },
-        performedBy,
-      }, tx)
-
-      return doc
-    })
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new AppError(
+          409,
+          'Ya existe un documento del mismo tipo y compañía con ese número',
+          'CONFLICT',
+        )
+      }
+      throw err
+    }
 
     return mapDocumentDetail(updated)
   },
@@ -1122,6 +1176,7 @@ export const documentsService = {
       select: {
         id: true,
         documentNumber: true,
+        insuranceCompany: true,
         currency: true,
         exchangeRate: true,
         paymentMethod: true,
@@ -1427,14 +1482,22 @@ export const documentsService = {
     return { paymentMethod: inheritedPaymentMethod, currency: inheritedCurrency, exchangeRate: inheritedExchangeRate }
   },
 
-  async checkDocumentNumber(documentNumber: string, documentType?: string, insuranceCompany?: string | null) {
-    // Mismo criterio compuesto que create(): el duplicado real es
-    // tipo + compañía + número, no el número solo.
+  async checkDocumentNumber(
+    documentNumber: string,
+    documentType?: string,
+    insuranceCompany?: string | null,
+    excludeId?: string,
+  ) {
+    // Mismo criterio compuesto que create()/update(): el duplicado real es
+    // tipo + compañía + número, no el número solo. excludeId lo manda la
+    // edición de un documento existente, para que su propio número sin
+    // cambios no se marque como "ya existe" contra sí mismo.
     const existing = await prisma.accountingDocument.findFirst({
       where: {
         documentNumber,
         ...(documentType && { documentType }),
         ...(insuranceCompany !== undefined && { insuranceCompany: insuranceCompany ?? null }),
+        ...(excludeId && { id: { not: excludeId } }),
       },
       select: { id: true },
     })
