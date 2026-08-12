@@ -13,6 +13,9 @@ describe('classifyAuditableAssetCategory', () => {
     ['Implemento agrícola', 'implemento'],
     ['Maquinaria', 'maquinaria'],
     ['Maquinaria agrícola', 'maquinaria'],
+    // "Moto" sí clasifica acá (a diferencia de classifyAssetType) — solo importa
+    // para INSURANCE_AUDIT, ver comentario en asset-audit-category-classification.ts.
+    ['Moto', 'moto'],
     // Legacy / sin acentos ni espacios — mismo criterio de normalización que classifyAssetType.
     ['camioneta', 'camioneta'],
     ['maquinaria_agricola', 'maquinaria'],
@@ -20,7 +23,7 @@ describe('classifyAuditableAssetCategory', () => {
     expect(classifyAuditableAssetCategory(assetType)).toBe(expected)
   })
 
-  it.each(['Moto', 'Edificio', 'Establecimiento', 'Equipo', 'Infraestructura', 'Carga Animal', 'Carga Común', ''])(
+  it.each(['Edificio', 'Establecimiento', 'Equipo', 'Infraestructura', 'Carga Animal', 'Carga Común', ''])(
     'returns null for a non-auditable category "%s"',
     (assetType) => {
       expect(classifyAuditableAssetCategory(assetType)).toBeNull()

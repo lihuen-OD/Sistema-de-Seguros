@@ -326,14 +326,18 @@ export default function AssetEditPage() {
   // admiten Bien de Uso asociado.
   const isLivestock = assetCategory === 'carga_animal'
   const isEquipoMaq = ['equipo', 'maquinaria'].includes(assetCategory ?? '')
-  // Categorías elegibles para la futura auditoría de activos — las mismas
-  // que se excluyen de la auditoría de matafuegos (ver
-  // asset-type-classification.ts en el backend). "moto" queda afuera a
-  // propósito: no lleva matafuego, nunca va a entrar en ese circuito.
-  const isAuditableCategory = [
+  // Categorías elegibles para Auditoría de Rodados (matafuego montado en el
+  // vehículo) — "moto" queda afuera a propósito: no lleva matafuego, así que
+  // nunca va a entrar en ese circuito (ver asset-type-classification.ts en
+  // el backend).
+  const isFireExtinguisherAuditableCategory = [
     'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
     'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',
   ].includes(assetCategory ?? '')
+  // Categorías elegibles para Auditoría de Seguros (verifica tarjeta de
+  // circulación) — mismas que arriba, más "moto": a diferencia del
+  // matafuego, la tarjeta de circulación sí aplica a motos.
+  const isInsuranceAuditableCategory = isFireExtinguisherAuditableCategory || assetCategory === 'moto'
   const isSiloInfra = isInfraestructura && form.infraType === 'Silo'
 
   // ── Early returns ──────────────────────────────────────────────────────────
@@ -645,26 +649,28 @@ export default function AssetEditPage() {
                   <FormInput type="date" value={reactivationDate} onChange={(e) => setReactivationDate(e.target.value)} />
                 </FormField>
               )}
-              {isAuditableCategory && (
+              {isInsuranceAuditableCategory && (
                 <FormField label="Auditorías" fullWidth>
                   <div className="space-y-2.5">
-                    <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={fireExtinguisherAuditable}
-                        onChange={(e) => setFireExtinguisherAuditable(e.target.checked)}
-                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
-                          <ClipboardCheck size={14} className="text-slate-400" />
-                          Incluir en Auditoría de Rodados
-                        </p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Habilita este activo para la Auditoría de Rodados, que verifica el matafuego montado en el vehículo.
-                        </p>
-                      </div>
-                    </label>
+                    {isFireExtinguisherAuditableCategory && (
+                      <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={fireExtinguisherAuditable}
+                          onChange={(e) => setFireExtinguisherAuditable(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                            <ClipboardCheck size={14} className="text-slate-400" />
+                            Incluir en Auditoría de Rodados
+                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Habilita este activo para la Auditoría de Rodados, que verifica el matafuego montado en el vehículo.
+                          </p>
+                        </div>
+                      </label>
+                    )}
                     <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer hover:border-slate-300 transition-colors">
                       <input
                         type="checkbox"

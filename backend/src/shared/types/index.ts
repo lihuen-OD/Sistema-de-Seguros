@@ -59,9 +59,12 @@ export type AuditScopeArea = typeof AUDIT_SCOPE_AREAS[number]
 // categorías que Asset.fireExtinguisherAuditable/insuranceAuditable habilitan
 // hoy (ver IS_AUDITABLE_CATEGORY en frontend/src/modules/assets/AssetNewPage.tsx)
 // — mismo patrón de duplicación FE/BE ya usado para MODULE_KEYS, porque el
-// backend no tiene enum/catálogo propio de categoría de activo.
+// backend no tiene enum/catálogo propio de categoría de activo. "moto" solo
+// habilita insuranceAuditable, nunca fireExtinguisherAuditable (no lleva
+// matafuego) — igual se incluye en este listado único porque ambos flags lo
+// comparten como scopeValue de UserAuditScope.
 export const AUDITABLE_ASSET_CATEGORIES = [
-  'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
+  'vehiculo', 'camioneta', 'camion', 'moto', 'transporte_pasajeros',
   'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',
 ] as const
 export type AuditableAssetCategory = typeof AUDITABLE_ASSET_CATEGORIES[number]

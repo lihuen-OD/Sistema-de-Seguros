@@ -194,11 +194,14 @@ export type AssetCategory =
   | 'carga_animal' | 'carga_comun'
 
 // Subconjunto de AssetCategory habilitado para Asset.fireExtinguisherAuditable/
-// insuranceAuditable (ver IS_AUDITABLE_CATEGORY en modules/assets/AssetNewPage.tsx)
-// — mismo listado que AUDITABLE_ASSET_CATEGORIES del backend, usado como
-// scopeValue en UserAuditScope para las áreas ASSET_AUDIT/INSURANCE_AUDIT.
+// insuranceAuditable (ver IS_FIRE_EXTINGUISHER_AUDITABLE_CATEGORY/
+// IS_INSURANCE_AUDITABLE_CATEGORY en modules/assets/AssetNewPage.tsx) — mismo
+// listado que AUDITABLE_ASSET_CATEGORIES del backend, usado como scopeValue
+// en UserAuditScope para las áreas ASSET_AUDIT/INSURANCE_AUDIT. "moto" solo
+// habilita insuranceAuditable (no lleva matafuego), pero comparte este mismo
+// listado con fireExtinguisherAuditable como scopeValue.
 export const AUDITABLE_ASSET_CATEGORIES: AssetCategory[] = [
-  'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
+  'vehiculo', 'camioneta', 'camion', 'moto', 'transporte_pasajeros',
   'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',
 ]
 
