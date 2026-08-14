@@ -56,6 +56,12 @@ jobs:
     defaults:
       run:
         working-directory: frontend
+    env:
+      # vite.config.ts corta el build si falta esta variable (ver comentario
+      # ahí) para no dejar pasar en silencio un build de demo/producción
+      # apuntando a localhost — acá en CI ningún build corre de verdad, así
+      # que solo hace falta que la variable exista.
+      VITE_API_URL: http://localhost:3001
     steps:
       - uses: actions/checkout@v4
 
