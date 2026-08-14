@@ -3,18 +3,19 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import clsx from 'clsx'
-import { PageContent } from '../../../shared/components/page-header/PageContent'
-import { PageHeader } from '../../../shared/components/page-header/PageHeader'
-import { SectionCard } from '../../../shared/components/cards/SectionCard'
-import { fireExtinguisherKeys, fireExtinguisherQueries } from '../../../shared/api/fire-extinguishers.api'
-import type { fireExtinguisherAuditsApi } from '../../../shared/api/fire-extinguisher-audits.api'
+import { PageContent } from '../../components/page-header/PageContent'
+import { PageHeader } from '../../components/page-header/PageHeader'
+import { SectionCard } from '../../components/cards/SectionCard'
+import { fireExtinguisherKeys, fireExtinguisherQueries } from '../../api/fire-extinguishers.api'
+import type { fireExtinguisherAuditsApi } from '../../api/fire-extinguisher-audits.api'
 import type {
   AuditChecklistInput,
   FireExtinguisherAudit,
   FireExtinguisherAuditAttachment,
   FireExtinguisherCoverageItem,
-} from '../../../shared/api/fire-extinguisher-audits.api'
-import type { FireExtinguisher } from '../../../shared/types'
+} from '../../api/fire-extinguisher-audits.api'
+import type { FireExtinguisher } from '../../types'
+import { currentPeriod } from '../../utils/period'
 import { AuditStep1Selection } from './AuditStep1Selection'
 import { AuditStep2Location } from './AuditStep2Location'
 import { AuditStep3FieldValidation, FIELD_VALIDATION_CONFIG } from './AuditStep3FieldValidation'
@@ -71,10 +72,6 @@ export interface AuditWizardConfig {
   newSubtitle: string
 }
 
-function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7)
-}
-
 export function AuditWizard({
   population,
   api,
@@ -89,98 +86,158 @@ export function AuditWizard({
   newSubtitle,
 }: AuditWizardConfig) {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const preselectedId = searchParams.get('extinguisherId')
-  const checklistFields = getChecklistFields(population)
 
   // Ruta /:id/edit — corrige una auditoría propia SUBMITTED en vez de crear
   // una nueva (ver fire-extinguisher-audits.service.ts's update()).
   const { id: editId } = useParams<{ id?: string }>()
   const isEditing = Boolean(editId)
 
-  const [step, setStep] = useState<WizardStep>(preselectedId || isEditing ? 2 : 1)
-  const [maxStepReached, setMaxStepReached] = useState<WizardStep>(preselectedId || isEditing ? 2 : 1)
-  const [seeded, setSeeded] = useState(false)
+  const { data: editingAudit } = useQuery(auditDetailQuery(editId ?? ''))
+  const { data: editingExtinguisher } = useQuery(fireExtinguisherQueries.detail(editingAudit?.fireExtinguisherId ?? ''))
+
+  const editingAuditInvalid = isEditing && !!editingAudit && editingAudit.status !== 'SUBMITTED'
+
+  // Redirect puro (no toca estado de React) — separado del seed del
+  // formulario, que vive en AuditWizardBody sin efecto (ver sus useState).
+  useEffect(() => {
+    if (editingAuditInvalid) {
+      toast.error('Esta auditoría ya no se puede editar porque ya fue revisada')
+      navigate(detailRoute(editingAudit!.id), { replace: true })
+    }
+  }, [editingAuditInvalid, editingAudit, navigate, detailRoute])
+
+  if (isEditing && (!editingAudit || !editingExtinguisher || editingAuditInvalid)) {
+    return (
+      <PageContent>
+        <p className="text-sm text-slate-400 py-10 text-center">Cargando auditoría…</p>
+      </PageContent>
+    )
+  }
+
+  return (
+    <AuditWizardBody
+      key={editId ?? 'new'}
+      population={population}
+      api={api}
+      auditKeys={auditKeys}
+      coverageQuery={coverageQuery}
+      detailRoute={detailRoute}
+      backRoute={backRoute}
+      backLabel={backLabel}
+      category={category}
+      newTitle={newTitle}
+      newSubtitle={newSubtitle}
+      editId={editId}
+      editingAudit={isEditing ? editingAudit! : null}
+      editingExtinguisher={isEditing ? editingExtinguisher! : null}
+      preselectedId={preselectedId}
+    />
+  )
+}
+
+interface AuditWizardBodyProps {
+  population: AuditPopulation
+  api: Pick<typeof fireExtinguisherAuditsApi, 'create' | 'update' | 'addAttachment' | 'deleteAttachment'>
+  auditKeys: { all: readonly unknown[]; detail: (id: string) => readonly unknown[] }
+  coverageQuery: (period: string) => QueryConfig<FireExtinguisherCoverageItem[]>
+  detailRoute: (id: string) => string
+  backRoute: string
+  backLabel: string
+  category: string
+  newTitle: string
+  newSubtitle: string
+  editId: string | undefined
+  editingAudit: FireExtinguisherAudit | null
+  editingExtinguisher: FireExtinguisher | null
+  preselectedId: string | null
+}
+
+// Con key={editId ?? 'new'} en el caller — todo el estado de abajo se siembra
+// una sola vez, directo de editingAudit/editingExtinguisher (ya garantizados
+// cargados y válidos por AuditWizard antes de montar esto), sin efecto.
+function AuditWizardBody({
+  population,
+  api,
+  auditKeys,
+  coverageQuery,
+  detailRoute,
+  backRoute,
+  backLabel,
+  category,
+  newTitle,
+  newSubtitle,
+  editId,
+  editingAudit,
+  editingExtinguisher,
+  preselectedId,
+}: AuditWizardBodyProps) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const checklistFields = getChecklistFields(population)
+  const isEditing = Boolean(editId)
+
+  const [step, setStep] = useState<WizardStep>(() => (isEditing || preselectedId ? 2 : 1))
+  // Al editar arranca en 5 directo (ya completó el wizard una vez, puede
+  // saltar libremente entre pasos) — antes pasaba por un salto transitorio
+  // 2→5 mientras cargaba; ya no hace falta, AuditWizard absorbe esa espera.
+  const [maxStepReached, setMaxStepReached] = useState<WizardStep>(() => (isEditing ? 5 : preselectedId ? 2 : 1))
 
   const [selectedId, setSelectedId] = useState<string | null>(preselectedId)
-  const [selectedExtinguisher, setSelectedExtinguisher] = useState<FireExtinguisher | null>(null)
 
   // Selección resuelta por id — vino de la pestaña "Cobertura"
   // (?extinguisherId=, se salta el Paso 1) o se eligió recién en el Paso 1 de
   // este mismo wizard (que busca en la lista ya scopeada de cobertura, no en
   // la lista maestra). En ambos casos se pide el detalle completo (GET
   // /fire-extinguishers/:id, permitido para el rol auditor de las dos
-  // poblaciones) para las pantallas que siguen.
+  // poblaciones) para las pantallas que siguen. Al editar, el matafuego ya
+  // viene resuelto como prop — no hace falta este fetch ni estado propio.
   const { data: fetchedExtinguisher } = useQuery(fireExtinguisherQueries.detail(selectedId ?? ''))
+  const selectedExtinguisher = isEditing ? editingExtinguisher : fetchedExtinguisher ?? null
 
-  useEffect(() => {
-    if (fetchedExtinguisher) setSelectedExtinguisher(fetchedExtinguisher)
-  }, [fetchedExtinguisher])
-
-  const { data: editingAudit } = useQuery(auditDetailQuery(editId ?? ''))
-  const { data: editingExtinguisher } = useQuery(fireExtinguisherQueries.detail(editingAudit?.fireExtinguisherId ?? ''))
-
-  const [locationConfirmed, setLocationConfirmed] = useState<boolean | null>(null)
-  const [proposedLocation, setProposedLocation] = useState('')
-  const [locationReason, setLocationReason] = useState('')
-
-  const [fieldValidations, setFieldValidations] = useState<Record<string, FieldValidationState>>(() =>
-    Object.fromEntries(FIELD_VALIDATION_CONFIG.map((f) => [f.key, emptyFieldValidationState()])),
+  const [locationConfirmed, setLocationConfirmed] = useState<boolean | null>(() =>
+    isEditing ? !editingAudit!.locationChangeRequested : null,
   )
+  const [proposedLocation, setProposedLocation] = useState(() => (isEditing ? editingAudit!.proposedLocation ?? '' : ''))
+  const [locationReason, setLocationReason] = useState(() => (isEditing ? editingAudit!.locationChangeReason ?? '' : ''))
 
-  const [checklist, setChecklist] = useState<Record<string, string>>({})
-  const [checklistComments, setChecklistComments] = useState('')
+  const [fieldValidations, setFieldValidations] = useState<Record<string, FieldValidationState>>(() => {
+    if (!isEditing) return Object.fromEntries(FIELD_VALIDATION_CONFIG.map((f) => [f.key, emptyFieldValidationState()]))
+    return Object.fromEntries(
+      FIELD_VALIDATION_CONFIG.map((f) => {
+        const change = editingAudit!.proposedChanges.find((pc) => pc.fieldName === f.key)
+        return [
+          f.key,
+          change
+            ? { modified: true, newValue: change.proposedValue, reason: change.reason ?? '' }
+            : emptyFieldValidationState(),
+        ]
+      }),
+    )
+  })
+
+  const [checklist, setChecklist] = useState<Record<string, string>>((): Record<string, string> =>
+    isEditing
+      ? {
+          cleanliness: editingAudit!.checklist.cleanliness,
+          chargeFillStatus: editingAudit!.checklist.chargeFillStatus,
+          mountingCondition: editingAudit!.checklist.mountingCondition,
+          sealStatus: editingAudit!.checklist.sealStatus,
+          ringStatus: editingAudit!.checklist.ringStatus,
+          hoseNozzleCondition: editingAudit!.checklist.hoseNozzleCondition,
+          chargeExpirationDateObserved: editingAudit!.checklist.chargeExpirationDateObserved ?? '',
+        }
+      : {},
+  )
+  const [checklistComments, setChecklistComments] = useState(() => (isEditing ? editingAudit!.checklist.comments ?? '' : ''))
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
-  const [existingPhotos, setExistingPhotos] = useState<FireExtinguisherAuditAttachment[]>([])
+  const [existingPhotos, setExistingPhotos] = useState<FireExtinguisherAuditAttachment[]>(() =>
+    isEditing ? editingAudit!.attachments.filter((a) => a.fileType === 'image') : [],
+  )
 
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
-
-  // Precarga el wizard con los datos de la auditoría SUBMITTED a editar — una
-  // sola vez, cuando ambos fetches (auditoría + matafuego) ya resolvieron.
-  useEffect(() => {
-    if (!isEditing || seeded || !editingAudit || !editingExtinguisher) return
-
-    if (editingAudit.status !== 'SUBMITTED') {
-      toast.error('Esta auditoría ya no se puede editar porque ya fue revisada')
-      navigate(detailRoute(editingAudit.id), { replace: true })
-      return
-    }
-
-    setSelectedExtinguisher(editingExtinguisher)
-    setLocationConfirmed(!editingAudit.locationChangeRequested)
-    setProposedLocation(editingAudit.proposedLocation ?? '')
-    setLocationReason(editingAudit.locationChangeReason ?? '')
-    setFieldValidations(
-      Object.fromEntries(
-        FIELD_VALIDATION_CONFIG.map((f) => {
-          const change = editingAudit.proposedChanges.find((pc) => pc.fieldName === f.key)
-          return [
-            f.key,
-            change
-              ? { modified: true, newValue: change.proposedValue, reason: change.reason ?? '' }
-              : emptyFieldValidationState(),
-          ]
-        }),
-      ),
-    )
-    setChecklist({
-      cleanliness: editingAudit.checklist.cleanliness,
-      chargeFillStatus: editingAudit.checklist.chargeFillStatus,
-      mountingCondition: editingAudit.checklist.mountingCondition,
-      sealStatus: editingAudit.checklist.sealStatus,
-      ringStatus: editingAudit.checklist.ringStatus,
-      hoseNozzleCondition: editingAudit.checklist.hoseNozzleCondition,
-      chargeExpirationDateObserved: editingAudit.checklist.chargeExpirationDateObserved ?? '',
-    })
-    setChecklistComments(editingAudit.checklist.comments ?? '')
-    setExistingPhotos(editingAudit.attachments.filter((a) => a.fileType === 'image'))
-    setStep(2)
-    // Ya completó el wizard una vez — puede saltar libremente entre pasos.
-    setMaxStepReached(5)
-    setSeeded(true)
-  }, [isEditing, seeded, editingAudit, editingExtinguisher, navigate, detailRoute])
 
   // Valor "vigente" de vencimiento tras el Paso 3: el corregido si se marcó
   // Modificar, si no el del maestro — para no pedir de nuevo en el checklist
@@ -282,14 +339,6 @@ export function AuditWizard({
       setSubmitError(err instanceof Error ? err.message : 'Error al registrar la auditoría')
       setSubmitting(false)
     }
-  }
-
-  if (isEditing && !seeded) {
-    return (
-      <PageContent>
-        <p className="text-sm text-slate-400 py-10 text-center">Cargando auditoría…</p>
-      </PageContent>
-    )
   }
 
   return (

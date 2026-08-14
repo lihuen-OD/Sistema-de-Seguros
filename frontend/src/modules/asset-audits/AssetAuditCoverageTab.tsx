@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -9,6 +9,7 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { AuditCommentsPanel } from '../../shared/components/audit-comments/AuditCommentsPanel'
 import { fireExtinguisherLabel } from '../../shared/utils/format'
+import { currentPeriod } from '../../shared/utils/period'
 import { CATEGORY_LABEL, AUDITABLE_CATEGORY_GROUPS } from '../../shared/constants/asset-categories'
 import type { AssetCategory } from '../../shared/types'
 import { assetAuditsApi, assetAuditKeys, assetAuditQueries, type AssetAuditCoverageItem } from '../../shared/api/asset-audits.api'
@@ -51,11 +52,9 @@ function groupByCategory(data: AssetAuditCoverageItem[]): CategoryGroup[] {
 }
 
 export function AssetAuditCoverageTab({ period, onPeriodChange, data, isLoading, canAudit }: AssetAuditCoverageTabProps) {
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user } = useCurrentUser()
   const [search, setSearch] = useState('')
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
 
   const { data: comments = [] } = useQuery(assetAuditQueries.comments(period))
   const commentTargets = useMemo(
@@ -81,22 +80,6 @@ export function AssetAuditCoverageTab({ period, onPeriodChange, data, isLoading,
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Error al marcar como visto'),
   })
 
-  function toggleCollapse(category: string) {
-    setCollapsedCategories((prev) => {
-      const next = new Set(prev)
-      if (next.has(category)) next.delete(category)
-      else next.add(category)
-      return next
-    })
-  }
-
-  // Categorías vienen cerradas por defecto — se re-cierran cada vez que
-  // llegan datos nuevos (cambio de período), mismo criterio que
-  // AuditCoverageTab de matafuegos.
-  useEffect(() => {
-    setCollapsedCategories(new Set(groupByCategory(data).map((g) => g.category)))
-  }, [data])
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return data
@@ -109,14 +92,6 @@ export function AssetAuditCoverageTab({ period, onPeriodChange, data, isLoading,
 
   const groups = useMemo(() => groupByCategory(filtered), [filtered])
   const totalAudited = filtered.filter((i) => i.audited).length
-
-  function goToAudit(extinguisherId: string) {
-    navigate(`${ROUTES.ASSET_AUDITS_NEW}?extinguisherId=${extinguisherId}`)
-  }
-
-  function goToEditAudit(auditId: string) {
-    navigate(ROUTES.ASSET_AUDITS_EDIT(auditId))
-  }
 
   return (
     <div className="space-y-4">
@@ -158,97 +133,152 @@ export function AssetAuditCoverageTab({ period, onPeriodChange, data, isLoading,
           </p>
         </SectionCard>
       ) : (
-        groups.map((group) => {
-          const collapsed = collapsedCategories.has(group.category)
-          const Icon = CATEGORY_ICON[group.category] ?? Package
-          return (
-            <SectionCard key={group.category} noPadding>
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => toggleCollapse(group.category)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapse(group.category) } }}
-                className="px-5 py-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50/60 transition-colors"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Icon size={15} className="text-slate-400 flex-shrink-0" />
-                    <span className="text-sm font-semibold text-slate-800 truncate">
-                      {CATEGORY_LABEL[group.category as AssetCategory] ?? group.category}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
-                      {group.audited}/{group.total} auditados
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); toggleCollapse(group.category) }}
-                      className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
-                      title={collapsed ? 'Mostrar categoría' : 'Ocultar categoría'}
-                    >
-                      {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {!collapsed && (
-                <div className="divide-y divide-slate-100">
-                  {group.items.map((item) => {
-                    const isAuditable = canAudit && (!item.audited || item.auditStatus === 'NEEDS_CORRECTION' || item.auditStatus === 'REJECTED')
-                    const isEditable = canAudit && item.audited && item.auditStatus === 'SUBMITTED' && !!item.auditId
-                    const onItemClick = isAuditable ? () => goToAudit(item.id) : isEditable ? () => goToEditAudit(item.auditId!) : undefined
-                    const primaryLabel = fireExtinguisherLabel(item.cylinderNumber, item.asset?.name ?? null, item.code)
-                    return (
-                      <div
-                        key={item.id}
-                        role={onItemClick ? 'button' : undefined}
-                        tabIndex={onItemClick ? 0 : undefined}
-                        onClick={onItemClick}
-                        onKeyDown={onItemClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onItemClick() } } : undefined}
-                        className={clsx(
-                          'flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 px-4 sm:px-5 py-2.5',
-                          onItemClick && 'cursor-pointer hover:bg-slate-50 transition-colors',
-                        )}
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-800 break-words sm:truncate">{primaryLabel}</p>
-                          <p className="text-xs text-slate-500 break-words sm:truncate">
-                            {item.asset?.name ?? '—'}{item.asset?.assetType ? ` · ${item.asset.assetType}` : ''}
-                          </p>
-                          <p className="text-xs text-slate-400 font-mono break-words sm:truncate">{item.code}</p>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap sm:flex-shrink-0">
-                          {item.audited ? (
-                            <StatusPill status={item.auditStatus ?? ''} size="sm" />
-                          ) : (
-                            <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200 whitespace-nowrap">
-                              Sin auditar
-                            </span>
-                          )}
-                          {isAuditable && (
-                            <span className="flex items-center gap-1 text-xs font-medium text-brand-600">
-                              <ClipboardCheck size={13} />
-                              Auditar
-                            </span>
-                          )}
-                          {isEditable && (
-                            <span className="flex items-center gap-1 text-xs font-medium text-brand-600">
-                              <Pencil size={13} />
-                              Editar
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </SectionCard>
-          )
-        })
+        <CoverageGroupsList key={period} period={period} data={data} groups={groups} canAudit={canAudit} />
       )}
     </div>
+  )
+}
+
+interface CoverageGroupsListProps {
+  period: string
+  data: AssetAuditCoverageItem[]
+  groups: CategoryGroup[]
+  canAudit: boolean
+}
+
+// Recibe key={period} del padre — se remonta entero al cambiar de período,
+// así que collapsedCategories puede inicializarse directo desde los datos
+// sin useEffect (categorías cerradas por defecto en cada período nuevo).
+function CoverageGroupsList({ period, data, groups, canAudit }: CoverageGroupsListProps) {
+  const navigate = useNavigate()
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    () => new Set(groupByCategory(data).map((g) => g.category)),
+  )
+
+  function toggleCollapse(category: string) {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(category)) next.delete(category)
+      else next.add(category)
+      return next
+    })
+  }
+
+  function goToAudit(extinguisherId: string) {
+    navigate(`${ROUTES.ASSET_AUDITS_NEW}?extinguisherId=${extinguisherId}`)
+  }
+
+  function goToEditAudit(auditId: string) {
+    navigate(ROUTES.ASSET_AUDITS_EDIT(auditId))
+  }
+
+  return (
+    <>
+      {groups.map((group) => {
+        const collapsed = collapsedCategories.has(group.category)
+        const Icon = CATEGORY_ICON[group.category] ?? Package
+        return (
+          <SectionCard key={group.category} noPadding>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => toggleCollapse(group.category)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapse(group.category) } }}
+              className="px-5 py-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50/60 transition-colors"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Icon size={15} className="text-slate-400 flex-shrink-0" />
+                  <span className="text-sm font-semibold text-slate-800 truncate">
+                    {CATEGORY_LABEL[group.category as AssetCategory] ?? group.category}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+                    {group.audited}/{group.total} auditados
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleCollapse(group.category) }}
+                    className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                    title={collapsed ? 'Mostrar categoría' : 'Ocultar categoría'}
+                  >
+                    {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {!collapsed && (
+              <div className="divide-y divide-slate-100">
+                {group.items.map((item) => {
+                  // Auditar siempre crea la auditoría con el período REAL de hoy
+                  // (currentYearMonth() en el backend, nunca el período que se
+                  // esté navegando acá) — si no es el período actual, la acción
+                  // no tiene sentido: mostrar "Sin auditar" para un mes viejo no
+                  // significa que se pueda auditar retroactivamente ese mes.
+                  const wouldBeAuditable = canAudit && (!item.audited || item.auditStatus === 'NEEDS_CORRECTION' || item.auditStatus === 'REJECTED')
+                  const isCurrentPeriod = period === currentPeriod()
+                  const isAuditable = wouldBeAuditable && isCurrentPeriod
+                  const isEditable = canAudit && item.audited && item.auditStatus === 'SUBMITTED' && !!item.auditId
+                  const onItemClick = isAuditable ? () => goToAudit(item.id) : isEditable ? () => goToEditAudit(item.auditId!) : undefined
+                  const primaryLabel = fireExtinguisherLabel(item.cylinderNumber, item.asset?.name ?? null, item.code)
+                  return (
+                    <div
+                      key={item.id}
+                      role={onItemClick ? 'button' : undefined}
+                      tabIndex={onItemClick ? 0 : undefined}
+                      onClick={onItemClick}
+                      onKeyDown={onItemClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onItemClick() } } : undefined}
+                      className={clsx(
+                        'flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 px-4 sm:px-5 py-2.5',
+                        onItemClick && 'cursor-pointer hover:bg-slate-50 transition-colors',
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 break-words sm:truncate">{primaryLabel}</p>
+                        <p className="text-xs text-slate-500 break-words sm:truncate">
+                          {item.asset?.name ?? '—'}{item.asset?.assetType ? ` · ${item.asset.assetType}` : ''}
+                        </p>
+                        <p className="text-xs text-slate-400 font-mono break-words sm:truncate">{item.code}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap sm:flex-shrink-0">
+                        {item.audited ? (
+                          <StatusPill status={item.auditStatus ?? ''} size="sm" />
+                        ) : (
+                          <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200 whitespace-nowrap">
+                            Sin auditar
+                          </span>
+                        )}
+                        {isAuditable && (
+                          <span className="flex items-center gap-1 text-xs font-medium text-brand-600">
+                            <ClipboardCheck size={13} />
+                            Auditar
+                          </span>
+                        )}
+                        {wouldBeAuditable && !isCurrentPeriod && (
+                          <span
+                            className="text-xs text-slate-400 whitespace-nowrap"
+                            title="Una auditoría nueva siempre se registra en el período actual — cambiá el período a hoy para auditar este activo."
+                          >
+                            Solo en el período actual
+                          </span>
+                        )}
+                        {isEditable && (
+                          <span className="flex items-center gap-1 text-xs font-medium text-brand-600">
+                            <Pencil size={13} />
+                            Editar
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </SectionCard>
+        )
+      })}
+    </>
   )
 }

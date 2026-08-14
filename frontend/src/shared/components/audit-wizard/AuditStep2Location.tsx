@@ -1,7 +1,7 @@
 import { MapPin } from 'lucide-react'
-import { ChoiceGroup } from '../../../shared/components/forms/ChoiceGroup'
-import { FormField, FormInput } from '../../../shared/components/forms/FormSection'
-import type { FireExtinguisher } from '../../../shared/types'
+import { ChoiceGroup } from '../../components/forms/ChoiceGroup'
+import { FormField, FormInput } from '../../components/forms/FormSection'
+import type { FireExtinguisher } from '../../types'
 
 interface AuditStep2LocationProps {
   extinguisher: FireExtinguisher

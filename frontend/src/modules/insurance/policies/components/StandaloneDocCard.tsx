@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { ChevronDown, ChevronUp, TrendingDown, TrendingUp } from 'lucide-react'
 import { StatusPill } from '../../../../shared/components/badges/StatusPill'
 import { InstallmentRow } from '../../../../shared/components/installments/InstallmentRow'
-import { formatDate } from '../../../../shared/utils/format'
+import { formatDate, formatCurrencyFull } from '../../../../shared/utils/format'
 import { DOCUMENT_TYPE_LABELS } from '../../../../shared/constants'
 import type { AccountingDocument, Installment, InstallmentUpdate } from '../../../../shared/types'
 
@@ -63,8 +63,7 @@ export function StandaloneDocCard({
             'text-sm font-bold tabular-nums',
             isNC ? 'text-red-600' : 'text-amber-700',
           )}>
-            {currency}{' '}
-            {Math.abs(doc.totalAmount).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {formatCurrencyFull(Math.abs(doc.totalAmount), doc.currency)}
           </p>
           <StatusPill status={doc.paymentStatus} size="sm" />
           {expanded

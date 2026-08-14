@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Save } from 'lucide-react'
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
@@ -20,7 +20,7 @@ import { assetQueries } from '../../shared/api/assets.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
-import type { TaskPriority, TaskStatus } from '../../shared/types'
+import type { Producer, ProducerTask, Policy, Asset, TaskPriority, TaskStatus } from '../../shared/types'
 
 interface FormErrors {
   title?: string
@@ -29,10 +29,8 @@ interface FormErrors {
 
 export default function TaskEditPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
 
-  const { data: allProducers = [] } = useQuery(producerQueries.list())
+  const { data: allProducers = [], isLoading: producersLoading } = useQuery(producerQueries.list())
   const { data: allPolicies = [] } = useQuery(policyQueries.list())
   const { data: allAssets = [] } = useQuery(assetQueries.list())
 
@@ -45,35 +43,7 @@ export default function TaskEditPage() {
   )
 
   const original = allTasks.find((t) => t.id === id)
-  const tasksLoading = allProducers.length > 0 && taskQueries.some((q) => q.isLoading)
-
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [producerId, setProducerId] = useState('')
-  const [policyId, setPolicyId] = useState('')
-  const [assetId, setAssetId] = useState('')
-  const [assignedTo, setAssignedTo] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [priority, setPriority] = useState<TaskPriority>('media')
-  const [status, setStatus] = useState<TaskStatus>('pendiente')
-  const [errors, setErrors] = useState<FormErrors>({})
-  const [submitting, setSubmitting] = useState(false)
-  const [formInitialized, setFormInitialized] = useState(false)
-
-  useEffect(() => {
-    if (original && !formInitialized) {
-      setTitle(original.title)
-      setDescription(original.description ?? '')
-      setProducerId(original.producerId ?? '')
-      setPolicyId(original.policyId ?? '')
-      setAssetId(original.assetId ?? '')
-      setAssignedTo(original.assignedTo ?? '')
-      setDueDate(original.dueDate ?? '')
-      setPriority(original.priority ?? 'media')
-      setStatus(original.status ?? 'pendiente')
-      setFormInitialized(true)
-    }
-  }, [original, formInitialized])
+  const tasksLoading = producersLoading || (allProducers.length > 0 && taskQueries.some((q) => q.isLoading))
 
   if (tasksLoading) {
     return (
@@ -85,7 +55,7 @@ export default function TaskEditPage() {
     )
   }
 
-  if (!tasksLoading && !original && allProducers.length > 0 && taskQueries.every((q) => !q.isLoading)) {
+  if (!original) {
     return (
       <PageContent>
         <EmptyState
@@ -95,6 +65,47 @@ export default function TaskEditPage() {
       </PageContent>
     )
   }
+
+  return (
+    <PageContent>
+      <PageHeader
+        title="Editar Tarea"
+        subtitle={original.title}
+        category="Tareas"
+        backTo={ROUTES.TASKS}
+        backLabel="Volver a Tareas"
+        badge={<StatusPill status={original.status} />}
+      />
+
+      <TaskForm key={id} original={original} allProducers={allProducers} allPolicies={allPolicies} allAssets={allAssets} />
+    </PageContent>
+  )
+}
+
+interface TaskFormProps {
+  original: ProducerTask
+  allProducers: Producer[]
+  allPolicies: Policy[]
+  allAssets: Asset[]
+}
+
+// Recibe key={id} del padre — se remonta entero al cambiar de tarea, así que
+// los campos pueden inicializarse directo desde `original` sin useEffect.
+function TaskForm({ original, allProducers, allPolicies, allAssets }: TaskFormProps) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const [title, setTitle] = useState(original.title)
+  const [description, setDescription] = useState(original.description ?? '')
+  const [producerId, setProducerId] = useState(original.producerId ?? '')
+  const [policyId, setPolicyId] = useState(original.policyId ?? '')
+  const [assetId, setAssetId] = useState(original.assetId ?? '')
+  const [assignedTo, setAssignedTo] = useState(original.assignedTo ?? '')
+  const [dueDate, setDueDate] = useState(original.dueDate ?? '')
+  const [priority, setPriority] = useState<TaskPriority>(original.priority ?? 'media')
+  const [status, setStatus] = useState<TaskStatus>(original.status ?? 'pendiente')
+  const [errors, setErrors] = useState<FormErrors>({})
+  const [submitting, setSubmitting] = useState(false)
 
   const filteredPolicies = producerId
     ? allPolicies.filter((p) => p.producerId === producerId)
@@ -115,7 +126,7 @@ export default function TaskEditPage() {
     setSubmitting(true)
 
     try {
-      await producersApi.updateTask(original!.producerId!, original!.id, {
+      await producersApi.updateTask(original.producerId!, original.id, {
         title: title.trim(),
         description: description.trim() || undefined,
         dueDate: dueDate || undefined,
@@ -133,16 +144,6 @@ export default function TaskEditPage() {
   }
 
   return (
-    <PageContent>
-      <PageHeader
-        title="Editar Tarea"
-        subtitle={original?.title ?? ''}
-        category="Tareas"
-        backTo={ROUTES.TASKS}
-        backLabel="Volver a Tareas"
-        badge={original ? <StatusPill status={original.status} /> : undefined}
-      />
-
       <form onSubmit={handleSubmit} noValidate>
         <SectionCard title="Datos de la Tarea" className="mb-5">
           <FormSection title="Descripción">
@@ -266,6 +267,5 @@ export default function TaskEditPage() {
           </button>
         </div>
       </form>
-    </PageContent>
   )
 }

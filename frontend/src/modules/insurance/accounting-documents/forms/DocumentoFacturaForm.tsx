@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Mail, CheckCircle2, ArrowLeftRight, X, Info } from 'lucide-react'
 import { PageContent } from '../../../../shared/components/page-header/PageContent'
@@ -17,8 +17,9 @@ import { policyQueries } from '../../../../shared/api/policies.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
+import { formatCurrencyFull } from '../../../../shared/utils/format'
 import { CURRENCY_OPTIONS } from '../../../../shared/constants'
-import type { AccountingDocument, Currency } from '../../../../shared/types'
+import type { AccountingDocument, Currency, Policy } from '../../../../shared/types'
 
 interface DocumentoFacturaFormProps {
   initialDoc?: AccountingDocument
@@ -37,25 +38,71 @@ interface FormState {
   otherTaxesAmount: string
 }
 
-type FormErrors = Partial<Record<keyof FormState | 'policies', string>>
+type FormErrors = Partial<Record<keyof FormState | 'policies' | 'installments', string>>
 
+// `sourcePolicyId` es estable durante toda la vida del formulario (viene de
+// un search param fijo puesto por DocumentNewPage) — se resuelve ACÁ, antes
+// de montar el formulario editable, para poder plegar el prefill directo en
+// el estado inicial de abajo sin necesitar un efecto.
 export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: DocumentoFacturaFormProps) {
+  const isEdit = !!initialDoc
+  const { data: sourcePolicy, isLoading: sourcePolicyLoading } = useQuery({
+    ...policyQueries.detail(sourcePolicyId!),
+    enabled: !isEdit && !!sourcePolicyId,
+  })
+
+  if (!isEdit && sourcePolicyId && (sourcePolicyLoading || !sourcePolicy)) {
+    return (
+      <PageContent>
+        <p className="text-sm text-slate-400 py-10 text-center">Cargando datos de la póliza…</p>
+      </PageContent>
+    )
+  }
+
+  return <DocumentoFacturaFormBody initialDoc={initialDoc} sourcePolicy={!isEdit ? sourcePolicy ?? null : null} />
+}
+
+interface DocumentoFacturaFormBodyProps {
+  initialDoc?: AccountingDocument
+  sourcePolicy: Policy | null
+}
+
+function DocumentoFacturaFormBody({ initialDoc, sourcePolicy }: DocumentoFacturaFormBodyProps) {
   const queryClient = useQueryClient()
   const isEdit = !!initialDoc
 
-  const [form, setForm] = useState<FormState>({
-    insuranceCompany: initialDoc?.insuranceCompany ?? '',
-    documentNumber: initialDoc?.documentNumber ?? '',
-    issueDate: initialDoc?.issueDate ?? '',
-    currency: initialDoc?.currency ?? '',
-    exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : '',
-    paymentMethod: initialDoc?.paymentMethod ?? '',
-    netAmount: initialDoc ? String(initialDoc.netAmount) : '',
-    vatAmount: initialDoc ? String(initialDoc.vatAmount) : '',
-    otherTaxesAmount: initialDoc ? String(initialDoc.otherTaxesAmount) : '',
+  const [form, setForm] = useState<FormState>(() => {
+    // La moneda/TC ya no son un campo único de la póliza (viven por línea de
+    // cobertura) — se toma la primera línea como referencia razonable.
+    const firstCoverage = sourcePolicy?.coverages?.[0]
+    return {
+      insuranceCompany: initialDoc?.insuranceCompany ?? sourcePolicy?.insuranceCompany ?? '',
+      documentNumber: initialDoc?.documentNumber ?? sourcePolicy?.policyNumber ?? '',
+      issueDate: initialDoc?.issueDate ?? '',
+      currency: initialDoc?.currency ?? firstCoverage?.currency ?? '',
+      exchangeRate: initialDoc
+        ? String(initialDoc.exchangeRate)
+        : firstCoverage && firstCoverage.exchangeRate > 1
+          ? firstCoverage.exchangeRate.toString()
+          : '',
+      paymentMethod: initialDoc?.paymentMethod ?? '',
+      netAmount: initialDoc ? String(initialDoc.netAmount) : '',
+      vatAmount: initialDoc ? String(initialDoc.vatAmount) : '',
+      otherTaxesAmount: initialDoc ? String(initialDoc.otherTaxesAmount) : '',
+    }
   })
   const [errors, setErrors] = useState<FormErrors>({})
-  const [policyRows, setPolicyRows] = useState<PolicyAllocationRow[]>([createEmptyPolicyRow()])
+  // Una fila por cada línea de cobertura de la póliza de origen — si cubre
+  // varios activos, quedan todas listas para completar el importe de cada
+  // una. Sin póliza de origen (alta en blanco, o edición), arranca con una
+  // fila vacía.
+  const [policyRows, setPolicyRows] = useState<PolicyAllocationRow[]>(() =>
+    sourcePolicy
+      ? sourcePolicy.coverages && sourcePolicy.coverages.length > 0
+        ? sourcePolicy.coverages.map((c) => ({ id: crypto.randomUUID(), policyAssetCoverageId: c.id, allocatedAmount: '' }))
+        : [createEmptyPolicyRow()]
+      : [createEmptyPolicyRow()],
+  )
   const [allocationsInitialized, setAllocationsInitialized] = useState(!isEdit)
   const [installmentCount, setInstallmentCount] = useState(1)
   const [installmentRows, setInstallmentRows] = useState<InstallmentRowData[]>(createInitialInstallmentRows())
@@ -76,11 +123,6 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: paymentMethods = [] } = useQuery(catalogQueries.byCategory('document_payment_method'))
 
-  const { data: sourcePolicy } = useQuery({
-    ...policyQueries.detail(sourcePolicyId!),
-    enabled: !isEdit && !!sourcePolicyId,
-  })
-
   const { data: existingAllocations = [], isSuccess: allocationsLoaded } = useQuery({
     ...documentQueries.allocations(initialDoc?.id ?? ''),
     enabled: isEdit,
@@ -94,27 +136,6 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   // mostrar un resumen real en el preview de "Enviar por mail" en vez de un
   // texto fijo que no reflejaba si había o no archivos cargados.
   const { data: docAttachments = [] } = useQuery(documentQueries.attachments(savedDocId ?? ''))
-
-  useEffect(() => {
-    if (!sourcePolicy) return
-    // La moneda/TC ya no son un campo único de la póliza (viven por línea de
-    // cobertura) — se toma la primera línea como referencia razonable.
-    const firstCoverage = sourcePolicy.coverages?.[0]
-    setForm((prev) => ({
-      ...prev,
-      insuranceCompany: sourcePolicy.insuranceCompany,
-      currency: firstCoverage?.currency ?? prev.currency,
-      exchangeRate: firstCoverage && firstCoverage.exchangeRate > 1 ? firstCoverage.exchangeRate.toString() : prev.exchangeRate,
-      documentNumber: sourcePolicy.policyNumber,
-    }))
-    // Una fila por cada línea de cobertura de la póliza — si cubre varios
-    // activos, quedan todas listas para completar el importe de cada una.
-    setPolicyRows(
-      sourcePolicy.coverages && sourcePolicy.coverages.length > 0
-        ? sourcePolicy.coverages.map((c) => ({ id: crypto.randomUUID(), policyAssetCoverageId: c.id, allocatedAmount: '' }))
-        : [createEmptyPolicyRow()],
-    )
-  }, [sourcePolicy])
 
   if (allocationsLoaded && !allocationsInitialized) {
     setAllocationsInitialized(true)
@@ -144,12 +165,12 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   const parsedOther = parseFloat(form.otherTaxesAmount) || 0
   const computedTotal = parsedNet + parsedVat + parsedOther
   const tc = parseFloat(form.exchangeRate) || 0
-  const mainPrefix = form.currency === 'USD' ? 'US$' : 'AR$'
-  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
+  const equivalentCurrency: Currency = form.currency === 'ARS' ? 'USD' : 'ARS'
   const equivalentAmount =
     form.currency === 'ARS' && tc > 0 ? computedTotal / tc : form.currency === 'USD' && tc > 0 ? computedTotal * tc : 0
 
   const totalAllocated = policyRows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0)
+  const totalInstallments = installmentRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
 
   const availablePolicySummaries = isEdit
     ? allPolicies.filter((p) => p.insuranceCompany === form.insuranceCompany)
@@ -178,6 +199,11 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     })
 
   const allocationTotalMismatch = policyRows.some((r) => r.policyAssetCoverageId) && Math.abs(computedTotal - totalAllocated) > 0.01
+  // Mismo criterio que el backend (documents.service.ts#assertInstallmentsMatchTotal)
+  // — solo se exige que cierre si hay al menos una cuota real cargada; un
+  // documento sin cuotas es válido (no todas las Facturas se financian).
+  const installmentsMismatch =
+    installmentRows.some((r) => r.dueDate && parseFloat(r.amount) > 0) && Math.abs(computedTotal - totalInstallments) > 0.01
 
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
@@ -206,7 +232,10 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     if (policyRows.length === 0 || policyRows.every((r) => !r.policyAssetCoverageId)) {
       next.policies = 'Asociá al menos una póliza'
     } else if (allocationTotalMismatch) {
-      next.policies = `El total asignado (${mainPrefix} ${totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) debe coincidir con el total del documento (${mainPrefix} ${computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+      next.policies = `El total asignado (${formatCurrencyFull(totalAllocated, form.currency)}) debe coincidir con el total del documento (${formatCurrencyFull(computedTotal, form.currency)}).`
+    }
+    if (installmentsMismatch) {
+      next.installments = `El total de las cuotas (${formatCurrencyFull(totalInstallments, form.currency)}) debe coincidir con el total del documento (${formatCurrencyFull(computedTotal, form.currency)}).`
     }
     setErrors(next)
     notifyValidationErrors(next)
@@ -398,7 +427,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
               <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</span>
                 <span className="text-base font-bold text-slate-800 tabular-nums">
-                  {mainPrefix} {computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {formatCurrencyFull(computedTotal, form.currency)}
                 </span>
               </div>
               {tc > 0 && (
@@ -407,7 +436,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                     <ArrowLeftRight size={12} /> Equivalente
                   </span>
                   <span className="text-base font-bold text-brand-700 tabular-nums">
-                    {equivalentPrefix} {equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCurrencyFull(equivalentAmount, equivalentCurrency)}
                   </span>
                 </div>
               )}
@@ -425,18 +454,19 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
             policies={availablePolicies}
             rows={policyRows}
             onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
-            currencyPrefix={mainPrefix}
+            currency={form.currency || 'ARS'}
             documentTotal={computedTotal}
             emptyMessage={!form.insuranceCompany ? 'Seleccioná una compañía aseguradora para ver sus pólizas.' : `No hay pólizas para ${form.insuranceCompany}.`}
           />
         </SectionCard>
 
         <SectionCard title="Cuotas" subtitle="Cantidad de cuotas, fechas e importes">
+          {errors.installments && <p className="text-xs text-red-500 mb-3">{errors.installments}</p>}
           <InstallmentsEditor
             count={installmentCount}
             rows={installmentRows}
             computedTotal={computedTotal}
-            currencyPrefix={mainPrefix}
+            currency={form.currency || 'ARS'}
             onChange={(count, rows) => { setInstallmentCount(count); setInstallmentRows(rows); markUnsaved() }}
           />
         </SectionCard>
@@ -555,7 +585,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                               <div className="text-right flex-shrink-0">
                                 <p className="text-xs font-bold text-brand-600">{pct.toFixed(1).replace('.', ',')}%</p>
                                 <p className="text-xs text-slate-500 tabular-nums">
-                                  {mainPrefix} {amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  {formatCurrencyFull(amount, form.currency)}
                                 </p>
                               </div>
                             </div>

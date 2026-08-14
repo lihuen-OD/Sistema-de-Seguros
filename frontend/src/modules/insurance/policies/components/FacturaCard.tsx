@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { Receipt, ChevronDown, ChevronUp, FileEdit, TrendingDown, TrendingUp, CheckCircle2 } from 'lucide-react'
 import { StatusPill } from '../../../../shared/components/badges/StatusPill'
 import { InstallmentRow } from '../../../../shared/components/installments/InstallmentRow'
-import { formatDate } from '../../../../shared/utils/format'
+import { formatDate, formatCurrencyFull } from '../../../../shared/utils/format'
 import { getDirectionSign, type TypeDirectionMap } from '../../../../shared/utils/policyInvoicedTotal'
 import { DOCUMENT_TYPE_LABELS } from '../../../../shared/constants'
 import type { AccountingDocument, Installment, InstallmentUpdate } from '../../../../shared/types'
@@ -97,8 +97,7 @@ export function FacturaCard({
                 Neto ajustado
               </p>
               <p className="text-sm font-bold text-slate-900 tabular-nums">
-                {currency}{' '}
-                {netTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatCurrencyFull(netTotal, factura.currency)}
               </p>
             </div>
           )}
@@ -110,8 +109,7 @@ export function FacturaCard({
               'text-sm font-semibold tabular-nums',
               appliedMods.length > 0 ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-800',
             )}>
-              {currency}{' '}
-              {factura.totalAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {formatCurrencyFull(factura.totalAmount, factura.currency)}
             </p>
           </div>
           <StatusPill status={factura.paymentStatus} size="sm" />
@@ -196,8 +194,7 @@ export function FacturaCard({
                       'text-sm font-bold tabular-nums',
                       isNeutral ? 'text-slate-500' : isCredit ? 'text-red-600' : 'text-emerald-700',
                     )}>
-                      {isNeutral ? '' : isCredit ? '−' : '+'}{modCurrency}{' '}
-                      {Math.abs(mod.totalAmount).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {isNeutral ? '' : isCredit ? '−' : '+'}{formatCurrencyFull(Math.abs(mod.totalAmount), mod.currency)}
                     </p>
                     {/* documentStatus (Emitida/Aplicada/Cancelada), no paymentStatus —
                         un NC/ND siempre tiene paymentStatus "No aplica", así que mostrar
@@ -232,8 +229,7 @@ export function FacturaCard({
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-slate-500">Saldo pendiente</span>
                   <span className="text-sm font-bold text-amber-600 tabular-nums">
-                    {currency}{' '}
-                    {saldo.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCurrencyFull(saldo, factura.currency)}
                   </span>
                 </div>
               ) : (
@@ -247,8 +243,7 @@ export function FacturaCard({
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-slate-500">Neto ajustado</span>
                   <span className="text-sm font-bold text-slate-900 tabular-nums">
-                    {currency}{' '}
-                    {netTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCurrencyFull(netTotal, factura.currency)}
                   </span>
                 </div>
               )}

@@ -1,44 +1,11 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  Plus, X, Download, Paperclip, Upload, FileText, FileSpreadsheet,
-  Image as ImageIcon, File as FileIcon, AlertTriangle, Loader2,
-} from 'lucide-react'
-import type { AccountingDocumentAttachment } from '../../../shared/types'
+import { Plus, X, Download, Paperclip, Upload, AlertTriangle, Loader2 } from 'lucide-react'
 import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
 import { formatDate } from '../../../shared/utils/format'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function detectFileType(filename: string): AccountingDocumentAttachment['fileType'] {
-  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
-  if (ext === 'pdf') return 'pdf'
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image'
-  if (['xlsx', 'xls', 'csv'].includes(ext)) return 'excel'
-  return 'other'
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
-// ── Sub-components ─────────────────────────────────────────────────────────────
-
-function FileTypeIcon({ fileType }: { fileType: AccountingDocumentAttachment['fileType'] }) {
-  const base = 'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0'
-  const variants: Record<AccountingDocumentAttachment['fileType'], { bg: string; icon: React.ReactNode }> = {
-    pdf:   { bg: 'bg-red-50',    icon: <FileText size={15} className="text-red-600" /> },
-    image: { bg: 'bg-brand-50',   icon: <ImageIcon size={15} className="text-brand-600" /> },
-    excel: { bg: 'bg-green-50',  icon: <FileSpreadsheet size={15} className="text-green-600" /> },
-    other: { bg: 'bg-slate-100', icon: <FileIcon size={15} className="text-slate-500" /> },
-  }
-  const v = variants[fileType]
-  return <div className={`${base} ${v.bg}`}>{v.icon}</div>
-}
+import { detectFileType, formatFileSize, FileTypeIcon } from '../../../shared/components/file-upload/AttachmentListEditor'
 
 // ── Add Modal ─────────────────────────────────────────────────────────────────
 

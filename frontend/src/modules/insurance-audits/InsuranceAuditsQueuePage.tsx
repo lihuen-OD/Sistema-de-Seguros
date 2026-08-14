@@ -2,35 +2,38 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, X, Gauge } from 'lucide-react'
+import { X, Gauge } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
-import { MetricGrid } from '../../shared/components/cards/MetricGrid'
-import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
+import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
+import { DateRangeMonthPicker } from '../../shared/components/filters/DateRangeMonthPicker'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { Tabs, type TabItem } from '../../shared/components/tabs/Tabs'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { AuditAssignmentTab } from '../../shared/components/audit-assignment/AuditAssignmentTab'
+import { AuditStatusKpiRow } from '../../shared/components/audit-queue/AuditStatusKpiRow'
+import { AuditBulkApproveBar } from '../../shared/components/audit-queue/AuditBulkApproveBar'
+import { useAuditSelection } from '../../shared/hooks/useAuditSelection'
 import { formatDate } from '../../shared/utils/format'
+import { currentPeriod } from '../../shared/utils/period'
 import { useCurrentUser } from '../../app/auth/AuthContext'
 import { insuranceAuditsApi, insuranceAuditKeys, insuranceAuditQueries, type InsuranceAuditListItem } from '../../shared/api/insurance-audits.api'
+import { FIRE_EXT_AUDIT_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TableColumn } from '../../shared/types'
 import { InsuranceAuditCoverageTab } from './InsuranceAuditCoverageTab'
+
+const STATUS_OPTIONS = Object.entries(FIRE_EXT_AUDIT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 
 const AUDIT_STATUS_SORT_ORDER: Record<string, number> = {
   SUBMITTED: 0,
   NEEDS_CORRECTION: 1,
   APPROVED: 2,
   REJECTED: 3,
-}
-
-function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7)
 }
 
 export default function InsuranceAuditsQueuePage() {
@@ -43,8 +46,10 @@ export default function InsuranceAuditsQueuePage() {
 
   const [activeTab, setActiveTab] = useState<'auditorias' | 'cobertura' | 'asignacion'>('cobertura')
   const [search, setSearch] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string[]>([])
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [coveragePeriod, setCoveragePeriod] = useState(currentPeriod())
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [bulkApproving, setBulkApproving] = useState(false)
 
@@ -78,29 +83,23 @@ export default function InsuranceAuditsQueuePage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return all.filter((a) => {
-      if (!q) return true
-      return [a.asset?.code, a.asset?.name, a.asset?.assetType, a.asset?.plate, a.asset?.chassisNumber, a.asset?.engineNumber, a.auditedBy]
-        .filter(Boolean)
-        .some((v) => v!.toLowerCase().includes(q))
+      const matchStatus = filterStatus.length === 0 || filterStatus.includes(a.status)
+      const matchSearch =
+        !q ||
+        [a.asset?.code, a.asset?.name, a.asset?.assetType, a.asset?.plate, a.asset?.chassisNumber, a.asset?.engineNumber, a.auditedBy]
+          .filter(Boolean)
+          .some((v) => v!.toLowerCase().includes(q))
+      const matchDateFrom = !filterDateFrom || a.auditPeriod >= filterDateFrom
+      const matchDateTo = !filterDateTo || a.auditPeriod <= filterDateTo
+      return matchStatus && matchSearch && matchDateFrom && matchDateTo
     })
-  }, [all, search])
+  }, [all, search, filterStatus, filterDateFrom, filterDateTo])
 
-  function isRowSelectable(row: InsuranceAuditListItem) {
-    return row.status === 'SUBMITTED'
+  function toggleStatusFilter(status: string) {
+    setFilterStatus((prev) => (prev.length === 1 && prev[0] === status ? [] : [status]))
   }
 
-  function toggleOne(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  function toggleAll(checked: boolean) {
-    setSelectedIds(checked ? new Set(filtered.filter(isRowSelectable).map((a) => a.id)) : new Set())
-  }
+  const { selectedIds, setSelectedIds, isRowSelectable, toggleOne, toggleAll, clearSelection } = useAuditSelection(filtered)
 
   async function handleBulkApprove() {
     if (bulkApproving) return
@@ -189,42 +188,40 @@ export default function InsuranceAuditsQueuePage() {
 
       {activeTab === 'auditorias' && canReview && (
         <>
-          <MetricGrid cols={4} className="mb-5">
-            <KpiCard label="Pendientes de revisión" value={counts.SUBMITTED} description="Esperando decisión" icon={ClipboardCheck} variant="info" />
-            <KpiCard label="Requieren corrección" value={counts.NEEDS_CORRECTION} description="Devueltas al auditor" icon={AlertTriangle} variant="warning" />
-            <KpiCard label="Aprobadas" value={counts.APPROVED} description="Auditoría validada" icon={CheckCircle2} variant="success" />
-            <KpiCard label="Rechazadas" value={counts.REJECTED} description="Auditoría descartada" icon={XCircle} variant="danger" />
-          </MetricGrid>
+          <AuditStatusKpiRow
+            counts={counts}
+            onStatusClick={toggleStatusFilter}
+            approvedDescription="Auditoría validada"
+            rejectedDescription="Auditoría descartada"
+          />
 
           <SectionCard noPadding>
             <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
               <SearchInput value={search} onChange={setSearch} placeholder="Buscar por activo, tipo, patente, chasis, motor o auditor…" className="w-full sm:w-80" />
+              <MultiSelectFilter label="Estado" options={STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
+              <DateRangeMonthPicker
+                from={filterDateFrom}
+                to={filterDateTo}
+                onChange={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
+              />
+              {(filterDateFrom || filterDateTo) && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterDateFrom(''); setFilterDateTo('') }}
+                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                >
+                  <X size={12} />
+                  Limpiar fechas
+                </button>
+              )}
               <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">{filtered.length} de {all.length} auditorías</span>
             </div>
 
-            {selectedIds.size > 0 && (
-              <div className="px-5 py-2.5 bg-brand-50 border-b border-brand-100 flex flex-wrap items-center gap-3">
-                <span className="text-sm font-medium text-brand-800">
-                  {selectedIds.size} auditoría{selectedIds.size !== 1 ? 's' : ''} seleccionada{selectedIds.size !== 1 ? 's' : ''}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowBulkConfirm(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors"
-                >
-                  <CheckCircle2 size={13} />
-                  Aprobar seleccionadas
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedIds(new Set())}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100 rounded-lg transition-colors ml-auto"
-                >
-                  <X size={13} />
-                  Limpiar selección
-                </button>
-              </div>
-            )}
+            <AuditBulkApproveBar
+              selectedCount={selectedIds.size}
+              onApproveClick={() => setShowBulkConfirm(true)}
+              onClear={clearSelection}
+            />
 
             <DataTable
               tableKey="insurance-audits"

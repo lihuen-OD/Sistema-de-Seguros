@@ -63,9 +63,12 @@ export const authService = {
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
 
-    // El JWT solo lleva el id — role, isActive y módulos se resuelven
-    // fresco desde la base en cada request (ver auth.middleware.ts).
-    const token = jwt.sign({ userId: user.id }, env.JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN })
+    // El JWT solo lleva el id (+ tokenVersion, para poder invalidarlo) —
+    // role, isActive y módulos se resuelven fresco desde la base en cada
+    // request (ver auth.middleware.ts).
+    const token = jwt.sign({ userId: user.id, tokenVersion: user.tokenVersion }, env.JWT_SECRET, {
+      expiresIn: TOKEN_EXPIRES_IN,
+    })
 
     return { token, user: safeUser(user) }
   },
@@ -100,7 +103,9 @@ export const authService = {
     const passwordHash = await bcrypt.hash(data.newPassword, BCRYPT_COST)
     await prisma.user.update({
       where: { id: userId },
-      data: { passwordHash, mustChangePassword: false },
+      // tokenVersion++ invalida cualquier sesión abierta con la contraseña
+      // anterior (otro dispositivo, otra pestaña) — ver auth.middleware.ts.
+      data: { passwordHash, mustChangePassword: false, tokenVersion: { increment: 1 } },
     })
 
     return { message: 'Contraseña actualizada correctamente' }

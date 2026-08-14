@@ -2,9 +2,10 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
-import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { toDateStr } from '../../shared/utils/dates'
-import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
+import { deleteFromCloudinary } from '../../config/cloudinary'
+import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
 import {
   DOCUMENT_TYPES,
   ADJUSTMENT_REASONS,
@@ -303,6 +304,10 @@ export const documentsService = {
       inherited.paymentMethod ?? (docData.paymentMethod?.trim() || null)
     const effectiveCurrency = (inherited.currency ?? docData.currency) as 'ARS' | 'USD'
     const effectiveExchangeRate = inherited.exchangeRate ?? docData.exchangeRate
+
+    if (installments.length > 0 && typeDef.hasInstallments) {
+      this.assertInstallmentsMatchTotal(installments, computeTotalAmount(docData))
+    }
 
     // El duplicado real es la combinación tipo + compañía + número
     // (documentNumber es inmutable después del alta, así que este chequeo
@@ -894,6 +899,11 @@ export const documentsService = {
   async replaceInstallments(documentId: string, data: ReplaceInstallmentsDTO) {
     const doc = await this.assertDocumentExists(documentId)
 
+    const typeDef = getDocumentTypeDef(doc.documentType)
+    if (data.installments.length > 0 && typeDef?.hasInstallments) {
+      this.assertInstallmentsMatchTotal(data.installments, computeTotalAmount(doc))
+    }
+
     // Reemplazo de cuotas + reset de paymentStatus en una sola transacción —
     // evita que el documento quede con cuotas nuevas pero un paymentStatus
     // desincronizado si el segundo write fallara por separado.
@@ -1074,29 +1084,10 @@ export const documentsService = {
   ) {
     await this.assertDocumentExists(documentId)
 
-    if (!isAllowedMimetype(file.mimetype)) {
-      throw new AppError(
-        415,
-        'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video',
-        'UNSUPPORTED_MEDIA_TYPE',
-      )
-    }
+    const { fileUrl, cloudinaryPublicId } = await validateAndUploadAttachment(file, 'documents')
 
-    if (!matchesDeclaredMimetype(file.buffer, file.mimetype)) {
-      throw new AppError(415, 'El contenido del archivo no coincide con su tipo declarado', 'FILE_TYPE_MISMATCH')
-    }
-
-    let fileUrl = `local://${file.originalname}`
-    let cloudinaryPublicId: string | null = null
-
-    if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'documents', file.mimetype)
-      fileUrl = result.secure_url
-      cloudinaryPublicId = result.public_id
-    }
-
-    try {
-      return await prisma.documentAttachment.create({
+    return withAttachmentRollback(cloudinaryPublicId, () =>
+      prisma.documentAttachment.create({
         data: {
           accountingDocumentId: documentId,
           name: sanitizeFileName(file.originalname),
@@ -1107,11 +1098,8 @@ export const documentsService = {
           cloudinaryPublicId,
           uploadedBy,
         },
-      })
-    } catch (err) {
-      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
-      throw err
-    }
+      }),
+    )
   },
 
   async deleteAttachment(documentId: string, attachmentId: string) {
@@ -1195,6 +1183,21 @@ export const documentsService = {
     })
     if (!doc) throw new AppError(404, 'Documento no encontrado', 'NOT_FOUND')
     return doc
+  },
+
+  // Nada impedía guardar cuotas que no sumaran el total del documento
+  // (netAmount+vatAmount+otherTaxesAmount) — un desfasaje silencioso entre lo
+  // facturado y lo que en los papeles se va a cobrar en cuotas. Se usa la
+  // misma tolerancia (0.01) que el resto de la app para comparar montos.
+  assertInstallmentsMatchTotal(installments: { amount: number }[], expectedTotal: number): void {
+    const sum = +installments.reduce((s, i) => s + i.amount, 0).toFixed(2)
+    if (Math.abs(sum - expectedTotal) > 0.01) {
+      throw new AppError(
+        400,
+        `La suma de las cuotas (${sum}) no coincide con el total del documento (${expectedTotal}).`,
+        'INSTALLMENTS_TOTAL_MISMATCH',
+      )
+    }
   },
 
   // Reparte el monto de una NC/ND/Ajuste, en partes iguales, entre las cuotas

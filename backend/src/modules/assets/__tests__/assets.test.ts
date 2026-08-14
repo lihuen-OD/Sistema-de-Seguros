@@ -39,6 +39,7 @@ jest.mock('../../../config/database', () => ({
       findMany: jest.fn(),
       create:   jest.fn(),
     },
+    producerTask: { updateMany: jest.fn() },
     $transaction: jest.fn(),
     $queryRaw:    jest.fn(),
   },
@@ -56,6 +57,12 @@ const db = prisma as any
 
 beforeEach(() => {
   db.user.findUnique.mockResolvedValue(mockDbUser())
+  // hardDelete() usa la forma en array ($transaction([...])) — alcanza con
+  // resolver cada operación en paralelo, igual que hace Prisma de verdad
+  // (mismo criterio que policies.test.ts).
+  db.$transaction.mockImplementation((arg: unknown) =>
+    typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(db) : Promise.all(arg as unknown[]),
+  )
 })
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────

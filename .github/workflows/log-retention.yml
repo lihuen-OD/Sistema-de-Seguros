@@ -1,0 +1,71 @@
+name: Log retention cleanup
+
+on:
+  schedule:
+    # 04:00 UTC del día 1 de cada mes = 01:00 en Argentina (UTC-3).
+    - cron: "0 4 1 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Solo contar filas a borrar, sin borrar nada
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-log-retention
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Delete expired log rows
+    # El cron programado no corre nada hasta que LOG_RETENTION_ENABLED esté
+    # en "true" — evita que esto empiece a borrar datos de producción solo
+    # por haberse mergeado el workflow. Un disparo manual siempre puede
+    # correr (en --dry-run por default) para poder probarlo primero.
+    if: >-
+      (github.event_name == 'schedule' && vars.LOG_RETENTION_ENABLED == 'true') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production-cleanup
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Mask database credential
+        env:
+          DATABASE_CREDENTIAL: ${{ secrets.LOG_RETENTION_DATABASE_URL }}
+        run: echo "::add-mask::${DATABASE_CREDENTIAL}"
+
+      - name: Run cleanup script
+        env:
+          DATABASE_URL: ${{ secrets.LOG_RETENTION_DATABASE_URL }}
+          # El cron programado siempre corre en modo real; un disparo manual
+          # respeta el input dry_run (default "true").
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+        run: |
+          if [[ "$DRY_RUN" == "true" ]]; then
+            npx ts-node scripts/cleanup-old-logs.ts --dry-run
+          else
+            npx ts-node scripts/cleanup-old-logs.ts
+          fi

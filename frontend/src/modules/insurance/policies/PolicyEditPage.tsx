@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -24,10 +24,12 @@ import { assetQueries } from '../../../shared/api/assets.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
+import { formatCurrencyFull } from '../../../shared/utils/format'
 import { buildAssetSearchKeywords } from '../../../shared/utils/assetSearch'
 import { CURRENCY_OPTIONS } from '../../../shared/constants'
-import type { PolicyCoverage } from '../../../shared/types'
+import type { Policy, PolicyCoverage, Producer, Asset, Company, CostCenter } from '../../../shared/types'
 import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
+import type { CatalogItem } from '../../../shared/api/catalogs.api'
 
 type AssociationType = 'activo' | 'sin_activo'
 
@@ -201,8 +203,6 @@ function CoverageSelector({
 
 export default function PolicyEditPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
 
   const { data: policy, isLoading: loadingPolicy } = useQuery(policyQueries.detail(id!))
   const { data: producers = [] } = useQuery(producerQueries.list())
@@ -212,28 +212,77 @@ export default function PolicyEditPage() {
   const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
 
+  if (loadingPolicy) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-20">
+          <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </PageContent>
+    )
+  }
+
+  if (!policy) {
+    return (
+      <PageContent>
+        <EmptyState title="Póliza no encontrada" description="La póliza solicitada no existe o fue eliminada." />
+      </PageContent>
+    )
+  }
+
+  return (
+    <PageContent>
+      <PageHeader
+        title="Editar Póliza"
+        subtitle={`Modificar datos de la póliza ${policy.policyNumber}`}
+        backTo={`/insurance/policies/${id}`}
+        backLabel="Volver al detalle"
+      />
+
+      <PolicyEditForm
+        key={id}
+        policy={policy}
+        producers={producers}
+        allAssets={allAssets}
+        companies={companies}
+        costCenters={costCenters}
+        insuranceTypes={insuranceTypes}
+        insuranceCompanies={insuranceCompanies}
+      />
+    </PageContent>
+  )
+}
+
+interface PolicyEditFormProps {
+  policy: Policy
+  producers: Producer[]
+  allAssets: Asset[]
+  companies: Company[]
+  costCenters: CostCenter[]
+  insuranceTypes: InsuranceTypeConfig[]
+  insuranceCompanies: CatalogItem[]
+}
+
+// Recibe key={id} del padre — se remonta entero al cambiar de póliza, así
+// que form/lines pueden inicializarse directo desde `policy` sin useEffect.
+function PolicyEditForm({
+  policy, producers, allAssets, companies, costCenters, insuranceTypes, insuranceCompanies,
+}: PolicyEditFormProps) {
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
   const [form, setForm] = useState<PolicyForm>({
-    policyNumber: '', insuranceCompany: '', producerId: '', startDate: '', endDate: '', description: '',
+    policyNumber: policy.policyNumber,
+    insuranceCompany: policy.insuranceCompany,
+    producerId: policy.producerId,
+    startDate: policy.startDate,
+    endDate: policy.endDate,
+    description: policy.description,
   })
   const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm, string>>>({})
-  const [lines, setLines] = useState<CoverageLineForm[]>([])
+  const [lines, setLines] = useState<CoverageLineForm[]>(() => (policy.coverages ?? []).map(coverageToLine))
   const [lineErrors, setLineErrors] = useState<Record<string, LineErrors>>({})
-  const [formInitialized, setFormInitialized] = useState(false)
-
-  useEffect(() => {
-    if (policy && !formInitialized) {
-      setForm({
-        policyNumber: policy.policyNumber,
-        insuranceCompany: policy.insuranceCompany,
-        producerId: policy.producerId,
-        startDate: policy.startDate,
-        endDate: policy.endDate,
-        description: policy.description,
-      })
-      setLines((policy.coverages ?? []).map(coverageToLine))
-      setFormInitialized(true)
-    }
-  }, [policy, formInitialized])
 
   const updatePolicyMutation = useMutation({
     mutationFn: (input: Parameters<typeof policiesApi.update>[1]) => policiesApi.update(id!, input),
@@ -271,24 +320,6 @@ export default function PolicyEditPage() {
 
   function removeLine(formId: string) {
     setLines((prev) => prev.filter((l) => l.formId !== formId))
-  }
-
-  if (loadingPolicy) {
-    return (
-      <PageContent>
-        <div className="flex items-center justify-center py-20">
-          <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
-        </div>
-      </PageContent>
-    )
-  }
-
-  if (!policy) {
-    return (
-      <PageContent>
-        <EmptyState title="Póliza no encontrada" description="La póliza solicitada no existe o fue eliminada." />
-      </PageContent>
-    )
   }
 
   function validate(): boolean {
@@ -367,14 +398,6 @@ export default function PolicyEditPage() {
   const isSaving = updatePolicyMutation.isPending || replaceCoveragesMutation.isPending
 
   return (
-    <PageContent>
-      <PageHeader
-        title="Editar Póliza"
-        subtitle={`Modificar datos de la póliza ${policy.policyNumber}`}
-        backTo={`/insurance/policies/${id}`}
-        backLabel="Volver al detalle"
-      />
-
       <form onSubmit={handleSubmit} className="max-w-5xl space-y-5">
 
         {/* 1. Datos de la Póliza */}
@@ -432,7 +455,6 @@ export default function PolicyEditPage() {
           {lines.map((line, idx) => {
             const err = lineErrors[line.formId] ?? {}
             const equivalentCurrencyLabel = line.currency === 'ARS' ? 'USD' : 'ARS'
-            const equivalentPrefix = line.currency === 'ARS' ? 'US$' : 'AR$'
             const amount = parseFloat(line.insuredAmount)
             const rate = parseFloat(line.exchangeRate)
             const equivalentAmount =
@@ -599,7 +621,7 @@ export default function PolicyEditPage() {
                       <FormField label={`Suma Asegurada (${equivalentCurrencyLabel})`}>
                         <FormInput
                           value={equivalentAmount != null
-                            ? `${equivalentPrefix} ${equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            ? formatCurrencyFull(equivalentAmount, equivalentCurrencyLabel)
                             : ''}
                           readOnly disabled placeholder="Se calcula automáticamente"
                         />
@@ -656,6 +678,5 @@ export default function PolicyEditPage() {
           </button>
         </div>
       </form>
-    </PageContent>
   )
 }

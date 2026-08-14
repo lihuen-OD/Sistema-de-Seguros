@@ -4,6 +4,7 @@ import { TrendingUp } from 'lucide-react'
 import { Modal } from '../../shared/components/modals/Modal'
 import { FormField, FormInput, FormSelect, FormTextarea } from '../../shared/components/forms/FormSection'
 import { CURRENCY_OPTIONS } from '../../shared/constants'
+import { formatCurrencyFull } from '../../shared/utils/format'
 import { assetsApi, assetKeys } from '../../shared/api/assets.api'
 import type { Currency } from '../../shared/types'
 
@@ -36,13 +37,12 @@ export function AddValuationModal({ assetId, type, defaultCurrency, defaultExcha
   const [submitting, setSubmitting] = useState(false)
 
   const config = TYPE_CONFIG[type]
-  const equivalentPrefix = currency === 'ARS' ? 'US$' : 'AR$'
+  const equivalentCurrency: Currency = currency === 'ARS' ? 'USD' : 'ARS'
   const equivalent = useMemo(() => {
     const amount = parseFloat(value)
     const rate = parseFloat(exchangeRate)
-    if (isNaN(amount) || isNaN(rate) || rate <= 0) return ''
-    const result = currency === 'ARS' ? amount / rate : amount * rate
-    return result.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    if (isNaN(amount) || isNaN(rate) || rate <= 0) return null
+    return currency === 'ARS' ? amount / rate : amount * rate
   }, [value, exchangeRate, currency])
 
   function validate(): boolean {
@@ -133,9 +133,9 @@ export function AddValuationModal({ assetId, type, defaultCurrency, defaultExcha
             onChange={(e) => { setExchangeRate(e.target.value); setErrors((p) => ({ ...p, exchangeRate: undefined })) }}
           />
         </FormField>
-        {equivalent && (
+        {equivalent !== null && (
           <p className="text-xs text-slate-400 -mt-2">
-            Equivalente: {equivalentPrefix} {equivalent}
+            Equivalente: {formatCurrencyFull(equivalent, equivalentCurrency)}
           </p>
         )}
         <FormField label="Nota (opcional)">

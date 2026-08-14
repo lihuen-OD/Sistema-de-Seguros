@@ -3,7 +3,7 @@ import { FIELD_VALIDATION_CONFIG } from './AuditStep3FieldValidation'
 import { ChecklistReadOnlySummary } from './ChecklistReadOnlySummary'
 import type { ChecklistFieldConfig } from './checklistConfig'
 import type { FieldValidationState } from './ValidatedField'
-import type { FireExtinguisher } from '../../../shared/types'
+import type { FireExtinguisher } from '../../types'
 
 interface AuditStep5SummaryProps {
   extinguisher: FireExtinguisher

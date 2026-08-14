@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PaginationSchema } from '../../shared/schemas/common'
+import { AuditPeriodQuerySchema, BulkApproveAuditsSchema } from '../../shared/schemas/audit-domain'
 import { AUDITABLE_ASSET_CATEGORIES } from '../../shared/types'
 import {
   FIRE_EXT_AUDIT_CLEANLINESS,
@@ -129,11 +130,9 @@ export const ReviewFireExtinguisherAuditSchema = z.object({
 // PENDING de cada auditoría seleccionada (confía en lo que cargó el
 // auditor). Pensada para el caso común de muchas auditorías sin nada que
 // objetar; una auditoría puntual que requiera decidir cambio por cambio
-// sigue yendo por review().
-export const BulkApproveFireExtinguisherAuditsSchema = z.object({
-  ids: z.array(z.string().uuid('ID de auditoría inválido')).min(1, 'Se requiere al menos una auditoría').max(100),
-  reviewNotes: z.string().max(1000).optional().nullable(),
-})
+// sigue yendo por review(). Mismo shape que los otros 2 dominios de
+// auditoría — ver shared/schemas/audit-domain.ts.
+export const BulkApproveFireExtinguisherAuditsSchema = BulkApproveAuditsSchema
 
 // Acepta ?status=SUBMITTED (string) o ?status=SUBMITTED&status=NEEDS_CORRECTION
 // (array, comportamiento nativo de Express/qs con params repetidos) y lo
@@ -148,10 +147,9 @@ export const ListFireExtinguisherAuditsQuerySchema = PaginationSchema.extend({
 })
 
 // ── Cobertura por establecimiento ───────────────────────────────────────────────
+// Mismo shape que los otros 2 dominios de auditoría — ver shared/schemas/audit-domain.ts.
 
-export const CoverageQuerySchema = z.object({
-  period: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM'),
-})
+export const CoverageQuerySchema = AuditPeriodQuerySchema
 
 // ── Dashboard de nivel % (auditoría mensual) ────────────────────────────────────
 // `establishment` solo tiene efecto en la población ESTABLISHMENT (Matafuegos);

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
+import type { Role } from '@prisma/client'
 import { AppError } from '../shared/errors/AppError'
-import type { ModuleKey, Role } from '../shared/types'
+import type { ModuleKey } from '../shared/types'
 
 export function requireRole(...roles: Role[]) {
   return (req: Request, res: Response, next: NextFunction): void => {

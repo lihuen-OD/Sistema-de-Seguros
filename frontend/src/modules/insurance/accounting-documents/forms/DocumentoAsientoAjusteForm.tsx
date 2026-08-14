@@ -17,7 +17,8 @@ import { documentsApi, documentKeys, documentQueries } from '../../../../shared/
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
-import type { AccountingDocument, AdjustmentSign, DocumentType } from '../../../../shared/types'
+import { formatCurrencyFull } from '../../../../shared/utils/format'
+import type { AccountingDocument, AdjustmentSign, DocumentType, Currency } from '../../../../shared/types'
 
 const ADJUSTABLE_TYPES: DocumentType[] = ['INVOICE', 'DEBIT_NOTE', 'CREDIT_NOTE', 'ENDORSEMENT']
 
@@ -92,7 +93,7 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
   }
 
   const amount = parseFloat(form.amount) || 0
-  const mainPrefix = linkedDocument?.currency === 'USD' ? 'US$' : 'AR$'
+  const adjustmentCurrency: Currency = linkedDocument?.currency === 'USD' ? 'USD' : 'ARS'
   const totalAllocated = policyRows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0)
   const hasAnyAllocationRow = policyRows.some((r) => r.policyAssetCoverageId)
   const allocationTotalMismatch = hasAnyAllocationRow && Math.abs(amount - totalAllocated) > 0.01
@@ -111,7 +112,7 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
     if (!form.amount || isNaN(parseFloat(form.amount)) || parseFloat(form.amount) <= 0) next.amount = 'Requerido'
     if (!form.description.trim()) next.description = 'Requerido'
     if (allocationTotalMismatch) {
-      next.policies = `El total distribuido (${mainPrefix} ${totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) debe coincidir con el importe del ajuste (${mainPrefix} ${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+      next.policies = `El total distribuido (${formatCurrencyFull(totalAllocated, adjustmentCurrency)}) debe coincidir con el importe del ajuste (${formatCurrencyFull(amount, adjustmentCurrency)}).`
     }
     setErrors(next)
     notifyValidationErrors(next)
@@ -311,7 +312,7 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
               policies={linkedPolicies}
               rows={policyRows}
               onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
-              currencyPrefix={mainPrefix}
+              currency={adjustmentCurrency}
               documentTotal={amount}
               emptyMessage="El documento ajustado no tiene pólizas con activos para distribuir."
             />

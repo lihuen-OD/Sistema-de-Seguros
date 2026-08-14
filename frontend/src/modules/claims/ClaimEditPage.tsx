@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -12,9 +12,11 @@ import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { computeEquivalent } from '../../shared/utils/currency'
+import { formatCurrencyFull } from '../../shared/utils/format'
 import { ROUTES } from '../../app/routes'
 import { CURRENCY_OPTIONS } from '../../shared/constants'
-import type { ClaimAttachment, ClaimOwnershipType, Currency } from '../../shared/types'
+import type { ClaimAttachment, ClaimOwnershipType, Currency, Claim } from '../../shared/types'
+import type { CatalogItem } from '../../shared/api/catalogs.api'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
 import { ClaimExpensesCard } from './ClaimExpensesCard'
 
@@ -49,95 +51,12 @@ const selectCls =
 export default function ClaimEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
 
   const { data: original, isLoading, isError } = useQuery(claimQueries.detail(id!))
 
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: claimStatuses = [] } = useQuery(catalogQueries.byCategory('claim_status'))
   const { data: claimTypes = [] } = useQuery(catalogQueries.byCategory('claim_type'))
-  const { data: attachments = [] } = useQuery(claimQueries.attachments(id!))
-
-  const docs = attachments.filter((a) => a.fileType !== 'image')
-  const photos = attachments.filter((a) => a.fileType === 'image')
-
-  const handleDeleteAttachment = async (attachmentId: string) => {
-    await claimsApi.deleteAttachment(id!, attachmentId)
-    queryClient.invalidateQueries({ queryKey: claimKeys.attachments(id!) })
-  }
-
-  // ── Form state ──────────────────────────────────────────────────────────────
-
-  const [ownershipType, setOwnershipType] = useState<ClaimOwnershipType | ''>('')
-  const [responsiblePersonName, setResponsiblePersonName] = useState('')
-  const [thirdPartyInsuranceCompany, setThirdPartyInsuranceCompany] = useState('')
-  const [thirdPartyContact, setThirdPartyContact] = useState('')
-  const [thirdPartyInsurerContact, setThirdPartyInsurerContact] = useState('')
-
-  const [claimNumber, setClaimNumber] = useState('')
-  const [title, setTitle] = useState('')
-  const [status, setStatus] = useState('')
-  const [claimType, setClaimType] = useState('')
-  const [occurrenceDate, setOccurrenceDate] = useState('')
-  const [reportDate, setReportDate] = useState('')
-  const [insuranceCompany, setInsuranceCompany] = useState('')
-  const [description, setDescription] = useState('')
-  const [currency, setCurrency] = useState<Currency>('ARS')
-  const [exchangeRate, setExchangeRate] = useState('')
-  const [claimedAmount, setClaimedAmount] = useState('')
-  const [realAmount, setRealAmount] = useState('')
-  const [settledAmount, setSettledAmount] = useState('')
-  const [deductible, setDeductible] = useState('')
-  const [observations, setObservations] = useState('')
-
-  const [saving, setSaving] = useState(false)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
-  // Seed form once data loads
-  useEffect(() => {
-    if (!original) return
-    setOwnershipType(original.ownershipType ?? 'propio')
-    setResponsiblePersonName(original.responsiblePersonName ?? '')
-    setThirdPartyInsuranceCompany(original.thirdPartyInsuranceCompany ?? '')
-    setThirdPartyContact(original.thirdPartyContact ?? '')
-    setThirdPartyInsurerContact(original.thirdPartyInsurerContact ?? '')
-    setClaimNumber(original.claimNumber ?? '')
-    setTitle(original.title ?? '')
-    setStatus(original.status)
-    setClaimType(original.claimType)
-    setOccurrenceDate(original.occurrenceDate)
-    setReportDate(original.reportDate)
-    setInsuranceCompany(original.insuranceCompany)
-    setDescription(original.description)
-    setCurrency(original.currency ?? 'ARS')
-    setExchangeRate(original.exchangeRate != null ? original.exchangeRate.toString() : '')
-    setClaimedAmount(original.claimedAmountArs > 0 ? original.claimedAmountArs.toString() : '')
-    setRealAmount(original.realAmountArs != null ? original.realAmountArs.toString() : '')
-    setSettledAmount(original.settledAmountArs != null ? original.settledAmountArs.toString() : '')
-    setDeductible(original.deductibleArs != null ? original.deductibleArs.toString() : '')
-    setObservations(original.observations ?? '')
-  }, [original])
-
-  // El backend cierra ambas monedas (ARS/USD) a partir del monto crudo +
-  // currency + exchangeRate — acá solo se decide el prefijo para los labels,
-  // sin convertir nada del lado del cliente (mismo patrón que ClaimNewPage).
-  const mainPrefix = currency === 'USD' ? 'US$' : 'AR$'
-
-  // Vista previa del equivalente en la otra moneda, para que el usuario vea
-  // ambos valores mientras edita (el backend es quien cierra y persiste los
-  // dos montos al guardar — ver computeDualAmounts). Estos hooks tienen que
-  // ir ANTES de los early return de abajo (isLoading / isError) — un hook
-  // nunca puede quedar después de un return condicional.
-  const equivalentPrefix = currency === 'USD' ? 'AR$' : 'US$'
-  const equivalentClaimed = useMemo(() => computeEquivalent(claimedAmount, currency, exchangeRate), [claimedAmount, exchangeRate, currency])
-  const equivalentReal = useMemo(() => computeEquivalent(realAmount, currency, exchangeRate), [realAmount, exchangeRate, currency])
-  const equivalentSettled = useMemo(() => computeEquivalent(settledAmount, currency, exchangeRate), [settledAmount, exchangeRate, currency])
-  const equivalentDeductible = useMemo(() => computeEquivalent(deductible, currency, exchangeRate), [deductible, exchangeRate, currency])
-  function formatEquivalent(value: string): string {
-    return value
-      ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      : ''
-  }
 
   if (isLoading) {
     return (
@@ -167,6 +86,95 @@ export default function ClaimEditPage() {
         />
       </PageContent>
     )
+  }
+
+  return (
+    <PageContent>
+      <PageHeader
+        title={`Editar ${original.claimNumber}`}
+        subtitle="Modificar datos del siniestro · Los cambios generan eventos en el historial"
+        category="Siniestro"
+        backTo={ROUTES.CLAIMS_DETAIL(original.id)}
+        backLabel="Volver al siniestro"
+      />
+
+      <ClaimForm
+        key={id}
+        original={original}
+        insuranceCompanies={insuranceCompanies}
+        claimStatuses={claimStatuses}
+        claimTypes={claimTypes}
+      />
+    </PageContent>
+  )
+}
+
+interface ClaimFormProps {
+  original: Claim
+  insuranceCompanies: CatalogItem[]
+  claimStatuses: CatalogItem[]
+  claimTypes: CatalogItem[]
+}
+
+// Recibe key={id} del padre — se remonta entero al cambiar de siniestro, así
+// que los 19 campos pueden inicializarse directo desde `original` sin useEffect.
+function ClaimForm({ original, insuranceCompanies, claimStatuses, claimTypes }: ClaimFormProps) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const { data: attachments = [] } = useQuery(claimQueries.attachments(original.id))
+
+  const docs = attachments.filter((a) => a.fileType !== 'image')
+  const photos = attachments.filter((a) => a.fileType === 'image')
+
+  const handleDeleteAttachment = async (attachmentId: string) => {
+    await claimsApi.deleteAttachment(original.id, attachmentId)
+    queryClient.invalidateQueries({ queryKey: claimKeys.attachments(original.id) })
+  }
+
+  // ── Form state ──────────────────────────────────────────────────────────────
+
+  const [ownershipType, setOwnershipType] = useState<ClaimOwnershipType | ''>(original.ownershipType ?? 'propio')
+  const [responsiblePersonName, setResponsiblePersonName] = useState(original.responsiblePersonName ?? '')
+  const [thirdPartyInsuranceCompany, setThirdPartyInsuranceCompany] = useState(original.thirdPartyInsuranceCompany ?? '')
+  const [thirdPartyContact, setThirdPartyContact] = useState(original.thirdPartyContact ?? '')
+  const [thirdPartyInsurerContact, setThirdPartyInsurerContact] = useState(original.thirdPartyInsurerContact ?? '')
+
+  const [claimNumber, setClaimNumber] = useState(original.claimNumber ?? '')
+  const [title, setTitle] = useState(original.title ?? '')
+  const [status, setStatus] = useState(original.status)
+  const [claimType, setClaimType] = useState(original.claimType)
+  const [occurrenceDate, setOccurrenceDate] = useState(original.occurrenceDate)
+  const [reportDate, setReportDate] = useState(original.reportDate)
+  const [insuranceCompany, setInsuranceCompany] = useState(original.insuranceCompany)
+  const [description, setDescription] = useState(original.description)
+  const [currency, setCurrency] = useState<Currency>(original.currency ?? 'ARS')
+  const [exchangeRate, setExchangeRate] = useState(original.exchangeRate != null ? original.exchangeRate.toString() : '')
+  const [claimedAmount, setClaimedAmount] = useState(original.claimedAmountArs > 0 ? original.claimedAmountArs.toString() : '')
+  const [realAmount, setRealAmount] = useState(original.realAmountArs != null ? original.realAmountArs.toString() : '')
+  const [settledAmount, setSettledAmount] = useState(original.settledAmountArs != null ? original.settledAmountArs.toString() : '')
+  const [deductible, setDeductible] = useState(original.deductibleArs != null ? original.deductibleArs.toString() : '')
+  const [observations, setObservations] = useState(original.observations ?? '')
+
+  const [saving, setSaving] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // El backend cierra ambas monedas (ARS/USD) a partir del monto crudo +
+  // currency + exchangeRate — acá solo se decide el prefijo para los labels,
+  // sin convertir nada del lado del cliente (mismo patrón que ClaimNewPage).
+  const mainPrefix = currency === 'USD' ? 'US$' : 'AR$'
+
+  // Vista previa del equivalente en la otra moneda, para que el usuario vea
+  // ambos valores mientras edita (el backend es quien cierra y persiste los
+  // dos montos al guardar — ver computeDualAmounts).
+  const equivalentPrefix = currency === 'USD' ? 'AR$' : 'US$'
+  const equivalentCurrency: Currency = currency === 'USD' ? 'ARS' : 'USD'
+  const equivalentClaimed = useMemo(() => computeEquivalent(claimedAmount, currency, exchangeRate), [claimedAmount, exchangeRate, currency])
+  const equivalentReal = useMemo(() => computeEquivalent(realAmount, currency, exchangeRate), [realAmount, exchangeRate, currency])
+  const equivalentSettled = useMemo(() => computeEquivalent(settledAmount, currency, exchangeRate), [settledAmount, exchangeRate, currency])
+  const equivalentDeductible = useMemo(() => computeEquivalent(deductible, currency, exchangeRate), [deductible, exchangeRate, currency])
+  function formatEquivalent(value: string): string {
+    return value ? formatCurrencyFull(parseFloat(value), equivalentCurrency) : ''
   }
 
   // ── Validation ──────────────────────────────────────────────────────────────
@@ -232,15 +240,6 @@ export default function ClaimEditPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <PageContent>
-      <PageHeader
-        title={`Editar ${original.claimNumber}`}
-        subtitle="Modificar datos del siniestro · Los cambios generan eventos en el historial"
-        category="Siniestro"
-        backTo={ROUTES.CLAIMS_DETAIL(original.id)}
-        backLabel="Volver al siniestro"
-      />
-
       <form onSubmit={handleSubmit} noValidate>
         <div className="space-y-5">
 
@@ -521,7 +520,7 @@ export default function ClaimEditPage() {
             {docs.length > 0 && (
               <div className="divide-y divide-slate-100 mb-4">
                 {docs.map((att) => (
-                  <EditAttachmentRow key={att.id} claimId={id!} attachment={att} onDelete={handleDeleteAttachment} />
+                  <EditAttachmentRow key={att.id} claimId={original.id} attachment={att} onDelete={handleDeleteAttachment} />
                 ))}
               </div>
             )}
@@ -592,7 +591,6 @@ export default function ClaimEditPage() {
 
         </div>
       </form>
-    </PageContent>
   )
 }
 

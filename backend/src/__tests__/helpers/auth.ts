@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
-import type { ModuleKey, Role } from '../../shared/types'
+import type { Role } from '@prisma/client'
+import type { ModuleKey } from '../../shared/types'
 
 const JWT_SECRET = process.env.JWT_SECRET!
 
@@ -26,6 +27,7 @@ export function mockDbUser(overrides: Partial<{
   role: Role
   isActive: boolean
   modules: ModuleKey[]
+  tokenVersion: number
 }> = {}) {
   const role: Role = overrides.role ?? 'ADMIN'
   const modules = overrides.modules ?? []
@@ -35,6 +37,11 @@ export function mockDbUser(overrides: Partial<{
     email: 'test@losodwyer.com',
     role,
     isActive: overrides.isActive ?? true,
+    // makeToken() no firma tokenVersion (payload viejo) — el default acá en
+    // 0 matchea el "?? 0" de authMiddleware para que los tests existentes no
+    // necesiten saber nada de esto salvo que quieran probar justamente la
+    // invalidación (pasando tokenVersion explícito).
+    tokenVersion: overrides.tokenVersion ?? 0,
     accessProfile:
       role === 'ADMIN'
         ? null

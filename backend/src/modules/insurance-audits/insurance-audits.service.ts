@@ -8,9 +8,19 @@ import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
 import { todayDate, currentYearMonth, toDateStr } from '../../shared/utils/dates'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { latestByKey } from '../../shared/utils/latest-by-key'
-import { isInScope, replaceUserAuditScope, type AuditScopeContext } from '../../shared/services/audit-scope.service'
+import { isInScope, type AuditScopeContext } from '../../shared/services/audit-scope.service'
 import { listAuditComments, createManualComment, recordAuditorNote, recordReviewDecision, markAuditCommentSeen } from '../../shared/services/audit-comments.service'
-import { classifyAuditableAssetCategory } from '../asset-audits/asset-audit-category-classification'
+import {
+  MAX_ATTACHMENTS_PER_AUDIT,
+  isAllowedPhotoMimetype,
+  handleDuplicateAudit,
+  assertNotSelfReview,
+  extractVehicleMeta,
+  classifyAuditableAssetCategory,
+  bulkApproveAudits,
+  getAuditAssetAssignments,
+  saveAuditAssetAssignment,
+} from '../../shared/services/audit-domain.service'
 import type {
   CreateInsuranceAuditDTO,
   UpdateInsuranceAuditDTO,
@@ -18,25 +28,6 @@ import type {
   ReviewInsuranceAuditDTO,
   ListInsuranceAuditsQueryDTO,
 } from './insurance-audits.schemas'
-
-const MAX_ATTACHMENTS_PER_AUDIT = 10
-
-const ALLOWED_PHOTO_MIMETYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
-
-function isAllowedPhotoMimetype(mimetype: string): boolean {
-  return ALLOWED_PHOTO_MIMETYPES.has(mimetype)
-}
-
-function handleDuplicateAudit(e: unknown): never {
-  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-    const target = Array.isArray(e.meta?.target) ? (e.meta.target as string[]).join(',') : String(e.meta?.target ?? '')
-    if (target.includes('auditPeriod')) {
-      throw new AppError(409, 'Ya existe una auditoría de seguros para este activo en el período actual', 'DUPLICATE_AUDIT_PERIOD')
-    }
-    throw new AppError(409, 'Registro duplicado', 'DUPLICATE')
-  }
-  throw e
-}
 
 function mapAttachment(a: Record<string, unknown>) {
   return {
@@ -48,20 +39,6 @@ function mapAttachment(a: Record<string, unknown>) {
     fileUrl: a.fileUrl,
     uploadedAt: a.uploadedAt,
     uploadedBy: a.uploadedBy,
-  }
-}
-
-// Patente/chasis/motor no son columnas propias del Activo — viven en
-// `Asset.metadata` (JSON), cargados hoy desde el alta/edición de Activos.
-// Único lugar donde este módulo los extrae, para no repetir el parseo en
-// cada mapper.
-function extractVehicleMeta(metadata: unknown): { plate: string | null; chassisNumber: string | null; engineNumber: string | null } {
-  const meta = (metadata ?? {}) as Record<string, unknown>
-  const asString = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null)
-  return {
-    plate: asString(meta.plate),
-    chassisNumber: asString(meta.chassisNumber),
-    engineNumber: asString(meta.engineNumber),
   }
 }
 
@@ -232,7 +209,7 @@ export const insuranceAuditsService = {
         await recordAuditorNote(tx, 'ASSET', asset.id, auditPeriod, row.id, performedBy, data.checklist.comments ?? null)
         return row
       })
-      .catch(handleDuplicateAudit)
+      .catch((e) => handleDuplicateAudit(e, 'Ya existe una auditoría de seguros para este activo en el período actual'))
 
     const referenceCirculationCard = await getCirculationCardReference(asset.id)
     return mapAudit({ ...created, attachments: [] } as unknown as Record<string, unknown>, referenceCirculationCard)
@@ -370,23 +347,22 @@ export const insuranceAuditsService = {
     const where: Prisma.InsuranceAuditWhereInput = {}
     if (query.status && query.status.length > 0) where.status = { in: query.status }
 
-    // El alcance es por activo individual (UserAuditScope.scopeValue =
-    // assetId) — se resuelve primero a un set de assetIds permitidos y se
-    // filtra por `assetId IN (...)`, un WHERE real, para que paginación y
-    // `total` queden correctos.
-    if (scope.restricted) {
-      const eligibleAssets = await prisma.asset.findMany({
-        where: { isActive: true, insuranceAuditable: true },
-        select: { id: true, assetType: true },
-      })
-      let allowedAssetIds = eligibleAssets
-        .filter((a) => isInScope(scope, a.id))
-        .map((a) => a.id)
-      if (query.assetId) allowedAssetIds = allowedAssetIds.includes(query.assetId) ? [query.assetId] : []
-      where.assetId = { in: allowedAssetIds }
-    } else if (query.assetId) {
-      where.assetId = query.assetId
-    }
+    // El filtro de elegibilidad (activo + insuranceAuditable) se aplica
+    // siempre, incluso sin restricción de alcance (ADMIN/revisor) — mismo
+    // criterio que la población en fire-extinguisher-audits.service.ts#findAll:
+    // un activo que dejó de ser asegurable/activo no debe seguir apareciendo
+    // en la cola para nadie. El alcance por usuario (UserAuditScope.scopeValue
+    // = assetId) se aplica ADEMÁS, solo si scope.restricted, recortando ese
+    // mismo set. Todo se resuelve a un WHERE real por assetId para que
+    // paginación y `total` queden correctos.
+    const eligibleAssets = await prisma.asset.findMany({
+      where: { isActive: true, insuranceAuditable: true },
+      select: { id: true },
+    })
+    let allowedAssetIds = eligibleAssets.map((a) => a.id)
+    if (scope.restricted) allowedAssetIds = allowedAssetIds.filter((id) => isInScope(scope, id))
+    if (query.assetId) allowedAssetIds = allowedAssetIds.includes(query.assetId) ? [query.assetId] : []
+    where.assetId = { in: allowedAssetIds }
 
     const [rows, total] = await Promise.all([
       prisma.insuranceAudit.findMany({
@@ -461,9 +437,7 @@ export const insuranceAuditsService = {
     if (audit.status !== 'SUBMITTED') {
       throw new AppError(409, 'Esta auditoría ya fue revisada', 'ALREADY_REVIEWED')
     }
-    if (audit.auditedBy === reviewedBy && !reviewerIsAdmin) {
-      throw new AppError(403, 'No podés revisar/aprobar una auditoría que vos mismo auditaste', 'SELF_REVIEW_FORBIDDEN')
-    }
+    assertNotSelfReview(audit.auditedBy, reviewedBy, reviewerIsAdmin)
 
     await prisma.$transaction(async (tx) => {
       await tx.insuranceAudit.update({
@@ -481,26 +455,16 @@ export const insuranceAuditsService = {
       where: { id: { in: ids } },
       include: { asset: { select: { code: true, name: true } } },
     })
-    const auditById = new Map(audits.map((a) => [a.id, a]))
+    const auditRefs = new Map(audits.map((a) => [a.id, { code: a.asset.code ?? a.asset.name }]))
 
-    const approved: string[] = []
-    const failed: { id: string; code: string | null; message: string }[] = []
-
-    for (const id of ids) {
-      const audit = auditById.get(id)
-      if (!audit) {
-        failed.push({ id, code: null, message: 'Auditoría no encontrada' })
-        continue
-      }
-      try {
-        await this.review(id, { auditDecision: 'APPROVED', reviewNotes: reviewNotes ?? undefined }, reviewedBy, reviewerIsAdmin)
-        approved.push(id)
-      } catch (err) {
-        failed.push({ id, code: audit.asset.code ?? audit.asset.name, message: err instanceof AppError ? err.message : 'Error al aprobar' })
-      }
-    }
-
-    return { approved, failed }
+    return bulkApproveAudits(
+      ids,
+      auditRefs,
+      () => ({ auditDecision: 'APPROVED' as const, reviewNotes: reviewNotes ?? undefined }),
+      (id, payload, rBy, rAdmin) => this.review(id, payload, rBy, rAdmin),
+      reviewedBy,
+      reviewerIsAdmin,
+    )
   },
 
   // Seguimiento de tarjeta de circulación (ver comentario en el modelo
@@ -582,13 +546,13 @@ export const insuranceAuditsService = {
 
   // Comentario suelto, sin auditoría de por medio (botón "Agregar
   // comentario") — mismo chequeo de elegibilidad/alcance que create().
-  async addComment(assetId: string, body: string, authorEmail: string, scope: AuditScopeContext) {
-    const asset = await prisma.asset.findUnique({ where: { id: assetId } })
+  async addComment(targetId: string, body: string, authorEmail: string, scope: AuditScopeContext) {
+    const asset = await prisma.asset.findUnique({ where: { id: targetId } })
     if (!asset) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
     if (!isEligibleAsset(asset)) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
     if (!isInScope(scope, asset.id)) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
 
-    return createManualComment('ASSET', assetId, currentYearMonth(), authorEmail, body)
+    return createManualComment('ASSET', targetId, currentYearMonth(), authorEmail, body)
   },
 
   // Valida que el comentario sea de Seguros y esté en el alcance de quien
@@ -626,76 +590,22 @@ export const insuranceAuditsService = {
   // dos auditores de la misma categoría (ej. "camioneta") pueden repartirse
   // vehículos puntuales en vez de ver todos los de la categoría.
   async getAssignments() {
-    const [auditors, assets, scopes] = await Promise.all([
-      prisma.user.findMany({
-        where: { isActive: true, accessProfile: { modules: { has: 'insurance_audit_coverage' } } },
-        select: { id: true, name: true, email: true },
-        orderBy: { name: 'asc' },
-      }),
+    return getAuditAssetAssignments('insurance_audit_coverage', 'INSURANCE_AUDIT', async () =>
       prisma.asset.findMany({
         where: { isActive: true, insuranceAuditable: true },
         select: { id: true, code: true, name: true, assetType: true, metadata: true },
         orderBy: [{ assetType: 'asc' }, { name: 'asc' }],
       }),
-      prisma.userAuditScope.findMany({
-        where: { area: 'INSURANCE_AUDIT' },
-        select: { userId: true, scopeValue: true },
-      }),
-    ])
-
-    const assetIdsByUser = new Map<string, string[]>()
-    for (const s of scopes) {
-      const list = assetIdsByUser.get(s.userId)
-      if (list) list.push(s.scopeValue)
-      else assetIdsByUser.set(s.userId, [s.scopeValue])
-    }
-
-    const eligibleAssets = assets
-      .map((asset) => ({ asset, category: classifyAuditableAssetCategory(asset.assetType) }))
-      .filter((x): x is { asset: typeof assets[number]; category: NonNullable<typeof x.category> } => x.category !== null)
-
-    // Un activo puede haber quedado asignado antes de perder elegibilidad
-    // (se le quitó el tilde insuranceAuditable, cambió de categoría, etc.) —
-    // no mostrarlo como asignado, porque tampoco se puede desmarcar desde la
-    // UI (ni aparece ahí). Se limpia solo la próxima vez que se guarde la
-    // asignación de ese usuario (ver saveAssignment).
-    const eligibleAssetIds = new Set(eligibleAssets.map((x) => x.asset.id))
-
-    return {
-      auditors: auditors.map((u) => ({
-        userId: u.id,
-        name: u.name,
-        email: u.email,
-        assetIds: (assetIdsByUser.get(u.id) ?? []).filter((id) => eligibleAssetIds.has(id)),
-      })),
-      assets: eligibleAssets.map(({ asset, category }) => ({
-        id: asset.id,
-        code: asset.code,
-        name: asset.name,
-        assetType: asset.assetType,
-        category,
-        ...extractVehicleMeta(asset.metadata),
-      })),
-    }
+    )
   },
 
   async saveAssignment(userId: string, assetIds: string[]) {
-    const user = await prisma.user.findUnique({ where: { id: userId } })
-    if (!user) throw new AppError(404, 'Usuario no encontrado', 'NOT_FOUND')
-
-    // Se descarta en silencio lo que ya no es elegible en vez de rechazar
-    // todo el guardado — ver el comentario equivalente en
-    // asset-audits-assignments.service.ts#saveAssignment.
-    let validAssetIds = assetIds
-    if (assetIds.length > 0) {
+    await saveAuditAssetAssignment(userId, assetIds, 'INSURANCE_AUDIT', async (ids) => {
       const found = await prisma.asset.findMany({
-        where: { id: { in: assetIds }, isActive: true, insuranceAuditable: true },
+        where: { id: { in: ids }, isActive: true, insuranceAuditable: true },
         select: { id: true, assetType: true },
       })
-      const validIds = new Set(found.filter((a) => classifyAuditableAssetCategory(a.assetType) !== null).map((a) => a.id))
-      validAssetIds = assetIds.filter((id) => validIds.has(id))
-    }
-
-    await replaceUserAuditScope(userId, 'INSURANCE_AUDIT', validAssetIds)
+      return new Set(found.filter((a) => classifyAuditableAssetCategory(a.assetType) !== null).map((a) => a.id))
+    })
   },
 }

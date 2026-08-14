@@ -24,6 +24,7 @@ import { exchangeRateQueries } from '../../shared/api/exchange-rate.api'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { computeEquivalent } from '../../shared/utils/currency'
+import { formatCurrencyFull } from '../../shared/utils/format'
 import { buildMetadata } from '../../shared/utils/assetMetadata'
 import { CategoryPicker } from './components/CategoryPicker'
 import { BienDeUsoField } from './components/BienDeUsoField'
@@ -219,7 +220,6 @@ export default function AssetNewPage() {
   // Vista previa del equivalente en la otra moneda — el backend es quien
   // cierra y persiste ambos montos al guardar (ver computeDualAmounts).
   const equivalentCurrencyLabel = form.currency === 'ARS' ? 'USD' : 'ARS'
-  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
   const equivalentReal = useMemo(
     () => computeEquivalent(form.patrimonialValueUsd, form.currency as Currency, form.exchangeRate),
     [form.patrimonialValueUsd, form.exchangeRate, form.currency],
@@ -229,9 +229,7 @@ export default function AssetNewPage() {
     [form.patrimonialValueNew, form.exchangeRate, form.currency],
   )
   function formatEquivalent(value: string): string {
-    return value
-      ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      : ''
+    return value ? formatCurrencyFull(parseFloat(value), equivalentCurrencyLabel) : ''
   }
 
   const { data: fuelTypes = [] } = useQuery(catalogQueries.byCategory('asset_fuel_type'))

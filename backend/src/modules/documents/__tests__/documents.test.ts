@@ -261,6 +261,25 @@ describe('Documents API', () => {
       )
     })
 
+    it('returns 400 when installments do not sum to the document total', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue(null)
+
+      const res = await request(app)
+        .post('/api/v1/documents')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validDocumentBody,
+          installments: [
+            { installmentNumber: 1, dueDate: '2026-02-01', amount: 600 },
+            { installmentNumber: 2, dueDate: '2026-03-01', amount: 600 },
+          ],
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.message).toContain('no coincide con el total del documento')
+      expect(db.accountingDocument.create).not.toHaveBeenCalled()
+    })
+
     it('inherits the linked document payment method for an associated document', async () => {
       db.accountingDocument.findUnique.mockResolvedValue({
         ...fakeDocument,
@@ -1038,6 +1057,24 @@ describe('Documents API', () => {
           expect.objectContaining({ paymentMethod: 'E-Cheq' }),
         ]),
       )
+    })
+
+    it('returns 400 when the new installments do not sum to the document total', async () => {
+      db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, paymentMethod: 'E-Cheq' })
+
+      const res = await request(app)
+        .put(`/api/v1/documents/${DOC_ID}/installments`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          installments: [
+            { installmentNumber: 1, dueDate: '2026-02-01', amount: 500 },
+            { installmentNumber: 2, dueDate: '2026-03-01', amount: 500 },
+          ],
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.message).toContain('no coincide con el total del documento')
+      expect(db.$transaction).not.toHaveBeenCalled()
     })
   })
 

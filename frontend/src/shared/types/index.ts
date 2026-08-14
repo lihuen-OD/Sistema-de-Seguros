@@ -331,7 +331,7 @@ export interface AccountingDocumentAttachment {
   documentId: string
   name: string
   description: string
-  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileType: 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
   fileSize: string
   fileUrl?: string
   uploadedAt: string
@@ -343,7 +343,7 @@ export interface PolicyAttachment {
   policyAssetCoverageId: string
   name: string
   description: string
-  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileType: 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
   fileSize: string
   fileUrl?: string
   isCirculationCard: boolean
@@ -618,7 +618,7 @@ export interface AssetAttachment {
   assetId: string
   name: string
   description: string
-  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileType: 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
   fileSize: string
   fileUrl?: string
   expirationDate: string | null
@@ -665,7 +665,7 @@ export interface ClaimAttachment {
   claimId: string
   name: string
   description: string | null
-  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileType: 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
   fileSize: string
   fileUrl?: string
   uploadedAt: string
@@ -677,7 +677,7 @@ export interface ClaimExpenseAttachment {
   expenseId: string
   name: string
   description: string | null
-  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileType: 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
   fileSize: string
   fileUrl?: string
   uploadedAt: string

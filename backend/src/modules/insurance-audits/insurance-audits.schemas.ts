@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PaginationSchema } from '../../shared/schemas/common'
+import { AuditPeriodQuerySchema, BulkApproveAuditsSchema, SaveAssignmentSchema } from '../../shared/schemas/audit-domain'
 import { INSURANCE_AUDIT_STATUSES } from './insurance-audits.constants'
 
 const ChecklistSchema = z.object({
@@ -30,10 +31,8 @@ export const ReviewInsuranceAuditSchema = z.object({
   reviewNotes: z.string().max(1000).optional().nullable(),
 })
 
-export const BulkApproveInsuranceAuditsSchema = z.object({
-  ids: z.array(z.string().uuid('ID de auditoría inválido')).min(1, 'Se requiere al menos una auditoría').max(100),
-  reviewNotes: z.string().max(1000).optional().nullable(),
-})
+// Mismo shape que los otros 2 dominios de auditoría — ver shared/schemas/audit-domain.ts.
+export const BulkApproveInsuranceAuditsSchema = BulkApproveAuditsSchema
 
 export const ListInsuranceAuditsQuerySchema = PaginationSchema.extend({
   status: z
@@ -43,9 +42,8 @@ export const ListInsuranceAuditsQuerySchema = PaginationSchema.extend({
   assetId: z.string().uuid('ID de activo inválido').optional(),
 })
 
-export const CoverageQuerySchema = z.object({
-  period: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM'),
-})
+// Mismo shape que los otros 2 dominios de auditoría — ver shared/schemas/audit-domain.ts.
+export const CoverageQuerySchema = AuditPeriodQuerySchema
 
 export const AuditDashboardQuerySchema = z.object({
   period: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM'),
@@ -54,14 +52,15 @@ export const AuditDashboardQuerySchema = z.object({
 export const AuditorProgressQuerySchema = CoverageQuerySchema
 
 // Asignación por activo individual — ver insurance-audits.service.ts#saveAssignment.
-export const SaveAssignmentSchema = z.object({
-  assetIds: z.array(z.string().uuid('ID de activo inválido')).max(500),
-})
+// Mismo shape que rodados — ver shared/schemas/audit-domain.ts.
+export { SaveAssignmentSchema }
 
 // Comentario suelto ("Agregar comentario"), sin auditoría de por medio — ver
-// insurance-audits.service.ts#addComment.
+// insurance-audits.service.ts#addComment. Campo `targetId` (no `assetId`)
+// para alinear el contrato con el modelo compartido AuditComment y con los
+// otros 2 dominios de auditoría (ver shared/services/audit-comments.service.ts).
 export const AddCommentSchema = z.object({
-  assetId: z.string().uuid('ID de activo inválido'),
+  targetId: z.string().uuid('ID de activo inválido'),
   body: z.string().trim().min(1, 'El comentario no puede estar vacío').max(1000),
 })
 

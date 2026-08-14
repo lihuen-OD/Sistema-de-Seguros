@@ -5,7 +5,7 @@ import { prisma } from '../config/database'
 import { AppError } from '../shared/errors/AppError'
 import { asyncHandler } from '../shared/utils/async-handler'
 import { TOKEN_EXPIRES_IN } from '../modules/auth/auth.service'
-import type { JwtPayload, ModuleKey, Role } from '../shared/types'
+import type { JwtPayload, ModuleKey } from '../shared/types'
 
 // Sesión deslizante: el token dura 12hs (TOKEN_EXPIRES_IN) desde que se firma,
 // pero si el usuario sigue activo no debería quedar afuera a mitad de uso solo
@@ -53,15 +53,26 @@ export const authMiddleware = asyncHandler(async (req: Request, res: Response, n
     return next(new AppError(401, 'No autenticado', 'UNAUTHORIZED'))
   }
 
+  // Tokens firmados antes de que tokenVersion existiera no lo llevan en el
+  // payload — se tratan como 0 (el valor inicial de todo usuario) para no
+  // invalidar de golpe todas las sesiones activas el día de este deploy.
+  // Cambiar/resetear la contraseña incrementa tokenVersion en base, así que
+  // cualquier token emitido antes de ese incremento deja de matchear acá.
+  if ((payload.tokenVersion ?? 0) !== user.tokenVersion) {
+    return next(new AppError(401, 'La sesión ya no es válida, iniciá sesión nuevamente', 'TOKEN_INVALID'))
+  }
+
   req.user = {
     userId: user.id,
     email: user.email,
-    role: user.role as Role,
+    role: user.role,
     modules: (user.role === 'ADMIN' ? [] : (user.accessProfile?.modules ?? [])) as ModuleKey[],
   }
 
   if (payload.iat && Date.now() / 1000 - payload.iat > RENEW_THRESHOLD_SECONDS) {
-    const renewedToken = jwt.sign({ userId: user.id }, env.JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN })
+    const renewedToken = jwt.sign({ userId: user.id, tokenVersion: user.tokenVersion }, env.JWT_SECRET, {
+      expiresIn: TOKEN_EXPIRES_IN,
+    })
     res.setHeader(RENEWED_TOKEN_HEADER, renewedToken)
   }
 

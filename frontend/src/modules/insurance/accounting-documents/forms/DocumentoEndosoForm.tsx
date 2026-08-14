@@ -17,6 +17,7 @@ import { policyQueries } from '../../../../shared/api/policies.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
+import { formatCurrencyFull } from '../../../../shared/utils/format'
 import { CURRENCY_OPTIONS } from '../../../../shared/constants'
 import type { AccountingDocument, Currency, EconomicImpactType } from '../../../../shared/types'
 
@@ -119,8 +120,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
   const parsedOther = parseFloat(form.otherTaxesAmount) || 0
   const computedTotal = hasEconomicImpact ? parsedNet + parsedVat + parsedOther : 0
   const tc = parseFloat(form.exchangeRate) || 0
-  const mainPrefix = form.currency === 'USD' ? 'US$' : 'AR$'
-  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
+  const equivalentCurrency: Currency = form.currency === 'ARS' ? 'USD' : 'ARS'
   const equivalentAmount =
     form.currency === 'ARS' && tc > 0 ? computedTotal / tc : form.currency === 'USD' && tc > 0 ? computedTotal * tc : 0
 
@@ -178,7 +178,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
       if (policyRows.length === 0 || policyRows.every((r) => !r.policyAssetCoverageId)) {
         next.policies = 'Distribuí el importe entre al menos un activo'
       } else if (allocationTotalMismatch) {
-        next.policies = `El total asignado (${mainPrefix} ${totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) debe coincidir con el importe del Endoso (${mainPrefix} ${computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+        next.policies = `El total asignado (${formatCurrencyFull(totalAllocated, form.currency)}) debe coincidir con el importe del Endoso (${formatCurrencyFull(computedTotal, form.currency)}).`
       }
     }
     setErrors(next)
@@ -428,7 +428,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
                   <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
                     <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</span>
                     <span className="text-base font-bold text-slate-800 tabular-nums">
-                      {mainPrefix} {computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {formatCurrencyFull(computedTotal, form.currency)}
                     </span>
                   </div>
                   {tc > 0 && (
@@ -437,7 +437,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
                         <ArrowLeftRight size={12} /> Equivalente
                       </span>
                       <span className="text-base font-bold text-brand-700 tabular-nums">
-                        {equivalentPrefix} {equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatCurrencyFull(equivalentAmount, equivalentCurrency)}
                       </span>
                     </div>
                   )}
@@ -465,7 +465,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
                 policies={distributionPolicies}
                 rows={policyRows}
                 onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
-                currencyPrefix={mainPrefix}
+                currency={form.currency || 'ARS'}
                 documentTotal={computedTotal}
                 emptyMessage="Seleccioná primero la póliza asociada."
               />

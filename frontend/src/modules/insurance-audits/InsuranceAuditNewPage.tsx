@@ -16,11 +16,13 @@ import {
   insuranceAuditsApi,
   insuranceAuditKeys,
   insuranceAuditQueries,
+  type InsuranceAudit,
   type InsuranceAuditCoverageItem,
   type InsuranceAuditAttachment,
   type CirculationCardReference,
 } from '../../shared/api/insurance-audits.api'
 import { ROUTES } from '../../app/routes'
+import { currentPeriod } from '../../shared/utils/period'
 
 const CIRCULATION_CARD_OPTIONS = [
   { value: 'yes', label: 'Tiene la tarjeta a bordo' },
@@ -39,10 +41,6 @@ interface AssetStub {
   assetType: string
   code: string | null
   plate: string | null
-}
-
-function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7)
 }
 
 function AssetPicker({
@@ -135,64 +133,105 @@ function CirculationCardReferenceCard({ card, assetId }: { card: CirculationCard
 
 export default function InsuranceAuditNewPage() {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const preselectedId = searchParams.get('assetId')
 
   const { id: editId } = useParams<{ id?: string }>()
   const isEditing = Boolean(editId)
 
-  const [selectedAsset, setSelectedAsset] = useState<AssetStub | null>(null)
-  const [referenceCard, setReferenceCard] = useState<CirculationCardReference | null>(null)
-  const [seeded, setSeeded] = useState(false)
-
   const { data: coverage = [], isLoading: coverageLoading } = useQuery(insuranceAuditQueries.coverage(currentPeriod()))
+  const { data: editingAudit, isLoading: editingAuditLoading } = useQuery({
+    ...insuranceAuditQueries.detail(editId ?? ''),
+    enabled: isEditing,
+  })
 
-  function handleSelectFromCoverage(item: InsuranceAuditCoverageItem) {
-    setSelectedAsset({ id: item.id, name: item.name, assetType: item.assetType, code: item.code, plate: item.plate })
-    setReferenceCard(item.referenceCirculationCard)
+  const editingAuditInvalid = isEditing && !!editingAudit && editingAudit.status !== 'SUBMITTED'
+
+  // Redirect puro (no toca estado de React) — separado del seed del
+  // formulario para no mezclar "esta auditoría ya no es editable" con
+  // "inicializar los campos", que son dos responsabilidades distintas.
+  useEffect(() => {
+    if (editingAuditInvalid) {
+      toast.error('Esta auditoría ya no se puede editar porque ya fue revisada')
+      navigate(ROUTES.INSURANCE_AUDITS_DETAIL(editingAudit!.id), { replace: true })
+    }
+  }, [editingAuditInvalid, editingAudit, navigate])
+
+  if (isEditing && (editingAuditLoading || !editingAudit || editingAuditInvalid)) {
+    return (
+      <PageContent>
+        <p className="text-sm text-slate-400 py-10 text-center">Cargando auditoría…</p>
+      </PageContent>
+    )
   }
 
-  // Preselección desde la pestaña "Cobertura" (?assetId=) — se resuelve
-  // buscando dentro de la misma lista ya scopeada, sin una consulta aparte.
-  useEffect(() => {
-    if (!preselectedId || selectedAsset) return
-    const match = coverage.find((c) => c.id === preselectedId)
-    if (match) handleSelectFromCoverage(match)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preselectedId, coverage, selectedAsset])
+  return (
+    <InsuranceAuditFormBody
+      key={editId ?? 'new'}
+      editId={editId}
+      editingAudit={isEditing ? editingAudit! : null}
+      preselectedId={preselectedId}
+      coverage={coverage}
+      coverageLoading={coverageLoading}
+    />
+  )
+}
 
-  const { data: editingAudit } = useQuery(insuranceAuditQueries.detail(editId ?? ''))
+interface InsuranceAuditFormBodyProps {
+  editId: string | undefined
+  editingAudit: InsuranceAudit | null
+  preselectedId: string | null
+  coverage: InsuranceAuditCoverageItem[]
+  coverageLoading: boolean
+}
 
-  const [hasCirculationCard, setHasCirculationCard] = useState<boolean | null>(null)
-  const [comments, setComments] = useState('')
+function InsuranceAuditFormBody({ editId, editingAudit, preselectedId, coverage, coverageLoading }: InsuranceAuditFormBodyProps) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const isEditing = Boolean(editId)
+
+  // Preselección desde la pestaña "Cobertura" (?assetId=) — derivado, no
+  // estado: `coverage` puede resolver después del primer render, así que no
+  // alcanza con "sembrar" una vez al montar, tiene que recalcularse en cada
+  // render mientras no haya selección manual (que en este flujo nunca la
+  // hay, ver el JSX de abajo).
+  const preselectedMatch = !isEditing && preselectedId ? coverage.find((c) => c.id === preselectedId) : undefined
+  const preselectedAsset: AssetStub | null = preselectedMatch
+    ? { id: preselectedMatch.id, name: preselectedMatch.name, assetType: preselectedMatch.assetType, code: preselectedMatch.code, plate: preselectedMatch.plate }
+    : null
+
+  const [manualAsset, setManualAsset] = useState<AssetStub | null>(() =>
+    isEditing && editingAudit?.asset
+      ? {
+          id: editingAudit.asset.id,
+          name: editingAudit.asset.name,
+          assetType: editingAudit.asset.assetType,
+          code: editingAudit.asset.code,
+          plate: editingAudit.asset.plate,
+        }
+      : null,
+  )
+  const [manualReferenceCard, setManualReferenceCard] = useState<CirculationCardReference | null>(() =>
+    isEditing ? editingAudit?.referenceCirculationCard ?? null : null,
+  )
+  const [hasCirculationCard, setHasCirculationCard] = useState<boolean | null>(() =>
+    isEditing ? editingAudit!.checklist.hasCirculationCard : null,
+  )
+  const [comments, setComments] = useState(() => (isEditing ? editingAudit!.checklist.comments ?? '' : ''))
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
-  const [existingPhotos, setExistingPhotos] = useState<InsuranceAuditAttachment[]>([])
+  const [existingPhotos, setExistingPhotos] = useState<InsuranceAuditAttachment[]>(() =>
+    isEditing ? editingAudit!.attachments.filter((a) => a.fileType === 'image') : [],
+  )
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!isEditing || seeded || !editingAudit) return
-    if (editingAudit.status !== 'SUBMITTED') {
-      toast.error('Esta auditoría ya no se puede editar porque ya fue revisada')
-      navigate(ROUTES.INSURANCE_AUDITS_DETAIL(editingAudit.id), { replace: true })
-      return
-    }
-    if (editingAudit.asset) {
-      setSelectedAsset({
-        id: editingAudit.asset.id,
-        name: editingAudit.asset.name,
-        assetType: editingAudit.asset.assetType,
-        code: editingAudit.asset.code,
-        plate: editingAudit.asset.plate,
-      })
-    }
-    setReferenceCard(editingAudit.referenceCirculationCard)
-    setHasCirculationCard(editingAudit.checklist.hasCirculationCard)
-    setComments(editingAudit.checklist.comments ?? '')
-    setExistingPhotos(editingAudit.attachments.filter((a) => a.fileType === 'image'))
-    setSeeded(true)
-  }, [isEditing, seeded, editingAudit, navigate])
+  const selectedAsset = preselectedAsset ?? manualAsset
+  const referenceCard = preselectedMatch ? preselectedMatch.referenceCirculationCard : manualReferenceCard
+
+  function handleSelectFromCoverage(item: InsuranceAuditCoverageItem) {
+    setManualAsset({ id: item.id, name: item.name, assetType: item.assetType, code: item.code, plate: item.plate })
+    setManualReferenceCard(item.referenceCirculationCard)
+  }
 
   async function handleRemoveExistingPhoto(attachmentId: string) {
     if (!editId) return
@@ -232,14 +271,6 @@ export default function InsuranceAuditNewPage() {
       setSubmitError(err instanceof Error ? err.message : 'Error al registrar la auditoría')
       setSubmitting(false)
     }
-  }
-
-  if (isEditing && !seeded) {
-    return (
-      <PageContent>
-        <p className="text-sm text-slate-400 py-10 text-center">Cargando auditoría…</p>
-      </PageContent>
-    )
   }
 
   return (

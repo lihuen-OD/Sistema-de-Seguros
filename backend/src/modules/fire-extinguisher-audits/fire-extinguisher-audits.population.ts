@@ -1,5 +1,5 @@
 import { classifyAssetType } from '../fire-extinguishers/asset-type-classification'
-import { classifyAuditableAssetCategory } from '../asset-audits/asset-audit-category-classification'
+import { classifyAuditableAssetCategory } from '../../shared/services/audit-domain.service'
 
 // FireExtinguisherAudit sirve a dos poblaciones de FireExtinguisher, nunca
 // mezcladas en una misma consulta: ESTABLISHMENT (matafuegos de edificio,

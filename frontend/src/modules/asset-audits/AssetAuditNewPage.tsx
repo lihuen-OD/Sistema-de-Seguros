@@ -1,6 +1,6 @@
 import { assetAuditsApi, assetAuditKeys, assetAuditQueries } from '../../shared/api/asset-audits.api'
 import { ROUTES } from '../../app/routes'
-import { AuditWizard } from '../fire-extinguishers/audits/AuditWizard'
+import { AuditWizard } from '../../shared/components/audit-wizard/AuditWizard'
 
 export default function AssetAuditNewPage() {
   return (

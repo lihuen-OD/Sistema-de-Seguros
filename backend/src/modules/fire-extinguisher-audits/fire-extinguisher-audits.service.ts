@@ -8,6 +8,13 @@ import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/
 import { latestByKey } from '../../shared/utils/latest-by-key'
 import { isInScope, type AuditScopeContext } from '../../shared/services/audit-scope.service'
 import { listAuditComments, createManualComment, recordAuditorNote, recordReviewDecision, markAuditCommentSeen } from '../../shared/services/audit-comments.service'
+import {
+  MAX_ATTACHMENTS_PER_AUDIT,
+  isAllowedPhotoMimetype,
+  handleDuplicateAudit,
+  assertNotSelfReview,
+  bulkApproveAudits,
+} from '../../shared/services/audit-domain.service'
 import { matchesAuditPopulation, auditScopeKeyFor, auditScopeMatchValueFor, type FireExtAuditPopulation } from './fire-extinguisher-audits.population'
 import type {
   CreateFireExtinguisherAuditDTO,
@@ -16,30 +23,6 @@ import type {
   ReviewFireExtinguisherAuditDTO,
   ListFireExtinguisherAuditsQueryDTO,
 } from './fire-extinguisher-audits.schemas'
-
-const MAX_ATTACHMENTS_PER_AUDIT = 10
-
-// Chequeo de mimetype MÁS ESTRICTO que el `isAllowedMimetype` compartido — son
-// fotos de inspección, no documentos. No se toca el helper compartido.
-const ALLOWED_PHOTO_MIMETYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
-
-function isAllowedPhotoMimetype(mimetype: string): boolean {
-  return ALLOWED_PHOTO_MIMETYPES.has(mimetype)
-}
-
-// Manejo local de la constraint única (fireExtinguisherId, auditPeriod) — no
-// reutiliza el handleUniqueConstraint de fire-extinguishers.service.ts, que es
-// privado del módulo y valida columnas distintas.
-function handleDuplicateAudit(e: unknown): never {
-  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-    const target = Array.isArray(e.meta?.target) ? (e.meta.target as string[]).join(',') : String(e.meta?.target ?? '')
-    if (target.includes('auditPeriod')) {
-      throw new AppError(409, 'Ya existe una auditoría para este matafuego en el período actual', 'DUPLICATE_AUDIT_PERIOD')
-    }
-    throw new AppError(409, 'Registro duplicado', 'DUPLICATE')
-  }
-  throw e
-}
 
 function normalizeMasterValue(field: string, value: unknown): string {
   if (value == null) return ''
@@ -269,7 +252,7 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
 
           return created.id
         })
-        .catch(handleDuplicateAudit)
+        .catch((e) => handleDuplicateAudit(e, 'Ya existe una auditoría para este matafuego en el período actual'))
 
       // La transacción solo ejecuta writes. La lectura con include se hace fuera
       // para no agotar el timeout de 5s de la transacción interactiva (mismo
@@ -698,13 +681,7 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
       if (audit.status !== 'SUBMITTED') {
         throw new AppError(409, 'Esta auditoría ya fue revisada', 'ALREADY_REVIEWED')
       }
-      if (audit.auditedBy === reviewedBy && !reviewerIsAdmin) {
-        throw new AppError(
-          403,
-          'No podés revisar/aprobar una auditoría que vos mismo auditaste',
-          'SELF_REVIEW_FORBIDDEN',
-        )
-      }
+      assertNotSelfReview(audit.auditedBy, reviewedBy, reviewerIsAdmin)
 
       const pending = audit.proposedChanges.filter((pc) => pc.status === 'PENDING')
       const reviewedAt = new Date()
@@ -809,27 +786,20 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
         include: { proposedChanges: true, extinguisher: { select: { code: true } } },
       })
       const auditById = new Map(audits.map((a) => [a.id, a]))
+      const auditRefs = new Map(audits.map((a) => [a.id, { code: a.extinguisher.code }]))
 
-      const approved: string[] = []
-      const failed: { id: string; code: string | null; message: string }[] = []
-
-      for (const id of ids) {
-        const audit = auditById.get(id)
-        if (!audit) {
-          failed.push({ id, code: null, message: 'Auditoría no encontrada' })
-          continue
-        }
-        try {
-          const pending = audit.proposedChanges.filter((pc) => pc.status === 'PENDING')
+      return bulkApproveAudits(
+        ids,
+        auditRefs,
+        (id) => {
+          const pending = auditById.get(id)!.proposedChanges.filter((pc) => pc.status === 'PENDING')
           const decisions = pending.map((pc) => ({ proposedChangeId: pc.id, decision: 'APPROVED' as const }))
-          await this.review(id, { decisions, auditDecision: 'APPROVED', reviewNotes: reviewNotes ?? undefined }, reviewedBy, reviewerIsAdmin)
-          approved.push(id)
-        } catch (err) {
-          failed.push({ id, code: audit.extinguisher.code, message: err instanceof AppError ? err.message : 'Error al aprobar' })
-        }
-      }
-
-      return { approved, failed }
+          return { decisions, auditDecision: 'APPROVED' as const, reviewNotes: reviewNotes ?? undefined }
+        },
+        (id, payload, rBy, rAdmin) => this.review(id, payload, rBy, rAdmin),
+        reviewedBy,
+        reviewerIsAdmin,
+      )
     },
   }
 }

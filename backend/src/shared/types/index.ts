@@ -1,6 +1,6 @@
-// ─── Auth ─────────────────────────────────────────────────────────────────────
+import type { Role } from '@prisma/client'
 
-export type Role = 'ADMIN' | 'USER'
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 
 // Un módulo = una pantalla otorgable por perfil de acceso. Todos se hacen
 // cumplir vía requireModule() en el router correspondiente — incluidas las
@@ -36,6 +36,9 @@ export interface JwtPayload {
   // es algo que nosotros elijamos codificar. Lo usa authMiddleware para saber
   // qué tan viejo es el token y decidir si toca renovarlo (sesión deslizante).
   iat?: number
+  // Ausente en tokens firmados antes de que este campo existiera —
+  // authMiddleware trata esa ausencia como 0 (ver comentario ahí).
+  tokenVersion?: number
 }
 
 // Lo que queda en req.user después de authMiddleware.

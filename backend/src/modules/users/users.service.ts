@@ -241,7 +241,9 @@ export const usersService = {
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_COST)
     await prisma.user.update({
       where: { id },
-      data: { passwordHash, mustChangePassword: true },
+      // tokenVersion++ invalida cualquier sesión abierta con la contraseña
+      // anterior — ver auth.middleware.ts.
+      data: { passwordHash, mustChangePassword: true, tokenVersion: { increment: 1 } },
     })
 
     await logUserAudit(id, 'RESET_PASSWORD', performedBy)

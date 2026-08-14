@@ -23,10 +23,11 @@ import {
   type FireExtinguisherCreateInput,
 } from '../../shared/api/fire-extinguishers.api'
 import { assetQueries } from '../../shared/api/assets.api'
-import { catalogQueries } from '../../shared/api/catalogs.api'
+import { catalogQueries, type CatalogItem } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { buildAssetSearchKeywords } from '../../shared/utils/assetSearch'
+import type { FireExtinguisher, Asset } from '../../shared/types'
 
 const CURRENT_YEAR = new Date().getFullYear()
 
@@ -45,8 +46,6 @@ interface FormErrors {
 
 export default function FireExtinguisherEditPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
 
   const { data: original, isLoading, isError } = useQuery(fireExtinguisherQueries.detail(id!))
 
@@ -57,64 +56,6 @@ export default function FireExtinguisherEditPage() {
   const { data: locationTypes = [] } = useQuery(catalogQueries.byCategory('fire_ext_location_type'))
   const { data: establishments = [] } = useQuery(catalogQueries.byCategory('fire_ext_establishment'))
   const { data: extBrands = [] } = useQuery(catalogQueries.byCategory('fire_ext_brand'))
-
-  const [type, setType] = useState('')
-  const [capacity, setCapacity] = useState('')
-  const [chargeDate, setChargeDate] = useState('')
-  const [expirationDate, setExpirationDate] = useState('')
-  const [hydraulicTestExpirationDate, setHydraulicTestExpirationDate] = useState('')
-  const [associatedAssetId, setAssociatedAssetId] = useState('')
-  const [associatedLocationType, setAssociatedLocationType] = useState('')
-  const [observations, setObservations] = useState('')
-  const [cylinderNumber, setCylinderNumber] = useState('')
-  const [iramCertificateNumber, setIramCertificateNumber] = useState('')
-  const [brand, setBrand] = useState('')
-  const [manufacturingYear, setManufacturingYear] = useState('')
-  const [establishment, setEstablishment] = useState('')
-  const [location, setLocation] = useState('')
-  const [errors, setErrors] = useState<FormErrors>({})
-  const [submitting, setSubmitting] = useState(false)
-  const [seeded, setSeeded] = useState(false)
-
-  // Keep expiration in sync only if user hasn't manually changed it
-  const [manualExpDate, setManualExpDate] = useState(true)
-
-  // Seed form fields once original data arrives
-  useEffect(() => {
-    if (original && !seeded) {
-      setType(original.type)
-      setCapacity(original.capacity)
-      setChargeDate(original.chargeDate ?? '')
-      setExpirationDate(original.expirationDate ?? '')
-      setHydraulicTestExpirationDate(original.hydraulicTestExpirationDate ?? '')
-      setAssociatedAssetId(original.associatedAssetId ?? '')
-      setAssociatedLocationType(original.associatedLocationType as string)
-      setObservations(original.observations ?? '')
-      setCylinderNumber(original.cylinderNumber ?? '')
-      setIramCertificateNumber(original.iramCertificateNumber ?? '')
-      setBrand(original.brand ?? '')
-      setManufacturingYear(original.manufacturingYear != null ? String(original.manufacturingYear) : '')
-      setEstablishment(original.establishment ?? '')
-      setLocation(original.location ?? '')
-      setSeeded(true)
-    }
-  }, [original, seeded])
-
-  const isMissingLegacyData =
-    seeded &&
-    (!original?.cylinderNumber ||
-      !original?.manufacturingYear ||
-      !original?.establishment ||
-      !original?.hydraulicTestExpirationDate)
-
-  useEffect(() => {
-    if (!manualExpDate && chargeDate) {
-      const [y, m, d] = chargeDate.split('-').map(Number)
-      setExpirationDate(
-        `${y + 1}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
-      )
-    }
-  }, [chargeDate, manualExpDate])
 
   if (isLoading) {
     return (
@@ -136,6 +77,84 @@ export default function FireExtinguisherEditPage() {
       </PageContent>
     )
   }
+
+  return (
+    <PageContent>
+      <PageHeader
+        title="Editar Matafuego"
+        subtitle={original.code}
+        category="Matafuegos"
+        backTo={ROUTES.FIRE_EXTINGUISHERS_DETAIL(original.id)}
+        backLabel="Volver al detalle"
+        badge={<StatusPill status={original.status} />}
+      />
+
+      <FireExtinguisherEditForm
+        key={id}
+        original={original}
+        assets={assets}
+        extTypes={extTypes}
+        extCapacities={extCapacities}
+        locationTypes={locationTypes}
+        establishments={establishments}
+        extBrands={extBrands}
+      />
+    </PageContent>
+  )
+}
+
+interface FireExtinguisherEditFormProps {
+  original: FireExtinguisher
+  assets: Asset[]
+  extTypes: CatalogItem[]
+  extCapacities: CatalogItem[]
+  locationTypes: CatalogItem[]
+  establishments: CatalogItem[]
+  extBrands: CatalogItem[]
+}
+
+// Recibe key={id} del padre — se remonta entero al cambiar de matafuego, así
+// que los campos pueden inicializarse directo desde `original` sin useEffect.
+function FireExtinguisherEditForm({
+  original, assets, extTypes, extCapacities, locationTypes, establishments, extBrands,
+}: FireExtinguisherEditFormProps) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const [type, setType] = useState(original.type)
+  const [capacity, setCapacity] = useState(original.capacity)
+  const [chargeDate, setChargeDate] = useState(original.chargeDate ?? '')
+  const [expirationDate, setExpirationDate] = useState(original.expirationDate ?? '')
+  const [hydraulicTestExpirationDate, setHydraulicTestExpirationDate] = useState(original.hydraulicTestExpirationDate ?? '')
+  const [associatedAssetId, setAssociatedAssetId] = useState(original.associatedAssetId ?? '')
+  const [associatedLocationType, setAssociatedLocationType] = useState(original.associatedLocationType as string)
+  const [observations, setObservations] = useState(original.observations ?? '')
+  const [cylinderNumber, setCylinderNumber] = useState(original.cylinderNumber ?? '')
+  const [iramCertificateNumber, setIramCertificateNumber] = useState(original.iramCertificateNumber ?? '')
+  const [brand, setBrand] = useState(original.brand ?? '')
+  const [manufacturingYear, setManufacturingYear] = useState(original.manufacturingYear != null ? String(original.manufacturingYear) : '')
+  const [establishment, setEstablishment] = useState(original.establishment ?? '')
+  const [location, setLocation] = useState(original.location ?? '')
+  const [errors, setErrors] = useState<FormErrors>({})
+  const [submitting, setSubmitting] = useState(false)
+
+  // Keep expiration in sync only if user hasn't manually changed it
+  const [manualExpDate, setManualExpDate] = useState(true)
+
+  const isMissingLegacyData =
+    !original.cylinderNumber ||
+    !original.manufacturingYear ||
+    !original.establishment ||
+    !original.hydraulicTestExpirationDate
+
+  useEffect(() => {
+    if (!manualExpDate && chargeDate) {
+      const [y, m, d] = chargeDate.split('-').map(Number)
+      setExpirationDate(
+        `${y + 1}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+      )
+    }
+  }, [chargeDate, manualExpDate])
 
   function validate(): boolean {
     const e: FormErrors = {}
@@ -180,26 +199,16 @@ export default function FireExtinguisherEditPage() {
         observations: observations.trim(),
       }
 
-      await fireExtinguishersApi.update(id!, input)
+      await fireExtinguishersApi.update(original.id, input)
       await queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
-      navigate(ROUTES.FIRE_EXTINGUISHERS_DETAIL(id!))
+      navigate(ROUTES.FIRE_EXTINGUISHERS_DETAIL(original.id))
     } catch {
       setSubmitting(false)
     }
   }
 
   return (
-    <PageContent>
-      <PageHeader
-        title="Editar Matafuego"
-        subtitle={original.code}
-        category="Matafuegos"
-        backTo={ROUTES.FIRE_EXTINGUISHERS_DETAIL(original.id)}
-        backLabel="Volver al detalle"
-        badge={<StatusPill status={original.status} />}
-      />
-
-      <form onSubmit={handleSubmit} noValidate>
+    <form onSubmit={handleSubmit} noValidate>
         {isMissingLegacyData && (
           <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
             <span>
@@ -399,6 +408,5 @@ export default function FireExtinguisherEditPage() {
           </button>
         </div>
       </form>
-    </PageContent>
   )
 }

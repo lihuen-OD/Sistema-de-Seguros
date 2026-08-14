@@ -1,6 +1,6 @@
 import { fireExtinguisherAuditsApi, fireExtinguisherAuditKeys, fireExtinguisherAuditQueries } from '../../../shared/api/fire-extinguisher-audits.api'
 import { ROUTES } from '../../../app/routes'
-import { AuditWizard } from './AuditWizard'
+import { AuditWizard } from '../../../shared/components/audit-wizard/AuditWizard'
 
 export default function FireExtinguisherAuditNewPage() {
   return (

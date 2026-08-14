@@ -27,6 +27,7 @@ import { catalogQueries } from '../../shared/api/catalogs.api'
 import { exchangeRateQueries } from '../../shared/api/exchange-rate.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { computeEquivalent } from '../../shared/utils/currency'
+import { formatCurrencyFull } from '../../shared/utils/format'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
 import { CURRENCY_OPTIONS } from '../../shared/constants'
 import type { ClaimOwnershipType, Currency } from '../../shared/types'
@@ -164,13 +165,14 @@ export default function ClaimNewPage() {
   // ambos valores mientras completa el formulario (el backend es quien cierra
   // y persiste los dos montos al guardar — ver computeDualAmounts).
   const equivalentPrefix = currency === 'USD' ? 'AR$' : 'US$'
+  const equivalentCurrency: Currency = currency === 'USD' ? 'ARS' : 'USD'
   const equivalentClaimed = useMemo(() => computeEquivalent(claimedAmount, currency, exchangeRate), [claimedAmount, exchangeRate, currency])
   const equivalentReal = useMemo(() => computeEquivalent(realAmount, currency, exchangeRate), [realAmount, exchangeRate, currency])
   const equivalentSettled = useMemo(() => computeEquivalent(settledAmount, currency, exchangeRate), [settledAmount, exchangeRate, currency])
   const equivalentDeductible = useMemo(() => computeEquivalent(deductible, currency, exchangeRate), [deductible, exchangeRate, currency])
   function formatEquivalent(value: string): string {
     return value
-      ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      ? formatCurrencyFull(parseFloat(value), equivalentCurrency)
       : ''
   }
 

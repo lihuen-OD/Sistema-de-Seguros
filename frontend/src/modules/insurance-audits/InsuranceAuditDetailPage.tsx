@@ -8,19 +8,12 @@ import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
-import { ChoiceGroup } from '../../shared/components/forms/ChoiceGroup'
-import { FormField, FormTextarea } from '../../shared/components/forms/FormSection'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
+import { AuditFinalDecisionCard } from '../../shared/components/audit-review/AuditFinalDecisionCard'
 import { FileViewDownloadButtons } from '../../shared/components/file-viewer/FileViewDownloadButtons'
 import { insuranceAuditsApi, insuranceAuditKeys, insuranceAuditQueries } from '../../shared/api/insurance-audits.api'
 import { ROUTES } from '../../app/routes'
 import { useCurrentUser } from '../../app/auth/AuthContext'
-
-const AUDIT_DECISION_OPTIONS = [
-  { value: 'APPROVED', label: 'Aprobar auditoría' },
-  { value: 'REJECTED', label: 'Rechazar' },
-  { value: 'NEEDS_CORRECTION', label: 'Solicitar corrección' },
-]
 
 export default function InsuranceAuditDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -200,43 +193,19 @@ export default function InsuranceAuditDetailPage() {
         )}
       </SectionCard>
 
-      <SectionCard title="Decisión final">
-        {isReviewable ? (
-          <div className="space-y-4">
-            <FormField label="Decisión" required>
-              <ChoiceGroup options={AUDIT_DECISION_OPTIONS} value={auditDecision ?? ''} onChange={(v) => setAuditDecision(v as typeof auditDecision)} />
-            </FormField>
-            <FormField label="Notas de revisión (opcional)">
-              <FormTextarea value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} rows={3} placeholder="Comentarios para el auditor…" />
-            </FormField>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowConfirm(true)}
-                disabled={auditDecision === null}
-                className="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-              >
-                Guardar revisión
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <StatusPill status={audit.status} />
-            {audit.reviewNotes && (
-              <p className="text-sm text-slate-600">
-                <span className="font-medium">Notas:</span> {audit.reviewNotes}
-              </p>
-            )}
-            {audit.reviewedBy && (
-              <p className="text-xs text-slate-500">
-                Revisado por {audit.reviewedBy}
-                {audit.reviewedAt ? ` el ${new Date(audit.reviewedAt).toLocaleString('es-AR')}` : ''}
-              </p>
-            )}
-          </div>
-        )}
-      </SectionCard>
+      <AuditFinalDecisionCard
+        isReviewable={isReviewable}
+        status={audit.status}
+        auditDecision={auditDecision}
+        onAuditDecisionChange={setAuditDecision}
+        draftNotes={reviewNotes}
+        onDraftNotesChange={setReviewNotes}
+        canSubmit={auditDecision !== null}
+        onSubmitClick={() => setShowConfirm(true)}
+        savedReviewNotes={audit.reviewNotes}
+        reviewedBy={audit.reviewedBy}
+        reviewedAt={audit.reviewedAt}
+      />
 
       <ConfirmDialog
         open={showConfirm}

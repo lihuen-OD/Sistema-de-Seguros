@@ -2,10 +2,11 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
-import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { toDateStr } from '../../shared/utils/dates'
-import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
+import { deleteFromCloudinary } from '../../config/cloudinary'
 import { computeDualAmounts } from '../../shared/utils/currency'
+import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
 import type {
   CreateAssetDTO,
   UpdateAssetDTO,
@@ -405,7 +406,13 @@ export const assetsService = {
     // best-effort, mismo criterio que policies.service.ts#hardDelete.
     await Promise.all(cloudinaryIds.map((cid) => deleteFromCloudinary(cid).catch(() => undefined)))
 
-    await prisma.asset.delete({ where: { id } })
+    // ProducerTask.assetId no tiene FK real en el schema (mismo caso que
+    // policyId, ver policies.service.ts#hardDelete) — sin este updateMany
+    // quedaría apuntando a un id inexistente.
+    await prisma.$transaction([
+      prisma.producerTask.updateMany({ where: { assetId: id }, data: { assetId: null } }),
+      prisma.asset.delete({ where: { id } }),
+    ])
   },
 
   // ── Allocations ─────────────────────────────────────────────────────────────
@@ -517,25 +524,10 @@ export const assetsService = {
   ) {
     await assertAssetExists(assetId)
 
-    if (!isAllowedMimetype(file.mimetype)) {
-      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video', 'UNSUPPORTED_MEDIA_TYPE')
-    }
+    const { fileUrl, cloudinaryPublicId } = await validateAndUploadAttachment(file, 'assets')
 
-    if (!matchesDeclaredMimetype(file.buffer, file.mimetype)) {
-      throw new AppError(415, 'El contenido del archivo no coincide con su tipo declarado', 'FILE_TYPE_MISMATCH')
-    }
-
-    let fileUrl = `local://${file.originalname}`
-    let cloudinaryPublicId: string | null = null
-
-    if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'assets', file.mimetype)
-      fileUrl = result.secure_url
-      cloudinaryPublicId = result.public_id
-    }
-
-    try {
-      const created = await prisma.assetAttachment.create({
+    const created = await withAttachmentRollback(cloudinaryPublicId, () =>
+      prisma.assetAttachment.create({
         data: {
           assetId,
           name: sanitizeFileName(file.originalname),
@@ -547,12 +539,9 @@ export const assetsService = {
           expirationDate: meta.expirationDate ?? null,
           uploadedBy,
         },
-      })
-      return mapAttachment(created)
-    } catch (err) {
-      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
-      throw err
-    }
+      }),
+    )
+    return mapAttachment(created)
   },
 
   async updateAttachment(assetId: string, attachmentId: string, data: UpdateAttachmentDTO) {

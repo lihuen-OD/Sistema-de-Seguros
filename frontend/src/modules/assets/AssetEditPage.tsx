@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -18,6 +18,7 @@ import { LABEL_TO_CATEGORY } from '../../shared/constants/asset-categories'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { computeEquivalent } from '../../shared/utils/currency'
+import { formatCurrencyFull } from '../../shared/utils/format'
 import { buildMetadata } from '../../shared/utils/assetMetadata'
 import { BienDeUsoField } from './components/BienDeUsoField'
 import { AllocationEditor } from './components/AllocationEditor'
@@ -26,7 +27,7 @@ import { EstBuildingsSection } from './components/EstBuildingsSection'
 import type { EstBuilding } from './components/EstBuildingsSection'
 import { ValueHistorySection } from './components/ValueHistorySection'
 import type {
-  AssetStatus, AssetAllocation, AssetValueEntry, AssetAttachment, AssetCategory, Silo,
+  Asset, AssetStatus, AssetAllocation, AssetValueEntry, AssetAttachment, AssetCategory, Silo,
 } from '../../shared/types'
 
 // ── Form type ──────────────────────────────────────────────────────────────────
@@ -153,75 +154,42 @@ function MapSection({ mapsUrl, onChange }: { mapsUrl: string; onChange: (v: stri
 
 export default function AssetEditPage() {
   const { id } = useParams<{ id: string }>()
+
+  const { data: asset, isLoading, isError } = useQuery(assetQueries.detail(id!))
+  const { data: existingAttachments = [], isLoading: attachmentsLoading } = useQuery(assetQueries.attachments(id!))
+
+  if (isLoading || attachmentsLoading) {
+    return (
+      <PageContent>
+        <div className="flex items-center justify-center py-24 text-slate-400 text-sm">Cargando activo…</div>
+      </PageContent>
+    )
+  }
+
+  if (isError || !asset) {
+    return (
+      <PageContent>
+        <EmptyState title="Activo no encontrado" description="El activo solicitado no existe o fue eliminado." />
+      </PageContent>
+    )
+  }
+
+  return <AssetEditForm key={asset.id} asset={asset} existingAttachments={existingAttachments} />
+}
+
+interface AssetEditFormProps {
+  asset: Asset
+  existingAttachments: AssetAttachment[]
+}
+
+function AssetEditForm({ asset, existingAttachments }: AssetEditFormProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: asset, isLoading, isError } = useQuery(assetQueries.detail(id!))
-
-  const { data: existingAttachments = [] } = useQuery(assetQueries.attachments(id!))
-
-  const [form, setForm] = useState<EditForm>(EMPTY_FORM)
-  const [patrimonialValueUsd, setPatrimonialValueUsd] = useState('')
-  const [patrimonialValueNew, setPatrimonialValueNew] = useState('')
-  const [currency, setCurrency] = useState<'ARS' | 'USD'>('USD')
-  const [exchangeRate, setExchangeRate] = useState('1')
-  const [valuationDate, setValuationDate] = useState('')
-  const [dischargeDate, setDischargeDate] = useState('')
-  const [saleDate, setSaleDate] = useState('')
-  const [reactivationDate, setReactivationDate] = useState('')
-  const [fireExtinguisherAuditable, setFireExtinguisherAuditable] = useState(false)
-  const [insuranceAuditable, setInsuranceAuditable] = useState(false)
-  const [allocations, setAllocations] = useState<AssetAllocation[]>([
-    { id: 'alloc-init', companyId: '', costCenterId: '', percentage: 100 },
-  ])
-  const [valueHistory, setValueHistory] = useState<AssetValueEntry[]>([])
-
-  // Vista previa del equivalente en la otra moneda — el backend es quien
-  // cierra y persiste ambos montos al guardar (ver computeDualAmounts).
-  const equivalentCurrencyLabel = currency === 'ARS' ? 'USD' : 'ARS'
-  const equivalentPrefix = currency === 'ARS' ? 'US$' : 'AR$'
-  const equivalentReal = useMemo(
-    () => computeEquivalent(patrimonialValueUsd, currency, exchangeRate),
-    [patrimonialValueUsd, exchangeRate, currency],
-  )
-  const equivalentNew = useMemo(
-    () => computeEquivalent(patrimonialValueNew, currency, exchangeRate),
-    [patrimonialValueNew, exchangeRate, currency],
-  )
-  // Los campos de valor de acá arriba solo sirven para cargar la PRIMERA
-  // valuación de cada tipo (si el activo todavía no tiene ninguna) — una vez
-  // que ya existe al menos un registro, las actualizaciones siguientes se
-  // hacen con el "+" de la pestaña Valuaciones del detalle del activo, no
-  // reeditando este formulario.
-  const hasRealHistory = valueHistory.some((e) => e.type === 'real')
-  const hasNuevoHistory = valueHistory.some((e) => e.type === 'nuevo')
-  function formatEquivalent(value: string): string {
-    return value
-      ? `${equivalentPrefix} ${parseFloat(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      : ''
-  }
-  const [silos, setSilos] = useState<Silo[]>([])
-  const [buildings, setBuildings] = useState<EstBuilding[]>([])
-  const [attachments, setAttachments] = useState<AssetAttachment[]>([])
-  const [errors, setErrors] = useState<FormErrors>({})
-  const [submitting, setSubmitting] = useState(false)
-
-  // Catalog queries
-  const { data: fuelTypes = [] } = useQuery(catalogQueries.byCategory('asset_fuel_type'))
-  const { data: buildingPurposes = [] } = useQuery(catalogQueries.byCategory('asset_building_purpose'))
-  const { data: infrastructureTypes = [] } = useQuery(catalogQueries.byCategory('asset_infrastructure_type'))
-  const { data: implementTypes = [] } = useQuery(catalogQueries.byCategory('asset_implement_type'))
-  const { data: cargoSpecies = [] } = useQuery(catalogQueries.byCategory('asset_cargo_species'))
-  const { data: siloContents = [] } = useQuery(catalogQueries.byCategory('asset_silo_content'))
-  const { data: productiveUnits = [] } = useQuery(catalogQueries.byCategory('asset_productive_unit'))
-  const { data: areas = [] } = useQuery(catalogQueries.byCategory('asset_area'))
-  const { data: landUses = [] } = useQuery(catalogQueries.byCategory('asset_land_use'))
-
-  useEffect(() => {
-    if (!asset) return
+  const [form, setForm] = useState<EditForm>(() => {
     const meta = (asset.metadata ?? {}) as Record<string, unknown>
     const str = (v: unknown) => (v !== undefined && v !== null ? String(v) : '')
-    setForm({
+    return {
       ...EMPTY_FORM,
       fixedAssetId: asset.fixedAssetId ?? '',
       name: asset.name,
@@ -269,45 +237,80 @@ export default function AssetEditPage() {
       productiveUnit: asset.productiveUnit ?? '',
       area: asset.area ?? '',
       observations: asset.observations,
-    })
-    // Este input muestra/edita el valor en la moneda elegida (currency), no
-    // necesariamente en USD pese al nombre del state — asset.patrimonialValueUsd
-    // ya viene forzado a USD (ver mapAsset), así que acá se toma el cierre en la
-    // moneda nativa del activo para no mostrar pesos convertidos a dólares.
+    }
+  })
+  // Este input muestra/edita el valor en la moneda elegida (currency), no
+  // necesariamente en USD pese al nombre del state — asset.patrimonialValueUsd
+  // ya viene forzado a USD (ver mapAsset), así que acá se toma el cierre en la
+  // moneda nativa del activo para no mostrar pesos convertidos a dólares.
+  const [patrimonialValueUsd, setPatrimonialValueUsd] = useState(() => {
     const rawCurrentValue = asset.currency === 'ARS' ? asset.currentValueArs : asset.currentValueUsd
-    setPatrimonialValueUsd(rawCurrentValue != null ? String(rawCurrentValue) : '')
-    setPatrimonialValueNew(asset.patrimonialValueNew != null ? String(asset.patrimonialValueNew) : '')
-    setCurrency(asset.currency ?? 'USD')
-    setExchangeRate(asset.exchangeRate != null ? String(asset.exchangeRate) : '1')
-    setValuationDate(asset.valuationDate ?? '')
-    setDischargeDate(asset.dischargeDate ?? '')
-    setSaleDate(asset.saleDate ?? '')
-    setFireExtinguisherAuditable(asset.fireExtinguisherAuditable ?? false)
-    setInsuranceAuditable(asset.insuranceAuditable ?? false)
-    if (asset.allocations && asset.allocations.length > 0) {
-      setAllocations(asset.allocations)
-    } else {
-      setAllocations([{ id: 'alloc-init', companyId: asset.companyId, costCenterId: asset.costCenterId, percentage: 100 }])
-    }
-    setValueHistory(asset.valueHistory ?? [])
-    setSilos(asset.silos ?? [])
-    setBuildings(
-      (asset.buildings ?? []).map((b) => ({
-        id: b.id,
-        name: b.name,
-        surfaceM2: b.surfaceM2 != null ? String(b.surfaceM2) : '',
-        purpose: b.purpose ?? '',
-        constructionType: b.constructionType ?? '',
-        constructionYear: b.constructionYear != null ? String(b.constructionYear) : '',
-      })),
-    )
-  }, [asset])
+    return rawCurrentValue != null ? String(rawCurrentValue) : ''
+  })
+  const [patrimonialValueNew, setPatrimonialValueNew] = useState(() =>
+    asset.patrimonialValueNew != null ? String(asset.patrimonialValueNew) : '',
+  )
+  const [currency, setCurrency] = useState<'ARS' | 'USD'>(() => asset.currency ?? 'USD')
+  const [exchangeRate, setExchangeRate] = useState(() => (asset.exchangeRate != null ? String(asset.exchangeRate) : '1'))
+  const [valuationDate, setValuationDate] = useState(() => asset.valuationDate ?? '')
+  const [dischargeDate, setDischargeDate] = useState(() => asset.dischargeDate ?? '')
+  const [saleDate, setSaleDate] = useState(() => asset.saleDate ?? '')
+  const [reactivationDate, setReactivationDate] = useState('')
+  const [fireExtinguisherAuditable, setFireExtinguisherAuditable] = useState(() => asset.fireExtinguisherAuditable ?? false)
+  const [insuranceAuditable, setInsuranceAuditable] = useState(() => asset.insuranceAuditable ?? false)
+  const [allocations, setAllocations] = useState<AssetAllocation[]>(() =>
+    asset.allocations && asset.allocations.length > 0
+      ? asset.allocations
+      : [{ id: 'alloc-init', companyId: asset.companyId, costCenterId: asset.costCenterId, percentage: 100 }],
+  )
+  const [valueHistory] = useState<AssetValueEntry[]>(() => asset.valueHistory ?? [])
 
-  useEffect(() => {
-    if (existingAttachments.length > 0) {
-      setAttachments(existingAttachments)
-    }
-  }, [existingAttachments])
+  // Vista previa del equivalente en la otra moneda — el backend es quien
+  // cierra y persiste ambos montos al guardar (ver computeDualAmounts).
+  const equivalentCurrencyLabel = currency === 'ARS' ? 'USD' : 'ARS'
+  const equivalentReal = useMemo(
+    () => computeEquivalent(patrimonialValueUsd, currency, exchangeRate),
+    [patrimonialValueUsd, exchangeRate, currency],
+  )
+  const equivalentNew = useMemo(
+    () => computeEquivalent(patrimonialValueNew, currency, exchangeRate),
+    [patrimonialValueNew, exchangeRate, currency],
+  )
+  // Los campos de valor de acá arriba solo sirven para cargar la PRIMERA
+  // valuación de cada tipo (si el activo todavía no tiene ninguna) — una vez
+  // que ya existe al menos un registro, las actualizaciones siguientes se
+  // hacen con el "+" de la pestaña Valuaciones del detalle del activo, no
+  // reeditando este formulario.
+  const hasRealHistory = valueHistory.some((e) => e.type === 'real')
+  const hasNuevoHistory = valueHistory.some((e) => e.type === 'nuevo')
+  function formatEquivalent(value: string): string {
+    return value ? formatCurrencyFull(parseFloat(value), equivalentCurrencyLabel) : ''
+  }
+  const [silos, setSilos] = useState<Silo[]>(() => asset.silos ?? [])
+  const [buildings, setBuildings] = useState<EstBuilding[]>(() =>
+    (asset.buildings ?? []).map((b) => ({
+      id: b.id,
+      name: b.name,
+      surfaceM2: b.surfaceM2 != null ? String(b.surfaceM2) : '',
+      purpose: b.purpose ?? '',
+      constructionType: b.constructionType ?? '',
+      constructionYear: b.constructionYear != null ? String(b.constructionYear) : '',
+    })),
+  )
+  const [attachments, setAttachments] = useState<AssetAttachment[]>(() => existingAttachments)
+  const [errors, setErrors] = useState<FormErrors>({})
+  const [submitting, setSubmitting] = useState(false)
+
+  // Catalog queries
+  const { data: fuelTypes = [] } = useQuery(catalogQueries.byCategory('asset_fuel_type'))
+  const { data: buildingPurposes = [] } = useQuery(catalogQueries.byCategory('asset_building_purpose'))
+  const { data: infrastructureTypes = [] } = useQuery(catalogQueries.byCategory('asset_infrastructure_type'))
+  const { data: implementTypes = [] } = useQuery(catalogQueries.byCategory('asset_implement_type'))
+  const { data: cargoSpecies = [] } = useQuery(catalogQueries.byCategory('asset_cargo_species'))
+  const { data: siloContents = [] } = useQuery(catalogQueries.byCategory('asset_silo_content'))
+  const { data: productiveUnits = [] } = useQuery(catalogQueries.byCategory('asset_productive_unit'))
+  const { data: areas = [] } = useQuery(catalogQueries.byCategory('asset_area'))
+  const { data: landUses = [] } = useQuery(catalogQueries.byCategory('asset_land_use'))
 
   // ── Derived category from stored assetType ────────────────────────────────
   const assetCategory: AssetCategory | undefined = LABEL_TO_CATEGORY[form.assetType]
@@ -335,24 +338,6 @@ export default function AssetEditPage() {
   // matafuego, la tarjeta de circulación sí aplica a motos.
   const isInsuranceAuditableCategory = isFireExtinguisherAuditableCategory || assetCategory === 'moto'
   const isSiloInfra = isInfraestructura && form.infraType === 'Silo'
-
-  // ── Early returns ──────────────────────────────────────────────────────────
-
-  if (isLoading) {
-    return (
-      <PageContent>
-        <div className="flex items-center justify-center py-24 text-slate-400 text-sm">Cargando activo…</div>
-      </PageContent>
-    )
-  }
-
-  if (isError || !asset) {
-    return (
-      <PageContent>
-        <EmptyState title="Activo no encontrado" description="El activo solicitado no existe o fue eliminado." />
-      </PageContent>
-    )
-  }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -415,7 +400,6 @@ export default function AssetEditPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!asset) return
     if (!validate()) return
 
     setSubmitting(true)
@@ -481,10 +465,10 @@ export default function AssetEditPage() {
 
       toast.success('Activo actualizado correctamente')
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: assetKeys.detail(id!) }),
+        queryClient.invalidateQueries({ queryKey: assetKeys.detail(asset.id) }),
         queryClient.invalidateQueries({ queryKey: assetKeys.all }),
-        queryClient.invalidateQueries({ queryKey: assetKeys.statusHistory(id!) }),
-        queryClient.invalidateQueries({ queryKey: assetKeys.attachments(id!) }),
+        queryClient.invalidateQueries({ queryKey: assetKeys.statusHistory(asset.id) }),
+        queryClient.invalidateQueries({ queryKey: assetKeys.attachments(asset.id) }),
       ])
       navigate(`/assets/${asset.id}`)
     } finally {

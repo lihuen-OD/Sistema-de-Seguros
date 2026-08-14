@@ -1,4 +1,4 @@
-import { classifyAuditableAssetCategory } from '../asset-audit-category-classification'
+import { classifyAuditableAssetCategory } from '../audit-domain.service'
 
 describe('classifyAuditableAssetCategory', () => {
   it.each([
@@ -14,7 +14,7 @@ describe('classifyAuditableAssetCategory', () => {
     ['Maquinaria', 'maquinaria'],
     ['Maquinaria agrícola', 'maquinaria'],
     // "Moto" sí clasifica acá (a diferencia de classifyAssetType) — solo importa
-    // para INSURANCE_AUDIT, ver comentario en asset-audit-category-classification.ts.
+    // para INSURANCE_AUDIT, ver comentario en audit-domain.service.ts.
     ['Moto', 'moto'],
     // Legacy / sin acentos ni espacios — mismo criterio de normalización que classifyAssetType.
     ['camioneta', 'camioneta'],

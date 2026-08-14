@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
-import { ChoiceGroup } from '../../../shared/components/forms/ChoiceGroup'
-import { FormField, FormInput, FormTextarea } from '../../../shared/components/forms/FormSection'
-import { FileDropzone } from '../../../shared/components/file-upload/FileDropzone'
+import { ChoiceGroup } from '../../components/forms/ChoiceGroup'
+import { FormField, FormInput, FormTextarea } from '../../components/forms/FormSection'
+import { FileDropzone } from '../../components/file-upload/FileDropzone'
 import type { ChecklistFieldConfig } from './checklistConfig'
 
 export interface ExistingAuditPhoto {
