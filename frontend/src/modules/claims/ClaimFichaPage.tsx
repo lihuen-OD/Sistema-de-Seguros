@@ -45,8 +45,6 @@ export default function ClaimFichaPage() {
     }
   }
 
-  const currency = claim.currency ?? 'ARS'
-
   return (
     <PageContent>
       <div className="flex items-center justify-between mb-6">

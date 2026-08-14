@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { ValidatedField, type FieldValidationState } from './ValidatedField'
-import { catalogQueries } from '../../../shared/api/catalogs.api'
-import type { FireExtinguisher } from '../../../shared/types'
-import type { FireExtAuditMasterField } from '../../../shared/api/fire-extinguisher-audits.api'
-import type { ChoiceOption } from '../../../shared/components/forms/ChoiceGroup'
+import { catalogQueries } from '../../api/catalogs.api'
+import type { FireExtinguisher } from '../../types'
+import type { FireExtAuditMasterField } from '../../api/fire-extinguisher-audits.api'
+import type { ChoiceOption } from '../../components/forms/ChoiceGroup'
 
 export interface FieldValidationConfigItem {
   key: FireExtAuditMasterField

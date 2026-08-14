@@ -304,7 +304,11 @@ describe('Users API (admin)', () => {
       expect(res.status).toBe(200)
       expect(db.user.update).toHaveBeenCalledWith({
         where: { id: OTHER_ID },
-        data: { passwordHash: 'hashed-password', mustChangePassword: true },
+        data: {
+          passwordHash: 'hashed-password',
+          mustChangePassword: true,
+          tokenVersion: { increment: 1 },
+        },
       })
       expect(db.userAuditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({

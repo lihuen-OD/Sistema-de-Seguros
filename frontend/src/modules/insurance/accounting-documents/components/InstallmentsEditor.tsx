@@ -1,5 +1,7 @@
 import { Calculator } from 'lucide-react'
 import { FormInput } from '../../../../shared/components/forms/FormSection'
+import { formatCurrencyFull } from '../../../../shared/utils/format'
+import type { Currency } from '../../../../shared/types'
 
 export interface InstallmentRowData {
   installmentNumber: number
@@ -15,13 +17,13 @@ interface InstallmentsEditorProps {
   count: number
   rows: InstallmentRowData[]
   computedTotal: number
-  currencyPrefix: string
+  currency: Currency
   onChange: (count: number, rows: InstallmentRowData[]) => void
 }
 
 // Editor de cuotas compartido por Factura, Nota de Débito y Refacturación —
 // los únicos tres tipos con hasInstallments: true (ver document-types.ts).
-export function InstallmentsEditor({ count, rows, computedTotal, currencyPrefix, onChange }: InstallmentsEditorProps) {
+export function InstallmentsEditor({ count, rows, computedTotal, currency, onChange }: InstallmentsEditorProps) {
   const rebuild = (newCount: number, total: number) => {
     const per = newCount > 0 && total > 0 ? total / newCount : 0
     const newRows: InstallmentRowData[] = Array.from({ length: newCount }, (_, i) => ({
@@ -68,12 +70,7 @@ export function InstallmentsEditor({ count, rows, computedTotal, currencyPrefix,
         </button>
         {computedTotal > 0 && count > 0 && (
           <p className="text-xs text-slate-400">
-            {currencyPrefix}{' '}
-            {(computedTotal / count).toLocaleString('es-AR', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}{' '}
-            por cuota
+            {formatCurrencyFull(computedTotal / count, currency)} por cuota
           </p>
         )}
       </div>

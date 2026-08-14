@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import clsx from 'clsx'
 import { CheckCircle2 } from 'lucide-react'
-import { FormField, FormInput, FormSelect } from '../../../shared/components/forms/FormSection'
-import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
-import type { ChoiceOption } from '../../../shared/components/forms/ChoiceGroup'
+import { FormField, FormInput, FormSelect } from '../../components/forms/FormSection'
+import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog'
+import type { ChoiceOption } from '../../components/forms/ChoiceGroup'
 
 export interface FieldValidationState {
   modified: boolean

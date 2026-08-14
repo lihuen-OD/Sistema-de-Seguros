@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import {
-  Plus, FileText, FileSpreadsheet, Image as ImageIcon, File as FileIcon,
+  Plus, FileText, FileSpreadsheet, FileVideo, Image as ImageIcon, File as FileIcon,
   X, AlertTriangle, CheckCircle2, Clock, Upload, Calendar, Paperclip, Download, IdCard,
 } from 'lucide-react'
 import type { AssetAttachment } from '../../types'
@@ -15,6 +15,8 @@ export function detectFileType(filename: string): AssetAttachment['fileType'] {
   if (ext === 'pdf') return 'pdf'
   if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image'
   if (['xlsx', 'xls', 'csv'].includes(ext)) return 'excel'
+  if (['doc', 'docx'].includes(ext)) return 'word'
+  if (['mp4', 'mov', 'avi', 'webm'].includes(ext)) return 'video'
   return 'other'
 }
 
@@ -32,6 +34,8 @@ export function FileTypeIcon({ fileType }: { fileType: AssetAttachment['fileType
     pdf:   { bg: 'bg-red-50',    icon: <FileText size={15} className="text-red-600" /> },
     image: { bg: 'bg-brand-50',   icon: <ImageIcon size={15} className="text-brand-600" /> },
     excel: { bg: 'bg-green-50',  icon: <FileSpreadsheet size={15} className="text-green-600" /> },
+    word:  { bg: 'bg-blue-50',   icon: <FileText size={15} className="text-blue-600" /> },
+    video: { bg: 'bg-violet-50', icon: <FileVideo size={15} className="text-violet-600" /> },
     other: { bg: 'bg-slate-100', icon: <FileIcon size={15} className="text-slate-500" /> },
   }
   const v = variants[fileType]

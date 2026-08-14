@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -123,31 +123,35 @@ export default function DocumentDetailPage() {
   const { data: fetchedInstallments } = useQuery(documentQueries.installments(id!))
 
   const [installments, setInstallments] = useState<Installment[]>([])
+  const [syncedFetchedInstallments, setSyncedFetchedInstallments] = useState<typeof fetchedInstallments>(undefined)
 
-  // Sincroniza en cuanto la query resuelve, incluso a array vacío — de lo
+  // Sincroniza en cuanto la query resuelve (o vuelve a resolver, ej. tras
+  // invalidar por un cambio de cuota), incluso a array vacío — de lo
   // contrario, al navegar de un documento con cuotas a otro sin cuotas (ej.
   // desde "Documentos relacionados") quedan pegadas en pantalla las cuotas del
   // documento anterior, porque el componente no se desmonta entre
-  // navegaciones (misma ruta con distinto :id).
-  useEffect(() => {
-    if (fetchedInstallments) {
-      setInstallments(
-        fetchedInstallments.map((i) => ({
-          id: i.id,
-          accountingDocumentId: i.accountingDocumentId,
-          installmentNumber: i.installmentNumber,
-          dueDate: i.dueDate,
-          amount: i.amount,
-          currency: i.currency as Installment['currency'],
-          amountArs: i.amountArs,
-          amountUsd: i.amountUsd,
-          paymentStatus: i.paymentStatus as Installment['paymentStatus'],
-          paidAt: i.paidAt,
-          paymentMethod: i.paymentMethod,
-        })),
-      )
-    }
-  }, [fetchedInstallments])
+  // navegaciones (misma ruta con distinto :id). Ajuste de estado durante el
+  // render (patrón oficial de React para esto) en vez de un efecto — evita
+  // el round-trip de un render extra y sigue resincronizando ante cualquier
+  // refetch posterior, no solo al cambiar de documento.
+  if (fetchedInstallments && fetchedInstallments !== syncedFetchedInstallments) {
+    setSyncedFetchedInstallments(fetchedInstallments)
+    setInstallments(
+      fetchedInstallments.map((i) => ({
+        id: i.id,
+        accountingDocumentId: i.accountingDocumentId,
+        installmentNumber: i.installmentNumber,
+        dueDate: i.dueDate,
+        amount: i.amount,
+        currency: i.currency as Installment['currency'],
+        amountArs: i.amountArs,
+        amountUsd: i.amountUsd,
+        paymentStatus: i.paymentStatus as Installment['paymentStatus'],
+        paidAt: i.paidAt,
+        paymentMethod: i.paymentMethod,
+      })),
+    )
+  }
 
   if (docLoading) {
     return (

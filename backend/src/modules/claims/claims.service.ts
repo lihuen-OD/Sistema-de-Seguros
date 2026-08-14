@@ -3,8 +3,9 @@ import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { toDateStr } from '../../shared/utils/dates'
 import { computeDualAmounts } from '../../shared/utils/currency'
-import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
-import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
+import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
+import { deleteFromCloudinary } from '../../config/cloudinary'
+import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
 import { computeTotalAmount } from '../documents/document-amounts'
 import type {
   CreateClaimDTO,
@@ -511,25 +512,10 @@ export const claimsService = {
   ) {
     await this.assertExists(claimId)
 
-    if (!isAllowedMimetype(file.mimetype)) {
-      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video', 'UNSUPPORTED_MEDIA_TYPE')
-    }
+    const { fileUrl, cloudinaryPublicId } = await validateAndUploadAttachment(file, 'claims')
 
-    if (!matchesDeclaredMimetype(file.buffer, file.mimetype)) {
-      throw new AppError(415, 'El contenido del archivo no coincide con su tipo declarado', 'FILE_TYPE_MISMATCH')
-    }
-
-    let fileUrl = `local://${file.originalname}`
-    let cloudinaryPublicId: string | null = null
-
-    if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'claims', file.mimetype)
-      fileUrl = result.secure_url
-      cloudinaryPublicId = result.public_id
-    }
-
-    try {
-      return await prisma.claimAttachment.create({
+    return withAttachmentRollback(cloudinaryPublicId, () =>
+      prisma.claimAttachment.create({
         data: {
           claimId,
           name: sanitizeFileName(file.originalname),
@@ -540,11 +526,8 @@ export const claimsService = {
           cloudinaryPublicId,
           uploadedBy,
         },
-      })
-    } catch (err) {
-      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
-      throw err
-    }
+      }),
+    )
   },
 
   async deleteAttachment(claimId: string, attachmentId: string) {
@@ -588,25 +571,10 @@ export const claimsService = {
   ) {
     await this.assertExpenseExists(claimId, expenseId)
 
-    if (!isAllowedMimetype(file.mimetype)) {
-      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video', 'UNSUPPORTED_MEDIA_TYPE')
-    }
+    const { fileUrl, cloudinaryPublicId } = await validateAndUploadAttachment(file, 'claim-expenses')
 
-    if (!matchesDeclaredMimetype(file.buffer, file.mimetype)) {
-      throw new AppError(415, 'El contenido del archivo no coincide con su tipo declarado', 'FILE_TYPE_MISMATCH')
-    }
-
-    let fileUrl = `local://${file.originalname}`
-    let cloudinaryPublicId: string | null = null
-
-    if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'claim-expenses', file.mimetype)
-      fileUrl = result.secure_url
-      cloudinaryPublicId = result.public_id
-    }
-
-    try {
-      return await prisma.claimExpenseAttachment.create({
+    return withAttachmentRollback(cloudinaryPublicId, () =>
+      prisma.claimExpenseAttachment.create({
         data: {
           expenseId,
           name: sanitizeFileName(file.originalname),
@@ -617,11 +585,8 @@ export const claimsService = {
           cloudinaryPublicId,
           uploadedBy,
         },
-      })
-    } catch (err) {
-      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
-      throw err
-    }
+      }),
+    )
   },
 
   async deleteExpenseAttachment(claimId: string, expenseId: string, attachmentId: string) {

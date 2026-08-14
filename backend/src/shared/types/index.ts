@@ -1,6 +1,6 @@
-// ─── Auth ─────────────────────────────────────────────────────────────────────
+import type { Role } from '@prisma/client'
 
-export type Role = 'ADMIN' | 'USER'
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 
 // Un módulo = una pantalla otorgable por perfil de acceso. Todos se hacen
 // cumplir vía requireModule() en el router correspondiente — incluidas las
@@ -36,6 +36,9 @@ export interface JwtPayload {
   // es algo que nosotros elijamos codificar. Lo usa authMiddleware para saber
   // qué tan viejo es el token y decidir si toca renovarlo (sesión deslizante).
   iat?: number
+  // Ausente en tokens firmados antes de que este campo existiera —
+  // authMiddleware trata esa ausencia como 0 (ver comentario ahí).
+  tokenVersion?: number
 }
 
 // Lo que queda en req.user después de authMiddleware.
@@ -59,9 +62,12 @@ export type AuditScopeArea = typeof AUDIT_SCOPE_AREAS[number]
 // categorías que Asset.fireExtinguisherAuditable/insuranceAuditable habilitan
 // hoy (ver IS_AUDITABLE_CATEGORY en frontend/src/modules/assets/AssetNewPage.tsx)
 // — mismo patrón de duplicación FE/BE ya usado para MODULE_KEYS, porque el
-// backend no tiene enum/catálogo propio de categoría de activo.
+// backend no tiene enum/catálogo propio de categoría de activo. "moto" solo
+// habilita insuranceAuditable, nunca fireExtinguisherAuditable (no lleva
+// matafuego) — igual se incluye en este listado único porque ambos flags lo
+// comparten como scopeValue de UserAuditScope.
 export const AUDITABLE_ASSET_CATEGORIES = [
-  'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
+  'vehiculo', 'camioneta', 'camion', 'moto', 'transporte_pasajeros',
   'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',
 ] as const
 export type AuditableAssetCategory = typeof AUDITABLE_ASSET_CATEGORIES[number]

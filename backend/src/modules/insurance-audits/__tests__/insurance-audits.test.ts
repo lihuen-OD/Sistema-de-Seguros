@@ -325,7 +325,8 @@ describe('Insurance Audits API', () => {
       )
     })
 
-    it('does not scope the list for ADMIN', async () => {
+    it('does not scope the list by user for ADMIN, but still excludes ineligible assets', async () => {
+      db.asset.findMany.mockResolvedValue([{ id: ASSET_ID }, { id: OTHER_ASSET_ID }])
       db.insuranceAudit.findMany.mockResolvedValue([])
       db.insuranceAudit.count.mockResolvedValue(0)
 
@@ -334,7 +335,12 @@ describe('Insurance Audits API', () => {
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(200)
-      expect(db.insuranceAudit.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {} }))
+      expect(db.asset.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { isActive: true, insuranceAuditable: true } }),
+      )
+      expect(db.insuranceAudit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { assetId: { in: [ASSET_ID, OTHER_ASSET_ID] } } }),
+      )
     })
   })
 
@@ -597,7 +603,7 @@ describe('Insurance Audits API', () => {
       const res = await request(app)
         .post('/api/v1/insurance-audits/comments')
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ assetId: ASSET_ID, body: 'Aviso puntual' })
+        .send({ targetId: ASSET_ID, body: 'Aviso puntual' })
 
       expect(res.status).toBe(201)
       expect(db.auditComment.create).toHaveBeenCalledWith({
@@ -609,7 +615,7 @@ describe('Insurance Audits API', () => {
       const res = await request(app)
         .post('/api/v1/insurance-audits/comments')
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ assetId: ASSET_ID, body: '   ' })
+        .send({ targetId: ASSET_ID, body: '   ' })
 
       expect(res.status).toBe(422)
     })
@@ -620,7 +626,7 @@ describe('Insurance Audits API', () => {
       const res = await request(app)
         .post('/api/v1/insurance-audits/comments')
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ assetId: ASSET_ID, body: 'Aviso puntual' })
+        .send({ targetId: ASSET_ID, body: 'Aviso puntual' })
 
       expect(res.status).toBe(404)
     })

@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Mail, CheckCircle2, ArrowLeftRight, X, Info } from 'lucide-react'
 import { PageContent } from '../../../../shared/components/page-header/PageContent'
@@ -10,6 +9,7 @@ import { PolicySelector, createEmptyPolicyRow, type PolicyAllocationRow } from '
 import { InstallmentsEditor, createInitialInstallmentRows, type InstallmentRowData } from '../components/InstallmentsEditor'
 import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
+import { EmailChipField } from '../components/EmailChipField'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
 import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
@@ -17,8 +17,9 @@ import { policyQueries } from '../../../../shared/api/policies.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
+import { formatCurrencyFull } from '../../../../shared/utils/format'
 import { CURRENCY_OPTIONS } from '../../../../shared/constants'
-import type { AccountingDocument, Currency } from '../../../../shared/types'
+import type { AccountingDocument, Currency, Policy } from '../../../../shared/types'
 
 interface DocumentoFacturaFormProps {
   initialDoc?: AccountingDocument
@@ -37,46 +38,90 @@ interface FormState {
   otherTaxesAmount: string
 }
 
-type FormErrors = Partial<Record<keyof FormState | 'policies', string>>
+type FormErrors = Partial<Record<keyof FormState | 'policies' | 'installments', string>>
 
+// `sourcePolicyId` es estable durante toda la vida del formulario (viene de
+// un search param fijo puesto por DocumentNewPage) — se resuelve ACÁ, antes
+// de montar el formulario editable, para poder plegar el prefill directo en
+// el estado inicial de abajo sin necesitar un efecto.
 export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: DocumentoFacturaFormProps) {
-  const navigate = useNavigate()
+  const isEdit = !!initialDoc
+  const { data: sourcePolicy, isLoading: sourcePolicyLoading } = useQuery({
+    ...policyQueries.detail(sourcePolicyId!),
+    enabled: !isEdit && !!sourcePolicyId,
+  })
+
+  if (!isEdit && sourcePolicyId && (sourcePolicyLoading || !sourcePolicy)) {
+    return (
+      <PageContent>
+        <p className="text-sm text-slate-400 py-10 text-center">Cargando datos de la póliza…</p>
+      </PageContent>
+    )
+  }
+
+  return <DocumentoFacturaFormBody initialDoc={initialDoc} sourcePolicy={!isEdit ? sourcePolicy ?? null : null} />
+}
+
+interface DocumentoFacturaFormBodyProps {
+  initialDoc?: AccountingDocument
+  sourcePolicy: Policy | null
+}
+
+function DocumentoFacturaFormBody({ initialDoc, sourcePolicy }: DocumentoFacturaFormBodyProps) {
   const queryClient = useQueryClient()
   const isEdit = !!initialDoc
 
-  const [form, setForm] = useState<FormState>({
-    insuranceCompany: initialDoc?.insuranceCompany ?? '',
-    documentNumber: initialDoc?.documentNumber ?? '',
-    issueDate: initialDoc?.issueDate ?? '',
-    currency: initialDoc?.currency ?? '',
-    exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : '',
-    paymentMethod: initialDoc?.paymentMethod ?? '',
-    netAmount: initialDoc ? String(initialDoc.netAmount) : '',
-    vatAmount: initialDoc ? String(initialDoc.vatAmount) : '',
-    otherTaxesAmount: initialDoc ? String(initialDoc.otherTaxesAmount) : '',
+  const [form, setForm] = useState<FormState>(() => {
+    // La moneda/TC ya no son un campo único de la póliza (viven por línea de
+    // cobertura) — se toma la primera línea como referencia razonable.
+    const firstCoverage = sourcePolicy?.coverages?.[0]
+    return {
+      insuranceCompany: initialDoc?.insuranceCompany ?? sourcePolicy?.insuranceCompany ?? '',
+      documentNumber: initialDoc?.documentNumber ?? sourcePolicy?.policyNumber ?? '',
+      issueDate: initialDoc?.issueDate ?? '',
+      currency: initialDoc?.currency ?? firstCoverage?.currency ?? '',
+      exchangeRate: initialDoc
+        ? String(initialDoc.exchangeRate)
+        : firstCoverage && firstCoverage.exchangeRate > 1
+          ? firstCoverage.exchangeRate.toString()
+          : '',
+      paymentMethod: initialDoc?.paymentMethod ?? '',
+      netAmount: initialDoc ? String(initialDoc.netAmount) : '',
+      vatAmount: initialDoc ? String(initialDoc.vatAmount) : '',
+      otherTaxesAmount: initialDoc ? String(initialDoc.otherTaxesAmount) : '',
+    }
   })
   const [errors, setErrors] = useState<FormErrors>({})
-  const [policyRows, setPolicyRows] = useState<PolicyAllocationRow[]>([createEmptyPolicyRow()])
+  // Una fila por cada línea de cobertura de la póliza de origen — si cubre
+  // varios activos, quedan todas listas para completar el importe de cada
+  // una. Sin póliza de origen (alta en blanco, o edición), arranca con una
+  // fila vacía.
+  const [policyRows, setPolicyRows] = useState<PolicyAllocationRow[]>(() =>
+    sourcePolicy
+      ? sourcePolicy.coverages && sourcePolicy.coverages.length > 0
+        ? sourcePolicy.coverages.map((c) => ({ id: crypto.randomUUID(), policyAssetCoverageId: c.id, allocatedAmount: '' }))
+        : [createEmptyPolicyRow()]
+      : [createEmptyPolicyRow()],
+  )
   const [allocationsInitialized, setAllocationsInitialized] = useState(!isEdit)
   const [installmentCount, setInstallmentCount] = useState(1)
   const [installmentRows, setInstallmentRows] = useState<InstallmentRowData[]>(createInitialInstallmentRows())
   const [installmentsInitialized, setInstallmentsInitialized] = useState(!isEdit)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
-  const [emailTo, setEmailTo] = useState('')
+  const [emailTo, setEmailTo] = useState<string[]>([])
+  const [emailCc, setEmailCc] = useState<string[]>([])
+  const [emailBcc, setEmailBcc] = useState<string[]>([])
+  const [showCc, setShowCc] = useState(false)
+  const [showBcc, setShowBcc] = useState(false)
   const [emailSubjectEdit, setEmailSubjectEdit] = useState('')
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'skipped'>('idle')
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
-  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'INVOICE', form.insuranceCompany)
+  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, true, 'INVOICE', form.insuranceCompany, initialDoc?.id)
 
   const { data: allPolicies = [] } = useQuery(policyQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: paymentMethods = [] } = useQuery(catalogQueries.byCategory('document_payment_method'))
-
-  const { data: sourcePolicy } = useQuery({
-    ...policyQueries.detail(sourcePolicyId!),
-    enabled: !isEdit && !!sourcePolicyId,
-  })
 
   const { data: existingAllocations = [], isSuccess: allocationsLoaded } = useQuery({
     ...documentQueries.allocations(initialDoc?.id ?? ''),
@@ -91,27 +136,6 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   // mostrar un resumen real en el preview de "Enviar por mail" en vez de un
   // texto fijo que no reflejaba si había o no archivos cargados.
   const { data: docAttachments = [] } = useQuery(documentQueries.attachments(savedDocId ?? ''))
-
-  useEffect(() => {
-    if (!sourcePolicy) return
-    // La moneda/TC ya no son un campo único de la póliza (viven por línea de
-    // cobertura) — se toma la primera línea como referencia razonable.
-    const firstCoverage = sourcePolicy.coverages?.[0]
-    setForm((prev) => ({
-      ...prev,
-      insuranceCompany: sourcePolicy.insuranceCompany,
-      currency: firstCoverage?.currency ?? prev.currency,
-      exchangeRate: firstCoverage && firstCoverage.exchangeRate > 1 ? firstCoverage.exchangeRate.toString() : prev.exchangeRate,
-      documentNumber: sourcePolicy.policyNumber,
-    }))
-    // Una fila por cada línea de cobertura de la póliza — si cubre varios
-    // activos, quedan todas listas para completar el importe de cada una.
-    setPolicyRows(
-      sourcePolicy.coverages && sourcePolicy.coverages.length > 0
-        ? sourcePolicy.coverages.map((c) => ({ id: crypto.randomUUID(), policyAssetCoverageId: c.id, allocatedAmount: '' }))
-        : [createEmptyPolicyRow()],
-    )
-  }, [sourcePolicy])
 
   if (allocationsLoaded && !allocationsInitialized) {
     setAllocationsInitialized(true)
@@ -141,12 +165,12 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   const parsedOther = parseFloat(form.otherTaxesAmount) || 0
   const computedTotal = parsedNet + parsedVat + parsedOther
   const tc = parseFloat(form.exchangeRate) || 0
-  const mainPrefix = form.currency === 'USD' ? 'US$' : 'AR$'
-  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
+  const equivalentCurrency: Currency = form.currency === 'ARS' ? 'USD' : 'ARS'
   const equivalentAmount =
     form.currency === 'ARS' && tc > 0 ? computedTotal / tc : form.currency === 'USD' && tc > 0 ? computedTotal * tc : 0
 
   const totalAllocated = policyRows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0)
+  const totalInstallments = installmentRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
 
   const availablePolicySummaries = isEdit
     ? allPolicies.filter((p) => p.insuranceCompany === form.insuranceCompany)
@@ -175,6 +199,11 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     })
 
   const allocationTotalMismatch = policyRows.some((r) => r.policyAssetCoverageId) && Math.abs(computedTotal - totalAllocated) > 0.01
+  // Mismo criterio que el backend (documents.service.ts#assertInstallmentsMatchTotal)
+  // — solo se exige que cierre si hay al menos una cuota real cargada; un
+  // documento sin cuotas es válido (no todas las Facturas se financian).
+  const installmentsMismatch =
+    installmentRows.some((r) => r.dueDate && parseFloat(r.amount) > 0) && Math.abs(computedTotal - totalInstallments) > 0.01
 
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
@@ -203,7 +232,10 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
     if (policyRows.length === 0 || policyRows.every((r) => !r.policyAssetCoverageId)) {
       next.policies = 'Asociá al menos una póliza'
     } else if (allocationTotalMismatch) {
-      next.policies = `El total asignado (${mainPrefix} ${totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) debe coincidir con el total del documento (${mainPrefix} ${computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+      next.policies = `El total asignado (${formatCurrencyFull(totalAllocated, form.currency)}) debe coincidir con el total del documento (${formatCurrencyFull(computedTotal, form.currency)}).`
+    }
+    if (installmentsMismatch) {
+      next.installments = `El total de las cuotas (${formatCurrencyFull(totalInstallments, form.currency)}) debe coincidir con el total del documento (${formatCurrencyFull(computedTotal, form.currency)}).`
     }
     setErrors(next)
     notifyValidationErrors(next)
@@ -243,6 +275,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   const updateMutation = useMutation({
     mutationFn: async (docId: string) => {
       await documentsApi.update(docId, {
+        documentNumber: form.documentNumber.trim(),
         issueDate: form.issueDate,
         currency: form.currency,
         exchangeRate: tc,
@@ -273,18 +306,28 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
   }
 
   const handleSendEmail = async () => {
-    if (!emailTo.trim() || !savedDocId || emailStatus === 'sending') return
+    if (emailTo.length === 0 || !savedDocId || emailStatus === 'sending') return
     setEmailStatus('sending')
     try {
       const result = await documentsApi.sendEmail(savedDocId, {
-        to: [emailTo.trim()],
+        to: emailTo,
+        cc: emailCc.length > 0 ? emailCc : undefined,
+        bcc: emailBcc.length > 0 ? emailBcc : undefined,
         subject: emailSubjectEdit || undefined,
       })
       if (result.status === 'SKIPPED') {
         setEmailStatus('skipped')
       } else {
         setEmailStatus('sent')
-        setTimeout(() => { setEmailModalOpen(false); setEmailStatus('idle'); setEmailTo('') }, 1800)
+        setTimeout(() => {
+          setEmailModalOpen(false)
+          setEmailStatus('idle')
+          setEmailTo([])
+          setEmailCc([])
+          setEmailBcc([])
+          setShowCc(false)
+          setShowBcc(false)
+        }, 1800)
       }
     } catch {
       // El toast de error ya lo muestra el interceptor de apiClient.
@@ -332,25 +375,18 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
               </FormSelect>
             </FormField>
 
-            {isEdit ? (
-              <FormField label="N° de Documento">
-                <FormInput value={form.documentNumber} readOnly disabled className="bg-slate-50 text-slate-500 cursor-not-allowed" />
-                <p className="text-xs text-slate-400 mt-1">El número de documento no puede modificarse.</p>
-              </FormField>
-            ) : (
-              <FormField label="N° de Documento" required error={errors.documentNumber}>
-                <FormInput placeholder="Ej: A-0001-00012345" value={form.documentNumber} onChange={set('documentNumber')} required />
-                {dupChecking && <p className="mt-1 text-xs text-slate-400">Verificando número…</p>}
-                {!dupChecking && dupWarning && (
-                  <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                    <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-800 leading-snug">
-                      Ya existe un documento con el número <strong>{form.documentNumber.trim()}</strong>. Podés guardarlo igual.
-                    </p>
-                  </div>
-                )}
-              </FormField>
-            )}
+            <FormField label="N° de Documento" required error={errors.documentNumber}>
+              <FormInput placeholder="Ej: A-0001-00012345" value={form.documentNumber} onChange={set('documentNumber')} required />
+              {dupChecking && <p className="mt-1 text-xs text-slate-400">Verificando número…</p>}
+              {!dupChecking && dupWarning && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 leading-snug">
+                    Ya existe un documento con el número <strong>{form.documentNumber.trim()}</strong>. Podés guardarlo igual.
+                  </p>
+                </div>
+              )}
+            </FormField>
 
             <FormField label="Fecha de Emisión" required error={errors.issueDate}>
               <FormInput type="date" value={form.issueDate} onChange={set('issueDate')} required />
@@ -391,7 +427,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
               <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</span>
                 <span className="text-base font-bold text-slate-800 tabular-nums">
-                  {mainPrefix} {computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {formatCurrencyFull(computedTotal, form.currency)}
                 </span>
               </div>
               {tc > 0 && (
@@ -400,7 +436,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                     <ArrowLeftRight size={12} /> Equivalente
                   </span>
                   <span className="text-base font-bold text-brand-700 tabular-nums">
-                    {equivalentPrefix} {equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCurrencyFull(equivalentAmount, equivalentCurrency)}
                   </span>
                 </div>
               )}
@@ -418,18 +454,19 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
             policies={availablePolicies}
             rows={policyRows}
             onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
-            currencyPrefix={mainPrefix}
+            currency={form.currency || 'ARS'}
             documentTotal={computedTotal}
             emptyMessage={!form.insuranceCompany ? 'Seleccioná una compañía aseguradora para ver sus pólizas.' : `No hay pólizas para ${form.insuranceCompany}.`}
           />
         </SectionCard>
 
         <SectionCard title="Cuotas" subtitle="Cantidad de cuotas, fechas e importes">
+          {errors.installments && <p className="text-xs text-red-500 mb-3">{errors.installments}</p>}
           <InstallmentsEditor
             count={installmentCount}
             rows={installmentRows}
             computedTotal={computedTotal}
-            currencyPrefix={mainPrefix}
+            currency={form.currency || 'ARS'}
             onChange={(count, rows) => { setInstallmentCount(count); setInstallmentRows(rows); markUnsaved() }}
           />
         </SectionCard>
@@ -492,10 +529,31 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
             ) : (
               <div className="px-6 py-5 space-y-4">
                 <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1">Para <span className="text-red-500">*</span></label>
-                  <input type="email" placeholder="destinatario@ejemplo.com" value={emailTo} onChange={(e) => setEmailTo(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-slate-600">Para <span className="text-red-500">*</span></label>
+                    <div className="flex items-center gap-2.5">
+                      {!showCc && (
+                        <button type="button" onClick={() => setShowCc(true)} className="text-xs text-slate-400 hover:text-brand-600 transition-colors">Cc</button>
+                      )}
+                      {!showBcc && (
+                        <button type="button" onClick={() => setShowBcc(true)} className="text-xs text-slate-400 hover:text-brand-600 transition-colors">Cco</button>
+                      )}
+                    </div>
+                  </div>
+                  <EmailChipField emails={emailTo} onChange={setEmailTo} placeholder="destinatario@ejemplo.com" autoFocus />
                 </div>
+                {showCc && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 block mb-1">Cc</label>
+                    <EmailChipField emails={emailCc} onChange={setEmailCc} placeholder="cc@ejemplo.com" />
+                  </div>
+                )}
+                {showBcc && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 block mb-1">Cco</label>
+                    <EmailChipField emails={emailBcc} onChange={setEmailBcc} placeholder="cco@ejemplo.com" />
+                  </div>
+                )}
                 <div>
                   <label className="text-xs font-medium text-slate-600 block mb-1">Asunto</label>
                   <input type="text" value={emailSubjectEdit} onChange={(e) => setEmailSubjectEdit(e.target.value)}
@@ -527,7 +585,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                               <div className="text-right flex-shrink-0">
                                 <p className="text-xs font-bold text-brand-600">{pct.toFixed(1).replace('.', ',')}%</p>
                                 <p className="text-xs text-slate-500 tabular-nums">
-                                  {mainPrefix} {amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  {formatCurrencyFull(amount, form.currency)}
                                 </p>
                               </div>
                             </div>
@@ -546,7 +604,7 @@ export default function DocumentoFacturaForm({ initialDoc, sourcePolicyId }: Doc
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pt-1">
-                  <button type="button" onClick={handleSendEmail} disabled={!emailTo.trim() || emailStatus === 'sending'}
+                  <button type="button" onClick={handleSendEmail} disabled={emailTo.length === 0 || emailStatus === 'sending'}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                     <Mail size={14} /> {emailStatus === 'sending' ? 'Enviando…' : 'Enviar'}
                   </button>

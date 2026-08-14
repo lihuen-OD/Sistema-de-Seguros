@@ -17,6 +17,7 @@ import { policyQueries } from '../../../../shared/api/policies.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
+import { formatCurrencyFull } from '../../../../shared/utils/format'
 import { CURRENCY_OPTIONS } from '../../../../shared/constants'
 import type { AccountingDocument, Currency, EconomicImpactType } from '../../../../shared/types'
 
@@ -68,7 +69,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
   const [allocationsInitialized, setAllocationsInitialized] = useState(!isEdit)
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
-  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'ENDORSEMENT', form.insuranceCompany)
+  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, true, 'ENDORSEMENT', form.insuranceCompany, initialDoc?.id)
 
   const { data: allPolicies = [] } = useQuery(policyQueries.list())
   const { data: allDocuments = [] } = useQuery(documentQueries.list())
@@ -119,8 +120,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
   const parsedOther = parseFloat(form.otherTaxesAmount) || 0
   const computedTotal = hasEconomicImpact ? parsedNet + parsedVat + parsedOther : 0
   const tc = parseFloat(form.exchangeRate) || 0
-  const mainPrefix = form.currency === 'USD' ? 'US$' : 'AR$'
-  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
+  const equivalentCurrency: Currency = form.currency === 'ARS' ? 'USD' : 'ARS'
   const equivalentAmount =
     form.currency === 'ARS' && tc > 0 ? computedTotal / tc : form.currency === 'USD' && tc > 0 ? computedTotal * tc : 0
 
@@ -178,7 +178,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
       if (policyRows.length === 0 || policyRows.every((r) => !r.policyAssetCoverageId)) {
         next.policies = 'Distribuí el importe entre al menos un activo'
       } else if (allocationTotalMismatch) {
-        next.policies = `El total asignado (${mainPrefix} ${totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) debe coincidir con el importe del Endoso (${mainPrefix} ${computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+        next.policies = `El total asignado (${formatCurrencyFull(totalAllocated, form.currency)}) debe coincidir con el importe del Endoso (${formatCurrencyFull(computedTotal, form.currency)}).`
       }
     }
     setErrors(next)
@@ -222,6 +222,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
   const updateMutation = useMutation({
     mutationFn: async (docId: string) => {
       await documentsApi.update(docId, {
+        documentNumber: form.documentNumber.trim(),
         issueDate: form.issueDate,
         currency: hasEconomicImpact ? form.currency : undefined,
         exchangeRate: hasEconomicImpact ? tc : undefined,
@@ -287,25 +288,18 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
               </FormSelect>
             </FormField>
 
-            {isEdit ? (
-              <FormField label="N° de Endoso / Documento">
-                <FormInput value={form.documentNumber} readOnly disabled className="bg-slate-50 text-slate-500 cursor-not-allowed" />
-                <p className="text-xs text-slate-400 mt-1">El número de documento no puede modificarse.</p>
-              </FormField>
-            ) : (
-              <FormField label="N° de Endoso / Documento" required error={errors.documentNumber}>
-                <FormInput placeholder="Ej: END-2026-000001" value={form.documentNumber} onChange={set('documentNumber')} required />
-                {dupChecking && <p className="mt-1 text-xs text-slate-400">Verificando número…</p>}
-                {!dupChecking && dupWarning && (
-                  <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                    <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-800 leading-snug">
-                      Ya existe un documento con el número <strong>{form.documentNumber.trim()}</strong>.
-                    </p>
-                  </div>
-                )}
-              </FormField>
-            )}
+            <FormField label="N° de Endoso / Documento" required error={errors.documentNumber}>
+              <FormInput placeholder="Ej: END-2026-000001" value={form.documentNumber} onChange={set('documentNumber')} required />
+              {dupChecking && <p className="mt-1 text-xs text-slate-400">Verificando número…</p>}
+              {!dupChecking && dupWarning && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 leading-snug">
+                    Ya existe un documento con el número <strong>{form.documentNumber.trim()}</strong>.
+                  </p>
+                </div>
+              )}
+            </FormField>
 
             <FormField label="Fecha de Emisión" required error={errors.issueDate}>
               <FormInput type="date" value={form.issueDate} onChange={set('issueDate')} required />
@@ -434,7 +428,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
                   <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
                     <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</span>
                     <span className="text-base font-bold text-slate-800 tabular-nums">
-                      {mainPrefix} {computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {formatCurrencyFull(computedTotal, form.currency)}
                     </span>
                   </div>
                   {tc > 0 && (
@@ -443,7 +437,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
                         <ArrowLeftRight size={12} /> Equivalente
                       </span>
                       <span className="text-base font-bold text-brand-700 tabular-nums">
-                        {equivalentPrefix} {equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatCurrencyFull(equivalentAmount, equivalentCurrency)}
                       </span>
                     </div>
                   )}
@@ -471,7 +465,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
                 policies={distributionPolicies}
                 rows={policyRows}
                 onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
-                currencyPrefix={mainPrefix}
+                currency={form.currency || 'ARS'}
                 documentTotal={computedTotal}
                 emptyMessage="Seleccioná primero la póliza asociada."
               />

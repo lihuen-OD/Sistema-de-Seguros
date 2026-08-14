@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Plus, Trash2, ListPlus, AlertTriangle } from 'lucide-react'
 import { FormSelect, FormInput } from './FormSection'
-import type { Policy, PolicyCoverage } from '../../types'
+import { formatCurrencyFull } from '../../utils/format'
+import type { Policy, PolicyCoverage, Currency } from '../../types'
 
 export interface PolicyAllocationRow {
   id: string
@@ -29,7 +30,7 @@ interface PolicySelectorMultiProps {
   policies: Policy[]
   rows: PolicyAllocationRow[]
   onRowsChange: (rows: PolicyAllocationRow[]) => void
-  currencyPrefix: string
+  currency: Currency
   // Total real del documento (neto + IVA + otros impuestos) — la
   // participación de cada línea se calcula contra ESTE valor, no contra la
   // suma de lo ya asignado, para que una distribución incompleta se vea
@@ -82,7 +83,7 @@ export function PolicySelector(props: PolicySelectorProps) {
     )
   }
 
-  const { policies, rows, onRowsChange, currencyPrefix, documentTotal } = props
+  const { policies, rows, onRowsChange, currency, documentTotal } = props
   const totalAllocated = rows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0)
   const policiesWithCoverages = policies.filter((p) => (p.coverages ?? []).length > 0)
   const remaining = documentTotal - totalAllocated
@@ -220,8 +221,7 @@ export function PolicySelector(props: PolicySelectorProps) {
           <div className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center">
             <span className="text-xs font-semibold text-slate-500 pl-1">Total asignado</span>
             <span className={`text-xs font-bold tabular-nums text-right pr-1 ${isBalanced ? 'text-slate-800' : 'text-red-600'}`}>
-              {currencyPrefix}{' '}
-              {totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {formatCurrencyFull(totalAllocated, currency)}
             </span>
             <span className={`text-xs font-bold text-right pr-1 ${isBalanced ? 'text-brand-600' : 'text-red-600'}`}>
               {(documentTotal > 0 ? (totalAllocated / documentTotal) * 100 : 0).toFixed(1).replace('.', ',')}%
@@ -232,8 +232,8 @@ export function PolicySelector(props: PolicySelectorProps) {
             <p className="flex items-center gap-1.5 text-xs text-red-600 pl-1">
               <AlertTriangle size={12} className="flex-shrink-0" />
               {remaining > 0
-                ? `Falta distribuir ${currencyPrefix} ${remaining.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} para llegar al total de la factura.`
-                : `El total asignado excede el total de la factura por ${currencyPrefix} ${Math.abs(remaining).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`}
+                ? `Falta distribuir ${formatCurrencyFull(remaining, currency)} para llegar al total de la factura.`
+                : `El total asignado excede el total de la factura por ${formatCurrencyFull(Math.abs(remaining), currency)}.`}
             </p>
           )}
         </div>

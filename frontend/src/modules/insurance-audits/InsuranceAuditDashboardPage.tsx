@@ -7,15 +7,13 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
+import { AuditorProgressPanel } from '../../shared/components/audit-dashboard/AuditorProgressPanel'
 import { insuranceAuditQueries } from '../../shared/api/insurance-audits.api'
 import { CATEGORY_LABEL } from '../../shared/constants/asset-categories'
 import type { AssetCategory } from '../../shared/types'
 import { ROUTES } from '../../app/routes'
-import { LevelBar } from '../fire-extinguishers/audits/LevelBar'
-
-function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7)
-}
+import { currentPeriod } from '../../shared/utils/period'
+import { LevelBar } from '../../shared/components/audit-wizard/LevelBar'
 
 export default function InsuranceAuditDashboardPage() {
   const [period, setPeriod] = useState(currentPeriod())
@@ -82,18 +80,10 @@ export default function InsuranceAuditDashboardPage() {
           </SectionCard>
 
           {progress && progress.auditors.length > 0 && (
-            <SectionCard title="Progreso por auditor" subtitle="Activos auditados este período dentro de las categorías asignadas a cada persona">
-              <div className="space-y-3">
-                {progress.auditors.map((a) => (
-                  <div key={a.userId} className="flex items-center gap-3">
-                    <LevelBar label={a.name} level={a.completionRate} />
-                    <span className="flex-shrink-0 text-xs text-slate-400 tabular-nums w-24 text-right">
-                      {a.assigned > 0 ? `${a.completed} / ${a.assigned}` : 'Sin asignar'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
+            <AuditorProgressPanel
+              auditors={progress.auditors}
+              subtitle="Activos auditados este período dentro de las categorías asignadas a cada persona"
+            />
           )}
         </div>
       )}

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -28,6 +28,7 @@ import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
 import { exchangeRateQueries } from '../../../shared/api/exchange-rate.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
+import { formatCurrencyFull } from '../../../shared/utils/format'
 import { buildAssetSearchKeywords } from '../../../shared/utils/assetSearch'
 import { CURRENCY_OPTIONS } from '../../../shared/constants'
 import type { PolicyAttachment } from '../../../shared/types'
@@ -212,22 +213,10 @@ export default function PolicyNewPage() {
   const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: currentExchangeRate } = useQuery(exchangeRateQueries.current())
-  const [exchangeRatePrefilled, setExchangeRatePrefilled] = useState(false)
 
   const createMutation = useMutation({
     mutationFn: (input: Parameters<typeof policiesApi.create>[0]) => policiesApi.create(input),
   })
-
-  // Prefill de conveniencia para la primera línea — si hay un tipo de cambio
-  // global cargado, se sugiere como valor inicial (editable después).
-  useEffect(() => {
-    if (currentExchangeRate?.rate && !exchangeRatePrefilled) {
-      setLines((prev) =>
-        prev.map((l) => (l.exchangeRate ? l : { ...l, exchangeRate: String(currentExchangeRate.rate) })),
-      )
-      setExchangeRatePrefilled(true)
-    }
-  }, [currentExchangeRate, exchangeRatePrefilled])
 
   const set =
     (key: keyof PolicyForm) =>
@@ -309,7 +298,7 @@ export default function PolicyNewPage() {
         coverageIds: line.coverageTypes,
         insuredAmount: parseFloat(line.insuredAmount) || 0,
         currency: line.currency,
-        exchangeRate: parseFloat(line.exchangeRate) || 1,
+        exchangeRate: parseFloat(line.exchangeRate) || currentExchangeRate?.rate || 1,
         companyId: line.association === 'sin_activo' ? line.companyId : null,
         costCenterId: line.association === 'sin_activo' ? line.costCenterId || null : null,
         beneficiaryDescription: line.association === 'sin_activo' ? line.beneficiaryDescription.trim() || null : null,
@@ -417,9 +406,14 @@ export default function PolicyNewPage() {
           {lines.map((line, idx) => {
             const err = lineErrors[line.id] ?? {}
             const equivalentCurrencyLabel = line.currency === 'ARS' ? 'USD' : 'ARS'
-            const equivalentPrefix = line.currency === 'ARS' ? 'US$' : 'AR$'
+            // Si la línea no tiene tipo de cambio propio todavía, se muestra
+            // (sin escribirlo en el estado) el tipo de cambio global vigente
+            // como sugerencia — se actualiza solo si el usuario no tipeó nada,
+            // incluso en líneas agregadas después de que el global cargó.
+            const effectiveExchangeRate =
+              line.exchangeRate || (currentExchangeRate?.rate != null ? String(currentExchangeRate.rate) : '')
             const amount = parseFloat(line.insuredAmount)
-            const rate = parseFloat(line.exchangeRate)
+            const rate = parseFloat(effectiveExchangeRate)
             const equivalentAmount =
               !isNaN(amount) && !isNaN(rate) && rate > 0
                 ? (line.currency === 'ARS' ? amount / rate : amount * rate)
@@ -578,14 +572,14 @@ export default function PolicyNewPage() {
                       <FormField label="Tipo de Cambio (ARS/USD)">
                         <FormInput
                           type="number" placeholder="Ej: 970" min="0" step="0.01"
-                          value={line.exchangeRate}
+                          value={effectiveExchangeRate}
                           onChange={(e) => updateLine(line.id, { exchangeRate: e.target.value })}
                         />
                       </FormField>
                       <FormField label={`Suma Asegurada (${equivalentCurrencyLabel})`}>
                         <FormInput
                           value={equivalentAmount != null
-                            ? `${equivalentPrefix} ${equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            ? formatCurrencyFull(equivalentAmount, equivalentCurrencyLabel)
                             : ''}
                           readOnly disabled placeholder="Se calcula automáticamente"
                         />

@@ -265,8 +265,8 @@ export const insuranceAuditsApi = {
     }))
   },
 
-  async addComment(assetId: string, body: string): Promise<void> {
-    await apiClient.post('/insurance-audits/comments', { assetId, body })
+  async addComment(targetId: string, body: string): Promise<void> {
+    await apiClient.post('/insurance-audits/comments', { targetId, body })
   },
 
   async markCommentSeen(id: string): Promise<void> {

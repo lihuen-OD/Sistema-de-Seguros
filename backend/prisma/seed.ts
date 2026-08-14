@@ -473,16 +473,16 @@ async function main() {
 
   await prisma.assetValueHistory.createMany({
     data: [
-      { assetId: actEdificio.id, value: 8000000, date: d('2010-03-15'), type: 'compra', note: 'Valor de compra original' },
-      { assetId: actEdificio.id, value: 10500000, date: d('2018-06-01'), type: 'revaluo', note: 'Revalúo técnico 2018' },
-      { assetId: actEdificio.id, value: 12800000, date: d('2021-12-01'), type: 'revaluo', note: 'Actualización por inflación' },
+      { assetId: actEdificio.id, value: 8000000, date: d('2010-03-15'), type: 'real', note: 'Valor de compra original' },
+      { assetId: actEdificio.id, value: 10500000, date: d('2018-06-01'), type: 'real', note: 'Revalúo técnico 2018' },
+      { assetId: actEdificio.id, value: 12800000, date: d('2021-12-01'), type: 'real', note: 'Actualización por inflación' },
       { assetId: actEdificio.id, value: 15000000, date: d('2025-01-01'), type: 'real', note: 'Valor de mercado actualizado' },
-      { assetId: actCosechadora.id, value: 38000000, date: d('2022-04-10'), type: 'compra', note: 'Valor de compra' },
-      { assetId: actCosechadora.id, value: 41000000, date: d('2023-04-01'), type: 'revaluo', note: 'Actualización campaña 2022/23' },
+      { assetId: actCosechadora.id, value: 38000000, date: d('2022-04-10'), type: 'real', note: 'Valor de compra' },
+      { assetId: actCosechadora.id, value: 41000000, date: d('2023-04-01'), type: 'real', note: 'Actualización campaña 2022/23' },
       { assetId: actCosechadora.id, value: 45000000, date: d('2024-04-01'), type: 'real', note: 'Valor de mercado campaña 2023/24' },
-      { assetId: actTractor.id, value: 12000000, date: d('2020-11-05'), type: 'compra', note: 'Valor de compra' },
+      { assetId: actTractor.id, value: 12000000, date: d('2020-11-05'), type: 'real', note: 'Valor de compra' },
       { assetId: actTractor.id, value: 14000000, date: d('2024-11-01'), type: 'real', note: 'Tasación mercado noviembre 2024' },
-      { assetId: actSembradora.id, value: 9500000, date: d('2021-10-15'), type: 'compra', note: 'Valor de compra' },
+      { assetId: actSembradora.id, value: 9500000, date: d('2021-10-15'), type: 'real', note: 'Valor de compra' },
       { assetId: actSembradora.id, value: 11000000, date: d('2025-10-01'), type: 'real', note: 'Actualización mercado 2025' },
     ],
   })

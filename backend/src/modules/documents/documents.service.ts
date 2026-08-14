@@ -2,9 +2,10 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
-import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
+import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { toDateStr } from '../../shared/utils/dates'
-import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
+import { deleteFromCloudinary } from '../../config/cloudinary'
+import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
 import {
   DOCUMENT_TYPES,
   ADJUSTMENT_REASONS,
@@ -65,7 +66,13 @@ const ALLOCATION_COVERAGE_SELECT = {
 
 const DOCUMENT_LIST_INCLUDE = {
   _count: { select: { installments: true, allocations: true, attachments: true } },
-  allocations: { select: { policyAssetCoverage: { select: { policyId: true } } } },
+  allocations: {
+    select: {
+      id: true, accountingDocumentId: true, policyAssetCoverageId: true,
+      allocatedAmount: true, allocationPercentage: true,
+      policyAssetCoverage: { select: { policyId: true, assetId: true } },
+    },
+  },
 }
 
 const DOCUMENT_DETAIL_INCLUDE = {
@@ -217,7 +224,15 @@ export const documentsService = {
     return buildPaginatedResponse(
       rawData.map((doc) => ({
         ...withTotalAmount(doc),
-        allocations: doc.allocations.map((a) => ({ policyId: a.policyAssetCoverage.policyId })),
+        allocations: doc.allocations.map((a) => ({
+          id: a.id,
+          accountingDocumentId: a.accountingDocumentId,
+          policyAssetCoverageId: a.policyAssetCoverageId,
+          policyId: a.policyAssetCoverage.policyId,
+          assetId: a.policyAssetCoverage.assetId,
+          allocatedAmount: a.allocatedAmount,
+          allocationPercentage: a.allocationPercentage,
+        })),
       })),
       total,
       { page, limit },
@@ -289,6 +304,10 @@ export const documentsService = {
       inherited.paymentMethod ?? (docData.paymentMethod?.trim() || null)
     const effectiveCurrency = (inherited.currency ?? docData.currency) as 'ARS' | 'USD'
     const effectiveExchangeRate = inherited.exchangeRate ?? docData.exchangeRate
+
+    if (installments.length > 0 && typeDef.hasInstallments) {
+      this.assertInstallmentsMatchTotal(installments, computeTotalAmount(docData))
+    }
 
     // El duplicado real es la combinación tipo + compañía + número
     // (documentNumber es inmutable después del alta, así que este chequeo
@@ -415,6 +434,32 @@ export const documentsService = {
     const typeDef = getDocumentTypeDef(effectiveType)
     if (!typeDef) throw new AppError(400, 'Tipo de documento inválido', 'BAD_REQUEST')
 
+    const effectiveDocumentNumber = docData.documentNumber ?? existing.documentNumber
+    const effectiveInsuranceCompany =
+      docData.insuranceCompany !== undefined ? docData.insuranceCompany : existing.insuranceCompany
+
+    // Mismo pre-chequeo que create() (ver comentario ahí) — el número de
+    // documento dejó de ser inmutable (puede corregirse un typo después del
+    // alta), así que el duplicado tipo+compañía+número hay que revalidarlo
+    // acá también. Excluye el propio id: comparar el documento contra sí
+    // mismo con estos mismos valores nunca es un conflicto real.
+    const duplicateOnUpdate = await prisma.accountingDocument.findFirst({
+      where: {
+        id: { not: id },
+        documentNumber: effectiveDocumentNumber,
+        documentType: effectiveType,
+        insuranceCompany: effectiveInsuranceCompany ?? null,
+      },
+      select: { id: true },
+    })
+    if (duplicateOnUpdate) {
+      throw new AppError(
+        409,
+        'Ya existe un documento del mismo tipo y compañía con ese número',
+        'CONFLICT',
+      )
+    }
+
     const effectiveLinkedId =
       docData.linkedDocumentId !== undefined ? docData.linkedDocumentId : existing.linkedDocumentId
     const effectiveAdjustmentReason =
@@ -474,46 +519,60 @@ export const documentsService = {
       effectiveExchangeRate,
     )
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const doc = await tx.accountingDocument.update({
-        where: { id },
-        data: {
-          ...docData,
-          currency: effectiveCurrency,
-          exchangeRate: effectiveExchangeRate,
-          paymentMethod: effectivePaymentMethod,
-          relationType: typeDef.relationType ?? null,
-          ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
-          totalAmountArs: effectiveTotalAmountArs,
-          totalAmountUsd: effectiveTotalAmountUsd,
-        },
-        include: DOCUMENT_DETAIL_INCLUDE,
+    let updated
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        const doc = await tx.accountingDocument.update({
+          where: { id },
+          data: {
+            ...docData,
+            currency: effectiveCurrency,
+            exchangeRate: effectiveExchangeRate,
+            paymentMethod: effectivePaymentMethod,
+            relationType: typeDef.relationType ?? null,
+            ...(!typeDef.hasPaymentStatus && { paymentStatus: 'NOT_APPLICABLE' }),
+            totalAmountArs: effectiveTotalAmountArs,
+            totalAmountUsd: effectiveTotalAmountUsd,
+          },
+          include: DOCUMENT_DETAIL_INCLUDE,
+        })
+
+        await this.recordAudit(id, {
+          action: 'UPDATE',
+          description: 'Documento actualizado',
+          previousData: {
+            documentNumber: existing.documentNumber,
+            documentType: existing.documentType,
+            linkedDocumentId: existing.linkedDocumentId,
+            paymentMethod: existing.paymentMethod,
+            netAmount: existing.netAmount,
+            vatAmount: existing.vatAmount,
+            otherTaxesAmount: existing.otherTaxesAmount,
+          },
+          newData: {
+            documentNumber: doc.documentNumber,
+            documentType: doc.documentType,
+            linkedDocumentId: doc.linkedDocumentId,
+            paymentMethod: doc.paymentMethod,
+            netAmount: doc.netAmount,
+            vatAmount: doc.vatAmount,
+            otherTaxesAmount: doc.otherTaxesAmount,
+          },
+          performedBy,
+        }, tx)
+
+        return doc
       })
-
-      await this.recordAudit(id, {
-        action: 'UPDATE',
-        description: 'Documento actualizado',
-        previousData: {
-          documentType: existing.documentType,
-          linkedDocumentId: existing.linkedDocumentId,
-          paymentMethod: existing.paymentMethod,
-          netAmount: existing.netAmount,
-          vatAmount: existing.vatAmount,
-          otherTaxesAmount: existing.otherTaxesAmount,
-        },
-        newData: {
-          documentType: doc.documentType,
-          linkedDocumentId: doc.linkedDocumentId,
-          paymentMethod: doc.paymentMethod,
-          netAmount: doc.netAmount,
-          vatAmount: doc.vatAmount,
-          otherTaxesAmount: doc.otherTaxesAmount,
-        },
-        performedBy,
-      }, tx)
-
-      return doc
-    })
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new AppError(
+          409,
+          'Ya existe un documento del mismo tipo y compañía con ese número',
+          'CONFLICT',
+        )
+      }
+      throw err
+    }
 
     return mapDocumentDetail(updated)
   },
@@ -840,6 +899,11 @@ export const documentsService = {
   async replaceInstallments(documentId: string, data: ReplaceInstallmentsDTO) {
     const doc = await this.assertDocumentExists(documentId)
 
+    const typeDef = getDocumentTypeDef(doc.documentType)
+    if (data.installments.length > 0 && typeDef?.hasInstallments) {
+      this.assertInstallmentsMatchTotal(data.installments, computeTotalAmount(doc))
+    }
+
     // Reemplazo de cuotas + reset de paymentStatus en una sola transacción —
     // evita que el documento quede con cuotas nuevas pero un paymentStatus
     // desincronizado si el segundo write fallara por separado.
@@ -1020,29 +1084,10 @@ export const documentsService = {
   ) {
     await this.assertDocumentExists(documentId)
 
-    if (!isAllowedMimetype(file.mimetype)) {
-      throw new AppError(
-        415,
-        'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video',
-        'UNSUPPORTED_MEDIA_TYPE',
-      )
-    }
+    const { fileUrl, cloudinaryPublicId } = await validateAndUploadAttachment(file, 'documents')
 
-    if (!matchesDeclaredMimetype(file.buffer, file.mimetype)) {
-      throw new AppError(415, 'El contenido del archivo no coincide con su tipo declarado', 'FILE_TYPE_MISMATCH')
-    }
-
-    let fileUrl = `local://${file.originalname}`
-    let cloudinaryPublicId: string | null = null
-
-    if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'documents', file.mimetype)
-      fileUrl = result.secure_url
-      cloudinaryPublicId = result.public_id
-    }
-
-    try {
-      return await prisma.documentAttachment.create({
+    return withAttachmentRollback(cloudinaryPublicId, () =>
+      prisma.documentAttachment.create({
         data: {
           accountingDocumentId: documentId,
           name: sanitizeFileName(file.originalname),
@@ -1053,11 +1098,8 @@ export const documentsService = {
           cloudinaryPublicId,
           uploadedBy,
         },
-      })
-    } catch (err) {
-      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
-      throw err
-    }
+      }),
+    )
   },
 
   async deleteAttachment(documentId: string, attachmentId: string) {
@@ -1122,6 +1164,7 @@ export const documentsService = {
       select: {
         id: true,
         documentNumber: true,
+        insuranceCompany: true,
         currency: true,
         exchangeRate: true,
         paymentMethod: true,
@@ -1140,6 +1183,21 @@ export const documentsService = {
     })
     if (!doc) throw new AppError(404, 'Documento no encontrado', 'NOT_FOUND')
     return doc
+  },
+
+  // Nada impedía guardar cuotas que no sumaran el total del documento
+  // (netAmount+vatAmount+otherTaxesAmount) — un desfasaje silencioso entre lo
+  // facturado y lo que en los papeles se va a cobrar en cuotas. Se usa la
+  // misma tolerancia (0.01) que el resto de la app para comparar montos.
+  assertInstallmentsMatchTotal(installments: { amount: number }[], expectedTotal: number): void {
+    const sum = +installments.reduce((s, i) => s + i.amount, 0).toFixed(2)
+    if (Math.abs(sum - expectedTotal) > 0.01) {
+      throw new AppError(
+        400,
+        `La suma de las cuotas (${sum}) no coincide con el total del documento (${expectedTotal}).`,
+        'INSTALLMENTS_TOTAL_MISMATCH',
+      )
+    }
   },
 
   // Reparte el monto de una NC/ND/Ajuste, en partes iguales, entre las cuotas
@@ -1427,14 +1485,22 @@ export const documentsService = {
     return { paymentMethod: inheritedPaymentMethod, currency: inheritedCurrency, exchangeRate: inheritedExchangeRate }
   },
 
-  async checkDocumentNumber(documentNumber: string, documentType?: string, insuranceCompany?: string | null) {
-    // Mismo criterio compuesto que create(): el duplicado real es
-    // tipo + compañía + número, no el número solo.
+  async checkDocumentNumber(
+    documentNumber: string,
+    documentType?: string,
+    insuranceCompany?: string | null,
+    excludeId?: string,
+  ) {
+    // Mismo criterio compuesto que create()/update(): el duplicado real es
+    // tipo + compañía + número, no el número solo. excludeId lo manda la
+    // edición de un documento existente, para que su propio número sin
+    // cambios no se marque como "ya existe" contra sí mismo.
     const existing = await prisma.accountingDocument.findFirst({
       where: {
         documentNumber,
         ...(documentType && { documentType }),
         ...(insuranceCompany !== undefined && { insuranceCompany: insuranceCompany ?? null }),
+        ...(excludeId && { id: { not: excludeId } }),
       },
       select: { id: true },
     })

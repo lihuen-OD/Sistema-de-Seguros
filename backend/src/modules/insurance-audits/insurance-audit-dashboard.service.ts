@@ -1,6 +1,6 @@
 import { prisma } from '../../config/database'
 import { latestByKey } from '../../shared/utils/latest-by-key'
-import { classifyAuditableAssetCategory } from '../asset-audits/asset-audit-category-classification'
+import { classifyAuditableAssetCategory } from '../../shared/services/audit-domain.service'
 import type { AuditableAssetCategory } from '../../shared/types'
 
 interface CategoryAcc {

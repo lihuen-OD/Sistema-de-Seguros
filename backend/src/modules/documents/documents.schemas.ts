@@ -61,7 +61,7 @@ const DocumentBaseSchema = z.object({
 
 export const CreateDocumentSchema = DocumentBaseSchema
 
-export const UpdateDocumentSchema = DocumentBaseSchema.partial().omit({ documentNumber: true })
+export const UpdateDocumentSchema = DocumentBaseSchema.partial()
 
 export const ListDocumentsQuerySchema = PaginationSchema.extend({
   search: z.string().optional(),
@@ -113,6 +113,9 @@ export const CheckDocumentNumberQuerySchema = z.object({
   documentNumber: z.string().max(100).optional(),
   documentType: z.string().max(100).optional(),
   insuranceCompany: z.string().max(300).optional(),
+  // Se manda al editar un documento existente, para que el propio número sin
+  // cambios no se marque como "ya existe" contra sí mismo.
+  excludeId: z.string().uuid().optional(),
 })
 
 const YearMonth = z.string().regex(/^\d{4}-\d{2}$/, 'Formato inválido. Usar YYYY-MM')

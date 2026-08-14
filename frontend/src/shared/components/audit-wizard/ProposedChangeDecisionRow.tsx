@@ -1,7 +1,7 @@
 import clsx from 'clsx'
-import { StatusPill } from '../../../shared/components/badges/StatusPill'
+import { StatusPill } from '../../components/badges/StatusPill'
 import { PROPOSED_CHANGE_FIELD_LABELS } from './proposedChangeFieldLabels'
-import type { FireExtinguisherAuditProposedChange } from '../../../shared/api/fire-extinguisher-audits.api'
+import type { FireExtinguisherAuditProposedChange } from '../../api/fire-extinguisher-audits.api'
 
 interface ProposedChangeDecisionRowProps {
   change: FireExtinguisherAuditProposedChange

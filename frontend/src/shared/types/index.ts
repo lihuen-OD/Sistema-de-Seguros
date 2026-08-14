@@ -194,11 +194,14 @@ export type AssetCategory =
   | 'carga_animal' | 'carga_comun'
 
 // Subconjunto de AssetCategory habilitado para Asset.fireExtinguisherAuditable/
-// insuranceAuditable (ver IS_AUDITABLE_CATEGORY en modules/assets/AssetNewPage.tsx)
-// — mismo listado que AUDITABLE_ASSET_CATEGORIES del backend, usado como
-// scopeValue en UserAuditScope para las áreas ASSET_AUDIT/INSURANCE_AUDIT.
+// insuranceAuditable (ver IS_FIRE_EXTINGUISHER_AUDITABLE_CATEGORY/
+// IS_INSURANCE_AUDITABLE_CATEGORY en modules/assets/AssetNewPage.tsx) — mismo
+// listado que AUDITABLE_ASSET_CATEGORIES del backend, usado como scopeValue
+// en UserAuditScope para las áreas ASSET_AUDIT/INSURANCE_AUDIT. "moto" solo
+// habilita insuranceAuditable (no lleva matafuego), pero comparte este mismo
+// listado con fireExtinguisherAuditable como scopeValue.
 export const AUDITABLE_ASSET_CATEGORIES: AssetCategory[] = [
-  'vehiculo', 'camioneta', 'camion', 'transporte_pasajeros',
+  'vehiculo', 'camioneta', 'camion', 'moto', 'transporte_pasajeros',
   'tractor', 'cosechadora', 'pulverizadora', 'implemento', 'maquinaria',
 ]
 
@@ -328,7 +331,7 @@ export interface AccountingDocumentAttachment {
   documentId: string
   name: string
   description: string
-  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileType: 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
   fileSize: string
   fileUrl?: string
   uploadedAt: string
@@ -340,7 +343,7 @@ export interface PolicyAttachment {
   policyAssetCoverageId: string
   name: string
   description: string
-  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileType: 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
   fileSize: string
   fileUrl?: string
   isCirculationCard: boolean
@@ -458,6 +461,7 @@ export interface AccountingDocument {
   endorsementType?: string | null
   endorsementEffectiveDate?: string | null
   policyIds: string[]
+  allocations?: DocumentPolicyAllocation[]
   attachmentsCount?: number
   createdAt: string
   updatedAt: string
@@ -614,7 +618,7 @@ export interface AssetAttachment {
   assetId: string
   name: string
   description: string
-  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileType: 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
   fileSize: string
   fileUrl?: string
   expirationDate: string | null
@@ -661,7 +665,7 @@ export interface ClaimAttachment {
   claimId: string
   name: string
   description: string | null
-  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileType: 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
   fileSize: string
   fileUrl?: string
   uploadedAt: string
@@ -673,7 +677,7 @@ export interface ClaimExpenseAttachment {
   expenseId: string
   name: string
   description: string | null
-  fileType: 'pdf' | 'image' | 'excel' | 'other'
+  fileType: 'pdf' | 'image' | 'excel' | 'word' | 'video' | 'other'
   fileSize: string
   fileUrl?: string
   uploadedAt: string

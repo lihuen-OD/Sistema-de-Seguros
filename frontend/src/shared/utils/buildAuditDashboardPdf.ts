@@ -1,6 +1,7 @@
 import type { AuditDashboardSector, AuditFlaggedExtinguisher } from '../api/fire-extinguisher-audits.api'
 import { formatPeriodLabel } from '../../modules/fire-extinguishers/audits/findingsReportFields'
 import { drawHorizontalBar } from './pdfShapes'
+import { classifyLevel } from './auditLevel'
 
 // PDF armado a mano con las primitivas de jsPDF (texto y figuras) — nada de
 // html2canvas/capturas de pantalla. Mismo estilo que ve la pantalla "Informe
@@ -28,16 +29,6 @@ const BAR_COLOR_CRITICAL = '#ef4444' // red-500
 // backend a su vez cae al código interno si tampoco hay número de cilindro).
 function formatExtinguisherList(items: AuditFlaggedExtinguisher[]): string {
   return items.map((i) => i.location ?? i.cylinderNumber).join(', ')
-}
-
-// Mismos cortes que fire-extinguisher-audit-dashboard.constants.ts (backend)
-// — si cambian ahí, actualizar acá también.
-function classifyLevel(level: number | null): string | null {
-  if (level == null) return null
-  if (level < 50) return 'Crítico'
-  if (level < 75) return 'Regular'
-  if (level < 90) return 'Bueno'
-  return 'Óptimo'
 }
 
 function groupByEstablishment(sectors: AuditDashboardSector[]): { establishment: string; sectors: AuditDashboardSector[] }[] {

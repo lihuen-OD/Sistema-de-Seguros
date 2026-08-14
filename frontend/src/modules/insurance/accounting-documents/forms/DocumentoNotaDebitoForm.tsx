@@ -17,6 +17,7 @@ import { documentsApi, documentKeys, documentQueries } from '../../../../shared/
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
+import { formatCurrencyFull } from '../../../../shared/utils/format'
 import { CURRENCY_OPTIONS } from '../../../../shared/constants'
 import type { AccountingDocument, Currency } from '../../../../shared/types'
 
@@ -62,7 +63,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
   const [allocationsInitialized, setAllocationsInitialized] = useState(!isEdit)
 
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
-  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, !isEdit, 'DEBIT_NOTE', form.insuranceCompany)
+  const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, true, 'DEBIT_NOTE', form.insuranceCompany, initialDoc?.id)
 
   const { data: allDocuments = [] } = useQuery(documentQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
@@ -99,8 +100,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
   const parsedOther = parseFloat(form.otherTaxesAmount) || 0
   const computedTotal = parsedNet + parsedVat + parsedOther
   const tc = parseFloat(form.exchangeRate) || 0
-  const mainPrefix = form.currency === 'USD' ? 'US$' : 'AR$'
-  const equivalentPrefix = form.currency === 'ARS' ? 'US$' : 'AR$'
+  const equivalentCurrency: Currency = form.currency === 'ARS' ? 'USD' : 'ARS'
   const equivalentAmount =
     form.currency === 'ARS' && tc > 0 ? computedTotal / tc : form.currency === 'USD' && tc > 0 ? computedTotal * tc : 0
 
@@ -124,7 +124,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
     if (!effectivePaymentMethod) next.paymentMethod = 'Requerido'
     if (!form.netAmount || isNaN(parseFloat(form.netAmount))) next.netAmount = 'Requerido'
     if (allocationTotalMismatch) {
-      next.policies = `El total distribuido (${mainPrefix} ${totalAllocated.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) debe coincidir con el total del documento (${mainPrefix} ${computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+      next.policies = `El total distribuido (${formatCurrencyFull(totalAllocated, form.currency)}) debe coincidir con el total del documento (${formatCurrencyFull(computedTotal, form.currency)}).`
     }
     setErrors(next)
     notifyValidationErrors(next)
@@ -162,6 +162,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
   const updateMutation = useMutation({
     mutationFn: async (docId: string) => {
       await documentsApi.update(docId, {
+        documentNumber: form.documentNumber.trim(),
         issueDate: form.issueDate,
         currency: form.currency,
         exchangeRate: tc,
@@ -211,25 +212,18 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
               </FormSelect>
             </FormField>
 
-            {isEdit ? (
-              <FormField label="N° de Documento">
-                <FormInput value={form.documentNumber} readOnly disabled className="bg-slate-50 text-slate-500 cursor-not-allowed" />
-                <p className="text-xs text-slate-400 mt-1">El número de documento no puede modificarse.</p>
-              </FormField>
-            ) : (
-              <FormField label="N° de Documento" required error={errors.documentNumber}>
-                <FormInput placeholder="Ej: ND-0001-00000123" value={form.documentNumber} onChange={set('documentNumber')} required />
-                {dupChecking && <p className="mt-1 text-xs text-slate-400">Verificando número…</p>}
-                {!dupChecking && dupWarning && (
-                  <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                    <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-800 leading-snug">
-                      Ya existe un documento con el número <strong>{form.documentNumber.trim()}</strong>.
-                    </p>
-                  </div>
-                )}
-              </FormField>
-            )}
+            <FormField label="N° de Documento" required error={errors.documentNumber}>
+              <FormInput placeholder="Ej: ND-0001-00000123" value={form.documentNumber} onChange={set('documentNumber')} required />
+              {dupChecking && <p className="mt-1 text-xs text-slate-400">Verificando número…</p>}
+              {!dupChecking && dupWarning && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 leading-snug">
+                    Ya existe un documento con el número <strong>{form.documentNumber.trim()}</strong>.
+                  </p>
+                </div>
+              )}
+            </FormField>
 
             <FormField label="Fecha de Emisión" required error={errors.issueDate}>
               <FormInput type="date" value={form.issueDate} onChange={set('issueDate')} required />
@@ -315,7 +309,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
               <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</span>
                 <span className="text-base font-bold text-slate-800 tabular-nums">
-                  {mainPrefix} {computedTotal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {formatCurrencyFull(computedTotal, form.currency)}
                 </span>
               </div>
               {tc > 0 && (
@@ -324,7 +318,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
                     <ArrowLeftRight size={12} /> Equivalente
                   </span>
                   <span className="text-base font-bold text-brand-700 tabular-nums">
-                    {equivalentPrefix} {equivalentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCurrencyFull(equivalentAmount, equivalentCurrency)}
                   </span>
                 </div>
               )}
@@ -352,7 +346,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
               policies={linkedPolicies}
               rows={policyRows}
               onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
-              currencyPrefix={mainPrefix}
+              currency={form.currency || 'ARS'}
               documentTotal={computedTotal}
               emptyMessage="La factura asociada no tiene pólizas con activos para distribuir."
             />

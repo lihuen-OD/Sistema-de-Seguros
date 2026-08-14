@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ShieldAlert, Clock, CheckCircle2, XCircle, FileSearch,
+  ShieldAlert, Clock, CheckCircle2,
   ArrowUpRight, Pencil, ArrowLeft, Package, ShieldCheck,
-  Calendar, DollarSign, AlertTriangle, ArrowLeftRight,
+  DollarSign, AlertTriangle, ArrowLeftRight,
   PlusCircle, ArrowRight, MessageSquare, Paperclip, Edit2,
-  TrendingDown, Percent, FileText, ImageIcon, Download, Trash2, FileDown, Receipt,
+  TrendingDown, Percent, FileText, ImageIcon, Download, FileDown, Receipt,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -15,7 +15,7 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
-import type { ClaimAttachment } from '../../shared/types'
+import type { ClaimAttachment, Currency } from '../../shared/types'
 import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
@@ -295,7 +295,7 @@ export default function ClaimDetailPage() {
 
   const tc = claim.exchangeRate ?? 0
   const currencyLabel = claim.currency === 'USD' ? 'US$' : 'AR$'
-  const altLabel = claim.currency === 'USD' ? 'AR$' : 'US$'
+  const altCurrency: Currency = claim.currency === 'USD' ? 'ARS' : 'USD'
   const toDisplayAlt = (arsAmount: number) =>
     tc > 0 && claim.currency === 'USD' ? arsAmount / tc : tc > 0 ? arsAmount / tc : null
 
@@ -614,7 +614,7 @@ export default function ClaimDetailPage() {
             value={formatCurrencyFull(claim.claimedAmountArs, 'ARS')}
             description={
               toDisplayAlt(claim.claimedAmountArs) != null
-                ? `≈ ${altLabel} ${toDisplayAlt(claim.claimedAmountArs)!.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                ? `≈ ${formatCurrencyFull(toDisplayAlt(claim.claimedAmountArs)!, altCurrency)}`
                 : 'Importe denunciado ante la aseguradora'
             }
             icon={ShieldAlert}

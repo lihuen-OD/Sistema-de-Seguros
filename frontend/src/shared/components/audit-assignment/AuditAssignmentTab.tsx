@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { Loader2, Save, User, CheckCircle2 } from 'lucide-react'
 import { SectionCard } from '../cards/SectionCard'
@@ -51,15 +51,9 @@ function groupByCategory(assets: AssignableAsset[]): CategoryGroup[] {
 // InsuranceAuditsQueuePage.tsx/AssetAuditsQueuePage.tsx).
 export function AuditAssignmentTab({ auditors, assets, isLoading, onSave }: AuditAssignmentTabProps) {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
-  const [pendingAssetIds, setPendingAssetIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
-  const [saving, setSaving] = useState(false)
 
   const selectedAuditor = auditors.find((a) => a.userId === selectedUserId) ?? null
-
-  useEffect(() => {
-    setPendingAssetIds(new Set(selectedAuditor?.assetIds ?? []))
-  }, [selectedAuditor])
 
   // A qué auditor (que no sea el seleccionado) ya está asignado cada activo —
   // se permite superponer asignaciones, pero se avisa para evitar duplicar
@@ -82,25 +76,6 @@ export function AuditAssignmentTab({ auditors, assets, isLoading, onSave }: Audi
   }, [assets, search])
 
   const groups = useMemo(() => groupByCategory(filteredAssets), [filteredAssets])
-
-  function toggleAsset(assetId: string) {
-    setPendingAssetIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(assetId)) next.delete(assetId)
-      else next.add(assetId)
-      return next
-    })
-  }
-
-  async function handleSave() {
-    if (!selectedUserId || saving) return
-    setSaving(true)
-    try {
-      await onSave(selectedUserId, [...pendingAssetIds])
-    } finally {
-      setSaving(false)
-    }
-  }
 
   if (isLoading) {
     return (
@@ -150,73 +125,121 @@ export function AuditAssignmentTab({ auditors, assets, isLoading, onSave }: Audi
         {!selectedAuditor ? (
           <p className="text-sm text-slate-400 text-center py-16">Seleccioná un auditor para ver y editar sus activos asignados.</p>
         ) : (
-          <>
-            <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-800">{selectedAuditor.name}</p>
-                <p className="text-xs text-slate-400">{selectedAuditor.email}</p>
-              </div>
-              <SearchInput value={search} onChange={setSearch} placeholder="Buscar por código, nombre, tipo, patente, chasis o motor…" className="w-full sm:w-80 sm:ml-auto" />
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
-              >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                Guardar asignación
-              </button>
-              <span className="text-xs text-slate-400 whitespace-nowrap">
-                {pendingAssetIds.size} activo{pendingAssetIds.size !== 1 ? 's' : ''} asignado{pendingAssetIds.size !== 1 ? 's' : ''}
-              </span>
-            </div>
-
-            {groups.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-8">
-                {search ? 'Sin resultados para tu búsqueda.' : 'No hay activos habilitados para esta auditoría.'}
-              </p>
-            ) : (
-              <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
-                {groups.map((group) => (
-                  <div key={group.category} className="py-2">
-                    <p className="px-5 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{group.category}</p>
-                    {group.items.map((asset) => {
-                      const checked = pendingAssetIds.has(asset.id)
-                      const otherOwner = ownerByAssetId.get(asset.id)
-                      return (
-                        <label
-                          key={asset.id}
-                          className="flex items-center gap-3 px-5 py-2 cursor-pointer hover:bg-slate-50 transition-colors"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleAsset(asset.id)}
-                            className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm text-slate-700 truncate">{asset.name}</p>
-                            <p className="text-xs text-slate-400 font-mono truncate">
-                              {asset.code ?? '—'}
-                              {asset.plate ? ` · ${asset.plate}` : ''}
-                            </p>
-                          </div>
-                          {checked && <CheckCircle2 size={15} className="text-brand-500 flex-shrink-0" />}
-                          {!checked && otherOwner && (
-                            <span className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0">
-                              Asignado a {otherOwner}
-                            </span>
-                          )}
-                        </label>
-                      )
-                    })}
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+          <AuditorAssignmentPanel
+            key={selectedUserId}
+            auditor={selectedAuditor}
+            groups={groups}
+            ownerByAssetId={ownerByAssetId}
+            search={search}
+            onSearchChange={setSearch}
+            onSave={onSave}
+          />
         )}
       </SectionCard>
     </div>
+  )
+}
+
+interface AuditorAssignmentPanelProps {
+  auditor: AssignmentAuditor
+  groups: CategoryGroup[]
+  ownerByAssetId: Map<string, string>
+  search: string
+  onSearchChange: (search: string) => void
+  onSave: (userId: string, assetIds: string[]) => Promise<void>
+}
+
+// Recibe key={selectedUserId} del padre — se remonta entero al cambiar de
+// auditor seleccionado, así que pendingAssetIds puede inicializarse directo
+// desde el auditor sin useEffect.
+function AuditorAssignmentPanel({ auditor, groups, ownerByAssetId, search, onSearchChange, onSave }: AuditorAssignmentPanelProps) {
+  const [pendingAssetIds, setPendingAssetIds] = useState<Set<string>>(() => new Set(auditor.assetIds))
+  const [saving, setSaving] = useState(false)
+
+  function toggleAsset(assetId: string) {
+    setPendingAssetIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(assetId)) next.delete(assetId)
+      else next.add(assetId)
+      return next
+    })
+  }
+
+  async function handleSave() {
+    if (saving) return
+    setSaving(true)
+    try {
+      await onSave(auditor.userId, [...pendingAssetIds])
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-800">{auditor.name}</p>
+          <p className="text-xs text-slate-400">{auditor.email}</p>
+        </div>
+        <SearchInput value={search} onChange={onSearchChange} placeholder="Buscar por código, nombre, tipo, patente, chasis o motor…" className="w-full sm:w-80 sm:ml-auto" />
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
+        >
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+          Guardar asignación
+        </button>
+        <span className="text-xs text-slate-400 whitespace-nowrap">
+          {pendingAssetIds.size} activo{pendingAssetIds.size !== 1 ? 's' : ''} asignado{pendingAssetIds.size !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {groups.length === 0 ? (
+        <p className="text-sm text-slate-400 text-center py-8">
+          {search ? 'Sin resultados para tu búsqueda.' : 'No hay activos habilitados para esta auditoría.'}
+        </p>
+      ) : (
+        <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+          {groups.map((group) => (
+            <div key={group.category} className="py-2">
+              <p className="px-5 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{group.category}</p>
+              {group.items.map((asset) => {
+                const checked = pendingAssetIds.has(asset.id)
+                const otherOwner = ownerByAssetId.get(asset.id)
+                return (
+                  <label
+                    key={asset.id}
+                    className="flex items-center gap-3 px-5 py-2 cursor-pointer hover:bg-slate-50 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleAsset(asset.id)}
+                      className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-slate-700 truncate">{asset.name}</p>
+                      <p className="text-xs text-slate-400 font-mono truncate">
+                        {asset.code ?? '—'}
+                        {asset.plate ? ` · ${asset.plate}` : ''}
+                      </p>
+                    </div>
+                    {checked && <CheckCircle2 size={15} className="text-brand-500 flex-shrink-0" />}
+                    {!checked && otherOwner && (
+                      <span className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0">
+                        Asignado a {otherOwner}
+                      </span>
+                    )}
+                  </label>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   )
 }

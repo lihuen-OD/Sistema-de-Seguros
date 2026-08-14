@@ -35,15 +35,18 @@ const fakeUser = {
   role: 'ADMIN',
   isActive: true,
   mustChangePassword: false,
+  tokenVersion: 0,
   lastLoginAt: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 }
 
-function tokenFor(user: { id: string; role: string; email: string }) {
-  return jwt.sign({ userId: user.id, role: user.role, email: user.email }, process.env.JWT_SECRET!, {
-    expiresIn: '1h',
-  })
+function tokenFor(user: { id: string; role: string; email: string }, tokenVersion?: number) {
+  return jwt.sign(
+    { userId: user.id, role: user.role, email: user.email, tokenVersion },
+    process.env.JWT_SECRET!,
+    { expiresIn: '1h' },
+  )
 }
 
 describe('Auth API', () => {
@@ -70,6 +73,20 @@ describe('Auth API', () => {
       expect(db.user.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: USER_ID }, data: { lastLoginAt: expect.any(Date) } }),
       )
+    })
+
+    it('signs the token with the user current tokenVersion', async () => {
+      db.user.findUnique.mockResolvedValue({ ...fakeUser, tokenVersion: 3 })
+      mockBcrypt.compare.mockResolvedValue(true)
+      db.user.update.mockResolvedValue(fakeUser)
+
+      const res = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: 'admin@losodwyer.com', password: 'CorrectPassword1' })
+
+      expect(res.status).toBe(200)
+      const decoded = jwt.decode(res.body.data.token) as { tokenVersion: number }
+      expect(decoded.tokenVersion).toBe(3)
     })
 
     it('returns the same generic error when the email does not exist', async () => {
@@ -190,6 +207,26 @@ describe('Auth API', () => {
 
       expect(res.status).toBe(401)
     })
+
+    it('returns 401 when the token tokenVersion is stale (password changed since)', async () => {
+      db.user.findUnique.mockResolvedValue({ ...fakeUser, tokenVersion: 1 })
+
+      const res = await request(app)
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${tokenFor(fakeUser, 0)}`)
+
+      expect(res.status).toBe(401)
+    })
+
+    it('accepts a token predating the tokenVersion field for a user still at version 0', async () => {
+      db.user.findUnique.mockResolvedValue(fakeUser)
+
+      const res = await request(app)
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${tokenFor(fakeUser)}`)
+
+      expect(res.status).toBe(200)
+    })
   })
 
   // ── POST /api/v1/auth/logout ─────────────────────────────────────────────────
@@ -251,7 +288,11 @@ describe('Auth API', () => {
       expect(res.status).toBe(200)
       expect(db.user.update).toHaveBeenCalledWith({
         where: { id: USER_ID },
-        data: { passwordHash: 'new-hashed-password', mustChangePassword: false },
+        data: {
+          passwordHash: 'new-hashed-password',
+          mustChangePassword: false,
+          tokenVersion: { increment: 1 },
+        },
       })
     })
 

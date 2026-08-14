@@ -2,12 +2,10 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, X, Gauge } from 'lucide-react'
+import { X, Gauge } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
-import { MetricGrid } from '../../shared/components/cards/MetricGrid'
-import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
@@ -17,7 +15,11 @@ import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { Tabs, type TabItem } from '../../shared/components/tabs/Tabs'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { AuditAssignmentTab } from '../../shared/components/audit-assignment/AuditAssignmentTab'
+import { AuditStatusKpiRow } from '../../shared/components/audit-queue/AuditStatusKpiRow'
+import { AuditBulkApproveBar } from '../../shared/components/audit-queue/AuditBulkApproveBar'
+import { useAuditSelection } from '../../shared/hooks/useAuditSelection'
 import { formatDate, fireExtinguisherLabel } from '../../shared/utils/format'
+import { currentPeriod } from '../../shared/utils/period'
 import { useCurrentUser } from '../../app/auth/AuthContext'
 import {
   assetAuditsApi,
@@ -40,9 +42,6 @@ const AUDIT_STATUS_SORT_ORDER: Record<string, number> = {
   REJECTED: 3,
 }
 
-function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7)
-}
 
 export default function AssetAuditsQueuePage() {
   const navigate = useNavigate()
@@ -58,7 +57,6 @@ export default function AssetAuditsQueuePage() {
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [coveragePeriod, setCoveragePeriod] = useState(currentPeriod())
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [bulkApproving, setBulkApproving] = useState(false)
 
@@ -115,26 +113,7 @@ export default function AssetAuditsQueuePage() {
     setFilterStatus((prev) => (prev.length === 1 && prev[0] === status ? [] : [status]))
   }
 
-  function isRowSelectable(row: AssetAuditListItem) {
-    return row.status === 'SUBMITTED'
-  }
-
-  function toggleOne(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  function toggleAll(checked: boolean) {
-    setSelectedIds(checked ? new Set(filtered.filter(isRowSelectable).map((a) => a.id)) : new Set())
-  }
-
-  function clearSelection() {
-    setSelectedIds(new Set())
-  }
+  const { selectedIds, setSelectedIds, isRowSelectable, toggleOne, toggleAll, clearSelection } = useAuditSelection(filtered)
 
   const selectedAudits = useMemo(() => all.filter((a) => selectedIds.has(a.id)), [all, selectedIds])
   const selectedWithChangesCount = selectedAudits.filter((a) => a.proposedChangesCount > 0).length
@@ -261,40 +240,7 @@ export default function AssetAuditsQueuePage() {
 
       {activeTab === 'auditorias' && canReview && (
         <>
-          <MetricGrid cols={4} className="mb-5">
-            <KpiCard
-              label="Pendientes de revisión"
-              value={counts.SUBMITTED}
-              description="Esperando decisión"
-              icon={ClipboardCheck}
-              variant="info"
-              onClick={() => toggleStatusFilter('SUBMITTED')}
-            />
-            <KpiCard
-              label="Requieren corrección"
-              value={counts.NEEDS_CORRECTION}
-              description="Devueltas al auditor"
-              icon={AlertTriangle}
-              variant="warning"
-              onClick={() => toggleStatusFilter('NEEDS_CORRECTION')}
-            />
-            <KpiCard
-              label="Aprobadas"
-              value={counts.APPROVED}
-              description="Cambios aplicados al maestro"
-              icon={CheckCircle2}
-              variant="success"
-              onClick={() => toggleStatusFilter('APPROVED')}
-            />
-            <KpiCard
-              label="Rechazadas"
-              value={counts.REJECTED}
-              description="Sin cambios aplicados"
-              icon={XCircle}
-              variant="danger"
-              onClick={() => toggleStatusFilter('REJECTED')}
-            />
-          </MetricGrid>
+          <AuditStatusKpiRow counts={counts} onStatusClick={toggleStatusFilter} />
 
           <SectionCard noPadding>
             <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
@@ -325,29 +271,11 @@ export default function AssetAuditsQueuePage() {
               </span>
             </div>
 
-            {selectedIds.size > 0 && (
-              <div className="px-5 py-2.5 bg-brand-50 border-b border-brand-100 flex flex-wrap items-center gap-3">
-                <span className="text-sm font-medium text-brand-800">
-                  {selectedIds.size} auditoría{selectedIds.size !== 1 ? 's' : ''} seleccionada{selectedIds.size !== 1 ? 's' : ''}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowBulkConfirm(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors"
-                >
-                  <CheckCircle2 size={13} />
-                  Aprobar seleccionadas
-                </button>
-                <button
-                  type="button"
-                  onClick={clearSelection}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100 rounded-lg transition-colors ml-auto"
-                >
-                  <X size={13} />
-                  Limpiar selección
-                </button>
-              </div>
-            )}
+            <AuditBulkApproveBar
+              selectedCount={selectedIds.size}
+              onApproveClick={() => setShowBulkConfirm(true)}
+              onClear={clearSelection}
+            />
 
             <DataTable
               tableKey="asset-audits"

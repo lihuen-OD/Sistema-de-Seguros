@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { formatPercent } from '../../../shared/utils/format'
+import { formatPercent } from '../../utils/format'
 
 interface LevelBarProps {
   label: string

@@ -1,20 +1,23 @@
 import { useEffect, useState } from 'react'
 import { documentsApi } from '../../../../shared/api/documents.api'
 
-// Solo tiene sentido en modo creación — en edición el número de documento es
-// de solo lectura (ver DocumentFormRouter), así que `enabled` se pasa en false.
+// Se usa tanto al crear como al editar (el número de documento se puede
+// corregir después del alta — ver DocumentFormRouter). `excludeId` es el id
+// del propio documento cuando se edita, para que su número sin cambios no
+// se marque como "ya existe" contra sí mismo.
 //
-// El duplicado real (ver documents.service.ts::create) es la combinación
-// documentType + insuranceCompany + documentNumber, no el número solo — dos
-// compañías (o dos tipos de documento) pueden compartir numeración. Por eso
-// este hook necesita documentType/insuranceCompany además del número: de lo
-// contrario mostraría una advertencia de duplicado en casos que el backend
-// permite sin problema.
+// El duplicado real (ver documents.service.ts::create/update) es la
+// combinación documentType + insuranceCompany + documentNumber, no el número
+// solo — dos compañías (o dos tipos de documento) pueden compartir
+// numeración. Por eso este hook necesita documentType/insuranceCompany
+// además del número: de lo contrario mostraría una advertencia de duplicado
+// en casos que el backend permite sin problema.
 export function useDuplicateDocumentNumberCheck(
   documentNumber: string,
   enabled: boolean,
   documentType?: string,
   insuranceCompany?: string,
+  excludeId?: string,
 ) {
   const [dupWarning, setDupWarning] = useState(false)
   const [dupChecking, setDupChecking] = useState(false)
@@ -32,7 +35,7 @@ export function useDuplicateDocumentNumberCheck(
     setDupChecking(true)
     const timer = setTimeout(async () => {
       try {
-        const { exists } = await documentsApi.checkDocumentNumber(trimmed, documentType, insuranceCompany)
+        const { exists } = await documentsApi.checkDocumentNumber(trimmed, documentType, insuranceCompany, excludeId)
         setDupWarning(exists)
       } catch {
         setDupWarning(false)
@@ -41,7 +44,7 @@ export function useDuplicateDocumentNumberCheck(
       }
     }, 600)
     return () => clearTimeout(timer)
-  }, [documentNumber, enabled, documentType, insuranceCompany])
+  }, [documentNumber, enabled, documentType, insuranceCompany, excludeId])
 
   return { dupWarning, dupChecking }
 }

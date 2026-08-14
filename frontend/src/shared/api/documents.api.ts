@@ -38,7 +38,7 @@ interface BackendDocument {
   policyId: string | null; economicImpactType: string | null
   endorsementType: string | null; endorsementEffectiveDate: string | null
   createdAt: string; updatedAt: string
-  allocations?: { policyId: string }[]
+  allocations?: BackendAllocation[]
   _count?: { attachments: number }
 }
 
@@ -119,6 +119,7 @@ function mapDocument(b: BackendDocument): AccountingDocument {
     policyIds: [
       ...new Set([...(b.allocations?.map((a) => a.policyId) ?? []), ...(b.policyId ? [b.policyId] : [])]),
     ],
+    allocations: (b.allocations ?? []).map(mapAllocation),
     attachmentsCount: b._count?.attachments ?? 0,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
@@ -223,7 +224,7 @@ export const documentsApi = {
     return mapDocument(res.data.data)
   },
 
-  async update(id: string, input: Partial<Omit<DocumentCreateInput, 'documentNumber' | 'allocations' | 'installments'>>): Promise<AccountingDocument> {
+  async update(id: string, input: Partial<Omit<DocumentCreateInput, 'allocations' | 'installments'>>): Promise<AccountingDocument> {
     const res = await apiClient.put<{ data: BackendDocument }>(`/documents/${id}`, input)
     return mapDocument(res.data.data)
   },
@@ -261,9 +262,10 @@ export const documentsApi = {
     documentNumber: string,
     documentType?: string,
     insuranceCompany?: string,
+    excludeId?: string,
   ): Promise<{ exists: boolean }> {
     const res = await apiClient.get<{ data: { exists: boolean } }>('/documents/check-number', {
-      params: { documentNumber, documentType, insuranceCompany },
+      params: { documentNumber, documentType, insuranceCompany, excludeId },
     })
     return res.data.data
   },

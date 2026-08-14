@@ -3,8 +3,9 @@ import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { computePolicyStatus, buildPolicyStatusFilter, toDateStr } from '../../shared/utils/dates'
 import { computeDualAmounts } from '../../shared/utils/currency'
-import { detectFileType, formatFileSize, isAllowedMimetype, matchesDeclaredMimetype, sanitizeFileName } from '../../shared/utils/files'
-import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } from '../../config/cloudinary'
+import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
+import { deleteFromCloudinary } from '../../config/cloudinary'
+import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
 import type {
   CreatePolicyDTO,
   UpdatePolicyDTO,
@@ -465,25 +466,10 @@ export const policiesService = {
   ) {
     await assertCoverageBelongsToPolicy(policyId, coverageId)
 
-    if (!isAllowedMimetype(file.mimetype)) {
-      throw new AppError(415, 'Tipo de archivo no permitido. Formatos: PDF, imágenes, Excel, Word, video', 'UNSUPPORTED_MEDIA_TYPE')
-    }
+    const { fileUrl, cloudinaryPublicId } = await validateAndUploadAttachment(file, 'policies')
 
-    if (!matchesDeclaredMimetype(file.buffer, file.mimetype)) {
-      throw new AppError(415, 'El contenido del archivo no coincide con su tipo declarado', 'FILE_TYPE_MISMATCH')
-    }
-
-    let fileUrl = `local://${file.originalname}`
-    let cloudinaryPublicId: string | null = null
-
-    if (isCloudinaryConfigured()) {
-      const result = await uploadToCloudinary(file.buffer, 'policies', file.mimetype)
-      fileUrl = result.secure_url
-      cloudinaryPublicId = result.public_id
-    }
-
-    try {
-      return await prisma.policyAttachment.create({
+    return withAttachmentRollback(cloudinaryPublicId, () =>
+      prisma.policyAttachment.create({
         data: {
           policyAssetCoverageId: coverageId,
           name: sanitizeFileName(file.originalname),
@@ -495,11 +481,8 @@ export const policiesService = {
           isCirculationCard: meta.isCirculationCard ?? false,
           uploadedBy,
         },
-      })
-    } catch (err) {
-      if (cloudinaryPublicId) await deleteFromCloudinary(cloudinaryPublicId).catch(() => undefined)
-      throw err
-    }
+      }),
+    )
   },
 
   async deleteAttachment(policyId: string, coverageId: string, attachmentId: string) {

@@ -317,6 +317,29 @@ export async function printTableAsPDF(
   }
 }
 
+// ─── Month range helper ───────────────────────────────────────────────────────
+
+/** Generates every "YYYY-MM" month key between from and to, inclusive. */
+export function generateMonthRange(
+  from: string,
+  to: string,
+): { key: string; label: string; year: number; month: number }[] {
+  const [fy, fm] = from.split('-').map(Number)
+  const [ty, tm] = to.split('-').map(Number)
+  const months: { key: string; label: string; year: number; month: number }[] = []
+  let y = fy
+  let m = fm
+  while ((y < ty || (y === ty && m <= tm)) && months.length < 60) {
+    const d = new Date(y, m - 1, 1)
+    const key = `${y}-${String(m).padStart(2, '0')}`
+    const label = d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
+    months.push({ key, label, year: y, month: m - 1 })
+    m++
+    if (m > 12) { m = 1; y++ }
+  }
+  return months
+}
+
 // ─── ISO week helpers ─────────────────────────────────────────────────────────
 
 /** Returns ISO week key "YYYY-Www" for a YYYY-MM-DD date string. */

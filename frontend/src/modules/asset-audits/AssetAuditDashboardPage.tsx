@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -9,50 +9,24 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
-import { assetAuditQueries } from '../../shared/api/asset-audits.api'
+import { AuditorProgressPanel } from '../../shared/components/audit-dashboard/AuditorProgressPanel'
+import { assetAuditQueries, type AssetAuditDashboardGroup } from '../../shared/api/asset-audits.api'
 import { CATEGORY_LABEL, AUDITABLE_CATEGORY_GROUPS } from '../../shared/constants/asset-categories'
 import type { AssetCategory } from '../../shared/types'
 import { ROUTES } from '../../app/routes'
-import { LevelBar } from '../fire-extinguishers/audits/LevelBar'
+import { currentPeriod } from '../../shared/utils/period'
+import { classifyLevel } from '../../shared/utils/auditLevel'
+import { LevelBar } from '../../shared/components/audit-wizard/LevelBar'
 
 const CATEGORY_ICON = Object.fromEntries(
   AUDITABLE_CATEGORY_GROUPS.flatMap((g) => g.items).map((item) => [item.key, item.icon]),
 ) as Record<string, typeof Package>
 
-function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7)
-}
-
-// Mismos cortes que backend/.../fire-extinguisher-audit-dashboard.constants.ts (LEVEL_SCALE).
-function classifyLevel(level: number | null): string | null {
-  if (level == null) return null
-  if (level < 50) return 'Crítico'
-  if (level < 75) return 'Regular'
-  if (level < 90) return 'Bueno'
-  return 'Óptimo'
-}
-
 export default function AssetAuditDashboardPage() {
   const [searchParams] = useSearchParams()
   const [period, setPeriod] = useState(searchParams.get('period') || currentPeriod())
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
   const { data, isLoading } = useQuery(assetAuditQueries.auditDashboard(period))
   const { data: progress } = useQuery(assetAuditQueries.auditorProgress(period))
-
-  // Categorías cerradas por defecto — mismo criterio que el informe de Matafuegos.
-  useEffect(() => {
-    if (!data) return
-    setCollapsedCategories(new Set(data.groups.map((g) => g.category)))
-  }, [data])
-
-  function toggleCollapse(category: string) {
-    setCollapsedCategories((prev) => {
-      const next = new Set(prev)
-      if (next.has(category)) next.delete(category)
-      else next.add(category)
-      return next
-    })
-  }
 
   const pointsBelow50 = data ? data.controlPoints.filter((c) => c.level != null && c.level < 50).length : 0
 
@@ -123,70 +97,84 @@ export default function AssetAuditDashboardPage() {
           </SectionCard>
 
           {progress && progress.auditors.length > 0 && (
-            <SectionCard title="Progreso por auditor" subtitle="Matafuegos auditados este período dentro de las categorías asignadas a cada persona">
-              <div className="space-y-3">
-                {progress.auditors.map((a) => (
-                  <div key={a.userId} className="flex items-center gap-3">
-                    <LevelBar label={a.name} level={a.completionRate} />
-                    <span className="flex-shrink-0 text-xs text-slate-400 tabular-nums w-24 text-right">
-                      {a.assigned > 0 ? `${a.completed} / ${a.assigned}` : 'Sin asignar'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
+            <AuditorProgressPanel
+              auditors={progress.auditors}
+              subtitle="Matafuegos auditados este período dentro de las categorías asignadas a cada persona"
+            />
           )}
 
-          <div className="space-y-4">
-            {data.groups.map((group) => {
-              const collapsed = collapsedCategories.has(group.category)
-              const Icon = CATEGORY_ICON[group.category] ?? Package
-              return (
-                <SectionCard key={group.category} noPadding>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleCollapse(group.category)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapse(group.category) } }}
-                    className="px-5 py-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50/60 transition-colors flex items-center justify-between gap-3 flex-wrap"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Icon size={15} className="text-slate-400 flex-shrink-0" />
-                      <span className="text-sm font-semibold text-slate-800 truncate">
-                        {CATEGORY_LABEL[group.category as AssetCategory] ?? group.category}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
-                        {group.total} matafuego{group.total !== 1 ? 's' : ''} · {group.audited} auditado{group.audited !== 1 ? 's' : ''}
-                      </span>
-                      <span className={clsx('text-sm font-bold tabular-nums', group.level != null && group.level < 50 ? 'text-red-600' : 'text-slate-900')}>
-                        {group.level != null ? `${group.level.toFixed(1)}%` : '—'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); toggleCollapse(group.category) }}
-                        className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
-                        title={collapsed ? 'Mostrar detalle' : 'Ocultar detalle'}
-                      >
-                        {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {!collapsed && (
-                    <div className="px-5 py-4 space-y-2">
-                      {group.controlPoints.map((cp) => (
-                        <LevelBar key={cp.key} label={cp.label} level={cp.level} compact />
-                      ))}
-                    </div>
-                  )}
-                </SectionCard>
-              )
-            })}
-          </div>
+          <CategoryBreakdown key={period} groups={data.groups} />
         </div>
       )}
     </PageContent>
+  )
+}
+
+// Recibe key={period} del padre — se remonta entero al cambiar de período,
+// así que collapsedCategories puede inicializarse directo desde los datos
+// sin useEffect (categorías cerradas por defecto en cada período nuevo).
+function CategoryBreakdown({ groups }: { groups: AssetAuditDashboardGroup[] }) {
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    () => new Set(groups.map((g) => g.category)),
+  )
+
+  function toggleCollapse(category: string) {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(category)) next.delete(category)
+      else next.add(category)
+      return next
+    })
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => {
+        const collapsed = collapsedCategories.has(group.category)
+        const Icon = CATEGORY_ICON[group.category] ?? Package
+        return (
+          <SectionCard key={group.category} noPadding>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => toggleCollapse(group.category)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapse(group.category) } }}
+              className="px-5 py-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50/60 transition-colors flex items-center justify-between gap-3 flex-wrap"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Icon size={15} className="text-slate-400 flex-shrink-0" />
+                <span className="text-sm font-semibold text-slate-800 truncate">
+                  {CATEGORY_LABEL[group.category as AssetCategory] ?? group.category}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+                  {group.total} matafuego{group.total !== 1 ? 's' : ''} · {group.audited} auditado{group.audited !== 1 ? 's' : ''}
+                </span>
+                <span className={clsx('text-sm font-bold tabular-nums', group.level != null && group.level < 50 ? 'text-red-600' : 'text-slate-900')}>
+                  {group.level != null ? `${group.level.toFixed(1)}%` : '—'}
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleCollapse(group.category) }}
+                  className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                  title={collapsed ? 'Mostrar detalle' : 'Ocultar detalle'}
+                >
+                  {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {!collapsed && (
+              <div className="px-5 py-4 space-y-2">
+                {group.controlPoints.map((cp) => (
+                  <LevelBar key={cp.key} label={cp.label} level={cp.level} compact />
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        )
+      })}
+    </div>
   )
 }

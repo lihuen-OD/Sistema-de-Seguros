@@ -185,20 +185,42 @@ model AssetAllocation {
 }
 
 model AssetValueHistory {
-  id       String   @id @default(uuid())
+  id       String                @id @default(uuid())
   assetId  String
   value    Float
   // Cierre en ambas monedas de `value` al momento de este registro histórico
   // (mismo criterio que Asset.currentValueArs/Usd).
   valueArs Float?
   valueUsd Float?
-  date     DateTime @db.Date
-  type     String   @default("real")
+  date     DateTime              @db.Date
+  type     AssetValueHistoryType @default(real)
   note     String?
-  asset    Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  asset    Asset                 @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@index([assetId])
   @@map("asset_value_history")
+}
+
+// Piloto de migración String→enum (ver CLAUDE.md §6) — valores en minúscula
+// a propósito, igual que el String que reemplaza, para que ningún literal ya
+// existente en el código de la aplicación (Zod, comparaciones, frontend)
+// tenga que cambiar.
+enum AssetValueHistoryType {
+  real
+  nuevo
+}
+
+// Compartido por los 7 modelos de adjuntos (AssetAttachment, InsuranceAuditAttachment,
+// PolicyAttachment, DocumentAttachment, FireExtinguisherAttachment,
+// ClaimExpenseAttachment, ClaimAttachment) — todos pasan por el mismo
+// detectFileType() en shared/utils/files.ts, que nunca devuelve otro valor.
+enum FileType {
+  pdf
+  image
+  excel
+  word
+  video
+  other
 }
 
 model AssetAttachment {
@@ -206,7 +228,7 @@ model AssetAttachment {
   assetId            String
   name               String
   description        String?
-  fileType           String
+  fileType           FileType
   fileSize           String
   fileUrl            String
   cloudinaryPublicId String?
@@ -324,7 +346,7 @@ model InsuranceAuditAttachment {
   auditId            String
   name               String
   description        String?
-  fileType           String
+  fileType           FileType
   fileSize           String
   fileUrl            String
   cloudinaryPublicId String?
@@ -467,7 +489,7 @@ model PolicyAttachment {
   policyAssetCoverageId String
   name                  String
   description           String?
-  fileType              String
+  fileType              FileType
   fileSize              String
   fileUrl               String
   cloudinaryPublicId    String?
@@ -554,6 +576,7 @@ model DocumentAuditLog {
   document             AccountingDocument @relation(fields: [accountingDocumentId], references: [id], onDelete: Cascade)
 
   @@index([accountingDocumentId])
+  @@index([createdAt])
   @@map("document_audit_logs")
 }
 
@@ -625,7 +648,7 @@ model DocumentAttachment {
   accountingDocumentId String
   name                 String
   description          String?
-  fileType             String
+  fileType             FileType
   fileSize             String
   fileUrl              String
   cloudinaryPublicId   String?
@@ -692,6 +715,7 @@ model FireExtinguisherHistory {
   extinguisher           FireExtinguisher @relation(fields: [fireExtinguisherId], references: [id], onDelete: Cascade)
 
   @@index([fireExtinguisherId])
+  @@index([createdAt])
   @@map("fire_extinguisher_history")
 }
 
@@ -791,7 +815,7 @@ model FireExtinguisherAttachment {
   auditId            String?
   name               String
   description        String?
-  fileType           String
+  fileType           FileType
   fileSize           String
   fileUrl            String
   cloudinaryPublicId String?
@@ -883,7 +907,7 @@ model ClaimExpenseAttachment {
   expenseId          String
   name               String
   description        String?
-  fileType           String
+  fileType           FileType
   fileSize           String
   fileUrl            String
   cloudinaryPublicId String?
@@ -900,7 +924,7 @@ model ClaimAttachment {
   claimId            String
   name               String
   description        String?
-  fileType           String
+  fileType           FileType
   fileSize           String
   fileUrl            String
   cloudinaryPublicId String?
@@ -1005,6 +1029,7 @@ model EmailLog {
 
   @@index([entityType, entityId])
   @@index([type, status])
+  @@index([createdAt])
   @@map("email_logs")
 }
 
@@ -1017,10 +1042,14 @@ model User {
   name               String
   email              String    @unique
   passwordHash       String
-  role               String // ADMIN | USER
+  role               Role
   accessProfileId    String?
   isActive           Boolean   @default(true)
   mustChangePassword Boolean   @default(false)
+  // Se incrementa al cambiar/resetear la contraseña — el JWT lleva el valor
+  // vigente al momento de firmarse, y authMiddleware lo compara contra este
+  // campo para invalidar cualquier token emitido antes del cambio.
+  tokenVersion       Int       @default(0)
   lastLoginAt        DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -1032,6 +1061,11 @@ model User {
   @@index([role])
   @@index([accessProfileId])
   @@map("users")
+}
+
+enum Role {
+  ADMIN
+  USER
 }
 
 // Alcance de auditoría — qué establecimientos (matafuegos) o categorías de
@@ -1105,6 +1139,7 @@ model UserAuditLog {
   createdAt    DateTime @default(now())
 
   @@index([targetUserId])
+  @@index([createdAt])
   @@map("user_audit_logs")
 }
 

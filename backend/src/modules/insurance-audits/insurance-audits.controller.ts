@@ -140,9 +140,9 @@ export const insuranceAuditsController = {
 
   addComment: asyncHandler(async (req: Request, res: Response) => {
     if (!req.user) throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
-    const { assetId, body } = req.body as AddCommentDTO
+    const { targetId, body } = req.body as AddCommentDTO
     const scope = await resolveAuditScope(req.user, 'INSURANCE_AUDIT', [...COVERAGE_MODULES])
-    const comment = await insuranceAuditsService.addComment(assetId, body, req.user.email, scope)
+    const comment = await insuranceAuditsService.addComment(targetId, body, req.user.email, scope)
     res.status(201).json({ data: comment })
   }),
 

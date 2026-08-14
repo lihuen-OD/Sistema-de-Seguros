@@ -7,7 +7,6 @@ export const dashboardService = {
 
   async getKpis() {
     const today = todayDate()
-    const in30Days = dateOffset(30)
 
     const [
       totalAssets,

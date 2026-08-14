@@ -1728,8 +1728,8 @@ npm run preview     # sirve el build de producción localmente
 ```
 
 No hay script `test` en el frontend todavía (no hay tests automatizados de frontend — ver
-`docs/TESTING_QA_STANDARDS.md` para el checklist manual mientras tanto). Tampoco hay script
-`lint` en ninguno de los dos proyectos (sin ESLint/Prettier configurado todavía).
+`docs/TESTING_QA_STANDARDS.md` para el checklist manual mientras tanto). Ambos proyectos sí
+tienen `npm run lint` (`eslint src`) y `npm run format`/`format:check` (Prettier).
 
 ### Migrations
 

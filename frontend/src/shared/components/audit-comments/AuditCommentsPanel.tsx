@@ -57,7 +57,7 @@ function sourceBadge(comment: AuditCommentItem) {
 // al aprobar/rechazar/pedir corrección) y también admite un comentario suelto
 // sin auditoría de por medio, vía "Agregar comentario".
 export function AuditCommentsPanel({ comments, targets, currentUserEmail, onAddComment, onMarkSeen }: AuditCommentsPanelProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
   const [targetId, setTargetId] = useState('')
   const [body, setBody] = useState('')

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Save } from 'lucide-react'
@@ -17,6 +17,7 @@ import {
 import { producersApi, producerQueries, producerKeys } from '../../shared/api/producers.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { ROUTES } from '../../app/routes'
+import type { Producer } from '../../shared/types'
 
 interface FormErrors {
   name?: string
@@ -26,30 +27,8 @@ interface FormErrors {
 
 export default function ProducerEditPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
 
   const { data: original, isLoading } = useQuery(producerQueries.detail(id!))
-
-  const [name, setName] = useState('')
-  const [registrationNumber, setRegistrationNumber] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
-  const [address, setAddress] = useState('')
-  const [status, setStatus] = useState<'activo' | 'inactivo'>('activo')
-  const [errors, setErrors] = useState<FormErrors>({})
-  const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    if (original) {
-      setName(original.name)
-      setRegistrationNumber(original.registrationNumber)
-      setPhone(original.phone ?? '')
-      setEmail(original.email ?? '')
-      setAddress(original.address ?? '')
-      setStatus(original.status ?? 'activo')
-    }
-  }, [original])
 
   if (isLoading) {
     return (
@@ -70,6 +49,37 @@ export default function ProducerEditPage() {
     )
   }
 
+  return (
+    <PageContent>
+      <PageHeader
+        title={`Editar: ${original.name}`}
+        subtitle={original.registrationNumber ? `Matrícula ${original.registrationNumber}` : 'Sin matrícula registrada'}
+        category="Productores"
+        backTo={ROUTES.PRODUCERS_DETAIL(original.id)}
+        backLabel="Volver al Productor"
+        badge={<StatusPill status={original.status} />}
+      />
+
+      <ProducerForm key={id} original={original} />
+    </PageContent>
+  )
+}
+
+// Recibe key={id} del padre — se remonta entero al cambiar de productor, así
+// que los campos pueden inicializarse directo desde `original` sin useEffect.
+function ProducerForm({ original }: { original: Producer }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const [name, setName] = useState(original.name)
+  const [registrationNumber, setRegistrationNumber] = useState(original.registrationNumber)
+  const [phone, setPhone] = useState(original.phone ?? '')
+  const [email, setEmail] = useState(original.email ?? '')
+  const [address, setAddress] = useState(original.address ?? '')
+  const [status, setStatus] = useState<'activo' | 'inactivo'>(original.status ?? 'activo')
+  const [errors, setErrors] = useState<FormErrors>({})
+  const [submitting, setSubmitting] = useState(false)
+
   function validate(): boolean {
     const e: FormErrors = {}
     if (!name.trim()) e.name = 'El nombre es obligatorio'
@@ -86,7 +96,7 @@ export default function ProducerEditPage() {
     if (!validate()) return
     setSubmitting(true)
     try {
-      await producersApi.update(original!.id, {
+      await producersApi.update(original.id, {
         name: name.trim(),
         matricula: registrationNumber.trim() || undefined,
         phone: phone.trim() || undefined,
@@ -96,23 +106,13 @@ export default function ProducerEditPage() {
       })
       toast.success('Productor actualizado correctamente')
       await queryClient.invalidateQueries({ queryKey: producerKeys.all })
-      navigate(ROUTES.PRODUCERS_DETAIL(original!.id))
+      navigate(ROUTES.PRODUCERS_DETAIL(original.id))
     } catch {
       setSubmitting(false)
     }
   }
 
   return (
-    <PageContent>
-      <PageHeader
-        title={`Editar: ${original.name}`}
-        subtitle={original.registrationNumber ? `Matrícula ${original.registrationNumber}` : 'Sin matrícula registrada'}
-        category="Productores"
-        backTo={ROUTES.PRODUCERS_DETAIL(original.id)}
-        backLabel="Volver al Productor"
-        badge={<StatusPill status={original.status} />}
-      />
-
       <form onSubmit={handleSubmit} noValidate>
         <SectionCard
           title="Datos del Productor"
@@ -198,6 +198,5 @@ export default function ProducerEditPage() {
           </button>
         </div>
       </form>
-    </PageContent>
   )
 }

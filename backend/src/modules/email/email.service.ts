@@ -146,20 +146,4 @@ export const emailService = {
       actor: input.actor,
     })
   },
-
-  // ── Roadmap (fuera de alcance en esta fase) ──────────────────────────────────
-  // sendExpirationSummaryEmail: migrar notifications.service.ts para que arme
-  //   su HTML con email.templates.ts y pase por acá (hoy sigue usando Nodemailer
-  //   directo, intacto a propósito).
-  // sendWorkflowNotification: notificaciones internas a responsables por rol
-  //   (auditorías pendientes, documentos observados, pólizas por aprobar).
-  // Ninguno de los dos tiene todavía consumidores — se declaran acá para que
-  // la forma del servicio no cambie cuando se implementen.
-  async sendExpirationSummaryEmail(): Promise<never> {
-    throw new AppError(501, 'No implementado en esta fase', 'NOT_IMPLEMENTED')
-  },
-
-  async sendWorkflowNotification(): Promise<never> {
-    throw new AppError(501, 'No implementado en esta fase', 'NOT_IMPLEMENTED')
-  },
 }

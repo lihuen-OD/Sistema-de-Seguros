@@ -15,6 +15,7 @@ import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
+import { SummaryRow } from '../../shared/components/cards/SummaryRow'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { formatCurrencyFull, formatCurrencyCompact, formatPercent, formatDate } from '../../shared/utils/format'
@@ -137,10 +138,10 @@ export default function AssetDetailPage() {
 
   // Estas pestañas muestran datos de OTROS módulos — un usuario con acceso
   // solo a "Activos" no debería verlas ni disparar el fetch (evita el 403 y
-  // el toast de error que eso generaba). Doc. Contables además depende de
-  // Pólizas porque el vínculo documento↔activo pasa por policyIds (los
-  // documentos no tienen assetId propio) — sin Pólizas no hay forma de saber
-  // qué documentos son de este activo, aunque el usuario sí tenga Documentos.
+  // el toast de error que eso generaba). Doc. Contables se mantiene gateado
+  // también por Pólizas para no ampliar el alcance de permisos existente,
+  // aunque el filtro de documentos en sí matchea directo por
+  // allocation.assetId (ver DocumentPolicyAllocation), no por policyIds.
   const canPolicies = hasModule(user, 'policies')
   const canDocuments = hasModule(user, 'documents') && canPolicies
   const canFinancial = hasModule(user, 'financial_analysis')
@@ -297,11 +298,19 @@ export default function AssetDetailPage() {
   const claims = allClaims
   const claimsCount = claims.length
 
-  // Documents linked to this asset via its policies
-  const assetPolicyIds = new Set(policies.map((p) => p.id))
+  // Documentos asignados específicamente a este activo (no todos los de sus
+  // pólizas) — una póliza puede cubrir varios activos, y cada documento se
+  // reparte entre ellos vía allocation.assetId.
+  const assetId = asset.id
   const documents = allDocuments.filter((doc) =>
-    doc.policyIds.some((pid) => assetPolicyIds.has(pid)),
+    doc.allocations?.some((a) => a.assetId === assetId),
   )
+
+  function assetAllocatedAmount(doc: AccountingDocument): number {
+    return (doc.allocations ?? [])
+      .filter((a) => a.assetId === assetId)
+      .reduce((sum, a) => sum + a.allocatedAmount, 0)
+  }
 
   // ── Photo handlers (Cloudinary via AssetAttachment) ──────────────────────────
 
@@ -489,6 +498,16 @@ export default function AssetDetailPage() {
     { key: 'issueDate', label: 'Fecha', sortable: true, render: (v) => <span className="text-xs">{formatDate(v as string)}</span> },
     { key: 'insuranceCompany', label: 'Aseguradora', sortable: true, render: (v) => <span className="text-sm">{(v as string) || '—'}</span> },
     { key: 'totalAmount', label: 'Total', sortable: true, render: (v, row) => <span className="font-semibold tabular-nums">{formatCurrencyCompact(v as number, row.currency)}</span>, headerClassName: 'text-right', className: 'text-right' },
+    {
+      id: 'assetAllocatedAmount',
+      key: 'totalAmount',
+      label: 'Asignado a este activo',
+      sortable: true,
+      sortValue: (row) => assetAllocatedAmount(row),
+      render: (_, row) => <span className="font-semibold tabular-nums">{formatCurrencyCompact(assetAllocatedAmount(row), row.currency)}</span>,
+      headerClassName: 'text-right',
+      className: 'text-right',
+    },
     {
       key: 'paymentStatus',
       label: 'Estado',
@@ -1088,11 +1107,3 @@ function InfoRow({ label, value, icon: Icon, mono }: {
   )
 }
 
-function SummaryRow({ label, value, color = 'text-slate-800' }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-sm text-slate-500">{label}</span>
-      <span className={`text-sm font-semibold ${color}`}>{value}</span>
-    </div>
-  )
-}

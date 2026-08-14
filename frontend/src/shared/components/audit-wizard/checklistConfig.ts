@@ -1,5 +1,5 @@
-import type { ChoiceOption } from '../../../shared/components/forms/ChoiceGroup'
-import type { AuditChecklistInput } from '../../../shared/api/fire-extinguisher-audits.api'
+import type { ChoiceOption } from '../../components/forms/ChoiceGroup'
+import type { AuditChecklistInput } from '../../api/fire-extinguisher-audits.api'
 
 // ── Opciones (valores reales del contrato — ver fire-extinguisher-audits.constants.ts en backend) ──
 
