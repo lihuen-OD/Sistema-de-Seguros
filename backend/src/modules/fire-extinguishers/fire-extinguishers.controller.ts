@@ -50,6 +50,11 @@ export const fireExtinguishersController = {
     res.json({ data: { message: 'Matafuego desactivado correctamente' } })
   }),
 
+  reactivate: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const fe = await fireExtinguishersService.reactivate(req.params.id, req.user?.email ?? 'sistema')
+    res.json({ data: fe })
+  }),
+
   recharge: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     const fe = await fireExtinguishersService.recharge(req.params.id, req.body as RechargeDTO)
     res.json({ data: fe })

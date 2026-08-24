@@ -29,7 +29,7 @@ interface Paginated<T> { data: T[]; pagination: { total: number; page: number; l
 
 export const fireExtinguisherKeys = {
   all: ['fire-extinguishers'] as const,
-  list: (filters?: { assetId?: string }) =>
+  list: (filters?: { assetId?: string; isActive?: boolean | null }) =>
     filters ? ([...fireExtinguisherKeys.all, filters] as const) : fireExtinguisherKeys.all,
   detail: (id: string) => [...fireExtinguisherKeys.all, id] as const,
   history: (id: string) => [...fireExtinguisherKeys.all, id, 'history'] as const,
@@ -69,6 +69,7 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
     hydraulicTestStatus: (b.hydraulicTestStatus as FireExtStatus) ?? null,
     manufacturingExpirationYear: b.manufacturingExpirationYear ?? null,
     observations: b.observations,
+    isActive: b.isActive,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
     asset: b.asset ?? null,
@@ -131,6 +132,11 @@ export const fireExtinguishersApi = {
     await apiClient.delete(`/fire-extinguishers/${id}`)
   },
 
+  async reactivate(id: string): Promise<FireExtinguisher> {
+    const res = await apiClient.post<{ data: BackendExtinguisher }>(`/fire-extinguishers/${id}/reactivate`)
+    return mapExtinguisher(res.data.data)
+  },
+
   async getDashboardSummary(): Promise<FireExtinguisherDashboardSummary> {
     const res = await apiClient.get<{ data: FireExtinguisherDashboardSummary }>('/fire-extinguishers/dashboard/summary')
     return res.data.data
@@ -145,10 +151,15 @@ export const fireExtinguisherQueries = {
   // filtro un matafuego "eliminado" seguía apareciendo en el listado, el
   // dashboard y la pestaña de matafuegos del activo, como si el borrado no
   // hubiera hecho nada.
-  list: (filters?: { assetId?: string; isActive?: boolean }) =>
+  list: (filters?: { assetId?: string; isActive?: boolean | null }) =>
     queryOptions({
       queryKey: fireExtinguisherKeys.list(filters),
-      queryFn: () => fireExtinguishersApi.findAll({ isActive: true, ...filters }),
+      queryFn: () => {
+        const { isActive, ...rest } = filters ?? {}
+        return fireExtinguishersApi.findAll(
+          isActive === null ? rest : { ...rest, isActive: isActive ?? true },
+        )
+      },
       staleTime: 60 * 1000,
     }),
   detail: (id: string) =>
