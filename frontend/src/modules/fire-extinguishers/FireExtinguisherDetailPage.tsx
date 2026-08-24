@@ -17,8 +17,10 @@ import {
   Trash2,
   ClipboardCheck,
   Droplet,
+  RotateCcw,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
@@ -40,6 +42,7 @@ import { RechargeModal } from './RechargeModal'
 import type { FireExtinguisherHistory, TableColumn } from '../../shared/types'
 import { useCurrentUser } from '../../app/auth/AuthContext'
 import { hasModule } from '../../app/auth/roleScope'
+import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 
 const EVENT_ICON_CONFIG: Record<string, { bg: string; text: string; Icon: typeof RefreshCw }> = {
   Recarga: { bg: 'bg-emerald-100', text: 'text-emerald-600', Icon: RefreshCw },
@@ -47,6 +50,7 @@ const EVENT_ICON_CONFIG: Record<string, { bg: string; text: string; Icon: typeof
   Alta: { bg: 'bg-brand-100', text: 'text-brand-600', Icon: Plus },
   Actualización: { bg: 'bg-amber-100', text: 'text-amber-600', Icon: Pencil },
   Baja: { bg: 'bg-slate-200', text: 'text-slate-600', Icon: Trash2 },
+  Reactivación: { bg: 'bg-emerald-100', text: 'text-emerald-600', Icon: RotateCcw },
   Auditoría: { bg: 'bg-indigo-100', text: 'text-indigo-600', Icon: ClipboardCheck },
 }
 
@@ -184,6 +188,8 @@ export default function FireExtinguisherDetailPage() {
   const queryClient = useQueryClient()
   const [showRechargeModal, setShowRechargeModal] = useState(false)
   const [activeTab, setActiveTab] = useState('resumen')
+  const [activityAction, setActivityAction] = useState<'deactivate' | 'reactivate' | null>(null)
+  const [isChangingActivity, setIsChangingActivity] = useState(false)
 
   const { user } = useCurrentUser()
   // Mismos módulos que habilitan la pestaña/página de Auditorías de
@@ -194,6 +200,7 @@ export default function FireExtinguisherDetailPage() {
     (user?.modules.includes('fire_extinguisher_audit_coverage') ?? false)
   // El activo asociado es de otro módulo — sin él, ni se pide ni se muestra.
   const canViewAsset = hasModule(user, 'assets')
+  const canManage = hasModule(user, 'fire_extinguishers')
 
   const { data: fe, isLoading } = useQuery(fireExtinguisherQueries.detail(id!))
 
@@ -201,7 +208,7 @@ export default function FireExtinguisherDetailPage() {
 
   const { data: audits = [], isLoading: auditsLoading } = useQuery({
     ...fireExtinguisherAuditQueries.list({ fireExtinguisherId: id! }),
-    enabled: canViewAudits && !!id,
+    enabled: canViewAudits && fe?.isActive === true && !!id,
   })
 
   const { data: asset } = useQuery({
@@ -214,6 +221,24 @@ export default function FireExtinguisherDetailPage() {
     await fireExtinguishersApi.recharge(fe.id, data)
     setShowRechargeModal(false)
     queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
+  }
+
+  async function handleActivityChange() {
+    if (!fe || !activityAction) return
+    setIsChangingActivity(true)
+    try {
+      if (activityAction === 'deactivate') {
+        await fireExtinguishersApi.softDelete(fe.id)
+        toast.success('Matafuego dado de baja correctamente')
+      } else {
+        await fireExtinguishersApi.reactivate(fe.id)
+        toast.success('Matafuego reactivado correctamente')
+      }
+      setActivityAction(null)
+      await queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
+    } finally {
+      setIsChangingActivity(false)
+    }
   }
 
   if (isLoading) {
@@ -286,16 +311,18 @@ export default function FireExtinguisherDetailPage() {
         category="Matafuego"
         backTo={ROUTES.FIRE_EXTINGUISHERS}
         backLabel="Volver a matafuegos"
-        badge={<StatusPill status={fe.status} />}
+        badge={<StatusPill status={fe.isActive ? fe.status : 'de_baja'} />}
         actions={
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowRechargeModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <RefreshCw size={15} />
-              Registrar Recarga
-            </button>
+            {fe.isActive && canManage && (
+              <button
+                onClick={() => setShowRechargeModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <RefreshCw size={15} />
+                Registrar Recarga
+              </button>
+            )}
             <button
               onClick={() => navigate(`/fire-extinguishers/${fe.id}/ficha`)}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
@@ -303,19 +330,37 @@ export default function FireExtinguisherDetailPage() {
               <FileDown size={15} />
               Ficha PDF
             </button>
-            <button
-              onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_EDIT(fe.id))}
-              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
-            >
-              <Pencil size={15} />
-              Editar
-            </button>
+            {fe.isActive && canManage && (
+              <button
+                onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_EDIT(fe.id))}
+                className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+              >
+                <Pencil size={15} />
+                Editar
+              </button>
+            )}
+            {canManage && (
+              <button
+                onClick={() => setActivityAction(fe.isActive ? 'deactivate' : 'reactivate')}
+                className={`flex items-center gap-2 px-4 py-2 border text-sm font-medium rounded-lg transition-colors ${fe.isActive ? 'border-red-200 text-red-700 hover:bg-red-50' : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'}`}
+              >
+                {fe.isActive ? <Trash2 size={15} /> : <RotateCcw size={15} />}
+                {fe.isActive ? 'Dar de baja' : 'Reactivar'}
+              </button>
+            )}
           </div>
         }
       />
 
+      {!fe.isActive && (
+        <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700">
+          <Info size={16} className="mt-0.5 flex-shrink-0" />
+          <span>Este matafuego está dado de baja. Conserva su información e historial, pero no participa en recargas, indicadores ni auditorías hasta que sea reactivado.</span>
+        </div>
+      )}
+
       {/* Alert banner for expired or expiring soon (siempre visible, independiente de la pestaña activa) */}
-      {(isExpired || isSoon) && (
+      {fe.isActive && (isExpired || isSoon) && (
         <div
           className={`mb-5 flex items-start gap-3 px-4 py-3 rounded-xl text-sm border ${
             isExpired
@@ -333,7 +378,7 @@ export default function FireExtinguisherDetailPage() {
       )}
 
       {/* Info banner when there's no expirationDate yet — registered on purpose without it, siempre visible */}
-      {!fe.expirationDate && (
+      {fe.isActive && !fe.expirationDate && (
         <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600">
           <Calendar size={16} className="mt-0.5 flex-shrink-0" />
           <span>
@@ -345,7 +390,7 @@ export default function FireExtinguisherDetailPage() {
       )}
 
       {/* Alert banner for manufacturing life (independent of charge status), siempre visible */}
-      {fe.manufacturingLifeStatus && fe.manufacturingLifeStatus !== 'vigente' && (
+      {fe.isActive && fe.manufacturingLifeStatus && fe.manufacturingLifeStatus !== 'vigente' && (
         <div
           className={`mb-5 flex items-start gap-3 px-4 py-3 rounded-xl text-sm border ${
             fe.manufacturingLifeStatus === 'vencido'
@@ -363,7 +408,7 @@ export default function FireExtinguisherDetailPage() {
       )}
 
       {/* Alert banner for hydraulic test (independent of charge/life status), siempre visible */}
-      {fe.hydraulicTestStatus && fe.hydraulicTestStatus !== 'vigente' && (
+      {fe.isActive && fe.hydraulicTestStatus && fe.hydraulicTestStatus !== 'vigente' && (
         <div
           className={`mb-5 flex items-start gap-3 px-4 py-3 rounded-xl text-sm border ${
             fe.hydraulicTestStatus === 'vencido'
@@ -381,7 +426,7 @@ export default function FireExtinguisherDetailPage() {
       )}
 
       {/* Recharge modal */}
-      {showRechargeModal && (
+      {fe.isActive && showRechargeModal && (
         <RechargeModal
           extinguishers={[fe]}
           onConfirm={handleRecharge}
@@ -391,7 +436,7 @@ export default function FireExtinguisherDetailPage() {
 
       <SectionCard noPadding className="mb-5">
         <Tabs
-          tabs={DETAIL_TABS.filter((t) => t.id !== 'auditorias' || canViewAudits).map((t) => {
+          tabs={DETAIL_TABS.filter((t) => t.id !== 'auditorias' || (canViewAudits && fe.isActive)).map((t) => {
             if (t.id === 'historial') return { ...t, count: history.length }
             if (t.id === 'auditorias') return { ...t, count: audits.length }
             return t
@@ -669,6 +714,19 @@ export default function FireExtinguisherDetailPage() {
           </div>
         )}
       </SectionCard>
+
+      <ConfirmDialog
+        open={activityAction !== null}
+        title={activityAction === 'deactivate' ? 'Dar de baja matafuego' : 'Reactivar matafuego'}
+        description={activityAction === 'deactivate'
+          ? `¿Dar de baja el matafuego "${fe.code}"? Conservará sus datos e historial y podrás reactivarlo más adelante.`
+          : `¿Reactivar el matafuego "${fe.code}"? Volverá a incluirse en la operación, los indicadores y las auditorías.`}
+        confirmLabel={activityAction === 'deactivate' ? 'Dar de baja' : 'Reactivar'}
+        danger={activityAction === 'deactivate'}
+        loading={isChangingActivity}
+        onConfirm={handleActivityChange}
+        onCancel={() => setActivityAction(null)}
+      />
     </PageContent>
   )
 }

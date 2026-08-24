@@ -495,6 +495,18 @@ describe('Fire Extinguishers API', () => {
       expect(res.status).toBe(404)
     })
 
+    it('returns 409 and does not edit an inactive fire extinguisher', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue({ ...fakeFireExt, isActive: false })
+
+      const res = await request(app)
+        .put(`/api/v1/fire-extinguishers/${FE_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ location: 'x' })
+
+      expect(res.status).toBe(409)
+      expect(db.fireExtinguisher.update).not.toHaveBeenCalled()
+    })
+
     it('returns 403 for a USER without the fire_extinguishers module', async () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
 
@@ -524,11 +536,59 @@ describe('Fire Extinguishers API', () => {
       expect(db.fireExtinguisherHistory.create.mock.calls[0][0].data.action).toBe('Baja')
     })
 
+    it('returns 409 when the fire extinguisher is already inactive', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue({ ...fakeFireExt, isActive: false })
+
+      const res = await request(app)
+        .delete(`/api/v1/fire-extinguishers/${FE_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(409)
+      expect(db.fireExtinguisher.update).not.toHaveBeenCalled()
+      expect(db.fireExtinguisherHistory.create).not.toHaveBeenCalled()
+    })
+
     it('returns 403 for a USER without the fire_extinguishers module', async () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
 
       const res = await request(app)
         .delete(`/api/v1/fire-extinguishers/${FE_ID}`)
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(403)
+    })
+  })
+
+  describe('POST /api/v1/fire-extinguishers/:id/reactivate', () => {
+    it('reactivates an inactive fire extinguisher and writes history', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue({ ...fakeFireExt, isActive: false })
+      db.fireExtinguisher.update.mockResolvedValue(fakeFireExt)
+
+      const res = await request(app)
+        .post(`/api/v1/fire-extinguishers/${FE_ID}/reactivate`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.isActive).toBe(true)
+      expect(db.fireExtinguisherHistory.create.mock.calls[0][0].data.action).toBe('Reactivación')
+    })
+
+    it('returns 409 when the fire extinguisher is already active', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue(fakeFireExt)
+
+      const res = await request(app)
+        .post(`/api/v1/fire-extinguishers/${FE_ID}/reactivate`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(409)
+      expect(db.fireExtinguisher.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 403 without the fire_extinguishers module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+      const res = await request(app)
+        .post(`/api/v1/fire-extinguishers/${FE_ID}/reactivate`)
         .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(403)
@@ -557,6 +617,19 @@ describe('Fire Extinguishers API', () => {
       expect(historyArgs.data.action).toBe('Recarga')
       expect(historyArgs.data.performedBy).toBe('Tecnico SRL')
       expect(historyArgs.data.previousExpirationDate).toEqual(fakeFireExt.expirationDate)
+    })
+
+    it('returns 409 and does not recharge an inactive fire extinguisher', async () => {
+      db.fireExtinguisher.findUnique.mockResolvedValue({ ...fakeFireExt, isActive: false })
+
+      const res = await request(app)
+        .post(`/api/v1/fire-extinguishers/${FE_ID}/recharge`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ chargeDate: '2026-07-01', expirationDate: '2027-07-01' })
+
+      expect(res.status).toBe(409)
+      expect(db.fireExtinguisher.update).not.toHaveBeenCalled()
+      expect(db.fireExtinguisherHistory.create).not.toHaveBeenCalled()
     })
   })
 })

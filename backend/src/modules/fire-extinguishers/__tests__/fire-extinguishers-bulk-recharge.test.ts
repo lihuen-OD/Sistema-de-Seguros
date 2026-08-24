@@ -29,7 +29,7 @@ const ID_3 = '60000000-0000-0000-0000-000000000003'
 const MISSING_ID = '60000000-0000-0000-0000-000000000099'
 
 function fakeFireExt(id: string) {
-  return { id, expirationDate: new Date('2026-08-01T00:00:00.000Z'), isActive: true }
+  return { id, code: `MAT-${id.slice(-3)}`, expirationDate: new Date('2026-08-01T00:00:00.000Z'), isActive: true }
 }
 
 const validBody = {
@@ -68,7 +68,7 @@ describe('POST /api/v1/fire-extinguishers/bulk-recharge', () => {
     for (const id of [ID_1, ID_2, ID_3]) {
       expect(db.fireExtinguisher.update).toHaveBeenCalledWith({
         where: { id },
-        data: { lastRechargeDate: new Date('2026-07-07T00:00:00.000Z'), expirationDate: new Date('2027-07-07T00:00:00.000Z'), isActive: true },
+        data: { lastRechargeDate: new Date('2026-07-07T00:00:00.000Z'), expirationDate: new Date('2027-07-07T00:00:00.000Z') },
       })
     }
   })
@@ -83,10 +83,9 @@ describe('POST /api/v1/fire-extinguishers/bulk-recharge', () => {
       .send({ ...validBody, ids: [ID_1, ID_2, ID_3] })
 
     expect(res.status).toBe(404)
-    // ID_1 se procesa antes de llegar al ID_2 que falla; ID_3 (después del que falla) nunca se toca.
-    expect(db.fireExtinguisher.update).toHaveBeenCalledTimes(1)
-    expect(db.fireExtinguisher.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: ID_1 } }))
-    expect(db.fireExtinguisherHistory.create).toHaveBeenCalledTimes(1)
+    // El lote completo se valida antes de la primera escritura.
+    expect(db.fireExtinguisher.update).not.toHaveBeenCalled()
+    expect(db.fireExtinguisherHistory.create).not.toHaveBeenCalled()
   })
 
   it('returns 404 when the missing id is the only one in the batch', async () => {
@@ -99,6 +98,22 @@ describe('POST /api/v1/fire-extinguishers/bulk-recharge', () => {
 
     expect(res.status).toBe(404)
     expect(db.fireExtinguisher.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 without writing when the first fire extinguisher is inactive', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      { ...fakeFireExt(ID_1), isActive: false },
+      fakeFireExt(ID_2),
+    ])
+
+    const res = await request(app)
+      .post('/api/v1/fire-extinguishers/bulk-recharge')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ ...validBody, ids: [ID_1, ID_2] })
+
+    expect(res.status).toBe(409)
+    expect(db.fireExtinguisher.update).not.toHaveBeenCalled()
+    expect(db.fireExtinguisherHistory.create).not.toHaveBeenCalled()
   })
 
   it('returns 422 when ids is empty', async () => {

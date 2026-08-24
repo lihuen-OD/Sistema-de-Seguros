@@ -33,6 +33,11 @@ fireExtinguishersRouter.post(
   validate(BulkRechargeSchema),
   fireExtinguishersController.bulkRecharge,
 )
+fireExtinguishersRouter.post(
+  '/:id/reactivate',
+  requireModule('fire_extinguishers'),
+  fireExtinguishersController.reactivate,
+)
 
 // ── CRUD principal ────────────────────────────────────────────────────────────
 // El listado también lo consumen Dashboard y la ficha de Activos.

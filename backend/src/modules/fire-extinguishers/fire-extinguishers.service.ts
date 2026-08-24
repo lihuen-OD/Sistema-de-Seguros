@@ -382,7 +382,7 @@ export const fireExtinguishersService = {
   },
 
   async update(id: string, data: UpdateFireExtinguisherDTO, performedBy?: string | null) {
-    const before = await this.assertExists(id)
+    const before = await this.assertActive(id)
 
     if (data.associatedAssetId) {
       const asset = await prisma.asset.findFirst({
@@ -435,7 +435,7 @@ export const fireExtinguishersService = {
   },
 
   async softDelete(id: string, performedBy?: string | null) {
-    await this.assertExists(id)
+    await this.assertActive(id)
     await prisma.$transaction([
       prisma.fireExtinguisher.update({ where: { id }, data: { isActive: false } }),
       recordHistoryEntry(prisma, id, {
@@ -448,10 +448,30 @@ export const fireExtinguishersService = {
     ])
   },
 
+  async reactivate(id: string, performedBy?: string | null) {
+    const current = await this.assertExists(id)
+    if (current.isActive) {
+      throw new AppError(409, 'El matafuego ya está activo', 'FIRE_EXTINGUISHER_ALREADY_ACTIVE')
+    }
+
+    const [updated] = await prisma.$transaction([
+      prisma.fireExtinguisher.update({ where: { id }, data: { isActive: true } }),
+      recordHistoryEntry(prisma, id, {
+        action: 'Reactivación',
+        description: 'Matafuego reactivado',
+        previousData: { isActive: false },
+        newData: { isActive: true },
+        performedBy,
+      }),
+    ])
+
+    return mapFireExt(updated as unknown as Record<string, unknown>)
+  },
+
   // ── Recharge ──────────────────────────────────────────────────────────────────
 
   async recharge(id: string, data: RechargeDTO) {
-    const fe = await this.assertExists(id)
+    const fe = await this.assertActive(id)
 
     const [updated] = await prisma.$transaction([
       prisma.fireExtinguisher.update({
@@ -459,7 +479,6 @@ export const fireExtinguishersService = {
         data: {
           lastRechargeDate: data.chargeDate,
           expirationDate: data.expirationDate,
-          isActive: true,
         },
       }),
       prisma.fireExtinguisherHistory.create({
@@ -492,17 +511,26 @@ export const fireExtinguishersService = {
       const existing = await tx.fireExtinguisher.findMany({ where: { id: { in: ids } } })
       const existingById = new Map(existing.map((fe) => [fe.id, fe]))
 
-      const results = []
+      // Validar el lote completo antes de la primera escritura. Prisma haría
+      // rollback igualmente ante un error posterior, pero este orden evita
+      // trabajo innecesario y deja la atomicidad explícita y testeable.
       for (const id of ids) {
         const fe = existingById.get(id)
         if (!fe) throw new AppError(404, `Matafuego ${id} no encontrado`, 'NOT_FOUND')
+        if (!fe.isActive) {
+          throw new AppError(409, `El matafuego ${fe.code} está dado de baja`, 'INACTIVE_FIRE_EXTINGUISHER')
+        }
+      }
+
+      const results = []
+      for (const id of ids) {
+        const fe = existingById.get(id)!
 
         const fe2 = await tx.fireExtinguisher.update({
           where: { id },
           data: {
             lastRechargeDate: data.chargeDate,
             expirationDate: data.expirationDate,
-            isActive: true,
           },
         })
         await tx.fireExtinguisherHistory.create({
@@ -557,6 +585,14 @@ export const fireExtinguishersService = {
   async assertExists(id: string) {
     const fe = await prisma.fireExtinguisher.findUnique({ where: { id } })
     if (!fe) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
+    return fe
+  },
+
+  async assertActive(id: string) {
+    const fe = await this.assertExists(id)
+    if (!fe.isActive) {
+      throw new AppError(409, 'El matafuego está dado de baja', 'INACTIVE_FIRE_EXTINGUISHER')
+    }
     return fe
   },
 }

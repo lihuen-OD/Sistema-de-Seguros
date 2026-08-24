@@ -596,6 +596,7 @@ export interface FireExtinguisher {
   hydraulicTestStatus: FireExtStatus | null
   manufacturingExpirationYear: number | null
   observations: string
+  isActive: boolean
   createdAt: string
   updatedAt: string
   // Poblado solo cuando associatedAssetId apunta a un vehículo/maquinaria

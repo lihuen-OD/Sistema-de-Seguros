@@ -1,8 +1,9 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import clsx from 'clsx'
-import { Plus, Flame, ShieldCheck, ShieldOff, AlertTriangle, CalendarOff, Eye, RefreshCw, X, Trash2 } from 'lucide-react'
+import { Plus, Flame, ShieldCheck, ShieldOff, AlertTriangle, CalendarOff, Eye, RefreshCw, X, Trash2, RotateCcw } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -28,6 +29,7 @@ import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { FireExtinguisher, TableColumn } from '../../shared/types'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
+type ActivityFilter = 'active' | 'inactive' | 'all'
 
 // Orden por severidad al ordenar la columna "Estado" — alfabético dejaría
 // "próximo_vencer" antes que "vencido", que no es el orden que espera nadie.
@@ -63,12 +65,19 @@ export default function FireExtinguishersPage() {
   const [filterStatus, setFilterStatus] = useState<string[]>([])
   const [filterLocation, setFilterLocation] = useState<string[]>([])
   const [filterEstablishment, setFilterEstablishment] = useState<string[]>([])
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>('active')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showRechargeModal, setShowRechargeModal] = useState(false)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deactivateId, setDeactivateId] = useState<string | null>(null)
+  const [reactivateId, setReactivateId] = useState<string | null>(null)
+  const [isChangingActivity, setIsChangingActivity] = useState(false)
   const queryClient = useQueryClient()
 
-  const { data: all = [], isError } = useQuery(fireExtinguisherQueries.list())
+  const activityParam = activityFilter === 'all' ? null : activityFilter === 'active'
+  const { data: all = [], isError } = useQuery(fireExtinguisherQueries.list({ isActive: activityParam }))
+  // Los KPI describen siempre el parque operativo, aunque la tabla esté
+  // mostrando bajas. En la vista Activos React Query reutiliza la misma key.
+  const { data: activeItems = [], isError: isActiveOverviewError } = useQuery(fireExtinguisherQueries.list({ isActive: true }))
   const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: establishmentCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_establishment'))
   const ESTABLISHMENT_OPTIONS = useMemo(
@@ -101,6 +110,7 @@ export default function FireExtinguishersPage() {
       const { isExp, isSoon } = getExpiryFlags(fe)
       return clsx(
         isSelected ? 'bg-brand-50/60 hover:bg-brand-50' : idx % 2 === 1 ? 'bg-slate-50/40 hover:bg-slate-50' : 'hover:bg-slate-50/60',
+        !fe.isActive && 'opacity-70',
         isExp && !isSelected && 'border-l-2 border-l-red-400',
         isSoon && !isSelected && !isExp && 'border-l-2 border-l-amber-400',
       )
@@ -277,7 +287,7 @@ export default function FireExtinguishersPage() {
       hideable: true,
       sortable: true,
       sortValue: (row) => STATUS_SORT_ORDER[row.status] ?? 99,
-      render: (v) => <StatusPill status={v as string} size="sm" />,
+      render: (v, row) => <StatusPill status={row.isActive ? (v as string) : 'de_baja'} size="sm" />,
     },
     {
       id: 'daysUntil',
@@ -335,14 +345,25 @@ export default function FireExtinguishersPage() {
           >
             <Eye size={15} />
           </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setDeleteId(row.id) }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-            title="Eliminar matafuego"
-            aria-label="Eliminar matafuego"
-          >
-            <Trash2 size={15} />
-          </button>
+          {row.isActive ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); setDeactivateId(row.id) }}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+              title="Dar de baja"
+              aria-label={`Dar de baja ${row.code}`}
+            >
+              <Trash2 size={15} />
+            </button>
+          ) : (
+            <button
+              onClick={(e) => { e.stopPropagation(); setReactivateId(row.id) }}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+              title="Reactivar"
+              aria-label={`Reactivar ${row.code}`}
+            >
+              <RotateCcw size={15} />
+            </button>
+          )}
         </div>
       ),
     },
@@ -351,18 +372,18 @@ export default function FireExtinguishersPage() {
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('fire-extinguishers', FE_COL_DEFS)
 
   const counts = useMemo(() => ({
-    vigente:        all.filter((f) => f.status === 'vigente').length,
-    proximo_vencer: all.filter((f) => f.status === 'proximo_vencer').length,
-    vencido:        all.filter((f) => f.status === 'vencido').length,
-    sin_fecha:      all.filter((f) => f.status === 'sin_fecha').length,
-  }), [all])
+    vigente:        activeItems.filter((f) => f.status === 'vigente').length,
+    proximo_vencer: activeItems.filter((f) => f.status === 'proximo_vencer').length,
+    vencido:        activeItems.filter((f) => f.status === 'vencido').length,
+    sin_fecha:      activeItems.filter((f) => f.status === 'sin_fecha').length,
+  }), [activeItems])
 
   // Desglose del banner de vencidos por establecimiento + asignación física —
   // solo tiene sentido mostrarlo cuando afecta a más de un sector, si no
   // duplicaría la misma info que ya dice la oración principal del banner.
   const vencidoBreakdown = useMemo(() => {
     const groups = new Map<string, number>()
-    for (const fe of all) {
+    for (const fe of activeItems) {
       if (fe.status !== 'vencido') continue
       const key = [fe.establishment, fe.associatedLocationType].filter(Boolean).join(' — ') || 'Sin establecimiento'
       groups.set(key, (groups.get(key) ?? 0) + 1)
@@ -372,7 +393,7 @@ export default function FireExtinguishersPage() {
       .sort((a, b) => b[1] - a[1])
       .map(([key, count]) => `${count} en ${key}`)
       .join(', ')
-  }, [all])
+  }, [activeItems])
 
   const filtered = useMemo(() => {
     return all.filter((fe) => {
@@ -413,10 +434,28 @@ export default function FireExtinguishersPage() {
     setSelectedIds(new Set())
   }
 
-  async function handleDelete(id: string) {
-    await fireExtinguishersApi.softDelete(id)
-    queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
-    setDeleteId(null)
+  async function handleDeactivate(id: string) {
+    setIsChangingActivity(true)
+    try {
+      await fireExtinguishersApi.softDelete(id)
+      await queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
+      setDeactivateId(null)
+      toast.success('Matafuego dado de baja correctamente')
+    } finally {
+      setIsChangingActivity(false)
+    }
+  }
+
+  async function handleReactivate(id: string) {
+    setIsChangingActivity(true)
+    try {
+      await fireExtinguishersApi.reactivate(id)
+      await queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
+      setReactivateId(null)
+      toast.success('Matafuego reactivado correctamente')
+    } finally {
+      setIsChangingActivity(false)
+    }
   }
 
   const selectedExtinguishers = useMemo(
@@ -424,7 +463,7 @@ export default function FireExtinguishersPage() {
     [all, selectedIds],
   )
 
-  if (isError) return <PageContent><ErrorState /></PageContent>
+  if (isError || isActiveOverviewError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>
@@ -447,7 +486,7 @@ export default function FireExtinguishersPage() {
         <KpiCard label="Próximos a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
         <KpiCard label="Vencidos"          value={counts.vencido}        description="Requieren recarga inmediata"     icon={ShieldOff} variant={counts.vencido > 0 ? 'danger' : 'default'} />
         <KpiCard label="Sin Fecha"         value={counts.sin_fecha}      description="Sin vencimiento cargado"         icon={CalendarOff} variant={counts.sin_fecha > 0 ? 'warning' : 'default'} />
-        <KpiCard label="Total"             value={all.length}            description="Matafuegos registrados"          icon={Flame} variant="default" />
+        <KpiCard label="Total Activos"     value={activeItems.length}    description="Matafuegos operativos"            icon={Flame} variant="default" />
       </MetricGrid>
 
       {counts.vencido > 0 && (
@@ -488,6 +527,20 @@ export default function FireExtinguishersPage() {
             value={filterEstablishment}
             onChange={setFilterEstablishment}
           />
+          <label className="sr-only" htmlFor="fire-extinguisher-activity-filter">Estado de actividad</label>
+          <select
+            id="fire-extinguisher-activity-filter"
+            value={activityFilter}
+            onChange={(e) => {
+              setActivityFilter(e.target.value as ActivityFilter)
+              setSelectedIds(new Set())
+            }}
+            className="px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
+          >
+            <option value="active">Activos</option>
+            <option value="inactive">Inactivos</option>
+            <option value="all">Todos</option>
+          </select>
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
               {filtered.length} de {all.length} matafuegos
@@ -536,7 +589,7 @@ export default function FireExtinguishersPage() {
           columns={visibleColumns}
           data={filtered}
           rowKey="id"
-          selectable
+          selectable={activityFilter === 'active'}
           selectedIds={selectedIds}
           onToggleOne={toggleOne}
           onToggleAll={toggleAll}
@@ -557,12 +610,24 @@ export default function FireExtinguishersPage() {
       )}
 
       <ConfirmDialog
-        open={deleteId !== null}
-        title="Eliminar matafuego"
-        description={`¿Eliminar el matafuego "${all.find((f) => f.id === deleteId)?.code ?? ''}"? Esta acción no se puede deshacer.`}
-        confirmLabel="Eliminar"
-        onConfirm={() => deleteId && handleDelete(deleteId)}
-        onCancel={() => setDeleteId(null)}
+        open={deactivateId !== null}
+        title="Dar de baja matafuego"
+        description={`¿Dar de baja el matafuego "${all.find((f) => f.id === deactivateId)?.code ?? ''}"? Conservará sus datos e historial y podrás reactivarlo más adelante.`}
+        confirmLabel="Dar de baja"
+        loading={isChangingActivity}
+        onConfirm={() => deactivateId && handleDeactivate(deactivateId)}
+        onCancel={() => setDeactivateId(null)}
+      />
+
+      <ConfirmDialog
+        open={reactivateId !== null}
+        title="Reactivar matafuego"
+        description={`¿Reactivar el matafuego "${all.find((f) => f.id === reactivateId)?.code ?? ''}"? Volverá a incluirse en la operación, los indicadores y las auditorías.`}
+        confirmLabel="Reactivar"
+        danger={false}
+        loading={isChangingActivity}
+        onConfirm={() => reactivateId && handleReactivate(reactivateId)}
+        onCancel={() => setReactivateId(null)}
       />
     </PageContent>
   )
