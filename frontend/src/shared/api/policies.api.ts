@@ -11,6 +11,9 @@ interface BackendCoverage { id: string; name: string; description: string | null
 interface BackendPolicyAsset {
   id: string; code: string | null; name: string; assetType: string
   fixedAssetCode: string | null
+  metadata?: Record<string, unknown> | null
+  brand?: string | null
+  model?: string | null
   fixedAsset?: { id: string; code: string | null; name: string } | null
   allocations?: { percentage: number; costCenter: { id: string; code: string | null; name: string } | null }[]
 }
@@ -97,6 +100,9 @@ function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
     assetType: a.assetType,
     fixedAssetCode: a.fixedAssetCode,
     fixedAssetName: a.fixedAsset?.name ?? null,
+    metadata: a.metadata ?? null,
+    brand: a.brand ?? null,
+    model: a.model ?? null,
     costCenters: (a.allocations ?? [])
       .filter((alloc) => !!alloc.costCenter)
       .map((alloc) => ({ name: alloc.costCenter!.name, code: alloc.costCenter!.code, percentage: alloc.percentage })),

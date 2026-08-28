@@ -61,7 +61,13 @@ const ALLOCATION_COVERAGE_SELECT = {
   policyId: true,
   assetId: true,
   policy: { select: { id: true, policyNumber: true, insuredName: true } },
-  asset: { select: { id: true, name: true, code: true, fixedAssetCode: true } },
+  asset: {
+    select: {
+      id: true, name: true, code: true, assetType: true, fixedAssetCode: true,
+      metadata: true, brand: true, model: true,
+      fixedAsset: { select: { name: true } },
+    },
+  },
 }
 
 const DOCUMENT_LIST_INCLUDE = {
@@ -135,7 +141,11 @@ function mapAllocation<T extends {
     policyId: string
     assetId: string | null
     policy?: { id: string; policyNumber: string; insuredName: string }
-    asset?: { id: string; name: string; code: string | null; fixedAssetCode: string | null } | null
+    asset?: {
+      id: string; name: string; code: string | null; assetType: string; fixedAssetCode: string | null
+      metadata: unknown; brand: string | null; model: string | null
+      fixedAsset: { name: string } | null
+    } | null
   }
 }>(allocation: T) {
   const { policyAssetCoverage, ...rest } = allocation

@@ -29,6 +29,7 @@ import {
   formatCurrencyCompact,
   formatDate,
 } from '../../../shared/utils/format'
+import { buildAssetLabel } from '../../../shared/utils/assetMetadata'
 import { useCurrentUser } from '../../../app/auth/AuthContext'
 import { hasModule } from '../../../app/auth/roleScope'
 import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
@@ -306,9 +307,7 @@ export default function DocumentDetailPage() {
       sortValue: (row) => row.asset?.name ?? '',
       render: (_v, row) => (
         <span className="inline-flex items-center gap-1.5 text-xs text-slate-600">
-          {row.asset
-            ? row.asset.fixedAssetCode ? `${row.asset.name} (${row.asset.fixedAssetCode})` : row.asset.name
-            : 'Sin activo asociado'}
+          {row.asset ? buildAssetLabel(row.asset) : 'Sin activo asociado'}
           {row.asset && canAssets && (
             <button
               type="button"

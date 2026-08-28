@@ -358,6 +358,11 @@ export interface PolicyAsset {
   assetType: string
   fixedAssetCode?: string | null
   fixedAssetName?: string | null
+  // Datos tipo-específicos (patente, dirección, etc.) usados para diferenciar
+  // activos del mismo tipo/Bien de Uso al mostrarlos — ver buildAssetLabel.
+  metadata?: Record<string, unknown> | null
+  brand?: string | null
+  model?: string | null
   // Centro(s) de costo del activo (no de la línea de cobertura) — un activo
   // puede repartirse entre varios por %, ver Asset.allocations.
   costCenters?: { name: string; code: string | null; percentage: number }[]
@@ -478,7 +483,13 @@ export interface DocumentPolicyAllocation {
   policyId: string
   assetId: string | null
   policy?: { id: string; policyNumber: string; insuranceCompany: string }
-  asset?: { id: string; name: string; code: string | null; fixedAssetCode: string | null } | null
+  asset?: {
+    id: string; name: string; code: string | null; assetType: string; fixedAssetCode: string | null
+    fixedAssetName?: string | null
+    metadata?: Record<string, unknown> | null
+    brand?: string | null
+    model?: string | null
+  } | null
   allocatedAmount: number
   allocationPercentage: number
 }
