@@ -313,7 +313,9 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
       .set('Authorization', `Bearer ${adminToken()}`)
 
     const sector = res.body.data.sectors[0]
-    expect(sector.needsCleaningExtinguishers).toEqual([{ cylinderNumber: 'CIL-011', location: 'Taller' }])
+    expect(sector.needsCleaningExtinguishers).toEqual([
+      { cylinderNumber: 'CIL-011', location: 'Taller', cleanliness: 'MUY_SUCIO' },
+    ])
   })
 
   it('returns 403 for a USER without the fire_extinguisher_audits module', async () => {

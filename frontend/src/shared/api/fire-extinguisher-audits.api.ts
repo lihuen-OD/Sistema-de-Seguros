@@ -166,6 +166,10 @@ export interface AuditControlPointLevel {
 export interface AuditFlaggedExtinguisher {
   cylinderNumber: string
   location: string | null
+  // Solo viene poblado en needsCleaningExtinguishers — nivel de suciedad de
+  // la última auditoría, usado para separar "requiere atención" de "sugiere
+  // limpieza" en el PDF del informe.
+  cleanliness?: string
 }
 
 export interface AuditDashboardSector {

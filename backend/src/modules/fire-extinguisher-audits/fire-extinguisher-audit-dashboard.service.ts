@@ -24,6 +24,10 @@ interface Accumulator {
 interface FlaggedExtinguisher {
   cylinderNumber: string
   location: string | null
+  // Solo presente en needsCleaningExtinguishers (viene de la auditoría) — el
+  // PDF del informe lo usa para separar "requiere atención" de "sugiere
+  // limpieza" según el nivel de suciedad reportado.
+  cleanliness?: string
 }
 
 interface AuditChecklistScores {
@@ -194,7 +198,11 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
           sectorAcc.audited += 1
           accumulateAuditScores(sectorAcc.controlPoints, audit)
           if (audit.cleanliness !== CLEAN_CLEANLINESS_VALUE) {
-            sectorAcc.needsCleaningExtinguishers.push({ cylinderNumber: fe.cylinderNumber ?? fe.code, location: fe.location })
+            sectorAcc.needsCleaningExtinguishers.push({
+              cylinderNumber: fe.cylinderNumber ?? fe.code,
+              location: fe.location,
+              cleanliness: audit.cleanliness,
+            })
           }
         }
 
@@ -264,7 +272,11 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
         acc.audited += 1
         accumulateAuditScores(acc.controlPoints, audit)
         if (audit.cleanliness !== CLEAN_CLEANLINESS_VALUE) {
-          acc.needsCleaningExtinguishers.push({ cylinderNumber: fe.cylinderNumber ?? fe.code, location: fe.location })
+          acc.needsCleaningExtinguishers.push({
+            cylinderNumber: fe.cylinderNumber ?? fe.code,
+            location: fe.location,
+            cleanliness: audit.cleanliness,
+          })
         }
       }
 
