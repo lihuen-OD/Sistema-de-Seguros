@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { CalendarDays, FileDown, Loader2, Building2, ChevronDown, ChevronUp, Gauge, ClipboardCheck, TrendingDown, AlertTriangle } from 'lucide-react'
+import { CalendarDays, FileDown, History, Loader2, Building2, ChevronDown, ChevronUp, Gauge, ClipboardCheck, TrendingDown, AlertTriangle } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -80,6 +80,7 @@ function PeriodPickerBar({
 }
 
 export default function FireExtinguisherFindingsReportPage() {
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [period, setPeriod] = useState(searchParams.get('period') || currentPeriod())
 
@@ -99,14 +100,24 @@ export default function FireExtinguisherFindingsReportPage() {
         backTo={ROUTES.FIRE_EXTINGUISHERS_AUDITS}
         backLabel="Volver a Auditorías"
         actions={
-          <button
-            type="button"
-            disabled
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-brand-600 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg font-medium"
-          >
-            <FileDown size={15} />
-            Descargar PDF
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => navigate(`${ROUTES.FIRE_EXTINGUISHERS_AUDIT_CLEANLINESS_HISTORY}?period=${period}`)}
+              className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg transition-colors font-medium"
+            >
+              <History size={15} />
+              Historial de limpieza
+            </button>
+            <button
+              type="button"
+              disabled
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-brand-600 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg font-medium"
+            >
+              <FileDown size={15} />
+              Descargar PDF
+            </button>
+          </>
         }
       />
 
@@ -142,6 +153,7 @@ interface FindingsReportBodyProps {
 // aparezca en un refetch del mismo período ya no se autoselecciona — hay
 // que tildarlo a mano.
 function FindingsReportBody({ period, onPeriodChange, data, progress }: FindingsReportBodyProps) {
+  const navigate = useNavigate()
   const [downloading, setDownloading] = useState(false)
   const [collapsedEstablishments, setCollapsedEstablishments] = useState<Set<string>>(
     // Los establecimientos vienen cerrados por defecto — el usuario expande
@@ -235,15 +247,25 @@ function FindingsReportBody({ period, onPeriodChange, data, progress }: Findings
         backTo={ROUTES.FIRE_EXTINGUISHERS_AUDITS}
         backLabel="Volver a Auditorías"
         actions={
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={downloading || selectedCount === 0}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-brand-600 hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
-          >
-            {downloading ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />}
-            {downloading ? 'Generando…' : `Descargar PDF${selectedCount > 0 ? ` (${selectedCount})` : ''}`}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => navigate(`${ROUTES.FIRE_EXTINGUISHERS_AUDIT_CLEANLINESS_HISTORY}?period=${period}`)}
+              className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg transition-colors font-medium"
+            >
+              <History size={15} />
+              Historial de limpieza
+            </button>
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={downloading || selectedCount === 0}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-brand-600 hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
+            >
+              {downloading ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />}
+              {downloading ? 'Generando…' : `Descargar PDF${selectedCount > 0 ? ` (${selectedCount})` : ''}`}
+            </button>
+          </>
         }
       />
 

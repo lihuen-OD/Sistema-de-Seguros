@@ -162,6 +162,23 @@ export const AuditDashboardQuerySchema = z.object({
   category: z.enum(AUDITABLE_ASSET_CATEGORIES).optional(),
 })
 
+// ── Historial de limpieza multi-período (heatmap sector × mes) ─────────────────
+// `periods` viaja como un único string separado por comas (no arrays
+// serializados de axios) — se separa, deduplica y valida cada elemento acá.
+// Tope de 24 (2 años) para acotar el ancho de la tabla y el costo de la query.
+export const CleanlinessHistoryQuerySchema = z.object({
+  periods: z
+    .string()
+    .transform((v) => [...new Set(v.split(',').map((p) => p.trim()).filter(Boolean))])
+    .pipe(
+      z
+        .array(z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM'))
+        .min(1, 'Debe seleccionar al menos un período')
+        .max(24, 'Máximo 24 períodos por consulta'),
+    ),
+})
+export type CleanlinessHistoryQueryDTO = z.infer<typeof CleanlinessHistoryQuerySchema>
+
 export type LocationReviewDTO = z.infer<typeof LocationReviewSchema>
 export type MasterFieldReviewDTO = z.infer<typeof MasterFieldReviewSchema>
 export type ChecklistDTO = z.infer<typeof ChecklistSchema>

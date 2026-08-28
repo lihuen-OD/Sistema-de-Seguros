@@ -196,6 +196,50 @@ export interface AuditDashboard {
   sectors: AuditDashboardSector[]
 }
 
+// ── Historial de limpieza multi-período (heatmap sector × mes) ─────────────────
+
+export interface AvailableAuditPeriod {
+  period: string
+  auditCount: number
+}
+
+export interface CleanlinessHistoryCell {
+  period: string
+  audited: number
+  level: number | null
+  levelLabel: string | null
+}
+
+// Celda de un matafuego individual (no un promedio) — `cleanliness` es el
+// valor crudo del checklist (ver checklistConfig.ts), necesario porque MUY_SUCIO
+// y SUCIEDAD_ACUMULADA comparten el mismo puntaje/color y solo el texto exacto
+// los distingue (se muestra en el tooltip de la celda).
+export interface CleanlinessHistoryExtinguisherCell {
+  period: string
+  cleanliness: string | null
+  level: number | null
+  levelLabel: string | null
+}
+
+export interface CleanlinessHistoryExtinguisher {
+  cylinderNumber: string
+  location: string | null
+  cells: CleanlinessHistoryExtinguisherCell[]
+}
+
+export interface CleanlinessHistorySector {
+  establishment: string
+  locationType: string
+  total: number
+  cells: CleanlinessHistoryCell[]
+  extinguishers: CleanlinessHistoryExtinguisher[]
+}
+
+export interface CleanlinessHistoryReport {
+  periods: string[]
+  sectors: CleanlinessHistorySector[]
+}
+
 // ── Progreso por auditor ─────────────────────────────────────────────────────────
 
 export interface AuditorProgress {
@@ -313,6 +357,18 @@ export const fireExtinguisherAuditsApi = {
     return res.data.data
   },
 
+  async getAvailablePeriods(): Promise<AvailableAuditPeriod[]> {
+    const res = await apiClient.get<{ data: AvailableAuditPeriod[] }>('/fire-extinguisher-audits/available-periods')
+    return res.data.data
+  },
+
+  async getCleanlinessHistory(periods: string[]): Promise<CleanlinessHistoryReport> {
+    const res = await apiClient.get<{ data: CleanlinessHistoryReport }>('/fire-extinguisher-audits/cleanliness-history', {
+      params: { periods: periods.join(',') },
+    })
+    return res.data.data
+  },
+
   async getComments(period: string): Promise<FireExtinguisherAuditCommentItem[]> {
     type RawComment = Omit<FireExtinguisherAuditCommentItem, 'target'> & {
       target: { id: string; code: string; cylinderNumber: string | null; location: string | null; establishment: string | null; assetName: string | null }
@@ -378,4 +434,22 @@ export const fireExtinguisherAuditQueries = {
       queryFn: () => fireExtinguisherAuditsApi.getComments(period),
       staleTime: 60 * 1000,
     }),
+  // Cambia poco — un mes nuevo con auditorías aparece a lo sumo una vez al mes.
+  availablePeriods: () =>
+    queryOptions({
+      queryKey: [...fireExtinguisherAuditKeys.all, 'available-periods'] as const,
+      queryFn: () => fireExtinguisherAuditsApi.getAvailablePeriods(),
+      staleTime: 10 * 60 * 1000,
+    }),
+  // queryKey ordena `periods` para no invalidar caché por el orden en que se
+  // tildaron los meses en el picker.
+  cleanlinessHistory: (periods: string[]) => {
+    const sortedPeriods = [...periods].sort()
+    return queryOptions({
+      queryKey: [...fireExtinguisherAuditKeys.all, 'cleanliness-history', sortedPeriods] as const,
+      queryFn: () => fireExtinguisherAuditsApi.getCleanlinessHistory(sortedPeriods),
+      staleTime: 60 * 1000,
+      enabled: sortedPeriods.length > 0,
+    })
+  },
 }

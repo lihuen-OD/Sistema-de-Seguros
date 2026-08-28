@@ -443,6 +443,168 @@ describe('GET /api/v1/fire-extinguisher-audits/auditor-progress', () => {
   })
 })
 
+describe('GET /api/v1/fire-extinguisher-audits/cleanliness-history', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    db.user.findUnique.mockResolvedValue(mockDbUser())
+    db.fireExtinguisher.findMany.mockResolvedValue([])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([])
+  })
+
+  function cell(sector: any, period: string) {
+    return sector.cells.find((c: any) => c.period === period)
+  }
+
+  it('averages only cleanliness per sector, one cell per requested period, null for a month with no audit', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1', expirationDate: FAR_FUTURE }),
+      fe({ id: 'fe-2', expirationDate: FAR_FUTURE }),
+    ])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([
+      { fireExtinguisherId: 'fe-1', auditPeriod: '2026-06', cleanliness: 'IMPECABLE' },
+      { fireExtinguisherId: 'fe-2', auditPeriod: '2026-06', cleanliness: 'LEVE_POLVO' },
+      { fireExtinguisherId: 'fe-1', auditPeriod: '2026-08', cleanliness: 'MUY_SUCIO' },
+      // fe-2 no tiene auditoría en 2026-08, y ningún matafuego en 2026-07 (mes salteado)
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/cleanliness-history')
+      .query({ periods: '2026-08,2026-06,2026-07' }) // desordenado a propósito
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.periods).toEqual(['2026-06', '2026-07', '2026-08']) // normalizado ascendente
+    const sector = res.body.data.sectors[0]
+    expect(sector).toMatchObject({ establishment: 'LA SUCHO', locationType: 'Engorde', total: 2 })
+    expect(cell(sector, '2026-06')).toMatchObject({ audited: 2, level: 90 }) // (100+80)/2
+    expect(cell(sector, '2026-07')).toMatchObject({ audited: 0, level: null })
+    expect(cell(sector, '2026-08')).toMatchObject({ audited: 1, level: 10, levelLabel: 'Crítico' })
+  })
+
+  it('keeps only the latest audit per extinguisher+period when there was a recorrección the same month', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([fe({ id: 'fe-1' })])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([
+      // orderBy createdAt desc → la más nueva llega primero en el mock, igual que la query real
+      { fireExtinguisherId: 'fe-1', auditPeriod: '2026-06', cleanliness: 'IMPECABLE' },
+      { fireExtinguisherId: 'fe-1', auditPeriod: '2026-06', cleanliness: 'MUY_SUCIO' },
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/cleanliness-history')
+      .query({ periods: '2026-06' })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(cell(res.body.data.sectors[0], '2026-06')).toMatchObject({ audited: 1, level: 100 })
+  })
+
+  it('excludes a vehicle/machinery-linked extinguisher, same as audit-dashboard', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1' }),
+      fe({ id: 'fe-2', assetId: 'a1', asset: { assetType: 'Tractor', fireExtinguisherAuditable: true } }),
+    ])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([{ fireExtinguisherId: 'fe-1', auditPeriod: '2026-06', cleanliness: 'IMPECABLE' }])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/cleanliness-history')
+      .query({ periods: '2026-06' })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.body.data.sectors[0].total).toBe(1)
+  })
+
+  it('lists per-extinguisher detail sorted by location, distinguishing MUY_SUCIO from SUCIEDAD_ACUMULADA (same score) via the raw cleanliness value', async () => {
+    db.fireExtinguisher.findMany.mockResolvedValue([
+      fe({ id: 'fe-1', cylinderNumber: 'CIL-010', location: 'Portón sur' }),
+      fe({ id: 'fe-2', cylinderNumber: 'CIL-011', location: 'Cocina' }),
+      fe({ id: 'fe-3', cylinderNumber: 'CIL-012', location: null }), // sin auditoría este período
+    ])
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([
+      { fireExtinguisherId: 'fe-1', auditPeriod: '2026-06', cleanliness: 'MUY_SUCIO' },
+      { fireExtinguisherId: 'fe-2', auditPeriod: '2026-06', cleanliness: 'SUCIEDAD_ACUMULADA' },
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/cleanliness-history')
+      .query({ periods: '2026-06' })
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    const extinguishers = res.body.data.sectors[0].extinguishers
+    // Ordenado por ubicación (o cilindro si no hay ubicación), localeCompare
+    expect(extinguishers.map((e: any) => e.location ?? e.cylinderNumber)).toEqual(['CIL-012', 'Cocina', 'Portón sur'])
+
+    const cocina = extinguishers.find((e: any) => e.location === 'Cocina')
+    expect(cocina.cells[0]).toMatchObject({ period: '2026-06', cleanliness: 'SUCIEDAD_ACUMULADA', level: 10, levelLabel: 'Crítico' })
+
+    const porton = extinguishers.find((e: any) => e.location === 'Portón sur')
+    expect(porton.cells[0]).toMatchObject({ period: '2026-06', cleanliness: 'MUY_SUCIO', level: 10, levelLabel: 'Crítico' })
+
+    const sinAuditar = extinguishers.find((e: any) => e.cylinderNumber === 'CIL-012')
+    expect(sinAuditar.cells[0]).toMatchObject({ period: '2026-06', cleanliness: null, level: null, levelLabel: null })
+  })
+
+  it('rejects a malformed period inside the comma-separated list', async () => {
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/cleanliness-history')
+      .query({ periods: '2026-06,not-a-period' })
+      .set('Authorization', `Bearer ${adminToken()}`)
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(res.status).toBeLessThan(500)
+  })
+
+  it('returns 403 for a USER without the fire_extinguisher_audits module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/cleanliness-history')
+      .query({ periods: '2026-06' })
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 401 without a token', async () => {
+    const res = await request(app).get('/api/v1/fire-extinguisher-audits/cleanliness-history').query({ periods: '2026-06' })
+    expect(res.status).toBe(401)
+  })
+})
+
+describe('GET /api/v1/fire-extinguisher-audits/available-periods', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    db.user.findUnique.mockResolvedValue(mockDbUser())
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([])
+  })
+
+  it('counts audit rows by period, sorted descending, excluding vehicle/machinery-linked extinguishers', async () => {
+    db.fireExtinguisherAudit.findMany.mockResolvedValue([
+      { auditPeriod: '2026-06', extinguisher: { assetId: null, asset: null } },
+      { auditPeriod: '2026-06', extinguisher: { assetId: null, asset: null } },
+      { auditPeriod: '2026-07', extinguisher: { assetId: null, asset: null } },
+      { auditPeriod: '2026-07', extinguisher: { assetId: 'a1', asset: { assetType: 'Tractor', fireExtinguisherAuditable: true } } },
+    ])
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/available-periods')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data).toEqual([
+      { period: '2026-07', auditCount: 1 },
+      { period: '2026-06', auditCount: 2 },
+    ])
+  })
+
+  it('returns 403 for a USER without the fire_extinguisher_audits module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+    const res = await request(app)
+      .get('/api/v1/fire-extinguisher-audits/available-periods')
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(403)
+  })
+})
+
 describe('classifyLevel', () => {
   it('respects the 4 scale cutoffs (Crítico < 50, Regular < 75, Bueno < 90, Óptimo >= 90)', () => {
     expect(classifyLevel(null)).toBeNull()
