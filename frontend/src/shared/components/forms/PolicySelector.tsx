@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, Trash2, ListPlus, AlertTriangle } from 'lucide-react'
 import { FormSelect, FormInput } from './FormSection'
 import { formatCurrencyFull } from '../../utils/format'
+import { buildAssetLabel } from '../../utils/assetMetadata'
 import type { Policy, PolicyCoverage, Currency } from '../../types'
 
 export interface PolicyAllocationRow {
@@ -47,7 +48,7 @@ function policyTypeLabel(p: Policy): string {
 
 function coverageLabel(coverage: PolicyCoverage): string {
   if (!coverage.asset) return 'Sin activo asociado'
-  return coverage.asset.fixedAssetCode ? `${coverage.asset.name} (${coverage.asset.fixedAssetCode})` : coverage.asset.name
+  return buildAssetLabel(coverage.asset)
 }
 
 // Selector de pólizas con dos modos: single (Endoso — una póliza obligatoria,
@@ -59,6 +60,12 @@ export function PolicySelector(props: PolicySelectorProps) {
   // render, sin importar qué rama (sin pólizas / single / multi) termine
   // renderizando este componente.
   const [policyToAdd, setPolicyToAdd] = useState('')
+  // Texto crudo que el usuario está tipeando en "Participación" por fila,
+  // mientras lo edita — sin esto, el input (controlado, valor derivado del
+  // importe) se autocorrige a 2 decimales en cada tecla y "pisa" lo que se
+  // está escribiendo. Se limpia al perder foco, así vuelve a mostrar el
+  // valor derivado ya reconciliado (por si documentTotal cambió mientras tanto).
+  const [pctDrafts, setPctDrafts] = useState<Record<string, string>>({})
 
   if (props.policies.length === 0) {
     return (
@@ -93,7 +100,16 @@ export function PolicySelector(props: PolicySelectorProps) {
     onRowsChange(rows.map((r) => (r.id === rowId ? { ...r, [field]: value } : r)))
   }
   const addRow = () => onRowsChange([...rows, createEmptyPolicyRow()])
-  const removeRow = (rowId: string) => onRowsChange(rows.filter((r) => r.id !== rowId))
+  const clearPctDraft = (rowId: string) =>
+    setPctDrafts((prev) => {
+      if (!(rowId in prev)) return prev
+      const { [rowId]: _removed, ...rest } = prev
+      return rest
+    })
+  const removeRow = (rowId: string) => {
+    onRowsChange(rows.filter((r) => r.id !== rowId))
+    clearPctDraft(rowId)
+  }
 
   // El importe es la fuente de verdad; la participación es una vista/entrada
   // alternativa sobre el MISMO valor — editarla despeja el importe a partir
@@ -159,7 +175,11 @@ export function PolicySelector(props: PolicySelectorProps) {
       {rows.map((row) => {
         const allocated = parseFloat(row.allocatedAmount) || 0
         const pct = documentTotal > 0 ? (allocated / documentTotal) * 100 : 0
-        const pctValue = allocated === 0 ? '' : String(Math.round(pct * 100) / 100)
+        // 4 decimales (no 2) para que una participación como 33,333% no se
+        // corte a 33,33% al derivarla de vuelta desde el importe redondeado
+        // a centavos.
+        const pctValue = allocated === 0 ? '' : String(Math.round(pct * 10000) / 10000)
+        const displayPctValue = pctDrafts[row.id] ?? pctValue
         return (
           <div key={row.id} className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center">
             <FormSelect
@@ -192,13 +212,17 @@ export function PolicySelector(props: PolicySelectorProps) {
               <FormInput
                 type="number"
                 placeholder="0,0"
-                value={pctValue}
-                onChange={(e) => handlePctChange(row.id, e.target.value)}
+                value={displayPctValue}
+                onChange={(e) => {
+                  setPctDrafts((prev) => ({ ...prev, [row.id]: e.target.value }))
+                  handlePctChange(row.id, e.target.value)
+                }}
+                onBlur={() => clearPctDraft(row.id)}
                 disabled={documentTotal <= 0}
                 title={documentTotal <= 0 ? 'Completá primero los importes de la factura' : undefined}
                 min="0"
                 max="100"
-                step="0.1"
+                step="any"
                 className="text-right pr-6"
               />
               <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">%</span>

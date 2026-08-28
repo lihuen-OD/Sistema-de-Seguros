@@ -51,7 +51,13 @@ interface BackendAllocation {
   allocatedAmount: number
   allocationPercentage: number
   policy?: { id: string; policyNumber: string; insuredName: string }
-  asset?: { id: string; name: string; code: string | null; fixedAssetCode: string | null } | null
+  asset?: {
+    id: string; name: string; code: string | null; assetType: string; fixedAssetCode: string | null
+    metadata?: Record<string, unknown> | null
+    brand?: string | null
+    model?: string | null
+    fixedAsset?: { name: string } | null
+  } | null
 }
 
 function mapAllocation(a: BackendAllocation): DocumentPolicyAllocation {
@@ -64,7 +70,12 @@ function mapAllocation(a: BackendAllocation): DocumentPolicyAllocation {
     allocatedAmount: a.allocatedAmount,
     allocationPercentage: a.allocationPercentage,
     ...(a.policy && { policy: { id: a.policy.id, policyNumber: a.policy.policyNumber, insuranceCompany: a.policy.insuredName } }),
-    ...(a.asset !== undefined && { asset: a.asset }),
+    ...(a.asset !== undefined && {
+      asset: a.asset && {
+        ...a.asset,
+        fixedAssetName: a.asset.fixedAsset?.name ?? null,
+      },
+    }),
   }
 }
 
