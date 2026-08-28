@@ -8,6 +8,9 @@ import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
+import { ExportPresetsButton } from '../../../shared/components/data-table/ExportPresetsButton'
+import { ColumnConfigButton } from '../../../shared/components/data-table/ColumnConfigButton'
+import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
 import { MultiSelectFilter } from '../../../shared/components/filters/MultiSelectFilter'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
@@ -147,12 +150,19 @@ export default function FireExtinguisherAuditsQueuePage() {
     }
   }
 
-  const columns: TableColumn<FireExtinguisherAuditListItem>[] = [
+  const AUDIT_COL_DEFS: TableColumn<FireExtinguisherAuditListItem>[] = useMemo(() => [
     {
+      id: 'extinguisher',
       key: 'extinguisher',
       label: 'Matafuego',
       sortable: true,
       sortValue: (row) => (row.extinguisher ? fireExtinguisherLabel(row.extinguisher.cylinderNumber, row.extinguisher.location, row.extinguisher.code) : null),
+      // `key` no mapea a un campo plano del row (es un objeto anidado) — sin
+      // esto, el export caería al fallback String(row.extinguisher).
+      exportValue: (row) =>
+        row.extinguisher
+          ? `${fireExtinguisherLabel(row.extinguisher.cylinderNumber, row.extinguisher.location, row.extinguisher.code)} — ${row.extinguisher.type}`
+          : '',
       render: (_, row) => {
         if (!row.extinguisher) return <span className="text-slate-400">—</span>
         // El código autogenerado (MAT-XXX-A) es un ID interno — el cilindro y
@@ -170,10 +180,13 @@ export default function FireExtinguisherAuditsQueuePage() {
       },
     },
     {
+      id: 'establishment',
       key: 'establishment',
       label: 'Establecimiento',
       sortable: true,
       sortValue: (row) => row.extinguisher?.establishment ?? null,
+      // Tampoco hay `row.establishment` a nivel raíz — vive bajo `extinguisher`.
+      exportValue: (row) => [row.extinguisher?.establishment, row.extinguisher?.associatedLocationType].filter(Boolean).join(' — '),
       render: (_, row) =>
         row.extinguisher?.establishment ? (
           <div className="min-w-0">
@@ -184,15 +197,17 @@ export default function FireExtinguisherAuditsQueuePage() {
           <span className="text-slate-400">—</span>
         ),
     },
-    { key: 'auditPeriod', label: 'Período', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
-    { key: 'auditedBy', label: 'Auditor', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
+    { id: 'auditPeriod', key: 'auditPeriod', label: 'Período', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
+    { id: 'auditedBy', key: 'auditedBy', label: 'Auditor', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
     {
+      id: 'auditDate',
       key: 'auditDate',
       label: 'Fecha',
       sortable: true,
       render: (v) => <span className="text-sm text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
     },
     {
+      id: 'proposedChangesCount',
       key: 'proposedChangesCount',
       label: 'Cambios propuestos',
       sortable: true,
@@ -208,13 +223,19 @@ export default function FireExtinguisherAuditsQueuePage() {
       },
     },
     {
+      id: 'status',
       key: 'status',
       label: 'Estado',
       sortable: true,
       sortValue: (row) => AUDIT_STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
-  ]
+  ], [])
+
+  const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig(
+    'fire-extinguisher-audits',
+    AUDIT_COL_DEFS,
+  )
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -271,9 +292,20 @@ export default function FireExtinguisherAuditsQueuePage() {
                   Limpiar fechas
                 </button>
               )}
-              <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-                {filtered.length} de {all.length} auditorías
-              </span>
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-slate-400 whitespace-nowrap">
+                  {filtered.length} de {all.length} auditorías
+                </span>
+                <ExportPresetsButton
+                  tableKey="fire-extinguisher-audits"
+                  allColumns={AUDIT_COL_DEFS}
+                  visibleColumns={visibleColumns}
+                  filteredRows={filtered}
+                  filenamePrefix="auditorias-matafuegos"
+                  onApplyPreset={applyPreset}
+                />
+                <ColumnConfigButton columnConfigs={columnConfigs} onToggle={toggle} onReorder={reorder} onReset={reset} />
+              </div>
             </div>
 
             <AuditBulkApproveBar
@@ -284,7 +316,7 @@ export default function FireExtinguisherAuditsQueuePage() {
 
             <DataTable
               tableKey="fire-extinguisher-audits"
-              columns={columns}
+              columns={visibleColumns}
               data={filtered}
               rowKey="id"
               loading={isLoading}
