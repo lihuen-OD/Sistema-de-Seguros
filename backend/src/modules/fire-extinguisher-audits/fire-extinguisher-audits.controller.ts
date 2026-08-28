@@ -10,6 +10,7 @@ import type {
   CoverageQueryDTO,
   AuditDashboardQueryDTO,
   AuditorProgressQueryDTO,
+  CleanlinessHistoryQueryDTO,
   AddCommentDTO,
 } from './fire-extinguisher-audits.schemas'
 
@@ -52,6 +53,17 @@ export const fireExtinguisherAuditsController = {
   auditorProgress: asyncHandler(async (req: Request, res: Response) => {
     const { period } = req.query as unknown as AuditorProgressQueryDTO
     const data = await fireExtinguisherAuditDashboardService.getAuditorProgress(period)
+    res.json({ data })
+  }),
+
+  cleanlinessHistory: asyncHandler(async (req: Request, res: Response) => {
+    const { periods } = req.query as unknown as CleanlinessHistoryQueryDTO
+    const data = await fireExtinguisherAuditDashboardService.getCleanlinessHistory(periods)
+    res.json({ data })
+  }),
+
+  availablePeriods: asyncHandler(async (_req: Request, res: Response) => {
+    const data = await fireExtinguisherAuditDashboardService.getAvailablePeriods()
     res.json({ data })
   }),
 

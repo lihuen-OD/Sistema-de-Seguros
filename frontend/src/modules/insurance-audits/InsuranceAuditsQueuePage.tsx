@@ -8,6 +8,9 @@ import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
+import { ExportPresetsButton } from '../../shared/components/data-table/ExportPresetsButton'
+import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
+import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { DateRangeMonthPicker } from '../../shared/components/filters/DateRangeMonthPicker'
@@ -127,12 +130,16 @@ export default function InsuranceAuditsQueuePage() {
     }
   }
 
-  const columns: TableColumn<InsuranceAuditListItem>[] = [
+  const AUDIT_COL_DEFS: TableColumn<InsuranceAuditListItem>[] = useMemo(() => [
     {
+      id: 'asset',
       key: 'asset',
       label: 'Activo',
       sortable: true,
       sortValue: (row) => row.asset?.name ?? null,
+      // `row.asset` es un objeto — sin esto, el export caería al fallback
+      // String(row.asset) ("[object Object]").
+      exportValue: (row) => (row.asset ? [row.asset.name, row.asset.assetType, row.asset.code, row.asset.plate].filter(Boolean).join(' — ') : ''),
       render: (_, row) =>
         row.asset ? (
           <div className="min-w-0">
@@ -147,17 +154,20 @@ export default function InsuranceAuditsQueuePage() {
           <span className="text-slate-400">—</span>
         ),
     },
-    { key: 'auditPeriod', label: 'Período', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
-    { key: 'auditedBy', label: 'Auditor', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
-    { key: 'auditDate', label: 'Fecha', sortable: true, render: (v) => <span className="text-sm text-slate-500 tabular-nums">{formatDate(v as string)}</span> },
+    { id: 'auditPeriod', key: 'auditPeriod', label: 'Período', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
+    { id: 'auditedBy', key: 'auditedBy', label: 'Auditor', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
+    { id: 'auditDate', key: 'auditDate', label: 'Fecha', sortable: true, render: (v) => <span className="text-sm text-slate-500 tabular-nums">{formatDate(v as string)}</span> },
     {
+      id: 'status',
       key: 'status',
       label: 'Estado',
       sortable: true,
       sortValue: (row) => AUDIT_STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
-  ]
+  ], [])
+
+  const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('insurance-audits', AUDIT_COL_DEFS)
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -214,7 +224,18 @@ export default function InsuranceAuditsQueuePage() {
                   Limpiar fechas
                 </button>
               )}
-              <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">{filtered.length} de {all.length} auditorías</span>
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-slate-400 whitespace-nowrap">{filtered.length} de {all.length} auditorías</span>
+                <ExportPresetsButton
+                  tableKey="insurance-audits"
+                  allColumns={AUDIT_COL_DEFS}
+                  visibleColumns={visibleColumns}
+                  filteredRows={filtered}
+                  filenamePrefix="auditorias-seguros"
+                  onApplyPreset={applyPreset}
+                />
+                <ColumnConfigButton columnConfigs={columnConfigs} onToggle={toggle} onReorder={reorder} onReset={reset} />
+              </div>
             </div>
 
             <AuditBulkApproveBar
@@ -225,7 +246,7 @@ export default function InsuranceAuditsQueuePage() {
 
             <DataTable
               tableKey="insurance-audits"
-              columns={columns}
+              columns={visibleColumns}
               data={filtered}
               rowKey="id"
               loading={isLoading}

@@ -24,6 +24,10 @@ interface Accumulator {
 interface FlaggedExtinguisher {
   cylinderNumber: string
   location: string | null
+  // Solo presente en needsCleaningExtinguishers (viene de la auditoría) — el
+  // PDF del informe lo usa para separar "requiere atención" de "sugiere
+  // limpieza" según el nivel de suciedad reportado.
+  cleanliness?: string
 }
 
 interface AuditChecklistScores {
@@ -194,7 +198,11 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
           sectorAcc.audited += 1
           accumulateAuditScores(sectorAcc.controlPoints, audit)
           if (audit.cleanliness !== CLEAN_CLEANLINESS_VALUE) {
-            sectorAcc.needsCleaningExtinguishers.push({ cylinderNumber: fe.cylinderNumber ?? fe.code, location: fe.location })
+            sectorAcc.needsCleaningExtinguishers.push({
+              cylinderNumber: fe.cylinderNumber ?? fe.code,
+              location: fe.location,
+              cleanliness: audit.cleanliness,
+            })
           }
         }
 
@@ -264,7 +272,11 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
         acc.audited += 1
         accumulateAuditScores(acc.controlPoints, audit)
         if (audit.cleanliness !== CLEAN_CLEANLINESS_VALUE) {
-          acc.needsCleaningExtinguishers.push({ cylinderNumber: fe.cylinderNumber ?? fe.code, location: fe.location })
+          acc.needsCleaningExtinguishers.push({
+            cylinderNumber: fe.cylinderNumber ?? fe.code,
+            location: fe.location,
+            cleanliness: audit.cleanliness,
+          })
         }
       }
 
@@ -302,6 +314,201 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
         controlPoints,
         groups,
       }
+    },
+
+    // Historial multi-período del punto de control "Limpieza" — a diferencia
+    // de getAuditDashboard (nivel general de UN período), trae varios
+    // períodos a la vez para poder comparar meses entre sí (heatmap sector ×
+    // mes en el frontend). Mismo criterio de agrupación que getAuditDashboard
+    // (ESTABLISHMENT: establecimiento → sector; ASSET: por categoría), pero
+    // promedia solo `cleanliness`, no los 6 puntos de control.
+    async getCleanlinessHistory(periods: string[], groupFilter?: string) {
+      const sortedPeriods = [...new Set(periods)].sort()
+
+      const feWhere: Record<string, unknown> = { isActive: true }
+      if (population === 'ESTABLISHMENT' && groupFilter) feWhere.establishment = groupFilter
+
+      const extinguishers = await prisma.fireExtinguisher.findMany({
+        where: feWhere,
+        select: {
+          id: true,
+          code: true,
+          cylinderNumber: true,
+          location: true,
+          establishment: true,
+          locationType: true,
+          assetId: true,
+          asset: { select: { assetType: true, fireExtinguisherAuditable: true } },
+        },
+        orderBy: [{ establishment: 'asc' }, { locationType: 'asc' }],
+      })
+
+      const eligible = extinguishers.filter((fe) => matchesAuditPopulation(fe, population))
+      const eligibleIds = eligible.map((fe) => fe.id)
+
+      // Acotar también por fireExtinguisherId (no solo por auditPeriod) deja
+      // que Postgres use el índice compuesto [fireExtinguisherId, auditPeriod]
+      // que ya existe en el modelo — no hace falta un índice nuevo para esto.
+      const audits =
+        eligibleIds.length === 0
+          ? []
+          : await prisma.fireExtinguisherAudit.findMany({
+              where: { fireExtinguisherId: { in: eligibleIds }, auditPeriod: { in: sortedPeriods } },
+              select: { fireExtinguisherId: true, auditPeriod: true, cleanliness: true },
+              // Más reciente por createdAt, no por auditDate — ver latest-by-key.ts.
+              orderBy: { createdAt: 'desc' },
+            })
+
+      // Clave compuesta matafuego+período (a diferencia de getAuditDashboard,
+      // que solo tiene UN período y le alcanza con la clave simple) — se
+      // queda con la auditoría más reciente si hubo recorrección ese mismo mes.
+      const latestByExtinguisherAndPeriod = latestByKey(audits, (a) => `${a.fireExtinguisherId}::${a.auditPeriod}`)
+
+      interface CellAcc {
+        sum: number
+        count: number
+        audited: number
+      }
+      function emptyCellAcc(): CellAcc {
+        return { sum: 0, count: 0, audited: 0 }
+      }
+
+      interface ExtinguisherAcc {
+        cylinderNumber: string
+        location: string | null
+        // período → cleanliness crudo (null = sin auditoría ese mes) — a
+        // diferencia de CellAcc (que promedia varias unidades), acá es un
+        // solo valor por matafuego, sin nada que promediar.
+        cleanlinessByPeriod: Map<string, string | null>
+      }
+
+      interface GroupAcc {
+        total: number
+        cellsByPeriod: Map<string, CellAcc>
+        // Detalle por matafuego — alimenta la fila expandible de cada sector
+        // en el heatmap (frontend), no se usa para el promedio del sector.
+        extinguishers: ExtinguisherAcc[]
+      }
+      function emptyGroupAcc(): GroupAcc {
+        return { total: 0, cellsByPeriod: new Map(sortedPeriods.map((p) => [p, emptyCellAcc()])), extinguishers: [] }
+      }
+
+      // Sector sin auditoría ese mes → level null ("sin datos"), no 0 —
+      // mismo criterio que levelOf() en getAuditDashboard.
+      function cellsFrom(acc: GroupAcc) {
+        return sortedPeriods.map((period) => {
+          const cell = acc.cellsByPeriod.get(period)!
+          const level = cell.count > 0 ? +(cell.sum / cell.count).toFixed(1) : null
+          return { period, audited: cell.audited, level, levelLabel: classifyLevel(level) }
+        })
+      }
+
+      // Mismo % + color que cellsFrom (un solo valor, no un promedio) — el
+      // frontend pinta la celda igual que la del sector; `cleanliness` crudo
+      // viaja aparte para el tooltip con el detalle exacto (ej. "Suciedad
+      // acumulada"), donde un % solo no distingue MUY_SUCIO de
+      // SUCIEDAD_ACUMULADA (mismo puntaje, 10).
+      function extinguisherCellsFrom(acc: ExtinguisherAcc) {
+        return sortedPeriods.map((period) => {
+          const cleanliness = acc.cleanlinessByPeriod.get(period) ?? null
+          const level = cleanliness != null ? (CLEANLINESS_SCORES[cleanliness] ?? null) : null
+          return { period, cleanliness, level, levelLabel: classifyLevel(level) }
+        })
+      }
+
+      function accumulate(fe: { id: string; cylinderNumber: string | null; code: string; location: string | null }, acc: GroupAcc) {
+        acc.total += 1
+        const cleanlinessByPeriod = new Map<string, string | null>()
+        for (const period of sortedPeriods) {
+          const audit = latestByExtinguisherAndPeriod.get(`${fe.id}::${period}`)
+          cleanlinessByPeriod.set(period, audit?.cleanliness ?? null)
+          if (!audit) continue
+          const cell = acc.cellsByPeriod.get(period)!
+          cell.audited += 1
+          const score = CLEANLINESS_SCORES[audit.cleanliness]
+          if (score != null) {
+            cell.sum += score
+            cell.count += 1
+          }
+        }
+        acc.extinguishers.push({ cylinderNumber: fe.cylinderNumber ?? fe.code, location: fe.location, cleanlinessByPeriod })
+      }
+
+      // Mismo criterio de identificación que expiredExtinguishers/
+      // needsCleaningExtinguishers en getAuditDashboard: por detalle de
+      // ubicación si está cargado, si no por número de cilindro.
+      function sortedExtinguishers(acc: GroupAcc) {
+        return acc.extinguishers
+          .map((e) => ({ cylinderNumber: e.cylinderNumber, location: e.location, cells: extinguisherCellsFrom(e) }))
+          .sort((a, b) => (a.location ?? a.cylinderNumber).localeCompare(b.location ?? b.cylinderNumber))
+      }
+
+      if (population === 'ESTABLISHMENT') {
+        const establishmentMap = new Map<string, Map<string, GroupAcc>>()
+
+        for (const fe of eligible) {
+          const est = fe.establishment ?? 'Sin establecimiento'
+          if (!establishmentMap.has(est)) establishmentMap.set(est, new Map())
+          const sectorsMap = establishmentMap.get(est)!
+          if (!sectorsMap.has(fe.locationType)) sectorsMap.set(fe.locationType, emptyGroupAcc())
+          accumulate(fe, sectorsMap.get(fe.locationType)!)
+        }
+
+        const sectors = [...establishmentMap.entries()]
+          .flatMap(([est, sectorsMap]) =>
+            [...sectorsMap.entries()].map(([locationType, acc]) => ({
+              establishment: est,
+              locationType,
+              total: acc.total,
+              cells: cellsFrom(acc),
+              extinguishers: sortedExtinguishers(acc),
+            })),
+          )
+          .sort((a, b) => a.establishment.localeCompare(b.establishment) || a.locationType.localeCompare(b.locationType))
+
+        return { periods: sortedPeriods, sectors }
+      }
+
+      // Población ASSET — un solo nivel de agrupación, por categoría de activo.
+      const categoryMap = new Map<string, GroupAcc>()
+      for (const fe of eligible) {
+        const category = auditScopeKeyFor(fe, population)
+        if (!category) continue
+        if (groupFilter && category !== groupFilter) continue
+        if (!categoryMap.has(category)) categoryMap.set(category, emptyGroupAcc())
+        accumulate(fe, categoryMap.get(category)!)
+      }
+
+      const groups = [...categoryMap.entries()]
+        .map(([category, acc]) => ({ category, total: acc.total, cells: cellsFrom(acc), extinguishers: sortedExtinguishers(acc) }))
+        .sort((a, b) => a.category.localeCompare(b.category))
+
+      return { periods: sortedPeriods, groups }
+    },
+
+    // Períodos que tienen al menos una auditoría cargada para esta población
+    // — alimenta el selector de meses del historial de limpieza (frontend)
+    // con valores reales en vez de asumir "últimos N meses" a ciegas.
+    // `auditCount` es una cuenta simple de filas (sin latestByKey — acá no
+    // importa si hubo recorrección, solo "hay algo cargado ese mes"), no
+    // representa "matafuegos auditados".
+    async getAvailablePeriods() {
+      const audits = await prisma.fireExtinguisherAudit.findMany({
+        select: {
+          auditPeriod: true,
+          extinguisher: { select: { assetId: true, asset: { select: { assetType: true, fireExtinguisherAuditable: true } } } },
+        },
+      })
+
+      const counts = new Map<string, number>()
+      for (const a of audits) {
+        if (!matchesAuditPopulation(a.extinguisher, population)) continue
+        counts.set(a.auditPeriod, (counts.get(a.auditPeriod) ?? 0) + 1)
+      }
+
+      return [...counts.entries()]
+        .map(([period, auditCount]) => ({ period, auditCount }))
+        .sort((a, b) => b.period.localeCompare(a.period))
     },
 
     // Progreso por auditor: para cada usuario con el módulo "de auditar" de

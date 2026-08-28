@@ -13,6 +13,7 @@ import {
   CoverageQuerySchema,
   AuditDashboardQuerySchema,
   AuditorProgressQuerySchema,
+  CleanlinessHistoryQuerySchema,
   AddCommentSchema,
 } from './fire-extinguisher-audits.schemas'
 import { fireExtinguisherAuditsController } from './fire-extinguisher-audits.controller'
@@ -54,6 +55,21 @@ fireExtinguisherAuditsRouter.get(
   requireModule('fire_extinguisher_audits'),
   validateQuery(AuditorProgressQuerySchema),
   fireExtinguisherAuditsController.auditorProgress,
+)
+
+// Historial de limpieza multi-período (heatmap sector × mes) — misma vista
+// ejecutiva que audit-dashboard/auditor-progress, mismo gate.
+fireExtinguisherAuditsRouter.get(
+  '/cleanliness-history',
+  requireModule('fire_extinguisher_audits'),
+  validateQuery(CleanlinessHistoryQuerySchema),
+  fireExtinguisherAuditsController.cleanlinessHistory,
+)
+
+fireExtinguisherAuditsRouter.get(
+  '/available-periods',
+  requireModule('fire_extinguisher_audits'),
+  fireExtinguisherAuditsController.availablePeriods,
 )
 
 fireExtinguisherAuditsRouter.post(
