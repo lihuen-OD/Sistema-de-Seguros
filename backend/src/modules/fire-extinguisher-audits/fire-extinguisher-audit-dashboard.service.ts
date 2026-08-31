@@ -25,7 +25,7 @@ interface FlaggedExtinguisher {
   cylinderNumber: string
   location: string | null
   // Solo presente en needsCleaningExtinguishers (viene de la auditoría) — el
-  // PDF del informe lo usa para separar "requiere atención" de "sugiere
+  // PDF del informe lo usa para separar "requieren limpieza" de "sugiere
   // limpieza" según el nivel de suciedad reportado.
   cleanliness?: string
 }

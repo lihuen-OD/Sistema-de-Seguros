@@ -12,7 +12,7 @@ import { classifyLevel } from './auditLevel'
 // que limpia/recarga matafuegos. Solo incluye los sectores recibidos (los
 // tildados en pantalla). Cada sector se dibuja como una card (mismo radio/
 // borde que `.card` en pantalla) que agrupa hasta 3 cards internas por
-// urgencia — Vencidos / Requiere atención / Sugiere limpieza — antes de las
+// urgencia — Vencidos / Requieren limpieza / Sugiere limpieza — antes de las
 // barras por punto de control, así la persona que limpia/recarga sabe qué
 // priorizar en vez de una sola lista mezclada.
 
@@ -30,15 +30,17 @@ const BAR_COLOR_CRITICAL = '#ef4444' // red-500
 // paleta nueva. Orden de aparición = orden de urgencia.
 const EXPIRED_FILL = '#fef2f2' // red-50
 const EXPIRED_BORDER = '#fecaca' // red-200
-const ATTENTION_FILL = '#fffbeb' // amber-50
-const ATTENTION_BORDER = '#fde68a' // amber-200
-const CLEANING_FILL = '#f1f5f9' // slate-100
-const CLEANING_BORDER = '#cbd5e1' // slate-300
+const AMBER_FILL = '#fffbeb' // amber-50
+const AMBER_BORDER = '#fde68a' // amber-200
+const SLATE_FILL = '#f1f5f9' // slate-100
+const SLATE_BORDER = '#cbd5e1' // slate-300
 const CARD_BORDER = '#e2e8f0' // slate-200 — mismo tono que border-slate-200 de `.card`
 const ESTABLISHMENT_RULE_COLOR = '#e2e8f0' // slate-200
 
-const ATTENTION_CLEANLINESS = ['LEVE_POLVO', 'SUCIEDAD_VISIBLE']
-const CLEANING_CLEANLINESS = ['MUY_SUCIO', 'SUCIEDAD_ACUMULADA']
+// Muy sucio/suciedad acumulada → "Requieren limpieza" (ámbar, más urgente).
+// Polvo leve/suciedad visible → "Sugiere limpieza" (gris, menos urgente).
+const HEAVY_DIRT_CLEANLINESS = ['MUY_SUCIO', 'SUCIEDAD_ACUMULADA']
+const LIGHT_DIRT_CLEANLINESS = ['LEVE_POLVO', 'SUCIEDAD_VISIBLE']
 
 // Mismos 4 cortes que auditLevel.ts (Crítico/Regular/Bueno/Óptimo), con los
 // mismos pares fill/border/text que ya usan Badge.tsx (danger/warning/
@@ -101,8 +103,8 @@ interface FlagGroup {
 
 // Las hasta 3 cards de urgencia de un sector, en orden decreciente de
 // prioridad — Vencidos primero (ya no puede evitarse, hay que reponer),
-// después "Requiere atención" (polvo leve/suciedad visible) y por último
-// "Sugiere limpieza" (muy sucio/suciedad acumulada). Un solo lugar arma esta
+// después "Requieren limpieza" (muy sucio/suciedad acumulada) y por último
+// "Sugiere limpieza" (polvo leve/suciedad visible). Un solo lugar arma esta
 // lista — tanto la medición previa del alto de la card como el dibujo real
 // iteran sobre el mismo array, así no hay dos criterios de armado que se
 // puedan desalinear.
@@ -111,13 +113,13 @@ function buildFlagGroups(sector: AuditDashboardSector): FlagGroup[] {
   if (sector.expiredExtinguishers.length > 0) {
     groups.push({ label: 'Vencidos', items: sector.expiredExtinguishers, fill: EXPIRED_FILL, border: EXPIRED_BORDER, text: RED_600 })
   }
-  const attention = sector.needsCleaningExtinguishers.filter((i) => i.cleanliness != null && ATTENTION_CLEANLINESS.includes(i.cleanliness))
-  if (attention.length > 0) {
-    groups.push({ label: 'Requiere atención', items: attention, fill: ATTENTION_FILL, border: ATTENTION_BORDER, text: AMBER_600 })
+  const heavyDirt = sector.needsCleaningExtinguishers.filter((i) => i.cleanliness != null && HEAVY_DIRT_CLEANLINESS.includes(i.cleanliness))
+  if (heavyDirt.length > 0) {
+    groups.push({ label: 'Requieren limpieza', items: heavyDirt, fill: AMBER_FILL, border: AMBER_BORDER, text: AMBER_600 })
   }
-  const cleaning = sector.needsCleaningExtinguishers.filter((i) => i.cleanliness != null && CLEANING_CLEANLINESS.includes(i.cleanliness))
-  if (cleaning.length > 0) {
-    groups.push({ label: 'Sugiere limpieza', items: cleaning, fill: CLEANING_FILL, border: CLEANING_BORDER, text: SLATE_700 })
+  const lightDirt = sector.needsCleaningExtinguishers.filter((i) => i.cleanliness != null && LIGHT_DIRT_CLEANLINESS.includes(i.cleanliness))
+  if (lightDirt.length > 0) {
+    groups.push({ label: 'Sugiere limpieza', items: lightDirt, fill: SLATE_FILL, border: SLATE_BORDER, text: SLATE_700 })
   }
   return groups
 }
