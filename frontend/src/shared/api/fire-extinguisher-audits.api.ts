@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { queryOptions, keepPreviousData } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { fireExtinguisherLabel } from '../utils/format'
 
@@ -84,6 +84,19 @@ export interface FireExtinguisherAudit {
 
 export type FireExtinguisherAuditStatus = 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'NEEDS_CORRECTION'
 
+// Mismo shape que AuditChecklistInput sin `comments` — la tabla no muestra
+// observaciones, solo los 7 campos que ya se ven en el detalle de la
+// auditoría (ver checklistConfig.ts).
+export interface FireExtinguisherAuditListChecklist {
+  cleanliness: string
+  chargeFillStatus: string
+  mountingCondition: string
+  sealStatus: string
+  ringStatus: string
+  hoseNozzleCondition: string
+  chargeExpirationDateObserved: string | null
+}
+
 export interface FireExtinguisherAuditListItem {
   id: string
   status: FireExtinguisherAuditStatus
@@ -94,6 +107,7 @@ export interface FireExtinguisherAuditListItem {
   reviewedAt: string | null
   reviewNotes: string | null
   proposedChangesCount: number
+  checklist: FireExtinguisherAuditListChecklist
   extinguisher: {
     id: string
     code: string
@@ -258,8 +272,65 @@ export interface AuditorProgressReport {
   auditors: AuditorProgress[]
 }
 
+// Filtros de la tabla — se mandan como query params reales, el backend arma
+// el `where` de Prisma (ver ListFireExtinguisherAuditsQuerySchema en el
+// backend, mismos nombres de campo). Con el paginador real, `status`/
+// `search`/`auditPeriodFrom`/`auditPeriodTo` también son server-side (antes
+// se filtraban en el cliente) — ver FireExtinguisherAuditsQueuePage.
 export interface FireExtinguisherAuditListFilters {
   fireExtinguisherId?: string
+  // ── Paginador real — antes client-side, ahora también soportados server-side.
+  // Aditivo: fireExtinguisherAuditsApi.findAll() (usado hoy por
+  // FireExtinguisherDetailPage.tsx para el historial de un matafuego puntual)
+  // sigue sin usarlos; solo los consume findAllPaginated().
+  search?: string
+  status?: string[]
+  auditPeriodFrom?: string
+  auditPeriodTo?: string
+  page?: number
+  limit?: number
+  auditedBy?: string[]
+  establishment?: string[]
+  locationType?: string[]
+  type?: string[]
+  cleanliness?: string[]
+  chargeFillStatus?: string[]
+  mountingCondition?: string[]
+  sealStatus?: string[]
+  ringStatus?: string[]
+  hoseNozzleCondition?: string[]
+  hasProposedChanges?: boolean
+  // Categoría de activo (Camión/Camioneta/Tractor/...) — solo tiene efecto
+  // en Auditoría de Rodados (población ASSET); Matafuegos nunca lo manda.
+  category?: string[]
+}
+
+// ── Paginador real — respuesta completa de GET /fire-extinguisher-audits ───────
+// Mismo shape que ya arma buildPaginatedResponse en el backend, más
+// statusCounts/auditorOptions agregados en la Fase 1 del paginador.
+
+export interface FireExtinguisherAuditPagination {
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+}
+
+// Mismo shape que AuditStatusCounts (shared/components/audit-queue/AuditStatusKpiRow.tsx)
+// — definido acá aparte, sin importarlo desde components/, para no hacer
+// depender la capa de API de la capa de componentes.
+export interface FireExtinguisherAuditStatusCounts {
+  SUBMITTED: number
+  NEEDS_CORRECTION: number
+  APPROVED: number
+  REJECTED: number
+}
+
+export interface FireExtinguisherAuditListResult {
+  data: FireExtinguisherAuditListItem[]
+  pagination: FireExtinguisherAuditPagination
+  statusCounts: FireExtinguisherAuditStatusCounts
+  auditorOptions: { value: string; label: string }[]
 }
 
 // ── Comentarios de Cobertura (feed compartido — ver AuditCommentsPanel.tsx) ────
@@ -316,11 +387,27 @@ export const fireExtinguisherAuditsApi = {
     await apiClient.delete(`/fire-extinguisher-audits/${auditId}/attachments/${attachmentId}`)
   },
 
+  // Usado hoy por FireExtinguisherDetailPage.tsx (historial de un matafuego
+  // puntual, vía fireExtinguisherId) — devuelve solo el array, sin
+  // paginación real. No lo usa más FireExtinguisherAuditsQueuePage.tsx desde
+  // que existe findAllPaginated() más abajo; se deja tal cual para no romper
+  // ese otro consumidor.
   async findAll(filters?: FireExtinguisherAuditListFilters): Promise<FireExtinguisherAuditListItem[]> {
+    // limit 500 = el tope del schema de paginación del backend (ver
+    // PaginationSchema).
     const res = await apiClient.get<{ data: FireExtinguisherAuditListItem[] }>('/fire-extinguisher-audits', {
-      params: { limit: 200, ...filters },
+      params: { limit: 500, ...filters },
     })
     return res.data.data
+  },
+
+  // Paginador real — devuelve data/pagination/statusCounts/auditorOptions tal
+  // cual los arma el backend (ver findAll() en fire-extinguisher-audits.service.ts).
+  // `page`/`limit` van en `filters`, sin default acá — quien llama decide el
+  // tamaño de página.
+  async findAllPaginated(filters?: FireExtinguisherAuditListFilters): Promise<FireExtinguisherAuditListResult> {
+    const res = await apiClient.get<FireExtinguisherAuditListResult>('/fire-extinguisher-audits', { params: filters })
+    return res.data
   },
 
   async review(id: string, input: FireExtinguisherAuditReviewInput): Promise<FireExtinguisherAudit> {
@@ -402,6 +489,18 @@ export const fireExtinguisherAuditQueries = {
       queryFn: () => fireExtinguisherAuditsApi.findAll(filters),
       staleTime: 60 * 1000,
       enabled: filters?.fireExtinguisherId === undefined || !!filters.fireExtinguisherId,
+    }),
+  // Paginador real — queryKey propia (no reusa fireExtinguisherAuditKeys.list)
+  // para no compartir caché con list() ni con su `enabled` (que es específico
+  // del historial por fireExtinguisherId). `keepPreviousData` evita el flash
+  // a loading al cambiar de página: se sigue mostrando la página anterior
+  // mientras llega la nueva.
+  listPaginated: (filters?: FireExtinguisherAuditListFilters) =>
+    queryOptions({
+      queryKey: [...fireExtinguisherAuditKeys.all, 'paginated', filters] as const,
+      queryFn: () => fireExtinguisherAuditsApi.findAllPaginated(filters),
+      staleTime: 60 * 1000,
+      placeholderData: keepPreviousData,
     }),
   detail: (id: string) =>
     queryOptions({

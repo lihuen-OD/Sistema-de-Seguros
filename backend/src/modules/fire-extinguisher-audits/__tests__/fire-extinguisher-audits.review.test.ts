@@ -18,6 +18,7 @@ jest.mock('../../../config/database', () => ({
       findUniqueOrThrow: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
+      groupBy: jest.fn(),
       update: jest.fn(),
     },
     fireExtinguisherAuditProposedChange: {
@@ -428,6 +429,9 @@ describe('Fire Extinguisher Audits — Review API', () => {
         },
       ])
       db.fireExtinguisherAudit.count.mockResolvedValue(1)
+      // statusCounts (groupBy) y auditorOptions (segundo findMany, con
+      // distinct) — agregados junto con el paginador real; ver findAll().
+      db.fireExtinguisherAudit.groupBy.mockResolvedValue([{ status: 'SUBMITTED', _count: 1 }])
     })
 
     it('returns items with extinguisher data and proposedChangesCount, no filter', async () => {

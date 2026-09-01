@@ -10,15 +10,17 @@ import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { ExportPresetsButton } from '../../../shared/components/data-table/ExportPresetsButton'
 import { ColumnConfigButton } from '../../../shared/components/data-table/ColumnConfigButton'
+import { PaginationControls } from '../../../shared/components/data-table/PaginationControls'
 import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
 import { MultiSelectFilter } from '../../../shared/components/filters/MultiSelectFilter'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
-import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { Tabs, type TabItem } from '../../../shared/components/tabs/Tabs'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { AuditStatusKpiRow } from '../../../shared/components/audit-queue/AuditStatusKpiRow'
 import { AuditBulkApproveBar } from '../../../shared/components/audit-queue/AuditBulkApproveBar'
+import { AdvancedFiltersToggleButton, AdvancedFiltersPanel } from '../../../shared/components/audit-queue/AdvancedFiltersBar'
+import { buildAuditPeriodColumn, buildAuditedByColumn, buildAuditDateColumn, buildAuditStatusColumn } from '../../../shared/components/audit-queue/auditQueueColumns'
 import { useAuditSelection } from '../../../shared/hooks/useAuditSelection'
 import { formatDate, fireExtinguisherLabel } from '../../../shared/utils/format'
 import { currentPeriod } from '../../../shared/utils/period'
@@ -28,25 +30,42 @@ import {
   fireExtinguisherAuditKeys,
   fireExtinguisherAuditQueries,
   type FireExtinguisherAuditListItem,
+  type FireExtinguisherAuditListFilters,
 } from '../../../shared/api/fire-extinguisher-audits.api'
 import { fireExtinguisherKeys } from '../../../shared/api/fire-extinguishers.api'
-import { FIRE_EXT_AUDIT_STATUS_LABELS } from '../../../shared/constants'
+import { catalogQueries } from '../../../shared/api/catalogs.api'
+import { getChecklistFields, optionLabel } from '../../../shared/components/audit-wizard/checklistConfig'
+import { AUDIT_STATUS_OPTIONS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import type { TableColumn } from '../../../shared/types'
 import { AuditCoverageTab } from './AuditCoverageTab'
 
-const STATUS_OPTIONS = Object.entries(FIRE_EXT_AUDIT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
+// Mismos labels/opciones que ya usa el detalle de la auditoría
+// (ChecklistReadOnlySummary) — se reutilizan acá tanto para las columnas
+// opcionales como para sus filtros, para no duplicar texto.
+const CHECKLIST_FIELDS = getChecklistFields('ESTABLISHMENT')
+type ChecklistChoiceKey = 'cleanliness' | 'chargeFillStatus' | 'mountingCondition' | 'sealStatus' | 'ringStatus' | 'hoseNozzleCondition'
+const CHECKLIST_CHOICE_KEYS = CHECKLIST_FIELDS.filter((f) => f.type === 'choice').map((f) => f.key) as ChecklistChoiceKey[]
 
-// Orden por flujo de trabajo al ordenar la columna "Estado" — alfabético
-// mezclaría aprobadas/rechazadas (ya resueltas) con las que todavía requieren
-// acción, que no es el orden que espera un revisor (mismo criterio que
-// STATUS_SORT_ORDER en FireExtinguishersPage; coincide con el orden de las
-// KPI cards de esta misma página).
-const AUDIT_STATUS_SORT_ORDER: Record<string, number> = {
-  SUBMITTED: 0,
-  NEEDS_CORRECTION: 1,
-  APPROVED: 2,
-  REJECTED: 3,
+const PROPOSED_CHANGES_OPTIONS = [
+  { value: 'with', label: 'Con cambios propuestos' },
+  { value: 'without', label: 'Sin cambios propuestos' },
+]
+
+// Paginador real — tamaño fijo por ahora, sin selector en esta fase.
+const PAGE_SIZE = 25
+
+// Envuelve un setter de filtro para que además vuelva a la página 1 — todo
+// cambio de filtro/búsqueda/estado/período tiene que resetear la página
+// (si no, se podría quedar "página 3" con un filtro nuevo que solo tiene 1
+// página de resultados, mostrando la tabla vacía sin explicación). A
+// propósito no es un useEffect (ver regla de CLAUDE.md sobre no sincronizar
+// estado con efectos) — cada handler llama esto explícitamente.
+function withPageReset<Args extends unknown[]>(setPage: (page: number) => void, fn: (...args: Args) => void) {
+  return (...args: Args) => {
+    fn(...args)
+    setPage(1)
+  }
 }
 
 export default function FireExtinguisherAuditsQueuePage() {
@@ -66,8 +85,118 @@ export default function FireExtinguisherAuditsQueuePage() {
   const [coveragePeriod, setCoveragePeriod] = useState(currentPeriod())
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [bulkApproving, setBulkApproving] = useState(false)
+  // Paginador real — page vuelve a 1 en cada cambio de filtro (ver
+  // withPageReset), page/limit se mandan al backend como query params reales.
+  const [page, setPage] = useState(1)
 
-  const { data: all = [], isLoading, isError } = useQuery(fireExtinguisherAuditQueries.list())
+  // ── Filtros avanzados — se pasan al backend como query params reales (ver
+  // FireExtinguisherAuditListFilters). Con el paginador real, status/
+  // búsqueda/período también son server-side (antes eran client-side).
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [filterAuditedBy, setFilterAuditedBy] = useState<string[]>([])
+  const [filterEstablishment, setFilterEstablishment] = useState<string[]>([])
+  const [filterLocationType, setFilterLocationType] = useState<string[]>([])
+  const [filterExtinguisherType, setFilterExtinguisherType] = useState<string[]>([])
+  const [checklistFilters, setChecklistFilters] = useState<Partial<Record<ChecklistChoiceKey, string[]>>>({})
+  const [filterProposedChanges, setFilterProposedChanges] = useState<string[]>([])
+
+  const { data: establishmentCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_establishment'))
+  const establishmentOptions = useMemo(() => establishmentCatalog.map((e) => ({ value: e.label, label: e.label })), [establishmentCatalog])
+
+  const { data: locationTypeCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_location_type'))
+  const locationTypeOptions = useMemo(() => locationTypeCatalog.map((lt) => ({ value: lt.label, label: lt.label })), [locationTypeCatalog])
+
+  const { data: extinguisherTypeCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_type'))
+  const extinguisherTypeOptions = useMemo(() => extinguisherTypeCatalog.map((t) => ({ value: t.label, label: t.label })), [extinguisherTypeCatalog])
+
+  function setChecklistFilter(key: ChecklistChoiceKey, values: string[]) {
+    setChecklistFilters((prev) => ({ ...prev, [key]: values }))
+  }
+
+  function clearAdvancedFilters() {
+    setFilterAuditedBy([])
+    setFilterEstablishment([])
+    setFilterLocationType([])
+    setFilterExtinguisherType([])
+    setChecklistFilters({})
+    setFilterProposedChanges([])
+  }
+
+  // Handlers "con reset de página" — uno por cada control que puede cambiar
+  // qué se está mirando (búsqueda, estado, período, avanzados). El botón de
+  // paginado en sí (onPageChange) NO pasa por acá.
+  const handleSearchChange = withPageReset(setPage, setSearch)
+  const handleStatusChange = withPageReset(setPage, setFilterStatus)
+  const handlePeriodChange = withPageReset(setPage, (from: string, to: string) => {
+    setFilterDateFrom(from)
+    setFilterDateTo(to)
+  })
+  const handleClearPeriod = withPageReset(setPage, () => {
+    setFilterDateFrom('')
+    setFilterDateTo('')
+  })
+  const handleAuditedByChange = withPageReset(setPage, setFilterAuditedBy)
+  const handleEstablishmentChange = withPageReset(setPage, setFilterEstablishment)
+  const handleLocationTypeChange = withPageReset(setPage, setFilterLocationType)
+  const handleExtinguisherTypeChange = withPageReset(setPage, setFilterExtinguisherType)
+  const handleChecklistFilterChange = withPageReset(setPage, setChecklistFilter)
+  const handleProposedChangesChange = withPageReset(setPage, setFilterProposedChanges)
+  const handleClearAdvancedFilters = withPageReset(setPage, clearAdvancedFilters)
+
+  const activeAdvancedFilterCount = useMemo(() => {
+    let count = 0
+    if (filterAuditedBy.length > 0) count++
+    if (filterEstablishment.length > 0) count++
+    if (filterLocationType.length > 0) count++
+    if (filterExtinguisherType.length > 0) count++
+    if (filterProposedChanges.length === 1) count++
+    count += CHECKLIST_CHOICE_KEYS.filter((key) => (checklistFilters[key]?.length ?? 0) > 0).length
+    return count
+  }, [filterAuditedBy, filterEstablishment, filterLocationType, filterExtinguisherType, filterProposedChanges, checklistFilters])
+
+  // Única fuente de filtros server-side — la usa tanto la query paginada en
+  // pantalla como la exportación (con page/limit propios cada una, ver
+  // getExportRows más abajo). Búsqueda/Estado/Período entran acá ahora que
+  // son server-side, junto a los filtros avanzados que ya lo eran.
+  const serverFilters = useMemo(() => {
+    const f: FireExtinguisherAuditListFilters = {}
+    if (search.trim()) f.search = search.trim()
+    if (filterStatus.length > 0) f.status = filterStatus
+    if (filterDateFrom) f.auditPeriodFrom = filterDateFrom
+    if (filterDateTo) f.auditPeriodTo = filterDateTo
+    if (filterAuditedBy.length > 0) f.auditedBy = filterAuditedBy
+    if (filterEstablishment.length > 0) f.establishment = filterEstablishment
+    if (filterLocationType.length > 0) f.locationType = filterLocationType
+    if (filterExtinguisherType.length > 0) f.type = filterExtinguisherType
+    for (const key of CHECKLIST_CHOICE_KEYS) {
+      const values = checklistFilters[key]
+      if (values && values.length > 0) f[key] = values
+    }
+    if (filterProposedChanges.length === 1) f.hasProposedChanges = filterProposedChanges[0] === 'with'
+    return f
+  }, [search, filterStatus, filterDateFrom, filterDateTo, filterAuditedBy, filterEstablishment, filterLocationType, filterExtinguisherType, checklistFilters, filterProposedChanges])
+
+  const { data: result, isLoading, isFetching, isError } = useQuery(
+    fireExtinguisherAuditQueries.listPaginated({ ...serverFilters, page, limit: PAGE_SIZE }),
+  )
+  const all = useMemo(() => result?.data ?? [], [result])
+  const pagination = result?.pagination
+  const statusCounts = result?.statusCounts ?? { SUBMITTED: 0, NEEDS_CORRECTION: 0, APPROVED: 0, REJECTED: 0 }
+  const auditorOptions = result?.auditorOptions ?? []
+
+  // Exporta TODO lo que matchea los filtros actuales (no solo la página
+  // visible) — un solo pedido puntual al hacer clic, con el mismo tope de
+  // 500 que ya existía antes del paginador. Si hay más de 500 resultados
+  // reales, avisa en vez de truncar en silencio.
+  async function getExportRows(): Promise<FireExtinguisherAuditListItem[]> {
+    const exportResult = await fireExtinguisherAuditsApi.findAllPaginated({ ...serverFilters, page: 1, limit: 500 })
+    if (exportResult.pagination.total > exportResult.data.length) {
+      toast.warning(
+        `Se exportaron los primeros ${exportResult.data.length} de ${exportResult.pagination.total} resultados — refiná los filtros para exportar todos.`,
+      )
+    }
+    return exportResult.data
+  }
 
   const { data: coverage = [], isLoading: coverageLoading } = useQuery(fireExtinguisherAuditQueries.coverage(coveragePeriod))
 
@@ -82,43 +211,11 @@ export default function FireExtinguisherAuditsQueuePage() {
       ]
     : []
 
-  const counts = useMemo(
-    () => ({
-      SUBMITTED: all.filter((a) => a.status === 'SUBMITTED').length,
-      NEEDS_CORRECTION: all.filter((a) => a.status === 'NEEDS_CORRECTION').length,
-      APPROVED: all.filter((a) => a.status === 'APPROVED').length,
-      REJECTED: all.filter((a) => a.status === 'REJECTED').length,
-    }),
-    [all],
-  )
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return all.filter((a) => {
-      const matchStatus = filterStatus.length === 0 || filterStatus.includes(a.status)
-      const matchSearch =
-        !q ||
-        [
-          a.extinguisher?.code,
-          a.extinguisher?.cylinderNumber,
-          a.extinguisher?.type,
-          a.extinguisher?.establishment,
-          a.extinguisher?.associatedLocationType,
-          a.auditedBy,
-        ]
-          .filter(Boolean)
-          .some((v) => v!.toLowerCase().includes(q))
-      const matchDateFrom = !filterDateFrom || a.auditPeriod >= filterDateFrom
-      const matchDateTo = !filterDateTo || a.auditPeriod <= filterDateTo
-      return matchStatus && matchSearch && matchDateFrom && matchDateTo
-    })
-  }, [all, search, filterStatus, filterDateFrom, filterDateTo])
-
-  function toggleStatusFilter(status: string) {
+  const handleToggleStatusFilter = withPageReset(setPage, (status: string) => {
     setFilterStatus((prev) => (prev.length === 1 && prev[0] === status ? [] : [status]))
-  }
+  })
 
-  const { selectedIds, setSelectedIds, isRowSelectable, toggleOne, toggleAll, clearSelection } = useAuditSelection(filtered)
+  const { selectedIds, setSelectedIds, isRowSelectable, toggleOne, toggleAll, clearSelection } = useAuditSelection(all)
 
   const selectedAudits = useMemo(() => all.filter((a) => selectedIds.has(a.id)), [all, selectedIds])
   const selectedWithChangesCount = selectedAudits.filter((a) => a.proposedChangesCount > 0).length
@@ -197,15 +294,9 @@ export default function FireExtinguisherAuditsQueuePage() {
           <span className="text-slate-400">—</span>
         ),
     },
-    { id: 'auditPeriod', key: 'auditPeriod', label: 'Período', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
-    { id: 'auditedBy', key: 'auditedBy', label: 'Auditor', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
-    {
-      id: 'auditDate',
-      key: 'auditDate',
-      label: 'Fecha',
-      sortable: true,
-      render: (v) => <span className="text-sm text-slate-500 tabular-nums">{formatDate(v as string)}</span>,
-    },
+    buildAuditPeriodColumn<FireExtinguisherAuditListItem>(),
+    buildAuditedByColumn<FireExtinguisherAuditListItem>(),
+    buildAuditDateColumn<FireExtinguisherAuditListItem>(),
     {
       id: 'proposedChangesCount',
       key: 'proposedChangesCount',
@@ -222,14 +313,34 @@ export default function FireExtinguisherAuditsQueuePage() {
         )
       },
     },
-    {
-      id: 'status',
-      key: 'status',
-      label: 'Estado',
-      sortable: true,
-      sortValue: (row) => AUDIT_STATUS_SORT_ORDER[row.status] ?? 99,
-      render: (v) => <StatusPill status={v as string} size="sm" />,
-    },
+    // Columnas del checklist de condición — ocultas por defecto (defaultVisible:
+    // false), seleccionables desde el selector de columnas existente.
+    // Generadas desde CHECKLIST_FIELDS (misma config que ChecklistReadOnlySummary
+    // en el detalle) para no duplicar labels/opciones acá.
+    ...CHECKLIST_FIELDS.map((field): TableColumn<FireExtinguisherAuditListItem> => {
+      const rawValue = (row: FireExtinguisherAuditListItem) =>
+        (row.checklist as unknown as Record<string, string | null | undefined>)[field.key]
+      return {
+        id: field.key,
+        key: field.key,
+        label: field.label,
+        sortable: true,
+        defaultVisible: false,
+        sortValue: (row) => rawValue(row) ?? null,
+        exportValue: (row) => {
+          const v = rawValue(row)
+          return field.type === 'date' ? (v ?? '') : optionLabel(field.options, v ?? undefined)
+        },
+        render: (_, row) => {
+          const v = rawValue(row)
+          if (field.type === 'date') {
+            return v ? <span className="text-sm text-slate-500 tabular-nums">{formatDate(v)}</span> : <span className="text-slate-400">—</span>
+          }
+          return <span className="text-sm text-slate-600">{optionLabel(field.options, v ?? undefined)}</span>
+        },
+      }
+    }),
+    buildAuditStatusColumn<FireExtinguisherAuditListItem>(),
   ], [])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig(
@@ -266,47 +377,75 @@ export default function FireExtinguisherAuditsQueuePage() {
 
       {activeTab === 'auditorias' && canReview && (
         <>
-          <AuditStatusKpiRow counts={counts} onStatusClick={toggleStatusFilter} />
+          <AuditStatusKpiRow counts={statusCounts} onStatusClick={handleToggleStatusFilter} />
 
           <SectionCard noPadding>
             <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
               <SearchInput
                 value={search}
-                onChange={setSearch}
+                onChange={handleSearchChange}
                 placeholder="Buscar por matafuego, establecimiento o auditor…"
                 className="w-full sm:w-80"
               />
-              <MultiSelectFilter label="Estado" options={STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
+              <MultiSelectFilter label="Estado" options={AUDIT_STATUS_OPTIONS} value={filterStatus} onChange={handleStatusChange} />
               <DateRangeMonthPicker
                 from={filterDateFrom}
                 to={filterDateTo}
-                onChange={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
+                onChange={handlePeriodChange}
               />
               {(filterDateFrom || filterDateTo) && (
                 <button
                   type="button"
-                  onClick={() => { setFilterDateFrom(''); setFilterDateTo('') }}
+                  onClick={handleClearPeriod}
                   className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
                 >
                   <X size={12} />
                   Limpiar fechas
                 </button>
               )}
+              <AdvancedFiltersToggleButton
+                active={showAdvancedFilters}
+                count={activeAdvancedFilterCount}
+                onClick={() => setShowAdvancedFilters((v) => !v)}
+              />
               <div className="ml-auto flex items-center gap-2">
-                <span className="text-xs text-slate-400 whitespace-nowrap">
-                  {filtered.length} de {all.length} auditorías
-                </span>
                 <ExportPresetsButton
                   tableKey="fire-extinguisher-audits"
                   allColumns={AUDIT_COL_DEFS}
                   visibleColumns={visibleColumns}
-                  filteredRows={filtered}
+                  filteredRows={all}
+                  getExportRows={getExportRows}
                   filenamePrefix="auditorias-matafuegos"
                   onApplyPreset={applyPreset}
                 />
                 <ColumnConfigButton columnConfigs={columnConfigs} onToggle={toggle} onReorder={reorder} onReset={reset} />
               </div>
             </div>
+
+            <AdvancedFiltersPanel show={showAdvancedFilters} activeCount={activeAdvancedFilterCount} onClear={handleClearAdvancedFilters}>
+              <MultiSelectFilter label="Auditor" options={auditorOptions} value={filterAuditedBy} onChange={handleAuditedByChange} />
+              <MultiSelectFilter label="Establecimiento" options={establishmentOptions} value={filterEstablishment} onChange={handleEstablishmentChange} />
+              <MultiSelectFilter label="Tipo de ubicación" options={locationTypeOptions} value={filterLocationType} onChange={handleLocationTypeChange} />
+              <MultiSelectFilter label="Tipo de matafuego" options={extinguisherTypeOptions} value={filterExtinguisherType} onChange={handleExtinguisherTypeChange} />
+              {CHECKLIST_CHOICE_KEYS.map((key) => {
+                const field = CHECKLIST_FIELDS.find((f) => f.key === key)!
+                return (
+                  <MultiSelectFilter
+                    key={key}
+                    label={field.label}
+                    options={field.options ?? []}
+                    value={checklistFilters[key] ?? []}
+                    onChange={(values) => handleChecklistFilterChange(key, values)}
+                  />
+                )
+              })}
+              <MultiSelectFilter
+                label="Cambios propuestos"
+                options={PROPOSED_CHANGES_OPTIONS}
+                value={filterProposedChanges}
+                onChange={handleProposedChangesChange}
+              />
+            </AdvancedFiltersPanel>
 
             <AuditBulkApproveBar
               selectedCount={selectedIds.size}
@@ -317,7 +456,7 @@ export default function FireExtinguisherAuditsQueuePage() {
             <DataTable
               tableKey="fire-extinguisher-audits"
               columns={visibleColumns}
-              data={filtered}
+              data={all}
               rowKey="id"
               loading={isLoading}
               onRowClick={(row) => navigate(ROUTES.FIRE_EXTINGUISHERS_AUDIT_DETAIL(row.id))}
@@ -330,6 +469,16 @@ export default function FireExtinguisherAuditsQueuePage() {
               onToggleAll={toggleAll}
               isRowSelectable={isRowSelectable}
             />
+            {pagination && (
+              <PaginationControls
+                page={pagination.page}
+                limit={pagination.limit}
+                total={pagination.total}
+                totalPages={pagination.totalPages}
+                isLoading={isFetching}
+                onPageChange={setPage}
+              />
+            )}
           </SectionCard>
         </>
       )}

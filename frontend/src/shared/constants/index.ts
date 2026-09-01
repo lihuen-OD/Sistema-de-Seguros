@@ -84,6 +84,11 @@ export const FIRE_EXT_AUDIT_STATUS_LABELS: Record<string, string> = {
   REJECTED: 'Rechazado',
 }
 
+// Opciones del filtro "Estado" — mismas 4 en los 3 dominios de auditoría
+// (Matafuegos/Rodados/Seguros), derivadas una sola vez acá en vez de
+// recalcularlas con Object.entries(...) en cada página.
+export const AUDIT_STATUS_OPTIONS = Object.entries(FIRE_EXT_AUDIT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
+
 export const TASK_STATUS_LABELS: Record<string, string> = {
   pendiente: 'Pendiente',
   en_curso: 'En Curso',

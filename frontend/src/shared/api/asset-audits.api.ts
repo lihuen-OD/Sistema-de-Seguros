@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { queryOptions, keepPreviousData } from '@tanstack/react-query'
 import { apiClient } from './client'
 import type {
   FireExtinguisherAuditCreateInput as AssetAuditCreateInput,
@@ -6,6 +6,11 @@ import type {
   FireExtinguisherAudit as AssetAudit,
   FireExtinguisherAuditAttachment as AssetAuditAttachment,
   FireExtinguisherAuditListItem as AssetAuditListItem,
+  FireExtinguisherAuditListChecklist as AssetAuditListChecklist,
+  FireExtinguisherAuditListFilters as AssetAuditListFilters,
+  FireExtinguisherAuditListResult as AssetAuditListResult,
+  FireExtinguisherAuditPagination as AssetAuditPagination,
+  FireExtinguisherAuditStatusCounts as AssetAuditStatusCounts,
   FireExtinguisherAuditReviewInput as AssetAuditReviewInput,
   BulkApproveFireExtinguisherAuditsResult as BulkApproveAssetAuditsResult,
   FireExtinguisherCoverageItem as AssetAuditCoverageItem,
@@ -28,6 +33,11 @@ export type {
   AssetAudit,
   AssetAuditAttachment,
   AssetAuditListItem,
+  AssetAuditListChecklist,
+  AssetAuditListFilters,
+  AssetAuditListResult,
+  AssetAuditPagination,
+  AssetAuditStatusCounts,
   AssetAuditReviewInput,
   BulkApproveAssetAuditsResult,
   AssetAuditCoverageItem,
@@ -75,10 +85,6 @@ export interface AssetAuditorProgress {
 export interface AssetAuditorProgressReport {
   period: string
   auditors: AssetAuditorProgress[]
-}
-
-export interface AssetAuditListFilters {
-  fireExtinguisherId?: string
 }
 
 // Asignación por activo individual — reemplaza la asignación por categoría.
@@ -140,9 +146,24 @@ export const assetAuditsApi = {
     await apiClient.delete(`/asset-audits/${auditId}/attachments/${attachmentId}`)
   },
 
+  // Sin otro consumidor hoy (a diferencia de findAll() de Matafuegos, que
+  // sigue usando FireExtinguisherDetailPage.tsx) — se mantiene igual, sin
+  // paginación real, por consistencia con el mismo patrón aditivo y por si
+  // en el futuro aparece un caso de uso análogo (historial de un matafuego
+  // puntual). AssetAuditsQueuePage.tsx ya no lo usa, ver findAllPaginated().
   async findAll(filters?: AssetAuditListFilters): Promise<AssetAuditListItem[]> {
-    const res = await apiClient.get<{ data: AssetAuditListItem[] }>('/asset-audits', { params: { limit: 200, ...filters } })
+    // limit 500 = tope del schema de paginación del backend.
+    const res = await apiClient.get<{ data: AssetAuditListItem[] }>('/asset-audits', { params: { limit: 500, ...filters } })
     return res.data.data
+  },
+
+  // Paginador real — devuelve data/pagination/statusCounts/auditorOptions tal
+  // cual los arma el backend compartido (mismo findAll() de
+  // fire-extinguisher-audits.service.ts, población ASSET). `page`/`limit` van
+  // en `filters`, sin default acá.
+  async findAllPaginated(filters?: AssetAuditListFilters): Promise<AssetAuditListResult> {
+    const res = await apiClient.get<AssetAuditListResult>('/asset-audits', { params: filters })
+    return res.data
   },
 
   async review(id: string, input: AssetAuditReviewInput): Promise<AssetAudit> {
@@ -209,6 +230,15 @@ export const assetAuditQueries = {
       queryKey: assetAuditKeys.list(filters),
       queryFn: () => assetAuditsApi.findAll(filters),
       staleTime: 60 * 1000,
+    }),
+  // Paginador real — queryKey propia, `keepPreviousData` evita el flash a
+  // loading al cambiar de página (mismo criterio que fire-extinguisher-audits.api.ts).
+  listPaginated: (filters?: AssetAuditListFilters) =>
+    queryOptions({
+      queryKey: [...assetAuditKeys.all, 'paginated', filters] as const,
+      queryFn: () => assetAuditsApi.findAllPaginated(filters),
+      staleTime: 60 * 1000,
+      placeholderData: keepPreviousData,
     }),
   detail: (id: string) =>
     queryOptions({

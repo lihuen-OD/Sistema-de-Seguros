@@ -105,6 +105,21 @@ function mapAuditListItem(row: Record<string, unknown>) {
     reviewedAt: row.reviewedAt ?? null,
     reviewNotes: row.reviewNotes ?? null,
     proposedChangesCount: (count?.proposedChanges as number | undefined) ?? 0,
+    // Mismo shape que mapAudit().checklist (sin `comments`, que no se
+    // muestra en la tabla) — la fila de FireExtinguisherAudit ya trae estas
+    // columnas porque findAll() solo usa `include` (no `select`) a nivel de
+    // FireExtinguisherAudit, así que exponerlas acá no agrega ninguna query.
+    checklist: {
+      cleanliness: row.cleanliness,
+      chargeFillStatus: row.chargeFillStatus,
+      mountingCondition: row.mountingCondition,
+      sealStatus: row.sealStatus,
+      ringStatus: row.ringStatus,
+      hoseNozzleCondition: row.hoseNozzleCondition,
+      chargeExpirationDateObserved: row.chargeExpirationDateObserved
+        ? toDateStr(row.chargeExpirationDateObserved as Date | string)
+        : null,
+    },
     extinguisher: fe
       ? {
           id: fe.id,
@@ -145,6 +160,68 @@ function assertDecisionsCoverPending(
       'DECISIONS_MISMATCH',
     )
   }
+}
+
+// Arma el `where` de FireExtinguisherAudit para findAll() — parametrizado
+// para poder pedir la misma combinación de filtros pero "sin" un campo
+// puntual (`skipStatus`/`skipAuditedBy`), que es exactamente lo que
+// necesitan statusCounts y auditorOptions: reflejar todos los filtros
+// activos EXCEPTO el propio campo que están calculando, para que el
+// selector de Estado y las opciones de Auditor no se autoexcluyan cuando
+// ese filtro ya está aplicado. Evita repetir esta misma cadena de `if` 3 veces.
+function buildAuditWhere(
+  query: ListFireExtinguisherAuditsQueryDTO,
+  fireExtinguisherIds: string[],
+  population: FireExtAuditPopulation,
+  options: { skipStatus?: boolean; skipAuditedBy?: boolean } = {},
+): Prisma.FireExtinguisherAuditWhereInput {
+  const where: Prisma.FireExtinguisherAuditWhereInput = { fireExtinguisherId: { in: fireExtinguisherIds } }
+  if (!options.skipStatus && query.status && query.status.length > 0) where.status = { in: query.status }
+  if (!options.skipAuditedBy && query.auditedBy && query.auditedBy.length > 0) where.auditedBy = { in: query.auditedBy }
+  if (query.cleanliness && query.cleanliness.length > 0) where.cleanliness = { in: query.cleanliness }
+  if (query.chargeFillStatus && query.chargeFillStatus.length > 0) where.chargeFillStatus = { in: query.chargeFillStatus }
+  if (query.mountingCondition && query.mountingCondition.length > 0) where.mountingCondition = { in: query.mountingCondition }
+  if (query.sealStatus && query.sealStatus.length > 0) where.sealStatus = { in: query.sealStatus }
+  if (query.ringStatus && query.ringStatus.length > 0) where.ringStatus = { in: query.ringStatus }
+  if (query.hoseNozzleCondition && query.hoseNozzleCondition.length > 0) where.hoseNozzleCondition = { in: query.hoseNozzleCondition }
+  // Mismo criterio que proposedChangesCount en la respuesta: cualquier
+  // cambio propuesto cuenta, sin importar su estado (PENDING/APPROVED/...).
+  if (query.hasProposedChanges !== undefined) {
+    where.proposedChanges = query.hasProposedChanges ? { some: {} } : { none: {} }
+  }
+  if (query.auditPeriodFrom || query.auditPeriodTo) {
+    where.auditPeriod = {
+      ...(query.auditPeriodFrom ? { gte: query.auditPeriodFrom } : {}),
+      ...(query.auditPeriodTo ? { lte: query.auditPeriodTo } : {}),
+    }
+  }
+  // Búsqueda de texto libre — mismos campos que ya buscaba el cliente por
+  // población (ver FireExtinguisherAuditsQueuePage.tsx/AssetAuditsQueuePage.tsx
+  // antes de este cambio), ahora resueltos server-side. `establishment`/
+  // `locationType` solo tienen sentido en ESTABLISHMENT; `asset.name`/
+  // `asset.assetType` solo en ASSET — mismo criterio que el filtro `category`
+  // más arriba.
+  if (query.search) {
+    const q = query.search
+    const baseOr: Prisma.FireExtinguisherAuditWhereInput[] = [
+      { auditedBy: { contains: q, mode: 'insensitive' } },
+      { extinguisher: { code: { contains: q, mode: 'insensitive' } } },
+      { extinguisher: { cylinderNumber: { contains: q, mode: 'insensitive' } } },
+      { extinguisher: { type: { contains: q, mode: 'insensitive' } } },
+    ]
+    where.OR = population === 'ESTABLISHMENT'
+      ? [
+          ...baseOr,
+          { extinguisher: { establishment: { contains: q, mode: 'insensitive' } } },
+          { extinguisher: { locationType: { contains: q, mode: 'insensitive' } } },
+        ]
+      : [
+          ...baseOr,
+          { extinguisher: { asset: { is: { name: { contains: q, mode: 'insensitive' } } } } },
+          { extinguisher: { asset: { is: { assetType: { contains: q, mode: 'insensitive' } } } } },
+        ]
+  }
+  return where
 }
 
 // FireExtinguisherAudit sirve a dos poblaciones (ver
@@ -472,22 +549,51 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
       // para cualquier caller, no solo para el auditor scope-restricted. Sin
       // esto, GET /fire-extinguisher-audits empezaría a devolver también
       // auditorías de matafuegos de vehículos (y viceversa en /asset-audits).
+      // Establecimiento/tipo de ubicación/tipo de matafuego viven en
+      // FireExtinguisher, no en FireExtinguisherAudit — se resuelven acá,
+      // recortando la misma consulta que ya arma la lista de elegibles por
+      // población/alcance en vez de sumar una consulta aparte. Antes esta
+      // consulta no tenía `where` (traía toda la tabla); con estos filtros
+      // activos ahora trae menos filas, nunca más que antes.
+      const extinguisherWhere: Prisma.FireExtinguisherWhereInput = {}
+      if (query.establishment && query.establishment.length > 0) extinguisherWhere.establishment = { in: query.establishment }
+      if (query.locationType && query.locationType.length > 0) extinguisherWhere.locationType = { in: query.locationType }
+      if (query.type && query.type.length > 0) extinguisherWhere.type = { in: query.type }
+
       const allExtinguishers = await prisma.fireExtinguisher.findMany({
+        where: extinguisherWhere,
         select: { id: true, establishment: true, assetId: true, asset: { select: { assetType: true, fireExtinguisherAuditable: true } } },
       })
       let allowed = allExtinguishers.filter((fe) => matchesAuditPopulation(fe, population))
       if (scope.restricted) {
         allowed = allowed.filter((fe) => isInScope(scope, auditScopeMatchValueFor(fe, population)))
       }
+      // Categoría de activo (Camión/Camioneta/Tractor/...) — solo tiene
+      // sentido para población ASSET (Rodados); Matafuegos (ESTABLISHMENT)
+      // ignora este filtro aunque llegara a mandarse. No se puede expresar
+      // como `where` de Prisma porque auditScopeKeyFor normaliza el
+      // `assetType` libre (acentos, variantes legacy) — se resuelve acá,
+      // en el mismo filtro en memoria que ya corre para población/alcance,
+      // sin sumar ninguna consulta nueva.
+      if (population === 'ASSET' && query.category && query.category.length > 0) {
+        const wantedCategories = new Set<string>(query.category)
+        allowed = allowed.filter((fe) => wantedCategories.has(auditScopeKeyFor(fe, population) ?? ''))
+      }
       let fireExtinguisherIds = allowed.map((fe) => fe.id)
       if (query.fireExtinguisherId) {
         fireExtinguisherIds = fireExtinguisherIds.includes(query.fireExtinguisherId) ? [query.fireExtinguisherId] : []
       }
 
-      const where: Prisma.FireExtinguisherAuditWhereInput = { fireExtinguisherId: { in: fireExtinguisherIds } }
-      if (query.status && query.status.length > 0) where.status = { in: query.status }
+      const where = buildAuditWhere(query, fireExtinguisherIds, population)
+      // statusCounts/auditorOptions reflejan TODOS los filtros activos menos
+      // el propio campo que están calculando — así el KPI row no cambia sus 4
+      // números al tocar el filtro de Estado, y el dropdown de Auditor sigue
+      // ofreciendo otros auditores aunque ya haya uno tildado (antes se
+      // autoexcluían, ver comentario de buildAuditWhere).
+      const whereForStatusCounts = buildAuditWhere(query, fireExtinguisherIds, population, { skipStatus: true })
+      const whereForAuditorOptions = buildAuditWhere(query, fireExtinguisherIds, population, { skipAuditedBy: true })
 
-      const [rows, total] = await Promise.all([
+      const [rows, total, statusGroups, auditorRows] = await Promise.all([
         prisma.fireExtinguisherAudit.findMany({
           where,
           skip,
@@ -510,13 +616,28 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
           },
         }),
         prisma.fireExtinguisherAudit.count({ where }),
+        prisma.fireExtinguisherAudit.groupBy({ by: ['status'], where: whereForStatusCounts, _count: true }),
+        prisma.fireExtinguisherAudit.findMany({
+          where: whereForAuditorOptions,
+          select: { auditedBy: true },
+          distinct: ['auditedBy'],
+          orderBy: { auditedBy: 'asc' },
+        }),
       ])
 
-      return buildPaginatedResponse(
-        rows.map((r) => mapAuditListItem(r as unknown as Record<string, unknown>)),
-        total,
-        { page, limit },
-      )
+      const statusCounts: Record<string, number> = { SUBMITTED: 0, NEEDS_CORRECTION: 0, APPROVED: 0, REJECTED: 0 }
+      for (const g of statusGroups) statusCounts[g.status] = g._count
+      const auditorOptions = auditorRows.map((r) => ({ value: r.auditedBy, label: r.auditedBy }))
+
+      return {
+        ...buildPaginatedResponse(
+          rows.map((r) => mapAuditListItem(r as unknown as Record<string, unknown>)),
+          total,
+          { page, limit },
+        ),
+        statusCounts,
+        auditorOptions,
+      }
     },
 
     // Cobertura de auditoría: todos los matafuegos activos de esta población

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema } from '../../shared/schemas/common'
+import { PaginationSchema, booleanFromString } from '../../shared/schemas/common'
 import { AuditPeriodQuerySchema, BulkApproveAuditsSchema } from '../../shared/schemas/audit-domain'
 import { AUDITABLE_ASSET_CATEGORIES } from '../../shared/types'
 import {
@@ -134,16 +134,58 @@ export const ReviewFireExtinguisherAuditSchema = z.object({
 // auditoría — ver shared/schemas/audit-domain.ts.
 export const BulkApproveFireExtinguisherAuditsSchema = BulkApproveAuditsSchema
 
-// Acepta ?status=SUBMITTED (string) o ?status=SUBMITTED&status=NEEDS_CORRECTION
-// (array, comportamiento nativo de Express/qs con params repetidos) y lo
-// normaliza siempre a un array (o undefined si no vino).
-export const ListFireExtinguisherAuditsQuerySchema = PaginationSchema.extend({
-  status: z
-    .union([z.enum(FIRE_EXT_AUDIT_STATUSES), z.array(z.enum(FIRE_EXT_AUDIT_STATUSES))])
+// Acepta ?campo=valor (string) o ?campo=valor1&campo=valor2 (array,
+// comportamiento nativo de Express/qs con params repetidos, también con
+// notación campo[]=valor1&campo[]=valor2) y lo normaliza siempre a un array
+// (o undefined si no vino). Factorizado porque el listado de auditorías
+// soporta varios filtros multi-select con esta misma forma (status y los
+// filtros avanzados de establecimiento/tipo/checklist más abajo).
+function arrayFilter<Schema extends z.ZodTypeAny>(schema: Schema) {
+  return z
+    .union([schema, z.array(schema)])
     .optional()
-    .transform((v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v])),
+    .transform((v) => {
+      // TS no puede acotar `Array.isArray` sobre una unión genérica (Schema
+      // podría en teoría ser un array), así que el resultado se castea
+      // explícitamente — los schemas que se le pasan acá nunca son arrays.
+      if (v === undefined) return undefined
+      return (Array.isArray(v) ? v : [v]) as z.infer<Schema>[]
+    })
+}
+
+export const ListFireExtinguisherAuditsQuerySchema = PaginationSchema.extend({
+  status: arrayFilter(z.enum(FIRE_EXT_AUDIT_STATUSES)),
   // Historial de auditorías de un matafuego puntual (ficha de detalle).
   fireExtinguisherId: z.string().uuid('ID de matafuego inválido').optional(),
+  // ── Filtros avanzados de la tabla (Fase 1 — columnas/filtros de checklist) ──
+  // auditedBy/establishment/locationType/type son texto libre respaldado por
+  // catálogo (establishment/locationType/type) o sin catálogo (auditedBy) —
+  // no son enums, se filtran por igualdad exacta contra lo que ya guarda
+  // FireExtinguisher/FireExtinguisherAudit.
+  auditedBy: arrayFilter(z.string().trim().min(1)),
+  establishment: arrayFilter(z.string().trim().min(1)),
+  locationType: arrayFilter(z.string().trim().min(1)),
+  type: arrayFilter(z.string().trim().min(1)),
+  cleanliness: arrayFilter(z.enum(FIRE_EXT_AUDIT_CLEANLINESS)),
+  chargeFillStatus: arrayFilter(z.enum(FIRE_EXT_AUDIT_CHARGE_FILL_STATUS)),
+  mountingCondition: arrayFilter(z.enum(FIRE_EXT_AUDIT_MOUNTING_CONDITION)),
+  sealStatus: arrayFilter(z.enum(FIRE_EXT_AUDIT_HAS_STATUS)),
+  ringStatus: arrayFilter(z.enum(FIRE_EXT_AUDIT_HAS_STATUS)),
+  hoseNozzleCondition: arrayFilter(z.enum(FIRE_EXT_AUDIT_HOSE_NOZZLE_CONDITION)),
+  // "Con cambios propuestos" (true) / "Sin cambios propuestos" (false) — mismo
+  // criterio que proposedChangesCount en la respuesta (cualquier estado, no
+  // solo PENDING).
+  hasProposedChanges: booleanFromString.optional(),
+  // Categoría del Asset al que está montado el matafuego (una de
+  // AUDITABLE_ASSET_CATEGORIES) — solo tiene efecto en población ASSET
+  // (Auditoría de Rodados); ESTABLISHMENT (Matafuegos) lo ignora, mismo
+  // criterio que establishment/category en AuditDashboardQuerySchema más abajo.
+  category: arrayFilter(z.enum(AUDITABLE_ASSET_CATEGORIES)),
+  // ── Paginador real (búsqueda/período server-side) ──────────────────────────
+  // Búsqueda de texto libre — campos exactos por población, ver findAll().
+  search: z.string().trim().min(1).optional(),
+  auditPeriodFrom: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM').optional(),
+  auditPeriodTo: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM').optional(),
 })
 
 // ── Cobertura por establecimiento ───────────────────────────────────────────────
