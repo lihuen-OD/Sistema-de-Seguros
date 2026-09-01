@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema } from '../../shared/schemas/common'
+import { PaginationSchema, booleanFromString } from '../../shared/schemas/common'
 import { AuditPeriodQuerySchema, BulkApproveAuditsSchema, SaveAssignmentSchema } from '../../shared/schemas/audit-domain'
 import { INSURANCE_AUDIT_STATUSES } from './insurance-audits.constants'
 
@@ -40,6 +40,15 @@ export const ListInsuranceAuditsQuerySchema = PaginationSchema.extend({
     .optional()
     .transform((v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v])),
   assetId: z.string().uuid('ID de activo inválido').optional(),
+  // ── Filtros avanzados de la tabla (mismo criterio que fire-extinguisher-audits) ──
+  auditedBy: z
+    .union([z.string().trim().min(1), z.array(z.string().trim().min(1))])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v])),
+  hasCirculationCard: booleanFromString.optional(),
+  // "Con comentarios" (true) / "Sin comentarios" (false) — comments es
+  // String? nullable en InsuranceAudit, se filtra por presencia de valor.
+  hasComments: booleanFromString.optional(),
 })
 
 // Mismo shape que los otros 2 dominios de auditoría — ver shared/schemas/audit-domain.ts.

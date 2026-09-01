@@ -6,6 +6,8 @@ import type {
   FireExtinguisherAudit as AssetAudit,
   FireExtinguisherAuditAttachment as AssetAuditAttachment,
   FireExtinguisherAuditListItem as AssetAuditListItem,
+  FireExtinguisherAuditListChecklist as AssetAuditListChecklist,
+  FireExtinguisherAuditListFilters as AssetAuditListFilters,
   FireExtinguisherAuditReviewInput as AssetAuditReviewInput,
   BulkApproveFireExtinguisherAuditsResult as BulkApproveAssetAuditsResult,
   FireExtinguisherCoverageItem as AssetAuditCoverageItem,
@@ -28,6 +30,8 @@ export type {
   AssetAudit,
   AssetAuditAttachment,
   AssetAuditListItem,
+  AssetAuditListChecklist,
+  AssetAuditListFilters,
   AssetAuditReviewInput,
   BulkApproveAssetAuditsResult,
   AssetAuditCoverageItem,
@@ -75,10 +79,6 @@ export interface AssetAuditorProgress {
 export interface AssetAuditorProgressReport {
   period: string
   auditors: AssetAuditorProgress[]
-}
-
-export interface AssetAuditListFilters {
-  fireExtinguisherId?: string
 }
 
 // Asignación por activo individual — reemplaza la asignación por categoría.
@@ -141,7 +141,9 @@ export const assetAuditsApi = {
   },
 
   async findAll(filters?: AssetAuditListFilters): Promise<AssetAuditListItem[]> {
-    const res = await apiClient.get<{ data: AssetAuditListItem[] }>('/asset-audits', { params: { limit: 200, ...filters } })
+    // limit 500 = mismo criterio que fire-extinguisher-audits.api.ts (tope
+    // del schema de paginación del backend, sin paginador visual todavía).
+    const res = await apiClient.get<{ data: AssetAuditListItem[] }>('/asset-audits', { params: { limit: 500, ...filters } })
     return res.data.data
   },
 

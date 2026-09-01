@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { X, Gauge } from 'lucide-react'
+import { X, Gauge, SlidersHorizontal, CheckCircle2, XCircle } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -24,7 +24,13 @@ import { useAuditSelection } from '../../shared/hooks/useAuditSelection'
 import { formatDate } from '../../shared/utils/format'
 import { currentPeriod } from '../../shared/utils/period'
 import { useCurrentUser } from '../../app/auth/AuthContext'
-import { insuranceAuditsApi, insuranceAuditKeys, insuranceAuditQueries, type InsuranceAuditListItem } from '../../shared/api/insurance-audits.api'
+import {
+  insuranceAuditsApi,
+  insuranceAuditKeys,
+  insuranceAuditQueries,
+  type InsuranceAuditListItem,
+  type InsuranceAuditListFilters,
+} from '../../shared/api/insurance-audits.api'
 import { FIRE_EXT_AUDIT_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TableColumn } from '../../shared/types'
@@ -38,6 +44,18 @@ const AUDIT_STATUS_SORT_ORDER: Record<string, number> = {
   APPROVED: 2,
   REJECTED: 3,
 }
+
+// Mismo criterio de texto que InsuranceAuditDetailPage.tsx (checklist) — no
+// se inventa una redacción nueva para la columna/filtro.
+const HAS_CIRCULATION_CARD_OPTIONS = [
+  { value: 'yes', label: 'Tiene la tarjeta a bordo' },
+  { value: 'no', label: 'No tiene la tarjeta a bordo' },
+]
+
+const HAS_COMMENTS_OPTIONS = [
+  { value: 'yes', label: 'Con comentarios' },
+  { value: 'no', label: 'Sin comentarios' },
+]
 
 export default function InsuranceAuditsQueuePage() {
   const navigate = useNavigate()
@@ -56,7 +74,49 @@ export default function InsuranceAuditsQueuePage() {
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [bulkApproving, setBulkApproving] = useState(false)
 
-  const { data: all = [], isLoading, isError } = useQuery(insuranceAuditQueries.list())
+  // ── Filtros avanzados — mismo criterio que Matafuegos/Rodados: query params
+  // reales al backend; status/búsqueda/período siguen client-side (KPI row).
+  // Sin filtro de "Vehículo/Activo" ni "Patente" acá — la búsqueda de texto
+  // ya cubre ambos (código/nombre/tipo/patente/chasis/motor/auditor) y un
+  // multi-select sobre todos los activos elegibles no aporta sobre eso.
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [filterAuditedBy, setFilterAuditedBy] = useState<string[]>([])
+  const [filterHasCard, setFilterHasCard] = useState<string[]>([])
+  const [filterHasComments, setFilterHasComments] = useState<string[]>([])
+
+  function clearAdvancedFilters() {
+    setFilterAuditedBy([])
+    setFilterHasCard([])
+    setFilterHasComments([])
+  }
+
+  const activeAdvancedFilterCount = useMemo(() => {
+    let count = 0
+    if (filterAuditedBy.length > 0) count++
+    if (filterHasCard.length === 1) count++
+    if (filterHasComments.length === 1) count++
+    return count
+  }, [filterAuditedBy, filterHasCard, filterHasComments])
+
+  const queryFilters = useMemo(() => {
+    const f: InsuranceAuditListFilters = {}
+    if (filterAuditedBy.length > 0) f.auditedBy = filterAuditedBy
+    if (filterHasCard.length === 1) f.hasCirculationCard = filterHasCard[0] === 'yes'
+    if (filterHasComments.length === 1) f.hasComments = filterHasComments[0] === 'yes'
+    return f
+  }, [filterAuditedBy, filterHasCard, filterHasComments])
+
+  const { data: all = [], isLoading, isError } = useQuery(
+    insuranceAuditQueries.list(Object.keys(queryFilters).length > 0 ? queryFilters : undefined),
+  )
+
+  // Auditores derivados de las auditorías ya cargadas — mismo criterio que
+  // Matafuegos/Rodados (auditedBy no tiene catálogo propio).
+  const auditorOptions = useMemo(() => {
+    const names = new Set(all.map((a) => a.auditedBy).filter(Boolean))
+    return [...names].sort().map((name) => ({ value: name, label: name }))
+  }, [all])
+
   const { data: coverage = [], isLoading: coverageLoading } = useQuery(insuranceAuditQueries.coverage(coveragePeriod))
   const { data: assignments, isLoading: assignmentsLoading } = useQuery({
     ...insuranceAuditQueries.assignments(),
@@ -157,6 +217,78 @@ export default function InsuranceAuditsQueuePage() {
     { id: 'auditPeriod', key: 'auditPeriod', label: 'Período', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
     { id: 'auditedBy', key: 'auditedBy', label: 'Auditor', sortable: true, render: (v) => <span className="text-sm text-slate-600">{v as string}</span> },
     { id: 'auditDate', key: 'auditDate', label: 'Fecha', sortable: true, render: (v) => <span className="text-sm text-slate-500 tabular-nums">{formatDate(v as string)}</span> },
+    // Columnas del checklist de Seguros — ocultas por defecto, seleccionables
+    // desde el selector de columnas existente. Checklist más chico que
+    // Matafuegos/Rodados (2 campos), sin config compartida que reutilizar acá
+    // (InsuranceAuditDetailPage.tsx tampoco pasa por checklistConfig.ts) —
+    // mismo texto/íconos que ya usa esa pantalla, para no inventar una
+    // redacción nueva.
+    {
+      id: 'hasCirculationCard',
+      key: 'hasCirculationCard',
+      label: 'Tiene tarjeta de circulación',
+      sortable: true,
+      defaultVisible: false,
+      sortValue: (row) => (row.checklist.hasCirculationCard ? 1 : 0),
+      exportValue: (row) => (row.checklist.hasCirculationCard ? 'Tiene la tarjeta a bordo' : 'No tiene la tarjeta a bordo'),
+      render: (_, row) => (
+        <span className="inline-flex items-center gap-1.5 text-sm text-slate-600">
+          {row.checklist.hasCirculationCard ? (
+            <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
+          ) : (
+            <XCircle size={14} className="text-red-500 flex-shrink-0" />
+          )}
+          {row.checklist.hasCirculationCard ? 'Tiene la tarjeta a bordo' : 'No tiene la tarjeta a bordo'}
+        </span>
+      ),
+    },
+    {
+      id: 'comments',
+      key: 'comments',
+      label: 'Comentarios',
+      sortable: true,
+      defaultVisible: false,
+      sortValue: (row) => row.checklist.comments ?? null,
+      exportValue: (row) => row.checklist.comments ?? '',
+      render: (_, row) =>
+        row.checklist.comments ? (
+          <span className="block text-sm text-slate-600 truncate max-w-xs" title={row.checklist.comments}>
+            {row.checklist.comments}
+          </span>
+        ) : (
+          <span className="text-slate-400">—</span>
+        ),
+    },
+    {
+      id: 'plate',
+      key: 'plate',
+      label: 'Patente',
+      sortable: true,
+      defaultVisible: false,
+      sortValue: (row) => row.asset?.plate ?? null,
+      exportValue: (row) => row.asset?.plate ?? '',
+      render: (_, row) => <span className="text-sm text-slate-600 font-mono">{row.asset?.plate ?? '—'}</span>,
+    },
+    {
+      id: 'chassisNumber',
+      key: 'chassisNumber',
+      label: 'Número de chasis',
+      sortable: true,
+      defaultVisible: false,
+      sortValue: (row) => row.asset?.chassisNumber ?? null,
+      exportValue: (row) => row.asset?.chassisNumber ?? '',
+      render: (_, row) => <span className="text-sm text-slate-600 font-mono">{row.asset?.chassisNumber ?? '—'}</span>,
+    },
+    {
+      id: 'engineNumber',
+      key: 'engineNumber',
+      label: 'Número de motor',
+      sortable: true,
+      defaultVisible: false,
+      sortValue: (row) => row.asset?.engineNumber ?? null,
+      exportValue: (row) => row.asset?.engineNumber ?? '',
+      render: (_, row) => <span className="text-sm text-slate-600 font-mono">{row.asset?.engineNumber ?? '—'}</span>,
+    },
     {
       id: 'status',
       key: 'status',
@@ -224,6 +356,18 @@ export default function InsuranceAuditsQueuePage() {
                   Limpiar fechas
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => setShowAdvancedFilters((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  showAdvancedFilters || activeAdvancedFilterCount > 0
+                    ? 'bg-brand-50 border-brand-300 text-brand-700'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                }`}
+              >
+                <SlidersHorizontal size={14} />
+                <span>Filtros avanzados{activeAdvancedFilterCount > 0 ? ` · ${activeAdvancedFilterCount}` : ''}</span>
+              </button>
               <div className="ml-auto flex items-center gap-2">
                 <span className="text-xs text-slate-400 whitespace-nowrap">{filtered.length} de {all.length} auditorías</span>
                 <ExportPresetsButton
@@ -237,6 +381,24 @@ export default function InsuranceAuditsQueuePage() {
                 <ColumnConfigButton columnConfigs={columnConfigs} onToggle={toggle} onReorder={reorder} onReset={reset} />
               </div>
             </div>
+
+            {showAdvancedFilters && (
+              <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3 bg-slate-50/60">
+                <MultiSelectFilter label="Auditor" options={auditorOptions} value={filterAuditedBy} onChange={setFilterAuditedBy} />
+                <MultiSelectFilter label="Tarjeta de circulación" options={HAS_CIRCULATION_CARD_OPTIONS} value={filterHasCard} onChange={setFilterHasCard} />
+                <MultiSelectFilter label="Comentarios" options={HAS_COMMENTS_OPTIONS} value={filterHasComments} onChange={setFilterHasComments} />
+                {activeAdvancedFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearAdvancedFilters}
+                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                  >
+                    <X size={12} />
+                    Limpiar filtros avanzados
+                  </button>
+                )}
+              </div>
+            )}
 
             <AuditBulkApproveBar
               selectedCount={selectedIds.size}

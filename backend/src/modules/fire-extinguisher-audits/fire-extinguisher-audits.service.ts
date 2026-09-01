@@ -105,6 +105,21 @@ function mapAuditListItem(row: Record<string, unknown>) {
     reviewedAt: row.reviewedAt ?? null,
     reviewNotes: row.reviewNotes ?? null,
     proposedChangesCount: (count?.proposedChanges as number | undefined) ?? 0,
+    // Mismo shape que mapAudit().checklist (sin `comments`, que no se
+    // muestra en la tabla) — la fila de FireExtinguisherAudit ya trae estas
+    // columnas porque findAll() solo usa `include` (no `select`) a nivel de
+    // FireExtinguisherAudit, así que exponerlas acá no agrega ninguna query.
+    checklist: {
+      cleanliness: row.cleanliness,
+      chargeFillStatus: row.chargeFillStatus,
+      mountingCondition: row.mountingCondition,
+      sealStatus: row.sealStatus,
+      ringStatus: row.ringStatus,
+      hoseNozzleCondition: row.hoseNozzleCondition,
+      chargeExpirationDateObserved: row.chargeExpirationDateObserved
+        ? toDateStr(row.chargeExpirationDateObserved as Date | string)
+        : null,
+    },
     extinguisher: fe
       ? {
           id: fe.id,
@@ -472,7 +487,19 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
       // para cualquier caller, no solo para el auditor scope-restricted. Sin
       // esto, GET /fire-extinguisher-audits empezaría a devolver también
       // auditorías de matafuegos de vehículos (y viceversa en /asset-audits).
+      // Establecimiento/tipo de ubicación/tipo de matafuego viven en
+      // FireExtinguisher, no en FireExtinguisherAudit — se resuelven acá,
+      // recortando la misma consulta que ya arma la lista de elegibles por
+      // población/alcance en vez de sumar una consulta aparte. Antes esta
+      // consulta no tenía `where` (traía toda la tabla); con estos filtros
+      // activos ahora trae menos filas, nunca más que antes.
+      const extinguisherWhere: Prisma.FireExtinguisherWhereInput = {}
+      if (query.establishment && query.establishment.length > 0) extinguisherWhere.establishment = { in: query.establishment }
+      if (query.locationType && query.locationType.length > 0) extinguisherWhere.locationType = { in: query.locationType }
+      if (query.type && query.type.length > 0) extinguisherWhere.type = { in: query.type }
+
       const allExtinguishers = await prisma.fireExtinguisher.findMany({
+        where: extinguisherWhere,
         select: { id: true, establishment: true, assetId: true, asset: { select: { assetType: true, fireExtinguisherAuditable: true } } },
       })
       let allowed = allExtinguishers.filter((fe) => matchesAuditPopulation(fe, population))
@@ -486,6 +513,18 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
 
       const where: Prisma.FireExtinguisherAuditWhereInput = { fireExtinguisherId: { in: fireExtinguisherIds } }
       if (query.status && query.status.length > 0) where.status = { in: query.status }
+      if (query.auditedBy && query.auditedBy.length > 0) where.auditedBy = { in: query.auditedBy }
+      if (query.cleanliness && query.cleanliness.length > 0) where.cleanliness = { in: query.cleanliness }
+      if (query.chargeFillStatus && query.chargeFillStatus.length > 0) where.chargeFillStatus = { in: query.chargeFillStatus }
+      if (query.mountingCondition && query.mountingCondition.length > 0) where.mountingCondition = { in: query.mountingCondition }
+      if (query.sealStatus && query.sealStatus.length > 0) where.sealStatus = { in: query.sealStatus }
+      if (query.ringStatus && query.ringStatus.length > 0) where.ringStatus = { in: query.ringStatus }
+      if (query.hoseNozzleCondition && query.hoseNozzleCondition.length > 0) where.hoseNozzleCondition = { in: query.hoseNozzleCondition }
+      // Mismo criterio que proposedChangesCount en la respuesta: cualquier
+      // cambio propuesto cuenta, sin importar su estado (PENDING/APPROVED/...).
+      if (query.hasProposedChanges !== undefined) {
+        where.proposedChanges = query.hasProposedChanges ? { some: {} } : { none: {} }
+      }
 
       const [rows, total] = await Promise.all([
         prisma.fireExtinguisherAudit.findMany({

@@ -63,6 +63,14 @@ export interface InsuranceAudit {
   updatedAt: string
 }
 
+// Mismo shape que InsuranceAuditChecklistInput, pero `comments` siempre
+// presente (string | null, tal como llega de la base) en vez de opcional —
+// esto es lo que ya devuelve el listado, no lo que se manda a crear/editar.
+export interface InsuranceAuditListChecklist {
+  hasCirculationCard: boolean
+  comments: string | null
+}
+
 export interface InsuranceAuditListItem {
   id: string
   status: InsuranceAuditStatus
@@ -73,6 +81,7 @@ export interface InsuranceAuditListItem {
   reviewedAt: string | null
   reviewNotes: string | null
   cardUpdateRequested: boolean
+  checklist: InsuranceAuditListChecklist
   asset: ({ id: string; code: string | null; name: string; assetType: string } & InsuranceAuditVehicleMeta) | null
 }
 
@@ -136,8 +145,15 @@ export interface InsuranceAuditorProgressReport {
   auditors: InsuranceAuditorProgress[]
 }
 
+// Filtros avanzados de la tabla — se mandan como query params reales (ver
+// ListInsuranceAuditsQuerySchema en el backend, mismos nombres de campo).
+// `status`, la búsqueda de texto y el rango de período siguen filtrándose
+// en el cliente, sin cambios — mismo criterio que fire-extinguisher-audits.
 export interface InsuranceAuditListFilters {
   assetId?: string
+  auditedBy?: string[]
+  hasCirculationCard?: boolean
+  hasComments?: boolean
 }
 
 // Feed de comentarios compartido — ver AuditCommentsPanel.tsx. `target` es el
@@ -215,7 +231,9 @@ export const insuranceAuditsApi = {
   },
 
   async findAll(filters?: InsuranceAuditListFilters): Promise<InsuranceAuditListItem[]> {
-    const res = await apiClient.get<{ data: InsuranceAuditListItem[] }>('/insurance-audits', { params: { limit: 200, ...filters } })
+    // limit 500 = mismo criterio que los otros 2 dominios de auditoría (tope
+    // del schema de paginación del backend, sin paginador visual todavía).
+    const res = await apiClient.get<{ data: InsuranceAuditListItem[] }>('/insurance-audits', { params: { limit: 500, ...filters } })
     return res.data.data
   },
 

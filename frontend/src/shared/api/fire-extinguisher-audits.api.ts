@@ -84,6 +84,19 @@ export interface FireExtinguisherAudit {
 
 export type FireExtinguisherAuditStatus = 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'NEEDS_CORRECTION'
 
+// Mismo shape que AuditChecklistInput sin `comments` — la tabla no muestra
+// observaciones, solo los 7 campos que ya se ven en el detalle de la
+// auditoría (ver checklistConfig.ts).
+export interface FireExtinguisherAuditListChecklist {
+  cleanliness: string
+  chargeFillStatus: string
+  mountingCondition: string
+  sealStatus: string
+  ringStatus: string
+  hoseNozzleCondition: string
+  chargeExpirationDateObserved: string | null
+}
+
 export interface FireExtinguisherAuditListItem {
   id: string
   status: FireExtinguisherAuditStatus
@@ -94,6 +107,7 @@ export interface FireExtinguisherAuditListItem {
   reviewedAt: string | null
   reviewNotes: string | null
   proposedChangesCount: number
+  checklist: FireExtinguisherAuditListChecklist
   extinguisher: {
     id: string
     code: string
@@ -258,8 +272,24 @@ export interface AuditorProgressReport {
   auditors: AuditorProgress[]
 }
 
+// Filtros avanzados de la tabla (Fase 1 — Auditoría de Matafuegos) — se
+// mandan como query params reales, el backend arma el `where` de Prisma
+// (ver ListFireExtinguisherAuditsQuerySchema en el backend, mismos nombres
+// de campo). `status`, la búsqueda de texto y el rango de período siguen
+// filtrándose en el cliente, sin cambios — ver FireExtinguisherAuditsQueuePage.
 export interface FireExtinguisherAuditListFilters {
   fireExtinguisherId?: string
+  auditedBy?: string[]
+  establishment?: string[]
+  locationType?: string[]
+  type?: string[]
+  cleanliness?: string[]
+  chargeFillStatus?: string[]
+  mountingCondition?: string[]
+  sealStatus?: string[]
+  ringStatus?: string[]
+  hoseNozzleCondition?: string[]
+  hasProposedChanges?: boolean
 }
 
 // ── Comentarios de Cobertura (feed compartido — ver AuditCommentsPanel.tsx) ────
@@ -317,8 +347,11 @@ export const fireExtinguisherAuditsApi = {
   },
 
   async findAll(filters?: FireExtinguisherAuditListFilters): Promise<FireExtinguisherAuditListItem[]> {
+    // limit 500 = el tope del schema de paginación del backend (ver
+    // PaginationSchema) — sin paginador visual todavía (Fase 1), así que se
+    // pide de una el máximo permitido en vez de los 200 previos.
     const res = await apiClient.get<{ data: FireExtinguisherAuditListItem[] }>('/fire-extinguisher-audits', {
-      params: { limit: 200, ...filters },
+      params: { limit: 500, ...filters },
     })
     return res.data.data
   },

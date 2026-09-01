@@ -165,6 +165,14 @@ function mapAuditListItem(row: Record<string, unknown>) {
     reviewedAt: row.reviewedAt ?? null,
     reviewNotes: row.reviewNotes ?? null,
     cardUpdateRequested: row.cardUpdateRequested ?? false,
+    // Mismo shape que mapAudit().checklist — la fila de InsuranceAudit ya
+    // trae estas 2 columnas porque findAll() solo usa `include` (no
+    // `select`) a nivel de InsuranceAudit, así que exponerlas acá no agrega
+    // ninguna query nueva.
+    checklist: {
+      hasCirculationCard: row.hasCirculationCard,
+      comments: row.comments ?? null,
+    },
     asset: asset
       ? { id: asset.id, code: asset.code, name: asset.name, assetType: asset.assetType, ...vehicleMeta }
       : null,
@@ -346,6 +354,9 @@ export const insuranceAuditsService = {
 
     const where: Prisma.InsuranceAuditWhereInput = {}
     if (query.status && query.status.length > 0) where.status = { in: query.status }
+    if (query.auditedBy && query.auditedBy.length > 0) where.auditedBy = { in: query.auditedBy }
+    if (query.hasCirculationCard !== undefined) where.hasCirculationCard = query.hasCirculationCard
+    if (query.hasComments !== undefined) where.comments = query.hasComments ? { not: null } : null
 
     // El filtro de elegibilidad (activo + insuranceAuditable) se aplica
     // siempre, incluso sin restricción de alcance (ADMIN/revisor) — mismo

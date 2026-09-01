@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { X, Gauge } from 'lucide-react'
+import { X, Gauge, SlidersHorizontal } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -29,8 +29,11 @@ import {
   assetAuditKeys,
   assetAuditQueries,
   type AssetAuditListItem,
+  type AssetAuditListFilters,
 } from '../../shared/api/asset-audits.api'
 import { fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
+import { catalogQueries } from '../../shared/api/catalogs.api'
+import { getChecklistFields, optionLabel } from '../../shared/components/audit-wizard/checklistConfig'
 import { FIRE_EXT_AUDIT_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TableColumn } from '../../shared/types'
@@ -44,6 +47,19 @@ const AUDIT_STATUS_SORT_ORDER: Record<string, number> = {
   APPROVED: 2,
   REJECTED: 3,
 }
+
+// Mismos labels/opciones que ya usa el detalle de la auditoría
+// (ChecklistReadOnlySummary) — población 'ASSET' rotula mountingCondition
+// como "Soporte / Abrazadera" en vez de "Chapa Baliza" (ver checklistConfig.ts).
+// Reutilizado tal cual desde Matafuegos, sin duplicar labels/opciones.
+const CHECKLIST_FIELDS = getChecklistFields('ASSET')
+type ChecklistChoiceKey = 'cleanliness' | 'chargeFillStatus' | 'mountingCondition' | 'sealStatus' | 'ringStatus' | 'hoseNozzleCondition'
+const CHECKLIST_CHOICE_KEYS = CHECKLIST_FIELDS.filter((f) => f.type === 'choice').map((f) => f.key) as ChecklistChoiceKey[]
+
+const PROPOSED_CHANGES_OPTIONS = [
+  { value: 'with', label: 'Con cambios propuestos' },
+  { value: 'without', label: 'Sin cambios propuestos' },
+]
 
 
 export default function AssetAuditsQueuePage() {
@@ -63,7 +79,71 @@ export default function AssetAuditsQueuePage() {
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [bulkApproving, setBulkApproving] = useState(false)
 
-  const { data: all = [], isLoading, isError } = useQuery(assetAuditQueries.list())
+  // ── Filtros avanzados — mismo criterio que Matafuegos (FireExtinguisherAuditsQueuePage):
+  // se pasan al backend como query params reales (mismo findAll/schema
+  // compartido, población ASSET); status/búsqueda/período siguen siendo
+  // client-side sin cambios, por la misma razón que en Matafuegos (KPI row).
+  // Sin filtro de "Establecimiento" acá — no aplica a matafuegos montados en
+  // vehículos/maquinaria.
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [filterAuditedBy, setFilterAuditedBy] = useState<string[]>([])
+  const [filterLocationType, setFilterLocationType] = useState<string[]>([])
+  const [filterExtinguisherType, setFilterExtinguisherType] = useState<string[]>([])
+  const [checklistFilters, setChecklistFilters] = useState<Partial<Record<ChecklistChoiceKey, string[]>>>({})
+  const [filterProposedChanges, setFilterProposedChanges] = useState<string[]>([])
+
+  const { data: locationTypeCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_location_type'))
+  const locationTypeOptions = useMemo(() => locationTypeCatalog.map((lt) => ({ value: lt.label, label: lt.label })), [locationTypeCatalog])
+
+  const { data: extinguisherTypeCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_type'))
+  const extinguisherTypeOptions = useMemo(() => extinguisherTypeCatalog.map((t) => ({ value: t.label, label: t.label })), [extinguisherTypeCatalog])
+
+  function setChecklistFilter(key: ChecklistChoiceKey, values: string[]) {
+    setChecklistFilters((prev) => ({ ...prev, [key]: values }))
+  }
+
+  function clearAdvancedFilters() {
+    setFilterAuditedBy([])
+    setFilterLocationType([])
+    setFilterExtinguisherType([])
+    setChecklistFilters({})
+    setFilterProposedChanges([])
+  }
+
+  const activeAdvancedFilterCount = useMemo(() => {
+    let count = 0
+    if (filterAuditedBy.length > 0) count++
+    if (filterLocationType.length > 0) count++
+    if (filterExtinguisherType.length > 0) count++
+    if (filterProposedChanges.length === 1) count++
+    count += CHECKLIST_CHOICE_KEYS.filter((key) => (checklistFilters[key]?.length ?? 0) > 0).length
+    return count
+  }, [filterAuditedBy, filterLocationType, filterExtinguisherType, filterProposedChanges, checklistFilters])
+
+  const queryFilters = useMemo(() => {
+    const f: AssetAuditListFilters = {}
+    if (filterAuditedBy.length > 0) f.auditedBy = filterAuditedBy
+    if (filterLocationType.length > 0) f.locationType = filterLocationType
+    if (filterExtinguisherType.length > 0) f.type = filterExtinguisherType
+    for (const key of CHECKLIST_CHOICE_KEYS) {
+      const values = checklistFilters[key]
+      if (values && values.length > 0) f[key] = values
+    }
+    if (filterProposedChanges.length === 1) f.hasProposedChanges = filterProposedChanges[0] === 'with'
+    return f
+  }, [filterAuditedBy, filterLocationType, filterExtinguisherType, checklistFilters, filterProposedChanges])
+
+  const { data: all = [], isLoading, isError } = useQuery(
+    assetAuditQueries.list(Object.keys(queryFilters).length > 0 ? queryFilters : undefined),
+  )
+
+  // Auditores derivados de las auditorías ya cargadas — mismo criterio que
+  // Matafuegos (auditedBy no tiene catálogo propio).
+  const auditorOptions = useMemo(() => {
+    const names = new Set(all.map((a) => a.auditedBy).filter(Boolean))
+    return [...names].sort().map((name) => ({ value: name, label: name }))
+  }, [all])
+
   const { data: coverage = [], isLoading: coverageLoading } = useQuery(assetAuditQueries.coverage(coveragePeriod))
   const { data: assignments, isLoading: assignmentsLoading } = useQuery({
     ...assetAuditQueries.assignments(),
@@ -217,6 +297,33 @@ export default function AssetAuditsQueuePage() {
         )
       },
     },
+    // Columnas del checklist de condición — ocultas por defecto, seleccionables
+    // desde el selector de columnas existente. Generadas desde CHECKLIST_FIELDS
+    // (getChecklistFields('ASSET'), misma fuente que Matafuegos con el label
+    // "Soporte / Abrazadera" para esta población) para no duplicar labels/opciones.
+    ...CHECKLIST_FIELDS.map((field): TableColumn<AssetAuditListItem> => {
+      const rawValue = (row: AssetAuditListItem) =>
+        (row.checklist as unknown as Record<string, string | null | undefined>)[field.key]
+      return {
+        id: field.key,
+        key: field.key,
+        label: field.label,
+        sortable: true,
+        defaultVisible: false,
+        sortValue: (row) => rawValue(row) ?? null,
+        exportValue: (row) => {
+          const v = rawValue(row)
+          return field.type === 'date' ? (v ?? '') : optionLabel(field.options, v ?? undefined)
+        },
+        render: (_, row) => {
+          const v = rawValue(row)
+          if (field.type === 'date') {
+            return v ? <span className="text-sm text-slate-500 tabular-nums">{formatDate(v)}</span> : <span className="text-slate-400">—</span>
+          }
+          return <span className="text-sm text-slate-600">{optionLabel(field.options, v ?? undefined)}</span>
+        },
+      }
+    }),
     {
       id: 'status',
       key: 'status',
@@ -284,6 +391,18 @@ export default function AssetAuditsQueuePage() {
                   Limpiar fechas
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => setShowAdvancedFilters((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  showAdvancedFilters || activeAdvancedFilterCount > 0
+                    ? 'bg-brand-50 border-brand-300 text-brand-700'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                }`}
+              >
+                <SlidersHorizontal size={14} />
+                <span>Filtros avanzados{activeAdvancedFilterCount > 0 ? ` · ${activeAdvancedFilterCount}` : ''}</span>
+              </button>
               <div className="ml-auto flex items-center gap-2">
                 <span className="text-xs text-slate-400 whitespace-nowrap">
                   {filtered.length} de {all.length} auditorías
@@ -299,6 +418,42 @@ export default function AssetAuditsQueuePage() {
                 <ColumnConfigButton columnConfigs={columnConfigs} onToggle={toggle} onReorder={reorder} onReset={reset} />
               </div>
             </div>
+
+            {showAdvancedFilters && (
+              <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3 bg-slate-50/60">
+                <MultiSelectFilter label="Auditor" options={auditorOptions} value={filterAuditedBy} onChange={setFilterAuditedBy} />
+                <MultiSelectFilter label="Tipo de ubicación" options={locationTypeOptions} value={filterLocationType} onChange={setFilterLocationType} />
+                <MultiSelectFilter label="Tipo de matafuego" options={extinguisherTypeOptions} value={filterExtinguisherType} onChange={setFilterExtinguisherType} />
+                {CHECKLIST_CHOICE_KEYS.map((key) => {
+                  const field = CHECKLIST_FIELDS.find((f) => f.key === key)!
+                  return (
+                    <MultiSelectFilter
+                      key={key}
+                      label={field.label}
+                      options={field.options ?? []}
+                      value={checklistFilters[key] ?? []}
+                      onChange={(values) => setChecklistFilter(key, values)}
+                    />
+                  )
+                })}
+                <MultiSelectFilter
+                  label="Cambios propuestos"
+                  options={PROPOSED_CHANGES_OPTIONS}
+                  value={filterProposedChanges}
+                  onChange={setFilterProposedChanges}
+                />
+                {activeAdvancedFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearAdvancedFilters}
+                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                  >
+                    <X size={12} />
+                    Limpiar filtros avanzados
+                  </button>
+                )}
+              </div>
+            )}
 
             <AuditBulkApproveBar
               selectedCount={selectedIds.size}
