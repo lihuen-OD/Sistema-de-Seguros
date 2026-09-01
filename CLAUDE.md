@@ -166,3 +166,32 @@ No correr `npm install`/`npm add` de ningún paquete nuevo (frontend o backend) 
 ## 17. Regla de buscar referencias antes de borrar o modificar funciones compartidas
 
 Antes de borrar, renombrar, o cambiar la firma de cualquier función, componente, tipo o constante exportada desde `shared/` (o desde cualquier módulo consumido por otros): `grep`/buscar todas las referencias en todo el repo — frontend y backend — y confirmar cada call site. Si se cambia la firma o el comportamiento, actualizar todos los llamadores en el mismo cambio, no dejarlos para después. Si no se pueden actualizar todos con confianza en el mismo cambio, no hacer el cambio todavía.
+
+## 18. Performance, consumo y escalabilidad en cada cambio
+
+Objetivo: cada cambio funcional, visual, técnico o de datos debe analizarse no solo por si funciona, sino también por si es eficiente, escalable y si cuida el consumo de infraestructura (Neon, Render, Netlify, Cloudinary, Resend). Que un cambio se vea bien no alcanza si además es ineficiente.
+
+Reglas:
+- Antes de implementar filtros, tablas, dashboards, reportes o exportaciones, analizar si los datos deben filtrarse en backend/base de datos o en frontend — no traer todo y filtrar en el cliente si el dataset puede crecer.
+- Mantener paginación en listados que puedan crecer. No romperla al agregar filtros o columnas nuevas.
+- Evitar traer más datos de los necesarios y evitar consultas N+1.
+- Evitar `findMany` sin `where` cuando el dataset puede crecer (ver regla 5).
+- Evitar `include`s pesados si la pantalla no necesita esos datos.
+- Evitar refetches innecesarios desde el frontend — usar TanStack Query con `staleTime`, cache e invalidation razonables, no invalidar de más.
+- No guardar archivos pesados en la base de datos; usar Cloudinary y guardar solo metadata/URL.
+- No generar logs infinitos o demasiado verbosos.
+- No enviar emails automáticos en loops sin control (ver Resend).
+- Si una mejora puede aumentar consumo o costo de forma no trivial, avisarlo antes de implementar, no después.
+- Si hay varias soluciones razonables, preferir la más simple, eficiente y mantenible — no la más grande "por las dudas".
+
+Todo plan de implementación (ver regla 11) tiene que responder además, aunque sea brevemente:
+
+1. Impacto en performance.
+2. Impacto en consumo de servidores (Neon/Render/Netlify/Cloudinary/Resend, según corresponda).
+3. Riesgo de consultas pesadas.
+4. Si mantiene la paginación existente.
+5. Si el filtrado queda en backend o en frontend, y por qué.
+6. Cómo evita duplicación de lógica o queries N+1.
+7. Cómo se va a probar que no queda lento (dataset realista, no solo el caso vacío).
+
+Esta sección aplica siempre, incluso si el usuario no la menciona explícitamente. Un pedido tan simple como "agregá un filtro", "agregá columnas", "agregá un tipo de activo" o "mejorá esta pantalla" tiene que pasar igual por este análisis — el usuario no tiene que repetirlo en cada pedido para que aplique.

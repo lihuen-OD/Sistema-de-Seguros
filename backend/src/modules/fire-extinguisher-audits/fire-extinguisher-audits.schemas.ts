@@ -176,6 +176,11 @@ export const ListFireExtinguisherAuditsQuerySchema = PaginationSchema.extend({
   // criterio que proposedChangesCount en la respuesta (cualquier estado, no
   // solo PENDING).
   hasProposedChanges: booleanFromString.optional(),
+  // Categoría del Asset al que está montado el matafuego (una de
+  // AUDITABLE_ASSET_CATEGORIES) — solo tiene efecto en población ASSET
+  // (Auditoría de Rodados); ESTABLISHMENT (Matafuegos) lo ignora, mismo
+  // criterio que establishment/category en AuditDashboardQuerySchema más abajo.
+  category: arrayFilter(z.enum(AUDITABLE_ASSET_CATEGORIES)),
 })
 
 // ── Cobertura por establecimiento ───────────────────────────────────────────────

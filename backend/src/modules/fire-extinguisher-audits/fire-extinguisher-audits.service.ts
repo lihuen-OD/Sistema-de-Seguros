@@ -506,6 +506,17 @@ function buildFireExtinguisherAuditsService(population: FireExtAuditPopulation) 
       if (scope.restricted) {
         allowed = allowed.filter((fe) => isInScope(scope, auditScopeMatchValueFor(fe, population)))
       }
+      // Categoría de activo (Camión/Camioneta/Tractor/...) — solo tiene
+      // sentido para población ASSET (Rodados); Matafuegos (ESTABLISHMENT)
+      // ignora este filtro aunque llegara a mandarse. No se puede expresar
+      // como `where` de Prisma porque auditScopeKeyFor normaliza el
+      // `assetType` libre (acentos, variantes legacy) — se resuelve acá,
+      // en el mismo filtro en memoria que ya corre para población/alcance,
+      // sin sumar ninguna consulta nueva.
+      if (population === 'ASSET' && query.category && query.category.length > 0) {
+        const wantedCategories = new Set<string>(query.category)
+        allowed = allowed.filter((fe) => wantedCategories.has(auditScopeKeyFor(fe, population) ?? ''))
+      }
       let fireExtinguisherIds = allowed.map((fe) => fe.id)
       if (query.fireExtinguisherId) {
         fireExtinguisherIds = fireExtinguisherIds.includes(query.fireExtinguisherId) ? [query.fireExtinguisherId] : []

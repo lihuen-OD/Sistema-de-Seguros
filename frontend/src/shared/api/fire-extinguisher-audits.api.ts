@@ -290,6 +290,9 @@ export interface FireExtinguisherAuditListFilters {
   ringStatus?: string[]
   hoseNozzleCondition?: string[]
   hasProposedChanges?: boolean
+  // Categoría de activo (Camión/Camioneta/Tractor/...) — solo tiene efecto
+  // en Auditoría de Rodados (población ASSET); Matafuegos nunca lo manda.
+  category?: string[]
 }
 
 // ── Comentarios de Cobertura (feed compartido — ver AuditCommentsPanel.tsx) ────

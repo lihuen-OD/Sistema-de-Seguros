@@ -35,8 +35,9 @@ import { fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { getChecklistFields, optionLabel } from '../../shared/components/audit-wizard/checklistConfig'
 import { FIRE_EXT_AUDIT_STATUS_LABELS } from '../../shared/constants'
+import { CATEGORY_LABEL } from '../../shared/constants/asset-categories'
 import { ROUTES } from '../../app/routes'
-import type { TableColumn } from '../../shared/types'
+import { AUDITABLE_ASSET_CATEGORIES, type TableColumn } from '../../shared/types'
 import { AssetAuditCoverageTab } from './AssetAuditCoverageTab'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_AUDIT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
@@ -55,6 +56,17 @@ const AUDIT_STATUS_SORT_ORDER: Record<string, number> = {
 const CHECKLIST_FIELDS = getChecklistFields('ASSET')
 type ChecklistChoiceKey = 'cleanliness' | 'chargeFillStatus' | 'mountingCondition' | 'sealStatus' | 'ringStatus' | 'hoseNozzleCondition'
 const CHECKLIST_CHOICE_KEYS = CHECKLIST_FIELDS.filter((f) => f.type === 'choice').map((f) => f.key) as ChecklistChoiceKey[]
+
+// Categoría real del Asset al que está montado el matafuego — reutiliza las
+// mismas constantes que ya usa el picker de "Alcance de auditoría" de este
+// módulo (AUDITABLE_ASSET_CATEGORIES/CATEGORY_LABEL), sin inventar una
+// lista nueva. Se excluye 'moto': un matafuego nunca queda vinculado a una
+// moto (ver matchesAuditPopulation en el backend — las motos no llevan
+// matafuego), así que esa opción nunca tendría resultados en Rodados.
+const ASSET_CATEGORY_OPTIONS = AUDITABLE_ASSET_CATEGORIES.filter((c) => c !== 'moto').map((c) => ({
+  value: c,
+  label: CATEGORY_LABEL[c],
+}))
 
 const PROPOSED_CHANGES_OPTIONS = [
   { value: 'with', label: 'Con cambios propuestos' },
@@ -87,6 +99,7 @@ export default function AssetAuditsQueuePage() {
   // vehículos/maquinaria.
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [filterAuditedBy, setFilterAuditedBy] = useState<string[]>([])
+  const [filterAssetCategory, setFilterAssetCategory] = useState<string[]>([])
   const [filterLocationType, setFilterLocationType] = useState<string[]>([])
   const [filterExtinguisherType, setFilterExtinguisherType] = useState<string[]>([])
   const [checklistFilters, setChecklistFilters] = useState<Partial<Record<ChecklistChoiceKey, string[]>>>({})
@@ -104,6 +117,7 @@ export default function AssetAuditsQueuePage() {
 
   function clearAdvancedFilters() {
     setFilterAuditedBy([])
+    setFilterAssetCategory([])
     setFilterLocationType([])
     setFilterExtinguisherType([])
     setChecklistFilters({})
@@ -113,16 +127,18 @@ export default function AssetAuditsQueuePage() {
   const activeAdvancedFilterCount = useMemo(() => {
     let count = 0
     if (filterAuditedBy.length > 0) count++
+    if (filterAssetCategory.length > 0) count++
     if (filterLocationType.length > 0) count++
     if (filterExtinguisherType.length > 0) count++
     if (filterProposedChanges.length === 1) count++
     count += CHECKLIST_CHOICE_KEYS.filter((key) => (checklistFilters[key]?.length ?? 0) > 0).length
     return count
-  }, [filterAuditedBy, filterLocationType, filterExtinguisherType, filterProposedChanges, checklistFilters])
+  }, [filterAuditedBy, filterAssetCategory, filterLocationType, filterExtinguisherType, filterProposedChanges, checklistFilters])
 
   const queryFilters = useMemo(() => {
     const f: AssetAuditListFilters = {}
     if (filterAuditedBy.length > 0) f.auditedBy = filterAuditedBy
+    if (filterAssetCategory.length > 0) f.category = filterAssetCategory
     if (filterLocationType.length > 0) f.locationType = filterLocationType
     if (filterExtinguisherType.length > 0) f.type = filterExtinguisherType
     for (const key of CHECKLIST_CHOICE_KEYS) {
@@ -131,7 +147,7 @@ export default function AssetAuditsQueuePage() {
     }
     if (filterProposedChanges.length === 1) f.hasProposedChanges = filterProposedChanges[0] === 'with'
     return f
-  }, [filterAuditedBy, filterLocationType, filterExtinguisherType, checklistFilters, filterProposedChanges])
+  }, [filterAuditedBy, filterAssetCategory, filterLocationType, filterExtinguisherType, checklistFilters, filterProposedChanges])
 
   const { data: all = [], isLoading, isError } = useQuery(
     assetAuditQueries.list(Object.keys(queryFilters).length > 0 ? queryFilters : undefined),
@@ -422,6 +438,7 @@ export default function AssetAuditsQueuePage() {
             {showAdvancedFilters && (
               <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3 bg-slate-50/60">
                 <MultiSelectFilter label="Auditor" options={auditorOptions} value={filterAuditedBy} onChange={setFilterAuditedBy} />
+                <MultiSelectFilter label="Categoría de activo" options={ASSET_CATEGORY_OPTIONS} value={filterAssetCategory} onChange={setFilterAssetCategory} />
                 <MultiSelectFilter label="Tipo de ubicación" options={locationTypeOptions} value={filterLocationType} onChange={setFilterLocationType} />
                 <MultiSelectFilter label="Tipo de matafuego" options={extinguisherTypeOptions} value={filterExtinguisherType} onChange={setFilterExtinguisherType} />
                 {CHECKLIST_CHOICE_KEYS.map((key) => {
