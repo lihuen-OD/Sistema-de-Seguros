@@ -20,6 +20,7 @@ import {
   bulkApproveAudits,
   getAuditAssetAssignments,
   saveAuditAssetAssignment,
+  VEHICLE_META_KEYS,
 } from '../../shared/services/audit-domain.service'
 import type {
   CreateInsuranceAuditDTO,
@@ -189,6 +190,52 @@ function isEligibleAsset(asset: { isActive: boolean; insuranceAuditable: boolean
   return asset.isActive && asset.insuranceAuditable && classifyAuditableAssetCategory(asset.assetType) !== null
 }
 
+// Arma el `where` de InsuranceAudit para findAll() — parametrizado para
+// poder pedir la misma combinación de filtros pero "sin" un campo puntual
+// (`skipStatus`/`skipAuditedBy`), que es lo que necesitan statusCounts y
+// auditorOptions: reflejar todos los filtros activos EXCEPTO el propio campo
+// que están calculando, para que el selector de Estado y las opciones de
+// Auditor no se autoexcluyan cuando ese filtro ya está aplicado. Mismo
+// criterio que buildAuditWhere() en fire-extinguisher-audits.service.ts.
+function buildAuditWhere(
+  query: ListInsuranceAuditsQueryDTO,
+  allowedAssetIds: string[],
+  options: { skipStatus?: boolean; skipAuditedBy?: boolean } = {},
+): Prisma.InsuranceAuditWhereInput {
+  const where: Prisma.InsuranceAuditWhereInput = { assetId: { in: allowedAssetIds } }
+  if (!options.skipStatus && query.status && query.status.length > 0) where.status = { in: query.status }
+  if (!options.skipAuditedBy && query.auditedBy && query.auditedBy.length > 0) where.auditedBy = { in: query.auditedBy }
+  if (query.hasCirculationCard !== undefined) where.hasCirculationCard = query.hasCirculationCard
+  if (query.hasComments !== undefined) where.comments = query.hasComments ? { not: null } : null
+  if (query.auditPeriodFrom || query.auditPeriodTo) {
+    where.auditPeriod = {
+      ...(query.auditPeriodFrom ? { gte: query.auditPeriodFrom } : {}),
+      ...(query.auditPeriodTo ? { lte: query.auditPeriodTo } : {}),
+    }
+  }
+  // Búsqueda de texto libre — mismos campos que ya buscaba el cliente
+  // (InsuranceAuditsQueuePage.tsx antes de este cambio): auditor, código/
+  // nombre/tipo de activo (columnas propias) + patente/chasis/motor, en
+  // Asset.metadata (JSON) — mismas 3 claves que ya usa extractVehicleMeta,
+  // ver VEHICLE_META_KEYS. Sin índice dedicado sobre `metadata`, así que el
+  // filtro no puede usar un índice B-tree como una columna de texto — costo
+  // aceptable hoy (ya viene acotado por elegibilidad/alcance), a revisar si
+  // el volumen de activos asegurables crece mucho.
+  if (query.search) {
+    const q = query.search
+    where.OR = [
+      { auditedBy: { contains: q, mode: 'insensitive' } },
+      { asset: { code: { contains: q, mode: 'insensitive' } } },
+      { asset: { name: { contains: q, mode: 'insensitive' } } },
+      { asset: { assetType: { contains: q, mode: 'insensitive' } } },
+      ...VEHICLE_META_KEYS.map((key) => ({
+        asset: { metadata: { path: [key], string_contains: q, mode: 'insensitive' as const } },
+      })),
+    ]
+  }
+  return where
+}
+
 export const insuranceAuditsService = {
   async create(data: CreateInsuranceAuditDTO, performedBy: string, scope: AuditScopeContext) {
     const asset = await prisma.asset.findUnique({ where: { id: data.assetId } })
@@ -352,12 +399,6 @@ export const insuranceAuditsService = {
   async findAll(query: ListInsuranceAuditsQueryDTO, scope: AuditScopeContext) {
     const { page, limit, skip } = getPaginationParams(query)
 
-    const where: Prisma.InsuranceAuditWhereInput = {}
-    if (query.status && query.status.length > 0) where.status = { in: query.status }
-    if (query.auditedBy && query.auditedBy.length > 0) where.auditedBy = { in: query.auditedBy }
-    if (query.hasCirculationCard !== undefined) where.hasCirculationCard = query.hasCirculationCard
-    if (query.hasComments !== undefined) where.comments = query.hasComments ? { not: null } : null
-
     // El filtro de elegibilidad (activo + insuranceAuditable) se aplica
     // siempre, incluso sin restricción de alcance (ADMIN/revisor) — mismo
     // criterio que la población en fire-extinguisher-audits.service.ts#findAll:
@@ -383,9 +424,15 @@ export const insuranceAuditsService = {
     let allowedAssetIds = categorizedAssets.map((a) => a.id)
     if (scope.restricted) allowedAssetIds = allowedAssetIds.filter((id) => isInScope(scope, id))
     if (query.assetId) allowedAssetIds = allowedAssetIds.includes(query.assetId) ? [query.assetId] : []
-    where.assetId = { in: allowedAssetIds }
 
-    const [rows, total] = await Promise.all([
+    const where = buildAuditWhere(query, allowedAssetIds)
+    // statusCounts/auditorOptions reflejan TODOS los filtros activos menos
+    // el propio campo que están calculando — mismo criterio que
+    // fire-extinguisher-audits.service.ts#findAll.
+    const whereForStatusCounts = buildAuditWhere(query, allowedAssetIds, { skipStatus: true })
+    const whereForAuditorOptions = buildAuditWhere(query, allowedAssetIds, { skipAuditedBy: true })
+
+    const [rows, total, statusGroups, auditorRows] = await Promise.all([
       prisma.insuranceAudit.findMany({
         where,
         skip,
@@ -394,9 +441,24 @@ export const insuranceAuditsService = {
         include: { asset: { select: { id: true, code: true, name: true, assetType: true, metadata: true } } },
       }),
       prisma.insuranceAudit.count({ where }),
+      prisma.insuranceAudit.groupBy({ by: ['status'], where: whereForStatusCounts, _count: true }),
+      prisma.insuranceAudit.findMany({
+        where: whereForAuditorOptions,
+        select: { auditedBy: true },
+        distinct: ['auditedBy'],
+        orderBy: { auditedBy: 'asc' },
+      }),
     ])
 
-    return buildPaginatedResponse(rows.map((r) => mapAuditListItem(r as unknown as Record<string, unknown>)), total, { page, limit })
+    const statusCounts: Record<string, number> = { SUBMITTED: 0, NEEDS_CORRECTION: 0, APPROVED: 0, REJECTED: 0 }
+    for (const g of statusGroups) statusCounts[g.status] = g._count
+    const auditorOptions = auditorRows.map((r) => ({ value: r.auditedBy, label: r.auditedBy }))
+
+    return {
+      ...buildPaginatedResponse(rows.map((r) => mapAuditListItem(r as unknown as Record<string, unknown>)), total, { page, limit }),
+      statusCounts,
+      auditorOptions,
+    }
   },
 
   // Cobertura de auditoría: todos los activos activos, marcados

@@ -12,6 +12,7 @@ jest.mock('../../../config/database', () => ({
       findUnique: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
+      groupBy: jest.fn(),
       update: jest.fn(),
     },
     insuranceAuditAttachment: {
@@ -314,6 +315,7 @@ describe('Insurance Audits API', () => {
       ])
       db.insuranceAudit.findMany.mockResolvedValue([])
       db.insuranceAudit.count.mockResolvedValue(0)
+      db.insuranceAudit.groupBy.mockResolvedValue([])
 
       const res = await request(app)
         .get('/api/v1/insurance-audits')
@@ -329,6 +331,7 @@ describe('Insurance Audits API', () => {
       db.asset.findMany.mockResolvedValue([{ id: ASSET_ID }, { id: OTHER_ASSET_ID }])
       db.insuranceAudit.findMany.mockResolvedValue([])
       db.insuranceAudit.count.mockResolvedValue(0)
+      db.insuranceAudit.groupBy.mockResolvedValue([])
 
       const res = await request(app)
         .get('/api/v1/insurance-audits')

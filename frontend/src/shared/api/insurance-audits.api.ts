@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { queryOptions, keepPreviousData } from '@tanstack/react-query'
 import { apiClient } from './client'
 
 export type InsuranceAuditStatus = 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'NEEDS_CORRECTION'
@@ -145,18 +145,53 @@ export interface InsuranceAuditorProgressReport {
   auditors: InsuranceAuditorProgress[]
 }
 
-// Filtros avanzados de la tabla — se mandan como query params reales (ver
+// Filtros de la tabla — se mandan como query params reales (ver
 // ListInsuranceAuditsQuerySchema en el backend, mismos nombres de campo).
-// `status`, la búsqueda de texto y el rango de período siguen filtrándose
-// en el cliente, sin cambios — mismo criterio que fire-extinguisher-audits.
+// Con el paginador real, `status`/`search`/`auditPeriodFrom`/`auditPeriodTo`
+// también son server-side (antes se filtraban en el cliente) — mismo
+// criterio que fire-extinguisher-audits.api.ts.
 export interface InsuranceAuditListFilters {
   assetId?: string
+  search?: string
+  status?: string[]
+  auditPeriodFrom?: string
+  auditPeriodTo?: string
+  page?: number
+  limit?: number
   auditedBy?: string[]
   hasCirculationCard?: boolean
   hasComments?: boolean
   // Categoría del Asset asegurado (una de AUDITABLE_ASSET_CATEGORIES) —
   // a diferencia de Rodados, acá "moto" es una opción válida.
   category?: string[]
+}
+
+// ── Paginador real — respuesta completa de GET /insurance-audits ───────────────
+// Mismo shape que ya arma buildPaginatedResponse en el backend, más
+// statusCounts/auditorOptions. Definido acá (no reexportado desde
+// fire-extinguisher-audits.api.ts) porque este archivo ya es un dominio
+// independiente, sin reexports cruzados — mismo criterio que el resto de
+// los tipos de este archivo.
+
+export interface InsuranceAuditPagination {
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+}
+
+export interface InsuranceAuditStatusCounts {
+  SUBMITTED: number
+  NEEDS_CORRECTION: number
+  APPROVED: number
+  REJECTED: number
+}
+
+export interface InsuranceAuditListResult {
+  data: InsuranceAuditListItem[]
+  pagination: InsuranceAuditPagination
+  statusCounts: InsuranceAuditStatusCounts
+  auditorOptions: { value: string; label: string }[]
 }
 
 // Feed de comentarios compartido — ver AuditCommentsPanel.tsx. `target` es el
@@ -233,11 +268,21 @@ export const insuranceAuditsApi = {
     await apiClient.delete(`/insurance-audits/${auditId}/attachments/${attachmentId}`)
   },
 
+  // Sin otro consumidor hoy — se mantiene por consistencia con el mismo
+  // patrón aditivo de los otros 2 dominios. InsuranceAuditsQueuePage.tsx ya
+  // no lo usa, ver findAllPaginated().
   async findAll(filters?: InsuranceAuditListFilters): Promise<InsuranceAuditListItem[]> {
-    // limit 500 = mismo criterio que los otros 2 dominios de auditoría (tope
-    // del schema de paginación del backend, sin paginador visual todavía).
+    // limit 500 = tope del schema de paginación del backend.
     const res = await apiClient.get<{ data: InsuranceAuditListItem[] }>('/insurance-audits', { params: { limit: 500, ...filters } })
     return res.data.data
+  },
+
+  // Paginador real — devuelve data/pagination/statusCounts/auditorOptions tal
+  // cual los arma el backend (ver findAll() en insurance-audits.service.ts).
+  // `page`/`limit` van en `filters`, sin default acá.
+  async findAllPaginated(filters?: InsuranceAuditListFilters): Promise<InsuranceAuditListResult> {
+    const res = await apiClient.get<InsuranceAuditListResult>('/insurance-audits', { params: filters })
+    return res.data
   },
 
   async review(id: string, input: InsuranceAuditReviewInput): Promise<InsuranceAudit> {
@@ -310,6 +355,15 @@ export const insuranceAuditQueries = {
       queryKey: insuranceAuditKeys.list(filters),
       queryFn: () => insuranceAuditsApi.findAll(filters),
       staleTime: 60 * 1000,
+    }),
+  // Paginador real — queryKey propia, `keepPreviousData` evita el flash a
+  // loading al cambiar de página (mismo criterio que los otros 2 dominios).
+  listPaginated: (filters?: InsuranceAuditListFilters) =>
+    queryOptions({
+      queryKey: [...insuranceAuditKeys.all, 'paginated', filters] as const,
+      queryFn: () => insuranceAuditsApi.findAllPaginated(filters),
+      staleTime: 60 * 1000,
+      placeholderData: keepPreviousData,
     }),
   detail: (id: string) =>
     queryOptions({

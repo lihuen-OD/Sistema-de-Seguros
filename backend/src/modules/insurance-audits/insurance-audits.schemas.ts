@@ -65,6 +65,11 @@ export const ListInsuranceAuditsQuerySchema = PaginationSchema.extend({
   // no lleva matafuego pero sí tiene tarjeta de circulación, ver
   // classifyAuditableAssetCategory en audit-domain.service.ts).
   category: arrayFilter(z.enum(AUDITABLE_ASSET_CATEGORIES)),
+  // ── Paginador real (búsqueda/período server-side) — mismo criterio que
+  // fire-extinguisher-audits.schemas.ts ──
+  search: z.string().trim().min(1).optional(),
+  auditPeriodFrom: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM').optional(),
+  auditPeriodTo: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM').optional(),
 })
 
 // Mismo shape que los otros 2 dominios de auditoría — ver shared/schemas/audit-domain.ts.

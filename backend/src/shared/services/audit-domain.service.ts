@@ -114,6 +114,14 @@ export async function bulkApproveAudits<TReviewPayload>(
   return { approved, failed }
 }
 
+// Claves planas de Asset.metadata (JSON) para patente/chasis/motor — única
+// fuente de verdad para el nombre de esas 3 claves. extractVehicleMeta() las
+// usa directo (acceso a propiedad, sin cambios); insurance-audits.service.ts
+// las reusa para armar el filtro de búsqueda server-side sobre `metadata`
+// (un filtro de Prisma no puede "llamar" a extractVehicleMeta en tiempo de
+// query, pero sí puede iterar los mismos 3 nombres de clave).
+export const VEHICLE_META_KEYS = ['plate', 'chassisNumber', 'engineNumber'] as const
+
 // Patente/chasis/motor no son columnas propias del Activo — viven en
 // Asset.metadata (JSON). Único lugar donde los dominios de auditoría que
 // tocan vehículos los extraen, para no repetir el parseo en cada mapper.

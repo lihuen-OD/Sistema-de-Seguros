@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, KeyboardEvent } from 'react'
-import { Download, Trash2, Check, X, Plus, ChevronDown, Columns2 } from 'lucide-react'
+import { Download, Trash2, Check, X, Plus, ChevronDown, Columns2, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { downloadXLSX, buildExportRows } from '../../utils/export'
 import { useExportPresets } from '../../hooks/useExportPresets'
 import type { TableColumn } from '../../types'
@@ -11,6 +12,14 @@ interface Props<T> {
   filteredRows: T[]
   filenamePrefix: string
   onApplyPreset?: (columnIds: string[]) => void
+  /** Opcional — para tablas con paginador real, donde `filteredRows` es solo
+   *  la página visible y no alcanza para "exportar todo lo filtrado". Si se
+   *  provee, se llama recién al hacer clic en exportar (no al montar, no en
+   *  cada render) y su resultado reemplaza a `filteredRows` solo para esa
+   *  exportación puntual. Sin este prop, el componente se comporta
+   *  exactamente igual que siempre — `filteredRows` sigue siendo la única
+   *  fuente de datos. */
+  getExportRows?: () => Promise<T[]>
 }
 
 export function ExportPresetsButton<T>({
@@ -20,9 +29,11 @@ export function ExportPresetsButton<T>({
   filteredRows,
   filenamePrefix,
   onApplyPreset,
+  getExportRows,
 }: Props<T>) {
   const [open, setOpen] = useState(false)
   const [savingName, setSavingName] = useState<string | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -34,18 +45,30 @@ export function ExportPresetsButton<T>({
   const exportableVisible = visibleColumns.filter((c) => c.hideable !== false)
 
   async function doExport(columns: TableColumn<T>[]) {
-    if (columns.length === 0) return
-    const exportCols = columns.filter((c) => c.hideable !== false)
-    const rows = buildExportRows(filteredRows, exportCols)
-    const numericColumnIndexes = exportCols
-      .map((c, i) => (c.numeric ? i : -1))
-      .filter((i) => i >= 0)
-    const date = new Date().toISOString().slice(0, 10)
-    await downloadXLSX(rows, `${filenamePrefix}-${date}.xlsx`, {
-      autoFilter: true,
-      ...(numericColumnIndexes.length > 0 && { numericColumnIndexes }),
-    })
-    setOpen(false)
+    if (columns.length === 0 || isExporting) return
+    setIsExporting(true)
+    try {
+      // Sin getExportRows, mismo comportamiento de siempre: exporta lo que ya
+      // está en memoria. Con getExportRows (tablas con paginador real), pide
+      // el conjunto completo recién acá, no antes — un solo pedido puntual
+      // por exportación, nunca automático ni repetido.
+      const rows = getExportRows ? await getExportRows() : filteredRows
+      const exportCols = columns.filter((c) => c.hideable !== false)
+      const exportRows = buildExportRows(rows, exportCols)
+      const numericColumnIndexes = exportCols
+        .map((c, i) => (c.numeric ? i : -1))
+        .filter((i) => i >= 0)
+      const date = new Date().toISOString().slice(0, 10)
+      await downloadXLSX(exportRows, `${filenamePrefix}-${date}.xlsx`, {
+        autoFilter: true,
+        ...(numericColumnIndexes.length > 0 && { numericColumnIndexes }),
+      })
+      setOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al exportar')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   function handleExportVisible() {
@@ -130,11 +153,16 @@ export function ExportPresetsButton<T>({
             <button
               type="button"
               onClick={handleExportVisible}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition-colors text-left"
+              disabled={isExporting}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Download size={13} className="text-slate-400 flex-shrink-0" />
-              <span>Exportar columnas visibles</span>
-              <span className="ml-auto text-xs text-slate-400">{exportableVisible.length} cols</span>
+              {isExporting ? (
+                <Loader2 size={13} className="text-slate-400 flex-shrink-0 animate-spin" />
+              ) : (
+                <Download size={13} className="text-slate-400 flex-shrink-0" />
+              )}
+              <span>{isExporting ? 'Exportando…' : 'Exportar columnas visibles'}</span>
+              {!isExporting && <span className="ml-auto text-xs text-slate-400">{exportableVisible.length} cols</span>}
             </button>
           </div>
 
@@ -170,7 +198,8 @@ export function ExportPresetsButton<T>({
                     <button
                       type="button"
                       onClick={() => handleExportPreset(preset.columnIds)}
-                      className="flex-1 text-left flex items-center gap-2 min-w-0"
+                      disabled={isExporting}
+                      className="flex-1 text-left flex items-center gap-2 min-w-0 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Download size={12} className="text-slate-400 flex-shrink-0" />
                       <span className="text-sm text-slate-700 truncate">{preset.name}</span>

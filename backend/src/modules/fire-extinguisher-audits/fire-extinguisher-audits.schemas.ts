@@ -181,6 +181,11 @@ export const ListFireExtinguisherAuditsQuerySchema = PaginationSchema.extend({
   // (Auditoría de Rodados); ESTABLISHMENT (Matafuegos) lo ignora, mismo
   // criterio que establishment/category en AuditDashboardQuerySchema más abajo.
   category: arrayFilter(z.enum(AUDITABLE_ASSET_CATEGORIES)),
+  // ── Paginador real (búsqueda/período server-side) ──────────────────────────
+  // Búsqueda de texto libre — campos exactos por población, ver findAll().
+  search: z.string().trim().min(1).optional(),
+  auditPeriodFrom: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM').optional(),
+  auditPeriodTo: z.string().regex(/^\d{4}-\d{2}$/, 'Formato de período inválido. Usar YYYY-MM').optional(),
 })
 
 // ── Cobertura por establecimiento ───────────────────────────────────────────────
