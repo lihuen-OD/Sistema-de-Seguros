@@ -368,9 +368,19 @@ export const insuranceAuditsService = {
     // paginación y `total` queden correctos.
     const eligibleAssets = await prisma.asset.findMany({
       where: { isActive: true, insuranceAuditable: true },
-      select: { id: true },
+      select: { id: true, assetType: true },
     })
-    let allowedAssetIds = eligibleAssets.map((a) => a.id)
+    // Categoría de activo — no se puede expresar como `where.assetType` de
+    // Prisma porque classifyAuditableAssetCategory normaliza acentos y
+    // variantes legacy del assetType libre; se resuelve acá, en el mismo
+    // filtro en memoria que ya arma allowedAssetIds, sin sumar ninguna
+    // consulta nueva (assetType ya viene en el select de arriba).
+    let categorizedAssets = eligibleAssets
+    if (query.category && query.category.length > 0) {
+      const wantedCategories = new Set<string>(query.category)
+      categorizedAssets = eligibleAssets.filter((a) => wantedCategories.has(classifyAuditableAssetCategory(a.assetType) ?? ''))
+    }
+    let allowedAssetIds = categorizedAssets.map((a) => a.id)
     if (scope.restricted) allowedAssetIds = allowedAssetIds.filter((id) => isInScope(scope, id))
     if (query.assetId) allowedAssetIds = allowedAssetIds.includes(query.assetId) ? [query.assetId] : []
     where.assetId = { in: allowedAssetIds }

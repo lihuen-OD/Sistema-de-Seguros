@@ -154,6 +154,9 @@ export interface InsuranceAuditListFilters {
   auditedBy?: string[]
   hasCirculationCard?: boolean
   hasComments?: boolean
+  // Categoría del Asset asegurado (una de AUDITABLE_ASSET_CATEGORIES) —
+  // a diferencia de Rodados, acá "moto" es una opción válida.
+  category?: string[]
 }
 
 // Feed de comentarios compartido — ver AuditCommentsPanel.tsx. `target` es el

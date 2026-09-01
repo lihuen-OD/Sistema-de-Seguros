@@ -32,8 +32,9 @@ import {
   type InsuranceAuditListFilters,
 } from '../../shared/api/insurance-audits.api'
 import { FIRE_EXT_AUDIT_STATUS_LABELS } from '../../shared/constants'
+import { CATEGORY_LABEL } from '../../shared/constants/asset-categories'
 import { ROUTES } from '../../app/routes'
-import type { TableColumn } from '../../shared/types'
+import { AUDITABLE_ASSET_CATEGORIES, type TableColumn } from '../../shared/types'
 import { InsuranceAuditCoverageTab } from './InsuranceAuditCoverageTab'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_AUDIT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
@@ -44,6 +45,14 @@ const AUDIT_STATUS_SORT_ORDER: Record<string, number> = {
   APPROVED: 2,
   REJECTED: 3,
 }
+
+// Categoría real del Asset asegurado — mismas constantes que ya usa el
+// filtro equivalente de Rodados (AssetAuditsQueuePage.tsx), sin inventar
+// una lista nueva. A diferencia de Rodados, acá NO se excluye "Moto": una
+// moto no lleva matafuego pero sí tiene tarjeta de circulación, así que sí
+// puede tener auditoría de seguros (ver classifyAuditableAssetCategory en
+// el backend).
+const ASSET_CATEGORY_OPTIONS = AUDITABLE_ASSET_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABEL[c] }))
 
 // Mismo criterio de texto que InsuranceAuditDetailPage.tsx (checklist) — no
 // se inventa una redacción nueva para la columna/filtro.
@@ -81,11 +90,13 @@ export default function InsuranceAuditsQueuePage() {
   // multi-select sobre todos los activos elegibles no aporta sobre eso.
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [filterAuditedBy, setFilterAuditedBy] = useState<string[]>([])
+  const [filterAssetCategory, setFilterAssetCategory] = useState<string[]>([])
   const [filterHasCard, setFilterHasCard] = useState<string[]>([])
   const [filterHasComments, setFilterHasComments] = useState<string[]>([])
 
   function clearAdvancedFilters() {
     setFilterAuditedBy([])
+    setFilterAssetCategory([])
     setFilterHasCard([])
     setFilterHasComments([])
   }
@@ -93,18 +104,20 @@ export default function InsuranceAuditsQueuePage() {
   const activeAdvancedFilterCount = useMemo(() => {
     let count = 0
     if (filterAuditedBy.length > 0) count++
+    if (filterAssetCategory.length > 0) count++
     if (filterHasCard.length === 1) count++
     if (filterHasComments.length === 1) count++
     return count
-  }, [filterAuditedBy, filterHasCard, filterHasComments])
+  }, [filterAuditedBy, filterAssetCategory, filterHasCard, filterHasComments])
 
   const queryFilters = useMemo(() => {
     const f: InsuranceAuditListFilters = {}
     if (filterAuditedBy.length > 0) f.auditedBy = filterAuditedBy
+    if (filterAssetCategory.length > 0) f.category = filterAssetCategory
     if (filterHasCard.length === 1) f.hasCirculationCard = filterHasCard[0] === 'yes'
     if (filterHasComments.length === 1) f.hasComments = filterHasComments[0] === 'yes'
     return f
-  }, [filterAuditedBy, filterHasCard, filterHasComments])
+  }, [filterAuditedBy, filterAssetCategory, filterHasCard, filterHasComments])
 
   const { data: all = [], isLoading, isError } = useQuery(
     insuranceAuditQueries.list(Object.keys(queryFilters).length > 0 ? queryFilters : undefined),
@@ -385,6 +398,7 @@ export default function InsuranceAuditsQueuePage() {
             {showAdvancedFilters && (
               <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3 bg-slate-50/60">
                 <MultiSelectFilter label="Auditor" options={auditorOptions} value={filterAuditedBy} onChange={setFilterAuditedBy} />
+                <MultiSelectFilter label="Categoría de activo" options={ASSET_CATEGORY_OPTIONS} value={filterAssetCategory} onChange={setFilterAssetCategory} />
                 <MultiSelectFilter label="Tarjeta de circulación" options={HAS_CIRCULATION_CARD_OPTIONS} value={filterHasCard} onChange={setFilterHasCard} />
                 <MultiSelectFilter label="Comentarios" options={HAS_COMMENTS_OPTIONS} value={filterHasComments} onChange={setFilterHasComments} />
                 {activeAdvancedFilterCount > 0 && (

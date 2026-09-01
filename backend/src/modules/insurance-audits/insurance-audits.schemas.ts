@@ -1,7 +1,24 @@
 import { z } from 'zod'
 import { PaginationSchema, booleanFromString } from '../../shared/schemas/common'
 import { AuditPeriodQuerySchema, BulkApproveAuditsSchema, SaveAssignmentSchema } from '../../shared/schemas/audit-domain'
+import { AUDITABLE_ASSET_CATEGORIES } from '../../shared/types'
 import { INSURANCE_AUDIT_STATUSES } from './insurance-audits.constants'
+
+// Acepta ?campo=valor (string) o ?campo=valor1&campo=valor2 (array) y lo
+// normaliza siempre a un array (o undefined si no vino) — factorizado acá
+// (local a este archivo, no compartido con fire-extinguisher-audits) porque
+// status/auditedBy/category repiten la misma forma. Mismo criterio/mismo
+// cast explicado que la versión de fire-extinguisher-audits.schemas.ts — TS
+// no puede acotar `Array.isArray` sobre una unión genérica.
+function arrayFilter<Schema extends z.ZodTypeAny>(schema: Schema) {
+  return z
+    .union([schema, z.array(schema)])
+    .optional()
+    .transform((v) => {
+      if (v === undefined) return undefined
+      return (Array.isArray(v) ? v : [v]) as z.infer<Schema>[]
+    })
+}
 
 const ChecklistSchema = z.object({
   hasCirculationCard: z.boolean(),
@@ -35,20 +52,19 @@ export const ReviewInsuranceAuditSchema = z.object({
 export const BulkApproveInsuranceAuditsSchema = BulkApproveAuditsSchema
 
 export const ListInsuranceAuditsQuerySchema = PaginationSchema.extend({
-  status: z
-    .union([z.enum(INSURANCE_AUDIT_STATUSES), z.array(z.enum(INSURANCE_AUDIT_STATUSES))])
-    .optional()
-    .transform((v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v])),
+  status: arrayFilter(z.enum(INSURANCE_AUDIT_STATUSES)),
   assetId: z.string().uuid('ID de activo inválido').optional(),
   // ── Filtros avanzados de la tabla (mismo criterio que fire-extinguisher-audits) ──
-  auditedBy: z
-    .union([z.string().trim().min(1), z.array(z.string().trim().min(1))])
-    .optional()
-    .transform((v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v])),
+  auditedBy: arrayFilter(z.string().trim().min(1)),
   hasCirculationCard: booleanFromString.optional(),
   // "Con comentarios" (true) / "Sin comentarios" (false) — comments es
   // String? nullable en InsuranceAudit, se filtra por presencia de valor.
   hasComments: booleanFromString.optional(),
+  // Categoría del Asset asegurado (una de AUDITABLE_ASSET_CATEGORIES) — a
+  // diferencia de Rodados, acá "moto" SÍ es una categoría válida (una moto
+  // no lleva matafuego pero sí tiene tarjeta de circulación, ver
+  // classifyAuditableAssetCategory en audit-domain.service.ts).
+  category: arrayFilter(z.enum(AUDITABLE_ASSET_CATEGORIES)),
 })
 
 // Mismo shape que los otros 2 dominios de auditoría — ver shared/schemas/audit-domain.ts.
