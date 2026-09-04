@@ -374,6 +374,7 @@ export default function DocumentDetailPage() {
         title={doc.documentNumber}
         subtitle={`Emisión: ${formatDate(doc.issueDate)} · Moneda: ${doc.currency}${doc.currency === 'USD' ? ` · TC: $${doc.exchangeRate.toLocaleString('es-AR')}` : ''}`}
         category="Documento"
+        responsiveActions
         backTo="/insurance/documents"
         backLabel="Volver a documentos"
         badge={
@@ -386,18 +387,18 @@ export default function DocumentDetailPage() {
           </div>
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="grid w-full grid-cols-1 gap-2 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:flex xl:w-auto xl:flex-wrap xl:justify-end [&>button]:w-full xl:[&>button]:w-auto">
             <SendAccountingDocumentEmailAction documentId={doc.id} />
             <button
               onClick={() => navigate(ROUTES.DOCUMENTS_EDIT(doc.id))}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Edit2 size={15} />
               Editar
             </button>
             <button
               onClick={() => navigate(`/insurance/documents/${doc.id}/ficha`)}
-              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
             >
               <FileDown size={15} />
               Ficha PDF
@@ -405,7 +406,7 @@ export default function DocumentDetailPage() {
             {canApply && (
               <button
                 onClick={() => setApplyConfirmOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 <CheckCheck size={15} />
                 Aplicar documento
@@ -414,14 +415,14 @@ export default function DocumentDetailPage() {
             {canCancel && (
               <button
                 onClick={() => setCancelDocConfirmOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
               >
                 <Ban size={15} />
                 Cancelar documento
               </button>
             )}
             {confirmDelete ? (
-              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50">
+              <div className="col-span-full flex min-w-0 flex-wrap items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50 xl:w-auto">
                 <span className="text-xs font-medium text-red-700">¿Eliminar documento?</span>
                 <button
                   onClick={async () => {
@@ -443,7 +444,7 @@ export default function DocumentDetailPage() {
             ) : (
               <button
                 onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-600 hover:bg-red-50 text-sm font-medium rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 border border-red-200 text-red-600 hover:bg-red-50 text-sm font-medium rounded-lg transition-colors"
               >
                 <Trash2 size={15} />
                 Eliminar
@@ -458,13 +459,13 @@ export default function DocumentDetailPage() {
           permite cargarle importe sin impacto económico real). */}
       {hasOwnAmounts && (
       <>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-1 gap-4 mb-5 sm:grid-cols-2 xl:grid-cols-4">
         <div className="card p-4">
           <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Neto</p>
           <p className="text-base font-bold text-slate-900 tabular-nums truncate">
             {formatCurrencyCompact(doc.netAmount, doc.currency)}
           </p>
-          <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+          <p className="text-xs text-slate-400 mt-0.5 tabular-nums break-words">
             {formatCurrencyFull(doc.netAmount, doc.currency)}
           </p>
         </div>
@@ -473,7 +474,7 @@ export default function DocumentDetailPage() {
           <p className="text-base font-bold text-slate-900 tabular-nums truncate">
             {formatCurrencyCompact(doc.vatAmount, doc.currency)}
           </p>
-          <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+          <p className="text-xs text-slate-400 mt-0.5 tabular-nums break-words">
             {formatCurrencyFull(doc.vatAmount, doc.currency)}
           </p>
         </div>
@@ -482,7 +483,7 @@ export default function DocumentDetailPage() {
           <p className="text-base font-bold text-slate-900 tabular-nums truncate">
             {formatCurrencyCompact(doc.otherTaxesAmount, doc.currency)}
           </p>
-          <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+          <p className="text-xs text-slate-400 mt-0.5 tabular-nums break-words">
             {formatCurrencyFull(doc.otherTaxesAmount, doc.currency)}
           </p>
         </div>
@@ -491,24 +492,24 @@ export default function DocumentDetailPage() {
           <p className="text-lg font-extrabold text-brand-700 tabular-nums truncate">
             {formatCurrencyCompact(computedTotal, doc.currency)}
           </p>
-          <p className="text-xs text-brand-400 mt-0.5 tabular-nums">
+          <p className="text-xs text-brand-400 mt-0.5 tabular-nums break-words">
             {formatCurrencyFull(computedTotal, doc.currency)}
           </p>
         </div>
       </div>
 
       {/* Formula note */}
-      <div className="mb-5 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg inline-flex items-center gap-2 text-xs text-slate-500">
+      <div className="mb-5 flex w-full items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-500 sm:w-auto sm:inline-flex sm:items-center">
         <Receipt size={13} className="text-slate-400 flex-shrink-0" />
-        <span>
+        <span className="min-w-0 break-words">
           <strong className="text-slate-700">Total</strong> = Neto + IVA + Otros Impuestos
-          &nbsp;=&nbsp;
+          {' = '}
           {formatCurrencyFull(doc.netAmount, doc.currency)}
-          &nbsp;+&nbsp;
+          {' + '}
           {formatCurrencyFull(doc.vatAmount, doc.currency)}
-          &nbsp;+&nbsp;
+          {' + '}
           {formatCurrencyFull(doc.otherTaxesAmount, doc.currency)}
-          &nbsp;=&nbsp;
+          {' = '}
           <strong className="text-slate-800">{formatCurrencyFull(computedTotal, doc.currency)}</strong>
         </span>
       </div>

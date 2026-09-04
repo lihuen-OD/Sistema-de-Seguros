@@ -11,6 +11,7 @@ interface PageHeaderProps {
   actions?: React.ReactNode
   badge?: React.ReactNode
   className?: string
+  responsiveActions?: boolean
 }
 
 export function PageHeader({
@@ -22,6 +23,7 @@ export function PageHeader({
   actions,
   badge,
   className,
+  responsiveActions = false,
 }: PageHeaderProps) {
   const navigate = useNavigate()
 
@@ -36,7 +38,10 @@ export function PageHeader({
           {backLabel}
         </button>
       )}
-      <div className="flex items-start justify-between gap-4">
+      <div className={clsx(
+        'flex items-start justify-between gap-4',
+        responsiveActions && 'flex-col xl:flex-row xl:items-start',
+      )}>
         <div className="min-w-0 flex-1">
           {category && (
             <p className="text-xs font-semibold text-brand-600 mb-1 uppercase tracking-wider">{category}</p>
@@ -50,7 +55,10 @@ export function PageHeader({
           )}
         </div>
         {actions && (
-          <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>
+          <div className={clsx(
+            'flex items-center gap-2 flex-shrink-0',
+            responsiveActions && 'w-full min-w-0 flex-wrap xl:w-auto xl:justify-end',
+          )}>{actions}</div>
         )}
       </div>
     </div>

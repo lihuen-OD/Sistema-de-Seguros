@@ -34,7 +34,7 @@ export function SendAccountingDocumentEmailAction({ documentId, disabled = false
         type="button"
         disabled={disabled || !documentId || attachmentsLoading}
         onClick={handleOpen}
-        className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         title={!documentId ? 'Guardá primero el documento para poder enviarlo' : 'Enviar por mail'}
       >
         <Mail size={15} />
@@ -153,11 +153,11 @@ function SendAccountingDocumentEmailModal({
             <FormTextarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={2000} rows={3} placeholder="Comentario opcional para el destinatario…" />
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2 text-xs">
-            <div className="flex justify-between gap-4"><span className="text-slate-500">Fecha</span><span className="font-medium text-slate-700">{formatDate(document.issueDate)}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-slate-500">Importe</span><span className="font-medium text-slate-700">{formatCurrencyFull(document.totalAmount, document.currency)}</span></div>
-            {document.insuranceCompany && <div className="flex justify-between gap-4"><span className="text-slate-500">Empresa</span><span className="font-medium text-slate-700 text-right">{document.insuranceCompany}</span></div>}
-            {policyNumbers.length > 0 && <div className="flex justify-between gap-4"><span className="text-slate-500">Pólizas</span><span className="font-medium text-slate-700 text-right">{policyNumbers.join(', ')}</span></div>}
-            {attachmentNames.length > 0 && <div className="border-t border-slate-200 pt-2 flex justify-between gap-4"><span className="text-slate-500">Adjuntos</span><span className="font-medium text-slate-700 text-right">{attachmentNames.join(', ')}</span></div>}
+            <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4"><span className="text-slate-500">Fecha</span><span className="font-medium text-slate-700">{formatDate(document.issueDate)}</span></div>
+            <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4"><span className="text-slate-500">Importe</span><span className="font-medium text-slate-700 break-words">{formatCurrencyFull(document.totalAmount, document.currency)}</span></div>
+            {document.insuranceCompany && <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4"><span className="text-slate-500">Empresa</span><span className="font-medium text-slate-700 break-words sm:text-right">{document.insuranceCompany}</span></div>}
+            {policyNumbers.length > 0 && <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4"><span className="text-slate-500">Pólizas</span><span className="font-medium text-slate-700 break-words sm:text-right">{policyNumbers.join(', ')}</span></div>}
+            {attachmentNames.length > 0 && <div className="border-t border-slate-200 pt-2 flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4"><span className="text-slate-500">Adjuntos</span><span className="font-medium text-slate-700 break-all sm:text-right">{attachmentNames.join(', ')}</span></div>}
           </div>
           {attachmentNames.length === 0 && (
             <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-800">
@@ -165,11 +165,11 @@ function SendAccountingDocumentEmailModal({
               <span>Este documento no tiene archivos adjuntos. Se enviará solo la información del documento.</span>
             </div>
           )}
-          <div className="flex items-center gap-2 pt-1">
-            <button type="button" onClick={handleSend} disabled={to.length === 0 || isBusy} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+          <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:items-center">
+            <button type="button" onClick={handleSend} disabled={to.length === 0 || isBusy} className="flex w-full items-center justify-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed sm:flex-1">
               <Mail size={14} /> {isBusy ? 'Enviando…' : 'Enviar'}
             </button>
-            <button type="button" onClick={onClose} disabled={isBusy} className="px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg disabled:opacity-40">Cancelar</button>
+            <button type="button" onClick={onClose} disabled={isBusy} className="w-full px-4 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg disabled:opacity-40 sm:w-auto">Cancelar</button>
           </div>
         </div>
       )}
