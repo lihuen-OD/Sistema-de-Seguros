@@ -99,6 +99,11 @@ export const documentsController = {
     res.json({ data: result })
   }),
 
+  getEmailLogs: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const logs = await documentsService.getEmailLogs(req.params.id)
+    res.json({ data: logs })
+  }),
+
   getAuditLog: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     const log = await documentsService.getAuditLog(req.params.id)
     res.json({ data: log })

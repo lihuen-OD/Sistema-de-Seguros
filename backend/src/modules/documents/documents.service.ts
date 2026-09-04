@@ -914,6 +914,39 @@ export const documentsService = {
     })
   },
 
+  async getEmailLogs(id: string) {
+    await this.assertDocumentExists(id)
+    const logs = await prisma.emailLog.findMany({
+      where: { entityType: 'AccountingDocument', entityId: id },
+      select: {
+        id: true, status: true, provider: true, toAddresses: true, ccAddresses: true,
+        bccAddresses: true, subject: true, triggeredByUserId: true, triggeredByEmail: true,
+        sentAt: true, failedAt: true, errorMessage: true, providerMessageId: true,
+        metadata: true, createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    return logs.map((log) => {
+      const metadata = log.metadata && typeof log.metadata === 'object' && !Array.isArray(log.metadata)
+        ? log.metadata as Record<string, unknown>
+        : {}
+      const stringArray = (value: unknown) =>
+        Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+      return {
+        id: log.id, createdAt: log.createdAt, sentAt: log.sentAt, failedAt: log.failedAt,
+        status: log.status,
+        sentBy: log.triggeredByEmail ? { userId: log.triggeredByUserId, email: log.triggeredByEmail } : null,
+        to: log.toAddresses, cc: log.ccAddresses, bcc: log.bccAddresses, subject: log.subject,
+        message: typeof metadata.message === 'string' ? metadata.message : null,
+        provider: log.provider, providerMessageId: log.providerMessageId,
+        errorMessage: log.errorMessage, attachments: stringArray(metadata.attachmentNames),
+        documentType: typeof metadata.documentType === 'string' ? metadata.documentType : null,
+        documentNumber: typeof metadata.documentNumber === 'string' ? metadata.documentNumber : null,
+      }
+    })
+  },
+
   // ── Installments ──────────────────────────────────────────────────────────────
 
   async findInstallments(documentId: string) {

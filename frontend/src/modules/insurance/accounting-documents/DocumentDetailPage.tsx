@@ -39,6 +39,7 @@ import { ROUTES } from '../../../app/routes'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
 import { DocumentBalanceSummary } from './components/DocumentBalanceSummary'
 import { SendAccountingDocumentEmailAction } from './components/SendAccountingDocumentEmailAction'
+import { DocumentEmailHistory } from './components/DocumentEmailHistory'
 import type { DocumentPolicyAllocation, Installment, InstallmentUpdate, TableColumn, RelatedDocSummary, DocumentAuditLog, DocumentAuditLogAction } from '../../../shared/types'
 
 // ── Historial de auditoría ────────────────────────────────────────────────────
@@ -709,6 +710,8 @@ export default function DocumentDetailPage() {
           </SectionCard>
         </div>
       )}
+
+      <DocumentEmailHistory documentId={doc.id} />
 
       {/* Adjuntos */}
       <SectionCard

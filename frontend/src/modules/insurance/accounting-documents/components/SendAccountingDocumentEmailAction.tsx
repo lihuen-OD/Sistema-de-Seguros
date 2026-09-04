@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, CheckCircle2, Info, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import { Modal } from '../../../../shared/components/modals/Modal'
 import { FormTextarea } from '../../../../shared/components/forms/FormSection'
-import { documentsApi, documentQueries } from '../../../../shared/api/documents.api'
+import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
 import { DOCUMENT_TYPE_LABELS } from '../../../../shared/constants'
 import { formatCurrencyFull, formatDate } from '../../../../shared/utils/format'
 import { EmailChipField } from './EmailChipField'
@@ -62,6 +62,7 @@ function SendAccountingDocumentEmailModal({
   attachmentNames: string[]
   onClose: () => void
 }) {
+  const queryClient = useQueryClient()
   const [to, setTo] = useState<string[]>([])
   const [cc, setCc] = useState<string[]>([])
   const [bcc, setBcc] = useState<string[]>([])
@@ -87,6 +88,7 @@ function SendAccountingDocumentEmailModal({
         subject: subject.trim() || undefined,
         message: message.trim() || undefined,
       })
+      await queryClient.invalidateQueries({ queryKey: documentKeys.emailLogs(document.id) })
       if (result.status === 'SKIPPED') {
         setStatus('skipped')
       } else {
