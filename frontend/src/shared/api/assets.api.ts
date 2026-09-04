@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { triggerBlobDownload } from '../utils/downloadFile'
-import type { Asset, AssetAttachment, AssetStatus, AssetStatusHistory, Building, Currency } from '../types'
+import type { Asset, AssetAttachment, AssetPledge, AssetStatus, AssetStatusHistory, Building, Currency } from '../types'
 
 interface BackendCompany { id: string; name: string; cuit: string }
 interface BackendCostCenter { id: string; name: string; code: string | null }
@@ -32,7 +32,7 @@ interface BackendAsset {
   location: string | null; mapsUrl: string | null
   productiveUnit: string | null; area: string | null
   description: string | null; metadata: Record<string, unknown> | null
-  isActive: boolean; fireExtinguisherAuditable: boolean; insuranceAuditable: boolean; createdAt: string; updatedAt: string
+  isActive: boolean; fireExtinguisherAuditable: boolean; insuranceAuditable: boolean; pledgeEligible: boolean; createdAt: string; updatedAt: string
   allocations: BackendAllocation[]
   valueHistory?: BackendValueHistory[]
   _count?: { attachments: number; fireExtinguishers: number }
@@ -117,6 +117,7 @@ function mapAsset(b: BackendAsset): Asset {
     saleDate: b.saleDate ? b.saleDate.slice(0, 10) : null,
     fireExtinguisherAuditable: b.fireExtinguisherAuditable,
     insuranceAuditable: b.insuranceAuditable,
+    pledgeEligible: b.pledgeEligible ?? false,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   }
@@ -178,6 +179,13 @@ export interface AssetCreateInput {
   description?: string
   metadata?: Record<string, unknown>
   allocations: { companyId: string; costCenterId: string; percentage: number }[]
+}
+
+export interface CreateAssetPledgeInput {
+  creditorName: string
+  startDate: string
+  endDate?: string
+  notes?: string
 }
 
 export const assetsApi = {
@@ -255,6 +263,27 @@ export const assetsApi = {
     return res.data.data.map((h) => ({ ...h, date: h.date.slice(0, 10) }))
   },
 
+  async findPledges(assetId: string): Promise<AssetPledge[]> {
+    const res = await apiClient.get<{ data: AssetPledge[] }>(`/assets/${assetId}/pledges`)
+    return res.data.data.map((pledge) => ({
+      ...pledge,
+      startDate: pledge.startDate.slice(0, 10),
+      endDate: pledge.endDate?.slice(0, 10) ?? null,
+    }))
+  },
+
+  async createPledge(assetId: string, input: CreateAssetPledgeInput): Promise<AssetPledge> {
+    const res = await apiClient.post<{ data: AssetPledge }>(`/assets/${assetId}/pledges`, input)
+    return res.data.data
+  },
+
+  async cancelPledge(assetId: string, pledgeId: string, cancellationReason: string): Promise<AssetPledge> {
+    const res = await apiClient.patch<{ data: AssetPledge }>(`/assets/${assetId}/pledges/${pledgeId}/cancel`, {
+      cancellationReason,
+    })
+    return res.data.data
+  },
+
   async addValueHistory(assetId: string, input: AddValueHistoryInput): Promise<void> {
     await apiClient.post(`/assets/${assetId}/value-history`, input)
   },
@@ -273,6 +302,7 @@ export const assetKeys = {
   detail: (id: string) => [...assetKeys.all, id] as const,
   attachments: (id: string) => [...assetKeys.all, id, 'attachments'] as const,
   statusHistory: (id: string) => ['asset-status-history', id] as const,
+  pledges: (id: string) => [...assetKeys.all, id, 'pledges'] as const,
 }
 
 export const assetQueries = {
@@ -301,6 +331,14 @@ export const assetQueries = {
       queryKey: assetKeys.statusHistory(id),
       queryFn: () => assetsApi.findStatusHistory(id),
       staleTime: 2 * 60 * 1000,
+      enabled: !!id,
+    }),
+  pledges: (id: string) =>
+    queryOptions({
+      queryKey: assetKeys.pledges(id),
+      queryFn: () => assetsApi.findPledges(id),
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: true,
       enabled: !!id,
     }),
 }

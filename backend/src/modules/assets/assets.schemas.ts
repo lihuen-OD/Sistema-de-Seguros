@@ -84,6 +84,20 @@ export const ListAssetsQuerySchema = PaginationSchema.merge(ActiveFilterSchema).
   assetType: z.string().optional(),
 })
 
+export const CreateAssetPledgeSchema = z.object({
+  creditorName: z.string().trim().min(1, 'El acreedor es obligatorio').max(200),
+  startDate: ISODate,
+  endDate: ISODate.optional(),
+  notes: z.string().trim().max(2000).optional(),
+}).refine((data) => !data.endDate || data.endDate >= data.startDate, {
+  message: 'La fecha de fin no puede ser anterior a la fecha de inicio',
+  path: ['endDate'],
+})
+
+export const CancelAssetPledgeSchema = z.object({
+  cancellationReason: z.string().trim().min(1, 'El motivo de baja es obligatorio').max(500),
+})
+
 export type CreateAssetDTO = z.infer<typeof CreateAssetSchema>
 export type UpdateAssetDTO = z.infer<typeof UpdateAssetSchema>
 export type ReplaceAllocationsDTO = z.infer<typeof ReplaceAllocationsSchema>
@@ -91,3 +105,5 @@ export type AddValueHistoryDTO = z.infer<typeof AddValueHistorySchema>
 export type AddAttachmentDTO = z.infer<typeof AddAttachmentSchema>
 export type UpdateAttachmentDTO = z.infer<typeof UpdateAttachmentSchema>
 export type ListAssetsQueryDTO = z.infer<typeof ListAssetsQuerySchema>
+export type CreateAssetPledgeDTO = z.infer<typeof CreateAssetPledgeSchema>
+export type CancelAssetPledgeDTO = z.infer<typeof CancelAssetPledgeSchema>

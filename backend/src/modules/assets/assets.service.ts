@@ -7,6 +7,7 @@ import { toDateStr } from '../../shared/utils/dates'
 import { deleteFromCloudinary } from '../../config/cloudinary'
 import { computeDualAmounts } from '../../shared/utils/currency'
 import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
+import { isPledgeEligibleAssetType } from './asset-pledge-eligibility'
 import type {
   CreateAssetDTO,
   UpdateAssetDTO,
@@ -177,7 +178,11 @@ export const assetsService = {
       include: ASSET_DETAIL_INCLUDE,
     })
     if (!asset) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
-    return { ...asset, attachments: asset.attachments.map(mapAttachment) }
+    return {
+      ...asset,
+      pledgeEligible: isPledgeEligibleAssetType(asset.assetType),
+      attachments: asset.attachments.map(mapAttachment),
+    }
   },
 
   async create(data: CreateAssetDTO) {
@@ -279,7 +284,11 @@ export const assetsService = {
       where: { id: created },
       include: ASSET_DETAIL_INCLUDE,
     })
-    return { ...asset, attachments: asset.attachments.map(mapAttachment) }
+    return {
+      ...asset,
+      pledgeEligible: isPledgeEligibleAssetType(asset.assetType),
+      attachments: asset.attachments.map(mapAttachment),
+    }
   },
 
   async update(id: string, data: UpdateAssetDTO) {
@@ -288,9 +297,23 @@ export const assetsService = {
 
     const current = await prisma.asset.findUnique({
       where: { id },
-      select: { id: true, status: true, currency: true, exchangeRate: true, purchaseDate: true },
+      select: { id: true, status: true, assetType: true, currency: true, exchangeRate: true, purchaseDate: true },
     })
     if (!current) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
+
+    if (assetData.assetType && assetData.assetType !== current.assetType && !isPledgeEligibleAssetType(assetData.assetType)) {
+      const activePledge = await prisma.assetPledge.findFirst({
+        where: { assetId: id, cancelledAt: null },
+        select: { id: true },
+      })
+      if (activePledge) {
+        throw new AppError(
+          409,
+          'No se puede cambiar a un tipo no elegible mientras el activo tenga una prenda activa.',
+          'ACTIVE_PLEDGE_TYPE_CHANGE',
+        )
+      }
+    }
 
     const fixedAssetCode = await resolveFixedAssetCode(assetData.fixedAssetId)
 
@@ -376,9 +399,9 @@ export const assetsService = {
     return { id }
   },
 
-  // Elimina el activo por completo (no es soft-delete) — a diferencia de
-  // policies.service.ts#hardDelete, acá no hay ninguna FK RESTRICT que
-  // resolver a mano: allocations/valueHistory/statusHistory/attachments/
+  // Elimina el activo por completo (no es soft-delete). AssetPledge usa
+  // RESTRICT para preservar su historial, por eso se rechaza antes con un
+  // AppError claro. allocations/valueHistory/statusHistory/attachments/
   // renewalProjectionOverrides/insuranceAudits (y sus adjuntos) se borran
   // solos vía onDelete: Cascade; FireExtinguisher.assetId, Claim.assetId y
   // PolicyAssetCoverage.assetId quedan en null vía onDelete: SetNull — esos
@@ -391,11 +414,19 @@ export const assetsService = {
       where: { id },
       select: {
         id: true,
+        _count: { select: { pledges: true } },
         attachments: { select: { cloudinaryPublicId: true } },
         insuranceAudits: { select: { attachments: { select: { cloudinaryPublicId: true } } } },
       },
     })
     if (!asset) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
+    if (asset._count?.pledges > 0) {
+      throw new AppError(
+        409,
+        'No se puede eliminar un activo que tiene historial de prendas.',
+        'ASSET_HAS_PLEDGE_HISTORY',
+      )
+    }
 
     const cloudinaryIds = [
       ...asset.attachments.map((a) => a.cloudinaryPublicId),

@@ -138,6 +138,7 @@ model Asset {
   allocations               AssetAllocation[]
   valueHistory              AssetValueHistory[]
   statusHistory             AssetStatusHistory[]
+  pledges                   AssetPledge[]
   attachments               AssetAttachment[]
   fireExtinguishers         FireExtinguisher[]
   claims                    Claim[]
@@ -152,6 +153,32 @@ model Asset {
   @@index([brand])
   @@index([fixedAssetId])
   @@map("assets")
+}
+
+// Historial prendario append-only. La unicidad de la prenda activa se
+// garantiza con un índice único parcial en la migración de esta tabla:
+// Prisma no puede representar `WHERE "cancelledAt" IS NULL` en el schema.
+model AssetPledge {
+  id                 String    @id @default(uuid())
+  assetId            String
+  creditorName       String
+  startDate          DateTime  @db.Date
+  endDate            DateTime? @db.Date
+  notes              String?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdBy          String?
+  cancelledBy        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Restrict preserva el historial: un activo con prendas no puede borrarse
+  // físicamente sin una decisión/migración explícita.
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@index([assetId, createdAt])
+  @@index([endDate])
+  @@map("asset_pledges")
 }
 
 model AssetStatusHistory {
