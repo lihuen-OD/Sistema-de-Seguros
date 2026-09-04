@@ -298,7 +298,7 @@ describe('Policies API', () => {
     it('updates an existing line in place when it comes with an id (preserves its attachments)', async () => {
       db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
       db.policyAssetCoverage.findMany
-        .mockResolvedValueOnce([{ id: COVERAGE_ID }]) // existing lines for this policy
+        .mockResolvedValueOnce([{ id: COVERAGE_ID, assetId: null, _count: { attachments: 2 } }]) // existing lines for this policy
         .mockResolvedValueOnce([ // findCoverages() re-read at the end
           {
             id: COVERAGE_ID, assetId: null, insuranceTypeId: TYPE_ID, coverageIds: [],
@@ -329,7 +329,10 @@ describe('Policies API', () => {
       db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
       const REMOVED_COVERAGE_ID = '60000000-0000-0000-0000-000000000002'
       db.policyAssetCoverage.findMany
-        .mockResolvedValueOnce([{ id: COVERAGE_ID }, { id: REMOVED_COVERAGE_ID }])
+        .mockResolvedValueOnce([
+          { id: COVERAGE_ID, assetId: null, _count: { attachments: 0 } },
+          { id: REMOVED_COVERAGE_ID, assetId: null, _count: { attachments: 0 } },
+        ])
         .mockResolvedValueOnce([])
       db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
       db.$transaction.mockResolvedValue([])
@@ -345,7 +348,9 @@ describe('Policies API', () => {
 
     it('returns 400 when a coverage id does not belong to this policy', async () => {
       db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
-      db.policyAssetCoverage.findMany.mockResolvedValueOnce([{ id: COVERAGE_ID }])
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([
+        { id: COVERAGE_ID, assetId: null, _count: { attachments: 0 } },
+      ])
 
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
@@ -354,6 +359,74 @@ describe('Policies API', () => {
 
       expect(res.status).toBe(400)
       expect(res.body.error.code).toBe('INVALID_REFERENCE')
+    })
+
+    it('returns 409 when an existing line with attachments changes assetId', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([
+        { id: COVERAGE_ID, assetId: ASSET_ID, _count: { attachments: 1 } },
+      ])
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ id: COVERAGE_ID, assetId: OTHER_ID, insuranceTypeId: TYPE_ID }] })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error).toEqual({
+        code: 'COVERAGE_ASSET_CHANGE_BLOCKED',
+        message: 'No se puede cambiar el activo de esta cobertura porque ya tiene adjuntos cargados. Para cambiar el activo, eliminá primero los adjuntos de esta cobertura o creá una nueva línea de cobertura.',
+      })
+      expect(db.$transaction).not.toHaveBeenCalled()
+    })
+
+    it('allows editing other fields when an existing line has attachments and assetId is unchanged', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
+      db.policyAssetCoverage.findMany
+        .mockResolvedValueOnce([{ id: COVERAGE_ID, assetId: ASSET_ID, _count: { attachments: 1 } }])
+        .mockResolvedValueOnce([])
+      db.asset.findFirst.mockResolvedValue({ id: ASSET_ID })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ id: COVERAGE_ID, assetId: ASSET_ID, insuranceTypeId: TYPE_ID, insuredAmount: 2500 }] })
+
+      expect(res.status).toBe(200)
+      expect(db.policyAssetCoverage.update).toHaveBeenCalled()
+    })
+
+    it('allows changing assetId when an existing line has no attachments', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
+      db.policyAssetCoverage.findMany
+        .mockResolvedValueOnce([{ id: COVERAGE_ID, assetId: ASSET_ID, _count: { attachments: 0 } }])
+        .mockResolvedValueOnce([])
+      db.asset.findFirst.mockResolvedValue({ id: OTHER_ID })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ id: COVERAGE_ID, assetId: OTHER_ID, insuranceTypeId: TYPE_ID }] })
+
+      expect(res.status).toBe(200)
+      expect(db.policyAssetCoverage.update).toHaveBeenCalled()
+    })
+
+    it('allows a new line to choose an assetId', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([])
+      db.asset.findFirst.mockResolvedValue({ id: ASSET_ID })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ assetId: ASSET_ID, insuranceTypeId: TYPE_ID }] })
+
+      expect(res.status).toBe(200)
+      expect(db.policyAssetCoverage.create).toHaveBeenCalled()
     })
   })
 
