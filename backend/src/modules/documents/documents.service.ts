@@ -784,6 +784,15 @@ export const documentsService = {
     const doc = await this.findById(id)
     const typeDef = getDocumentTypeDef(doc.documentType)
 
+    const [ownPolicy, linkedDocument] = await Promise.all([
+      doc.policyId
+        ? prisma.policy.findUnique({ where: { id: doc.policyId }, select: { policyNumber: true } })
+        : Promise.resolve(null),
+      doc.linkedDocumentId
+        ? prisma.accountingDocument.findUnique({ where: { id: doc.linkedDocumentId }, select: { documentNumber: true } })
+        : Promise.resolve(null),
+    ])
+
     // Bien de Uso + Centro de Costo de cada asignación — se resuelven acá
     // (no vienen en DOCUMENT_DETAIL_INCLUDE) porque están asociados al
     // Activo (o, en líneas "sin activo", directo a la línea de cobertura),
@@ -856,12 +865,30 @@ export const documentsService = {
     // documento — nunca con montos/distribución que pudiera mandar el
     // cliente en el body de este endpoint.
     const templateData: ManualDocumentEmailData = {
+      documentType: doc.documentType,
       documentTypeLabel: typeDef?.label ?? doc.documentType,
       documentNumber: doc.documentNumber,
+      issueDate: toDateStr(doc.issueDate),
+      dueDate: doc.installments.map((installment) => installment.dueDate as string).sort()[0] ?? null,
       insuranceCompany: doc.insuranceCompany,
       paymentMethod: doc.paymentMethod,
       currency: doc.currency,
       totalAmount: doc.totalAmount,
+      policyNumbers: [...new Set([
+        ...doc.allocations.map((allocation) => allocation.policy?.policyNumber).filter((value): value is string => !!value),
+        ...(ownPolicy?.policyNumber ? [ownPolicy.policyNumber] : []),
+      ])],
+      linkedDocumentNumber: linkedDocument?.documentNumber ?? null,
+      description: doc.description,
+      adjustmentReason: doc.adjustmentReason
+        ? (ADJUSTMENT_REASONS[doc.adjustmentReason] ?? doc.adjustmentReason)
+        : null,
+      endorsementType: doc.endorsementType
+        ? (ENDORSEMENT_TYPES[doc.endorsementType] ?? doc.endorsementType)
+        : null,
+      endorsementEffectiveDate: doc.endorsementEffectiveDate
+        ? toDateStr(doc.endorsementEffectiveDate)
+        : null,
       costCenters: [...groups.values()],
       attachments: [],
     }

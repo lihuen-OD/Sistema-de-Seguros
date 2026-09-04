@@ -38,6 +38,7 @@ import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { DocumentAttachmentsSection } from './DocumentAttachmentsSection'
 import { DocumentBalanceSummary } from './components/DocumentBalanceSummary'
+import { SendAccountingDocumentEmailAction } from './components/SendAccountingDocumentEmailAction'
 import type { DocumentPolicyAllocation, Installment, InstallmentUpdate, TableColumn, RelatedDocSummary, DocumentAuditLog, DocumentAuditLogAction } from '../../../shared/types'
 
 // ── Historial de auditoría ────────────────────────────────────────────────────
@@ -386,6 +387,7 @@ export default function DocumentDetailPage() {
         }
         actions={
           <div className="flex items-center gap-2">
+            <SendAccountingDocumentEmailAction documentId={doc.id} />
             <button
               onClick={() => navigate(ROUTES.DOCUMENTS_EDIT(doc.id))}
               className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"

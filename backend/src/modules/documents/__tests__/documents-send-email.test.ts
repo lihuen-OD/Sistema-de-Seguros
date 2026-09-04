@@ -6,6 +6,7 @@ jest.mock('../../../config/database', () => ({
   prisma: {
     user: { findUnique: jest.fn() },
     accountingDocument: { findUnique: jest.fn() },
+    policy: { findUnique: jest.fn() },
     asset: { findMany: jest.fn() },
     policyAssetCoverage: { findMany: jest.fn() },
   },
@@ -90,6 +91,7 @@ describe('POST /api/v1/documents/:id/send-email', () => {
     db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
     db.asset.findMany.mockResolvedValue(fakeAssetWithCostCenter)
     db.policyAssetCoverage.findMany.mockResolvedValue([])
+    db.policy.findUnique.mockResolvedValue(null)
     mockedEmailService.sendManualEntityEmail.mockResolvedValue({
       sent: true,
       status: 'SENT',
@@ -114,6 +116,7 @@ describe('POST /api/v1/documents/:id/send-email', () => {
         subjectOverride: 'Asunto custom',
         actor: { userId: ADMIN_USER_ID, email: 'test@losodwyer.com' },
         templateData: expect.objectContaining({
+          documentType: 'INVOICE',
           documentTypeLabel: 'Factura',
           documentNumber: 'A-0001-00012345',
           insuranceCompany: 'La Segunda',
@@ -141,6 +144,56 @@ describe('POST /api/v1/documents/:id/send-email', () => {
 
     expect(db.asset.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: { in: ['asset-1'] } } }),
+    )
+  })
+
+  it.each([
+    ['CREDIT_NOTE', 'Nota de Crédito'],
+    ['DEBIT_NOTE', 'Nota de Débito'],
+    ['ENDORSEMENT', 'Endoso'],
+    ['ADJUSTMENT_ENTRY', 'Asiento de Ajuste'],
+  ])('envía documentos %s con archivo usando el mismo flujo genérico', async (documentType, documentTypeLabel) => {
+    db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, documentType })
+
+    const res = await request(app)
+      .post(`/api/v1/documents/${DOC_ID}/send-email`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ to: ['destinatario@empresa.com'] })
+
+    expect(res.status).toBe(200)
+    expect(mockedEmailService.sendManualEntityEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: 'AccountingDocument',
+        entityId: DOC_ID,
+        templateData: expect.objectContaining({ documentType, documentTypeLabel }),
+      }),
+    )
+  })
+
+  it.each([
+    ['INVOICE', 'Factura'],
+    ['CREDIT_NOTE', 'Nota de Crédito'],
+    ['DEBIT_NOTE', 'Nota de Débito'],
+    ['ENDORSEMENT', 'Endoso'],
+    ['ADJUSTMENT_ENTRY', 'Asiento de Ajuste'],
+  ])('envía documentos %s sin archivo usando solamente el contenido HTML', async (documentType, documentTypeLabel) => {
+    db.accountingDocument.findUnique.mockResolvedValue({ ...fakeDocument, documentType, attachments: [] })
+
+    const res = await request(app)
+      .post(`/api/v1/documents/${DOC_ID}/send-email`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ to: ['destinatario@empresa.com'] })
+
+    expect(res.status).toBe(200)
+    expect(mockedEmailService.sendManualEntityEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: [],
+        templateData: expect.objectContaining({
+          documentType,
+          documentTypeLabel,
+          attachments: [],
+        }),
+      }),
     )
   })
 
