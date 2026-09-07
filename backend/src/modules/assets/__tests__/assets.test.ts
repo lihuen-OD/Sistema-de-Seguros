@@ -125,6 +125,8 @@ const fakeAsset = {
 const validAssetBody = {
   name: 'Toyota Hilux',
   assetType: 'camioneta',
+  currency: 'USD',
+  exchangeRate: 1500,
   allocations: [{ companyId: COMPANY_ID, costCenterId: CC_ID, percentage: 100 }],
 }
 

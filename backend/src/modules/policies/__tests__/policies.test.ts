@@ -160,8 +160,8 @@ describe('Policies API', () => {
         .send({
           ...validPolicyBody,
           coverages: [
-            { insuranceTypeId: TYPE_ID, assetId: ASSET_ID, insuredAmount: 100 },
-            { insuranceTypeId: TYPE_ID, assetId: ASSET_ID, insuredAmount: 200 },
+            { insuranceTypeId: TYPE_ID, assetId: ASSET_ID, insuredAmount: 100, exchangeRate: 1000 },
+            { insuranceTypeId: TYPE_ID, assetId: ASSET_ID, insuredAmount: 200, exchangeRate: 1000 },
           ],
         })
 
@@ -340,7 +340,7 @@ describe('Policies API', () => {
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ coverages: [{ id: COVERAGE_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000 }] })
+        .send({ coverages: [{ id: COVERAGE_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1000 }] })
 
       expect(res.status).toBe(200)
       expect(db.policyAssetCoverage.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [REMOVED_COVERAGE_ID] } } })
@@ -355,7 +355,7 @@ describe('Policies API', () => {
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ coverages: [{ id: OTHER_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000 }] })
+        .send({ coverages: [{ id: OTHER_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1000 }] })
 
       expect(res.status).toBe(400)
       expect(res.body.error.code).toBe('INVALID_REFERENCE')
@@ -370,7 +370,7 @@ describe('Policies API', () => {
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ coverages: [{ id: COVERAGE_ID, assetId: OTHER_ID, insuranceTypeId: TYPE_ID }] })
+        .send({ coverages: [{ id: COVERAGE_ID, assetId: OTHER_ID, insuranceTypeId: TYPE_ID, exchangeRate: 1000 }] })
 
       expect(res.status).toBe(409)
       expect(res.body.error).toEqual({
@@ -391,7 +391,7 @@ describe('Policies API', () => {
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ coverages: [{ id: COVERAGE_ID, assetId: ASSET_ID, insuranceTypeId: TYPE_ID, insuredAmount: 2500 }] })
+        .send({ coverages: [{ id: COVERAGE_ID, assetId: ASSET_ID, insuranceTypeId: TYPE_ID, insuredAmount: 2500, exchangeRate: 1000 }] })
 
       expect(res.status).toBe(200)
       expect(db.policyAssetCoverage.update).toHaveBeenCalled()
@@ -408,7 +408,7 @@ describe('Policies API', () => {
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ coverages: [{ id: COVERAGE_ID, assetId: OTHER_ID, insuranceTypeId: TYPE_ID }] })
+        .send({ coverages: [{ id: COVERAGE_ID, assetId: OTHER_ID, insuranceTypeId: TYPE_ID, exchangeRate: 1000 }] })
 
       expect(res.status).toBe(200)
       expect(db.policyAssetCoverage.update).toHaveBeenCalled()
@@ -423,7 +423,7 @@ describe('Policies API', () => {
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ coverages: [{ assetId: ASSET_ID, insuranceTypeId: TYPE_ID }] })
+        .send({ coverages: [{ assetId: ASSET_ID, insuranceTypeId: TYPE_ID, exchangeRate: 1000 }] })
 
       expect(res.status).toBe(200)
       expect(db.policyAssetCoverage.create).toHaveBeenCalled()

@@ -79,7 +79,7 @@ function coverageToLine(c: PolicyCoverage): CoverageLineForm {
   }
 }
 
-function createEmptyLine(defaultExchangeRate = ''): CoverageLineForm {
+function createEmptyLine(defaultExchangeRate = '0'): CoverageLineForm {
   return {
     formId: crypto.randomUUID(),
     attachmentsCount: 0,
@@ -371,7 +371,7 @@ function PolicyEditForm({
         coverageIds: line.coverageTypes,
         insuredAmount: parseFloat(line.insuredAmount) || 0,
         currency: line.currency,
-        exchangeRate: parseFloat(line.exchangeRate) || 1,
+        exchangeRate: parseFloat(line.exchangeRate) || 0,
         companyId: line.association === 'sin_activo' ? line.companyId : null,
         costCenterId: line.association === 'sin_activo' ? line.costCenterId || null : null,
         beneficiaryDescription: line.association === 'sin_activo' ? line.beneficiaryDescription.trim() || null : null,

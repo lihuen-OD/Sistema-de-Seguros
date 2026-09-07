@@ -125,6 +125,7 @@ const validClaimBody = {
   reportDate: '2026-01-15',
   description: 'Siniestro de prueba para test',
   claimedAmountArs: 100000,
+  exchangeRate: 1,
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

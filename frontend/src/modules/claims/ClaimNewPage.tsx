@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -24,7 +24,6 @@ import { claimsApi, claimKeys } from '../../shared/api/claims.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
-import { exchangeRateQueries } from '../../shared/api/exchange-rate.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { computeEquivalent } from '../../shared/utils/currency'
 import { formatCurrencyFull } from '../../shared/utils/format'
@@ -83,7 +82,6 @@ export default function ClaimNewPage() {
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: claimTypes = [] } = useQuery(catalogQueries.byCategory('claim_type'))
   const { data: claimStatuses = [] } = useQuery(catalogQueries.byCategory('claim_status'))
-  const { data: currentExchangeRate } = useQuery(exchangeRateQueries.current())
 
   const preselectedAsset = preselectedAssetId
     ? (allAssets.find((a) => a.id === preselectedAssetId) ?? null)
@@ -109,8 +107,7 @@ export default function ClaimNewPage() {
 
   // Amounts + currency
   const [currency, setCurrency] = useState<Currency>('ARS')
-  const [exchangeRate, setExchangeRate] = useState('')
-  const [exchangeRatePrefilled, setExchangeRatePrefilled] = useState(false)
+  const [exchangeRate, setExchangeRate] = useState('0')
   const [claimedAmount, setClaimedAmount] = useState('')
   const [realAmount, setRealAmount] = useState('')
   const [settledAmount, setSettledAmount] = useState('')
@@ -119,16 +116,6 @@ export default function ClaimNewPage() {
   const [observations, setObservations] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
-
-  // Prefill de conveniencia con el tipo de cambio global vigente — el usuario
-  // puede editarlo libremente después. Solo corre una vez y solo si el campo
-  // sigue vacío (mismo patrón que Pólizas).
-  useEffect(() => {
-    if (currentExchangeRate?.rate && !exchangeRatePrefilled && !exchangeRate) {
-      setExchangeRate(String(currentExchangeRate.rate))
-      setExchangeRatePrefilled(true)
-    }
-  }, [currentExchangeRate, exchangeRatePrefilled, exchangeRate])
 
   // Archivos seleccionados en el form — se suben después de crear el siniestro
   const [pendingDocs, setPendingDocs] = useState<File[]>([])
@@ -204,8 +191,8 @@ export default function ClaimNewPage() {
     if (!insuranceCompany.trim()) e.insuranceCompany = 'Ingresá la compañía aseguradora.'
     if (!claimedAmount || isNaN(Number(claimedAmount)) || Number(claimedAmount) < 0)
       e.claimedAmount = 'Ingresá un monto reclamado válido.'
-    if (currency === 'USD' && (!exchangeRate || parseFloat(exchangeRate) <= 0))
-      e.exchangeRate = 'Ingresá el tipo de cambio.'
+    if (!exchangeRate || parseFloat(exchangeRate) <= 0)
+      e.exchangeRate = 'El tipo de cambio debe ser mayor a 0.'
     setErrors(e)
     notifyValidationErrors(e)
     return Object.keys(e).length === 0
@@ -241,7 +228,7 @@ export default function ClaimNewPage() {
         settledAmountArs: settledAmount ? parseFloat(settledAmount) : undefined,
         deductibleArs: deductible ? parseFloat(deductible) : undefined,
         observations: observations.trim() || undefined,
-        exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
+        exchangeRate: parseFloat(exchangeRate) || 0,
       })
       // Subir archivos adjuntos seleccionados en el form
       const allFiles = [

@@ -52,7 +52,7 @@ export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDeb
     issueDate: initialDoc?.issueDate ?? '',
     linkedDocumentId: initialDoc?.linkedDocumentId ?? '',
     currency: initialDoc?.currency ?? '',
-    exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : '',
+    exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : '0',
     paymentMethod: initialDoc?.paymentMethod ?? '',
     netAmount: initialDoc ? String(initialDoc.netAmount) : '',
     vatAmount: initialDoc ? String(initialDoc.vatAmount) : '0',

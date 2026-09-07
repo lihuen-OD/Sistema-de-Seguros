@@ -34,7 +34,7 @@ export const CreateAssetSchema = z.object({
   currentValue: z.number().nonnegative().optional(),
   patrimonialValueNew: z.number().nonnegative().optional(),
   currency: z.enum(['ARS', 'USD']).default('USD'),
-  exchangeRate: z.number().positive().default(1),
+  exchangeRate: z.number().positive('El tipo de cambio debe ser mayor a 0'),
   location: z.string().max(300).optional(),
   mapsUrl: z.string().max(2000).optional(),
   productiveUnit: z.string().max(150).optional(),

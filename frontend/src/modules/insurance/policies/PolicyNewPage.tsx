@@ -26,7 +26,6 @@ import { producerQueries } from '../../../shared/api/producers.api'
 import { assetQueries } from '../../../shared/api/assets.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
-import { exchangeRateQueries } from '../../../shared/api/exchange-rate.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { formatCurrencyFull } from '../../../shared/utils/format'
 import { buildAssetSearchKeywords } from '../../../shared/utils/assetSearch'
@@ -72,7 +71,7 @@ interface CoverageLineForm {
   beneficiaryDescription: string
 }
 
-function createEmptyLine(defaultExchangeRate = ''): CoverageLineForm {
+function createEmptyLine(defaultExchangeRate = '0'): CoverageLineForm {
   return {
     id: crypto.randomUUID(),
     association: 'activo',
@@ -212,7 +211,6 @@ export default function PolicyNewPage() {
   const { data: costCenters = [] } = useQuery(costCenterQueries.list())
   const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
-  const { data: currentExchangeRate } = useQuery(exchangeRateQueries.current())
 
   const createMutation = useMutation({
     mutationFn: (input: Parameters<typeof policiesApi.create>[0]) => policiesApi.create(input),
@@ -298,7 +296,7 @@ export default function PolicyNewPage() {
         coverageIds: line.coverageTypes,
         insuredAmount: parseFloat(line.insuredAmount) || 0,
         currency: line.currency,
-        exchangeRate: parseFloat(line.exchangeRate) || currentExchangeRate?.rate || 1,
+        exchangeRate: parseFloat(line.exchangeRate) || 0,
         companyId: line.association === 'sin_activo' ? line.companyId : null,
         costCenterId: line.association === 'sin_activo' ? line.costCenterId || null : null,
         beneficiaryDescription: line.association === 'sin_activo' ? line.beneficiaryDescription.trim() || null : null,
@@ -407,11 +405,7 @@ export default function PolicyNewPage() {
             const err = lineErrors[line.id] ?? {}
             const equivalentCurrencyLabel = line.currency === 'ARS' ? 'USD' : 'ARS'
             // Si la línea no tiene tipo de cambio propio todavía, se muestra
-            // (sin escribirlo en el estado) el tipo de cambio global vigente
-            // como sugerencia — se actualiza solo si el usuario no tipeó nada,
-            // incluso en líneas agregadas después de que el global cargó.
-            const effectiveExchangeRate =
-              line.exchangeRate || (currentExchangeRate?.rate != null ? String(currentExchangeRate.rate) : '')
+            const effectiveExchangeRate = line.exchangeRate
             const amount = parseFloat(line.insuredAmount)
             const rate = parseFloat(effectiveExchangeRate)
             const equivalentAmount =

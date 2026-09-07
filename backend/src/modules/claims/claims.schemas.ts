@@ -43,7 +43,7 @@ const ClaimBaseSchema = z.object({
   settledAmountArs: z.number().min(0).optional().nullable(),
   deductibleArs: z.number().min(0).optional().nullable(),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
-  exchangeRate: z.number().positive().default(1),
+  exchangeRate: z.number().positive('El tipo de cambio debe ser mayor a 0'),
   observations: z.string().max(2000).optional().nullable(),
 })
 

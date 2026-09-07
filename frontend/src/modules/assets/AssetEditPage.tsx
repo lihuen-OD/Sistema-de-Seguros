@@ -436,7 +436,7 @@ function AssetEditForm({ asset, existingAttachments }: AssetEditFormProps) {
           currentValue: (!hasRealHistory && patrimonialValueUsd) ? parseFloat(patrimonialValueUsd) : undefined,
           patrimonialValueNew: (!hasNuevoHistory && patrimonialValueNew) ? parseFloat(patrimonialValueNew) : undefined,
           currency,
-          exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
+          exchangeRate: parseFloat(exchangeRate) || 0,
           mapsUrl: form.mapsUrl.trim() || undefined,
           productiveUnit: form.productiveUnit || undefined,
           area: form.area || undefined,

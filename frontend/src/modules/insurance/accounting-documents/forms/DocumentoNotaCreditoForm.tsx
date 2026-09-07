@@ -52,7 +52,7 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
     issueDate: initialDoc?.issueDate ?? '',
     linkedDocumentId: initialDoc?.linkedDocumentId ?? '',
     currency: initialDoc?.currency ?? '',
-    exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : '',
+    exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : '0',
     netAmount: initialDoc ? String(initialDoc.netAmount) : '',
     vatAmount: initialDoc ? String(initialDoc.vatAmount) : '0',
     otherTaxesAmount: initialDoc ? String(initialDoc.otherTaxesAmount) : '0',

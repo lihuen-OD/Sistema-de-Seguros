@@ -191,8 +191,8 @@ function ClaimForm({ original, insuranceCompanies, claimStatuses, claimTypes }: 
     if (!reportDate) e.reportDate = 'Requerido'
     if (!claimedAmount || isNaN(parseFloat(claimedAmount))) e.claimedAmount = 'Ingresá un monto válido'
     if (!description.trim()) e.description = 'Requerido'
-    if (currency === 'USD' && (!exchangeRate || isNaN(parseFloat(exchangeRate)))) {
-      e.exchangeRate = 'Ingresá el tipo de cambio'
+    if (!exchangeRate || isNaN(parseFloat(exchangeRate)) || parseFloat(exchangeRate) <= 0) {
+      e.exchangeRate = 'El tipo de cambio debe ser mayor a 0.'
     }
     setErrors(e)
     notifyValidationErrors(e)
@@ -227,7 +227,7 @@ function ClaimForm({ original, insuranceCompanies, claimStatuses, claimTypes }: 
         settledAmountArs: settledAmount ? parseFloat(settledAmount) : undefined,
         deductibleArs: deductible ? parseFloat(deductible) : undefined,
         observations: observations.trim() || undefined,
-        exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
+        exchangeRate: parseFloat(exchangeRate) || 0,
       })
       queryClient.invalidateQueries({ queryKey: claimKeys.all })
       toast.success('Siniestro actualizado correctamente')

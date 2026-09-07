@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -20,7 +20,6 @@ import {
 import {
   CATEGORY_LABEL,
 } from '../../shared/constants/asset-categories'
-import { exchangeRateQueries } from '../../shared/api/exchange-rate.api'
 import { parseGoogleMapsUrl } from '../../shared/utils/maps'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { computeEquivalent } from '../../shared/utils/currency'
@@ -108,7 +107,7 @@ type FormState = {
 
 const EMPTY: FormState = {
   bienDeUsoId: '', name: '', status: 'activo', patrimonialValueUsd: '',
-  currency: 'USD', exchangeRate: '1',
+  currency: 'USD', exchangeRate: '0',
   valuationDate: '',
   brand: '', model: '', year: '', serialNumber: '', chassisNumber: '',
   plate: '', engineNumber: '', color: '', fuelType: '',
@@ -205,17 +204,6 @@ export default function AssetNewPage() {
   const [attachments, setAttachments] = useState<AssetAttachment[]>([])
   const [fireExtinguisherAuditable, setFireExtinguisherAuditable] = useState(false)
   const [insuranceAuditable, setInsuranceAuditable] = useState(false)
-
-  // Prefill del tipo de cambio actual (global) — solo mientras el usuario no
-  // lo haya tocado a mano, y solo en Alta (en Edición no se pisa un TC
-  // histórico ya guardado).
-  const [exchangeRateTouched, setExchangeRateTouched] = useState(false)
-  const { data: currentExchangeRate } = useQuery(exchangeRateQueries.current())
-  useEffect(() => {
-    if (!exchangeRateTouched && currentExchangeRate?.rate) {
-      setForm((prev) => ({ ...prev, exchangeRate: String(currentExchangeRate.rate) }))
-    }
-  }, [currentExchangeRate, exchangeRateTouched])
 
   // Vista previa del equivalente en la otra moneda — el backend es quien
   // cierra y persiste ambos montos al guardar (ver computeDualAmounts).
@@ -332,7 +320,7 @@ export default function AssetNewPage() {
         currentValue: form.patrimonialValueUsd ? parseFloat(form.patrimonialValueUsd) : undefined,
         patrimonialValueNew: form.patrimonialValueNew ? parseFloat(form.patrimonialValueNew) : undefined,
         currency: form.currency as 'ARS' | 'USD',
-        exchangeRate: form.exchangeRate ? parseFloat(form.exchangeRate) : undefined,
+        exchangeRate: parseFloat(form.exchangeRate) || 0,
         mapsUrl: form.mapsUrl.trim() || undefined,
         productiveUnit: form.productiveUnit || undefined,
         area: form.area || undefined,
@@ -454,7 +442,7 @@ export default function AssetNewPage() {
                   <FormInput
                     type="number" min={0.01} step="0.01" placeholder="Ej: 1150"
                     value={form.exchangeRate}
-                    onChange={(e) => { set('exchangeRate')(e); setExchangeRateTouched(true) }}
+                    onChange={(e) => { set('exchangeRate')(e) }}
                   />
                 </FormField>
                 <FormField label={`Valor Patrimonial Real (${form.currency})`} error={errors.patrimonialValueUsd}>

@@ -81,11 +81,7 @@ function DocumentoFacturaFormBody({ initialDoc, sourcePolicy }: DocumentoFactura
       documentNumber: initialDoc?.documentNumber ?? sourcePolicy?.policyNumber ?? '',
       issueDate: initialDoc?.issueDate ?? '',
       currency: initialDoc?.currency ?? firstCoverage?.currency ?? '',
-      exchangeRate: initialDoc
-        ? String(initialDoc.exchangeRate)
-        : firstCoverage && firstCoverage.exchangeRate > 1
-          ? firstCoverage.exchangeRate.toString()
-          : '',
+      exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : '0',
       paymentMethod: initialDoc?.paymentMethod ?? '',
       netAmount: initialDoc ? String(initialDoc.netAmount) : '',
       vatAmount: initialDoc ? String(initialDoc.vatAmount) : '',
