@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Info, ArrowLeftRight } from 'lucide-react'
+import { Info, ArrowLeftRight, AlertTriangle } from 'lucide-react'
 import { PageContent } from '../../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../../shared/components/cards/SectionCard'
@@ -19,6 +19,7 @@ import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
 import { formatCurrencyFull } from '../../../../shared/utils/format'
+import { isFutureDate } from '../../../../shared/utils/dateValidation'
 import { CURRENCY_OPTIONS } from '../../../../shared/constants'
 import type { AccountingDocument, Currency } from '../../../../shared/types'
 
@@ -244,6 +245,14 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
 
             <FormField label="Fecha de Emisión" required error={errors.issueDate}>
               <FormInput type="date" value={form.issueDate} onChange={set('issueDate')} required />
+              {isFutureDate(form.issueDate) && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 leading-snug">
+                    Estás cargando una fecha de emisión futura. Revisá si corresponde antes de guardar.
+                  </p>
+                </div>
+              )}
             </FormField>
 
             <FormField
