@@ -294,7 +294,7 @@ export default function PolicyDetailPage() {
         badge={<StatusPill status={policy.status} />}
         actions={
           <div className="flex items-center gap-2">
-            {policy.status === 'vencida' && (
+            {policy.status !== 'de_baja' && (
               <button
                 onClick={() => setShowDeBajaConfirm(true)}
                 className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"

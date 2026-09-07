@@ -387,14 +387,11 @@ export const policiesService = {
     ])
   },
 
-  // Acción manual del admin — solo permitida desde "Vencida", nunca automática.
+  // Acción manual del admin — permitida para cualquier estado excepto ya dada de baja.
   async markAsDeBaja(id: string) {
-    const policy = await prisma.policy.findUnique({ where: { id }, select: { id: true, endDate: true, deactivatedAt: true } })
+    const policy = await prisma.policy.findUnique({ where: { id }, select: { id: true, deactivatedAt: true } })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
     if (policy.deactivatedAt) throw new AppError(409, 'La póliza ya está dada de baja', 'CONFLICT')
-    if (computePolicyStatus(policy.endDate) !== 'vencida') {
-      throw new AppError(400, 'Solo se puede dar de baja una póliza vencida', 'INVALID_STATE')
-    }
     const updated = await prisma.policy.update({
       where: { id },
       data: { deactivatedAt: new Date() },

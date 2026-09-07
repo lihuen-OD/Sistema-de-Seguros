@@ -430,6 +430,113 @@ describe('Policies API', () => {
     })
   })
 
+  // ── POST /api/v1/policies/:id/de-baja ────────────────────────────────────────
+
+  describe('POST /api/v1/policies/:id/de-baja', () => {
+    const UPDATED_AT = new Date('2026-07-27T12:00:00.000Z')
+
+    function mockDeBajaUpdate(overrides: Record<string, unknown> = {}) {
+      db.policy.update.mockResolvedValue({
+        id: POLICY_ID,
+        policyNumber: 'POL-TEST-001',
+        insuredName: 'La Segunda',
+        startDate: new Date('2026-01-01T00:00:00.000Z'),
+        endDate: new Date('2026-12-31T00:00:00.000Z'),
+        description: null,
+        isActive: true,
+        deactivatedAt: UPDATED_AT,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: UPDATED_AT,
+        producer: null,
+        coverages: [],
+        ...overrides,
+      })
+    }
+
+    it('returns 200 when deactivating a vigente policy', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: null })
+      mockDeBajaUpdate()
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.status).toBe('de_baja')
+      expect(res.body.data.deactivatedAt).toBeTruthy()
+    })
+
+    it('returns 200 when deactivating a proxima_a_vencer policy', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: null })
+      mockDeBajaUpdate()
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.status).toBe('de_baja')
+    })
+
+    it('returns 200 when deactivating a vencida policy', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: null })
+      mockDeBajaUpdate()
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.status).toBe('de_baja')
+    })
+
+    it('returns 409 when the policy is already deactivated', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: UPDATED_AT })
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(409)
+      expect(db.policy.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 404 when the policy does not exist', async () => {
+      db.policy.findUnique.mockResolvedValue(null)
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(404)
+    })
+
+    it('sets deactivatedAt on the updated policy', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: null })
+      mockDeBajaUpdate()
+
+      await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const updateCall = db.policy.update.mock.calls[0][0]
+      expect(updateCall.data.deactivatedAt).toBeInstanceOf(Date)
+    })
+
+    it('does not delete coverages or related data', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: null })
+      mockDeBajaUpdate()
+
+      await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(db.policyAssetCoverage.deleteMany).not.toHaveBeenCalled()
+      expect(db.policyAttachment.delete).not.toHaveBeenCalled()
+      expect(db.documentPolicyAllocation.deleteMany).not.toHaveBeenCalled()
+    })
+  })
+
   // ── Attachments (por línea de cobertura) ─────────────────────────────────────
 
   describe('POST /api/v1/policies/:id/coverages/:coverageId/attachments', () => {
