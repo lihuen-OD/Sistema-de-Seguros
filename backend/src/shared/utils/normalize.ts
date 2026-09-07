@@ -17,6 +17,6 @@
  */
 export function normalizeLicensePlate(value: string | null | undefined): string | null {
   if (!value) return null
-  const normalized = value.trim().replace(/[\s\-]/g, '').toUpperCase()
+  const normalized = value.trim().replace(/[\s-]/g, '').toUpperCase()
   return normalized || null
 }
