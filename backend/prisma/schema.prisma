@@ -121,6 +121,10 @@ model Asset {
   area                   String?
   description            String?
   metadata               Json?
+  // Campo técnico para detectar duplicados de patente. Normaliza espacios,
+  // guiones y mayúsculas de metadata.plate. El índice único parcial se crea
+  // manualmente en SQL porque Prisma no soporta unique parciales.
+  licensePlateNormalized String?
   isActive               Boolean   @default(true)
   // Dos flags ortogonales — cada uno gatea una auditoría distinta, un mismo
   // activo puede habilitarse para una y no para la otra. Junto con isActive

@@ -539,7 +539,7 @@ export default function AssetNewPage() {
             {IS_WHEELED(category) && (
               <SectionCard title="Datos del vehículo" subtitle="Información técnica del rodado.">
                 <FormSection title="">
-                  <FormField label="Patente">
+                  <FormField label="Patente" helperText="Ej: AB 123 CD o A 123 BCD. El sistema detecta duplicados aunque se escriba sin espacios.">
                     <FormInput placeholder="Ej: AB 123 CD" value={form.plate} onChange={set('plate')} />
                   </FormField>
                   <FormField label="N° de Motor">
@@ -561,7 +561,7 @@ export default function AssetNewPage() {
             {(['tractor', 'cosechadora', 'pulverizadora'] as AssetCategory[]).includes(category as AssetCategory) && (
               <SectionCard title="Datos de la maquinaria" subtitle="Especificaciones técnicas del equipo.">
                 <FormSection title="">
-                  <FormField label="Patente">
+                  <FormField label="Patente" helperText="Ej: AB 123 CD o A 123 BCD. El sistema detecta duplicados aunque se escriba sin espacios.">
                     <FormInput placeholder="Ej: AB 123 CD" value={form.plate} onChange={set('plate')} />
                   </FormField>
                   <FormField label="N° de Motor">
@@ -601,7 +601,7 @@ export default function AssetNewPage() {
                   <FormField label="Ancho de trabajo (m)">
                     <FormInput type="number" min={0} step="0.1" placeholder="Ej: 9.5" value={form.workWidth} onChange={set('workWidth')} />
                   </FormField>
-                  <FormField label="Patente">
+                  <FormField label="Patente" helperText="Ej: AB 123 CD o A 123 BCD. El sistema detecta duplicados aunque se escriba sin espacios.">
                     <FormInput placeholder="Ej: AB 123 CD" value={form.plate} onChange={set('plate')} />
                   </FormField>
                 </FormSection>

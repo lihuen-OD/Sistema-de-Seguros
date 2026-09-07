@@ -8,6 +8,7 @@ import { deleteFromCloudinary } from '../../config/cloudinary'
 import { computeDualAmounts } from '../../shared/utils/currency'
 import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
 import { isPledgeEligibleAssetType } from './asset-pledge-eligibility'
+import { normalizeLicensePlate } from '../../shared/utils/normalize'
 import type {
   CreateAssetDTO,
   UpdateAssetDTO,
@@ -80,7 +81,32 @@ function handleUpdateNotFound(e: unknown) {
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
     throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
   }
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+    throw new AppError(409, DUPLICATE_LICENSE_PLATE_MESSAGE, 'DUPLICATE_LICENSE_PLATE')
+  }
   throw e
+}
+
+function extractPlateFromMetadata(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null
+  const plate = (metadata as Record<string, unknown>).plate
+  return typeof plate === 'string' ? plate : null
+}
+
+const DUPLICATE_LICENSE_PLATE_MESSAGE = 'Ya existe un activo registrado con esta patente. Revisá si corresponde al mismo bien.'
+
+async function assertNoDuplicateLicensePlate(
+  normalized: string | null,
+  excludeAssetId?: string,
+): Promise<void> {
+  if (!normalized) return
+  const where = excludeAssetId
+    ? { licensePlateNormalized: normalized, id: { not: excludeAssetId } }
+    : { licensePlateNormalized: normalized }
+  const conflict = await prisma.asset.findFirst({ where, select: { id: true, name: true, code: true } })
+  if (conflict) {
+    throw new AppError(409, DUPLICATE_LICENSE_PLATE_MESSAGE, 'DUPLICATE_LICENSE_PLATE')
+  }
 }
 
 // Traza el historial de valuación en base a la fecha de valuación (assetId +
@@ -206,6 +232,11 @@ export const assetsService = {
     const code = `ACT-${String(Number(seqResult[0].nextval)).padStart(5, '0')}`
     const fixedAssetCode = await resolveFixedAssetCode(assetData.fixedAssetId)
 
+    // Validación de patente duplicada — normaliza y verifica que no exista
+    const plateFromMetadata = extractPlateFromMetadata(assetData.metadata)
+    const licensePlateNormalized = normalizeLicensePlate(plateFromMetadata)
+    await assertNoDuplicateLicensePlate(licensePlateNormalized)
+
     // Cierre en ambas monedas de currentValue/patrimonialValueNew al momento
     // de guardar (ver shared/utils/currency.ts#computeDualAmounts) — mismo
     // criterio que Policy.premiumArs/Usd. Se reutiliza el mismo resultado
@@ -223,6 +254,7 @@ export const assetsService = {
           ...assetData,
           code,
           fixedAssetCode,
+          licensePlateNormalized,
           metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
           ...(currentDual && { currentValueArs: currentDual.amountArs, currentValueUsd: currentDual.amountUsd }),
           ...(newDual && { patrimonialValueNewArs: newDual.amountArs, patrimonialValueNewUsd: newDual.amountUsd }),
@@ -317,6 +349,14 @@ export const assetsService = {
 
     const fixedAssetCode = await resolveFixedAssetCode(assetData.fixedAssetId)
 
+    // Validación de patente duplicada — solo si se está cambiando la patente
+    let licensePlateNormalized: string | null | undefined
+    if (assetData.metadata !== undefined) {
+      const plateFromMetadata = extractPlateFromMetadata(assetData.metadata)
+      licensePlateNormalized = normalizeLicensePlate(plateFromMetadata)
+      await assertNoDuplicateLicensePlate(licensePlateNormalized, id)
+    }
+
     // Actualización parcial: solo se recalcula el cierre en ambas monedas
     // cuando el valor viene en este payload, usando la moneda/TC efectivos
     // (los nuevos si vienen, si no los ya guardados en el activo).
@@ -351,6 +391,7 @@ export const assetsService = {
         data: {
           ...assetDataWithoutValues,
           ...(fixedAssetCode !== undefined && { fixedAssetCode }),
+          ...(licensePlateNormalized !== undefined && { licensePlateNormalized }),
           metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
         },
         select: { id: true },

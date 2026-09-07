@@ -600,7 +600,7 @@ function AssetEditForm({ asset, existingAttachments }: AssetEditFormProps) {
                 <FormField label="N° de Chasis">
                   <FormInput placeholder="Ej: JTFHM923X00123456" value={form.chassisNumber} onChange={set('chassisNumber')} />
                 </FormField>
-                <FormField label="Patente">
+                <FormField label="Patente" helperText="Ej: AB 123 CD o A 123 BCD. El sistema detecta duplicados aunque se escriba sin espacios.">
                   <FormInput placeholder="Ej: AB 123 CD" value={form.plate} onChange={set('plate')} />
                 </FormField>
                 <FormField label="N° de Motor">
@@ -635,7 +635,7 @@ function AssetEditForm({ asset, existingAttachments }: AssetEditFormProps) {
                 <FormField label="N° de Serie">
                   <FormInput placeholder="Ej: RW8320P024316" value={form.serialNumber} onChange={set('serialNumber')} />
                 </FormField>
-                <FormField label="Patente">
+                <FormField label="Patente" helperText="Ej: AB 123 CD o A 123 BCD. El sistema detecta duplicados aunque se escriba sin espacios.">
                   <FormInput placeholder="Ej: AB 123 CD" value={form.plate} onChange={set('plate')} />
                 </FormField>
                 <FormField label="N° de Motor">
@@ -688,7 +688,7 @@ function AssetEditForm({ asset, existingAttachments }: AssetEditFormProps) {
                 <FormField label="Ancho de trabajo (m)">
                   <FormInput type="number" min={0} step="0.1" placeholder="Ej: 9.5" value={form.workWidth} onChange={set('workWidth')} />
                 </FormField>
-                <FormField label="Patente">
+                <FormField label="Patente" helperText="Ej: AB 123 CD o A 123 BCD. El sistema detecta duplicados aunque se escriba sin espacios.">
                   <FormInput placeholder="Ej: AB 123 CD" value={form.plate} onChange={set('plate')} />
                 </FormField>
               </FormSection>
