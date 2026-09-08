@@ -32,6 +32,26 @@ const POLICY_STATUS_SORT_ORDER: Record<string, number> = {
   de_baja: 3,
 }
 
+function policyTypeLabel(p: Policy): string {
+  if (p.insuranceTypeNames?.length) return p.insuranceTypeNames.join(', ')
+  if (p.assetCoverage?.insuranceTypeName) return p.assetCoverage.insuranceTypeName
+  if (p.coverages?.length) {
+    const types = p.coverages.map((c) => c.insuranceType).filter(Boolean)
+    if (types.length) return types.join(', ')
+  }
+  return '—'
+}
+
+function policyTotalInsuredArs(p: Policy): number | null {
+  if (p.totalInsuredAmountArs != null) return p.totalInsuredAmountArs
+  if (p.assetCoverage?.insuredAmountArs != null) return p.assetCoverage.insuredAmountArs
+  if (p.coverages?.length) {
+    const total = p.coverages.reduce((sum, c) => sum + (c.insuredAmountArs ?? 0), 0)
+    if (total > 0) return total
+  }
+  return null
+}
+
 // Orden por severidad al ordenar la columna "Estado" de tareas — pendiente/en
 // curso van antes que vencida (más urgente), y finalizada al final porque ya
 // no requiere atención.
@@ -91,10 +111,11 @@ export default function ProducerDetailPage() {
       sortable: true,
     },
     {
-      key: 'insuranceType',
+      key: 'insuranceTypeNames',
       label: 'Tipo',
       sortable: true,
-      render: (v) => <span className="text-slate-700">{String(v)}</span>,
+      sortValue: (row) => policyTypeLabel(row),
+      render: (_v, row) => <span className="text-slate-700">{policyTypeLabel(row)}</span>,
     },
     {
       key: 'insuranceCompany',
@@ -103,14 +124,18 @@ export default function ProducerDetailPage() {
       render: (v) => <span className="text-slate-600 text-xs">{String(v)}</span>,
     },
     {
-      key: 'insuredAmountArs',
+      key: 'totalInsuredAmountArs',
       label: 'Suma Aseg.',
       sortable: true,
-      render: (v) => (
-        <span className="font-semibold tabular-nums">
-          {formatCurrencyCompact(v as number, 'ARS')}
-        </span>
-      ),
+      sortValue: (row) => policyTotalInsuredArs(row) ?? 0,
+      render: (_v, row) => {
+        const amount = policyTotalInsuredArs(row)
+        return (
+          <span className="font-semibold tabular-nums">
+            {amount != null ? formatCurrencyCompact(amount, 'ARS') : '—'}
+          </span>
+        )
+      },
       headerClassName: 'text-right',
       className: 'text-right',
     },
