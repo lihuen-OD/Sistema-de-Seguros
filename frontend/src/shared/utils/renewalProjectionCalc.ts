@@ -2,6 +2,26 @@ import type { Policy } from '../types'
 import type { DocumentForFinancial } from '../api/documents.api'
 import { ACTIVE_POLICY_STATUSES, policyTermMonths } from './insuranceDashboardCalc'
 
+// ── Fechas razonables ───────────────────────────────────────────────────────
+// MonthKeys con año mayor a este límite se ignoran al calcular first/last
+// real y se excluyen del rango del calendario.  Protege contra datos viejos
+// con fechas absurdas (ej. 2206-10-17) sin bloquear historial válido.
+const MAX_REASONABLE_YEAR = new Date().getFullYear() + 10
+
+export function isReasonableMonthKey(key: string): boolean {
+  const year = Number(key.slice(0, 4))
+  return year >= 1900 && year <= MAX_REASONABLE_YEAR
+}
+
+// Límite de seguridad para buildMonthRange — evita crear arrays enormes si
+// accidentalmente se genera un rango de siglos. 600 meses = 50 años, cubre
+// historial largo sin riesgo de performance.
+const MAX_MONTH_RANGE = 600
+
+// Límite para el número de ciclos en projectAssetRow — previene overflow
+// de Math.pow() que produciría Infinity.
+const MAX_CYCLE_NUMBER = 100
+
 // ── Claves de mes ('YYYY-MM') ────────────────────────────────────────────────
 // Comparan y ordenan como strings sin conversión — el formato ya es lexicográfico.
 
@@ -35,6 +55,7 @@ export function buildMonthRange(startKey: string, endKey: string): string[] {
   let cur = startKey
   while (cur <= endKey) {
     out.push(cur)
+    if (out.length >= MAX_MONTH_RANGE) break
     cur = nextMonthKey(cur)
   }
   return out
@@ -359,11 +380,14 @@ export function projectAssetRow(
   const effectiveTotal = netEffArs + vatEffArs + otherEffArs
   return buildMonthRange(startMonthKey, endMonthKey).map((monthKey) => {
     const offset = monthsBetweenKeys(cycle.lastRenewalStartMonthKey, monthKey)
-    const cycleNumber = Math.floor(offset / cycle.cycleLengthMonths)
+    const rawCycleNumber = Math.floor(offset / cycle.cycleLengthMonths)
+    const cycleNumber = Math.min(rawCycleNumber, MAX_CYCLE_NUMBER)
     const posInCycle = ((offset % cycle.cycleLengthMonths) + cycle.cycleLengthMonths) % cycle.cycleLengthMonths
     const share = cycle.originalShare[posInCycle] ?? 0
     const scaledCycleTotal = effectiveTotal * Math.pow(1 + growthPercent / 100, cycleNumber)
-    return { monthKey, amountArs: scaledCycleTotal * share }
+    const raw = scaledCycleTotal * share
+    if (!Number.isFinite(raw)) return { monthKey, amountArs: 0 }
+    return { monthKey, amountArs: raw }
   })
 }
 
@@ -422,6 +446,7 @@ export function resolveMonthCell(
   }
   const projected = projectedByMonth.get(monthKey)
   if (!projected || projected.amountArs <= 0) return null
+  if (!Number.isFinite(projected.amountArs)) return null
   const split = splitByCurrentRatio(projected.amountArs, netArs, vatArs, otherArs)
   return { isReal: false, status: 'projected', totalArs: projected.amountArs, netArs: split.net, vatArs: split.vat, otherArs: split.other }
 }

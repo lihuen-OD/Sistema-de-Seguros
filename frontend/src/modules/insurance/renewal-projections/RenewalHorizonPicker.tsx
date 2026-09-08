@@ -13,6 +13,8 @@ interface RenewalHorizonPickerProps {
   customEndMonthKey: string | null
   /** Ningún mes <= a este es seleccionable — no se puede proyectar hacia atrás. */
   lastRealMonthKey: string
+  /** Mes máximo seleccionable — evita navegación/selección fuera de rango. */
+  maxMonthKey: string
   onSelectPreset: (years: 1 | 2 | 3) => void
   onSelectCustomEnd: (monthKey: string) => void
 }
@@ -21,6 +23,7 @@ export function RenewalHorizonPicker({
   horizonYears,
   customEndMonthKey,
   lastRealMonthKey,
+  maxMonthKey,
   onSelectPreset,
   onSelectCustomEnd,
 }: RenewalHorizonPickerProps) {
@@ -28,6 +31,9 @@ export function RenewalHorizonPicker({
   const [viewYear, setViewYear] = useState(() => Number(lastRealMonthKey.split('-')[0]))
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+
+  const [lastRealYear, lastRealMonth] = lastRealMonthKey.split('-').map(Number)
+  const [maxYear, maxMonth] = maxMonthKey.split('-').map(Number)
 
   useEffect(() => {
     if (!open) return
@@ -43,10 +49,10 @@ export function RenewalHorizonPicker({
     return () => document.removeEventListener('mousedown', handleClick)
   }, [open])
 
-  const [lastRealYear, lastRealMonth] = lastRealMonthKey.split('-').map(Number)
-
   function isDisabled(month: number): boolean {
-    return viewYear < lastRealYear || (viewYear === lastRealYear && month <= lastRealMonth)
+    if (viewYear < lastRealYear || (viewYear === lastRealYear && month <= lastRealMonth)) return true
+    if (viewYear > maxYear || (viewYear === maxYear && month > maxMonth)) return true
+    return false
   }
 
   function isSelected(month: number): boolean {
@@ -54,6 +60,9 @@ export function RenewalHorizonPicker({
     const [y, m] = customEndMonthKey.split('-').map(Number)
     return y === viewYear && m === month
   }
+
+  const canGoBack = viewYear > lastRealYear
+  const canGoForward = viewYear < maxYear
 
   return (
     <div className="flex items-center gap-2">
@@ -98,11 +107,11 @@ export function RenewalHorizonPicker({
             style={{ width: 210 }}
           >
             <div className="flex items-center justify-between mb-2.5">
-              <button type="button" onClick={() => setViewYear((y) => y - 1)} className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-50">
+              <button type="button" onClick={() => setViewYear((y) => y - 1)} disabled={!canGoBack} className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:text-slate-200 disabled:cursor-not-allowed">
                 <ChevronLeft size={14} />
               </button>
               <span className="text-xs font-semibold text-slate-700">{viewYear}</span>
-              <button type="button" onClick={() => setViewYear((y) => y + 1)} className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-50">
+              <button type="button" onClick={() => setViewYear((y) => y + 1)} disabled={!canGoForward} className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:text-slate-200 disabled:cursor-not-allowed">
                 <ChevronRight size={14} />
               </button>
             </div>

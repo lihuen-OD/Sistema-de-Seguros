@@ -1,5 +1,6 @@
 import {
   toISODate,
+  isReasonableDate,
   computeExpirationStatus,
   computePolicyStatus,
   buildPolicyStatusFilter,
@@ -134,5 +135,72 @@ describe('buildPolicyStatusFilter', () => {
     const filter = buildPolicyStatusFilter('vencida') as { endDate: { lt: Date } }
     expect(filter.endDate.lt).toBeInstanceOf(Date)
     expect(filter.endDate.lt.toISOString()).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/)
+  })
+})
+
+// ── isReasonableDate ────────────────────────────────────────────────────────
+
+describe('isReasonableDate', () => {
+  const currentYear = new Date().getFullYear()
+
+  it('accepts a normal recent date', () => {
+    expect(isReasonableDate('2025-08-15')).toBe(true)
+  })
+
+  it('accepts today', () => {
+    const today = toISODate()
+    expect(isReasonableDate(today)).toBe(true)
+  })
+
+  it('accepts a date exactly at the future boundary (today + 10 years)', () => {
+    expect(isReasonableDate(`${currentYear + 10}-12-31`)).toBe(true)
+  })
+
+  it('rejects a date one year beyond the future boundary (today + 11 years)', () => {
+    expect(isReasonableDate(`${currentYear + 11}-01-01`)).toBe(false)
+  })
+
+  it('rejects the production bug date 2206-10-17', () => {
+    expect(isReasonableDate('2206-10-17')).toBe(false)
+  })
+
+  it('rejects year 2099', () => {
+    expect(isReasonableDate('2099-12-31')).toBe(false)
+  })
+
+  it('rejects year 3026', () => {
+    expect(isReasonableDate('3026-01-01')).toBe(false)
+  })
+
+  it('accepts an old valid date like 2015-01-01', () => {
+    expect(isReasonableDate('2015-01-01')).toBe(true)
+  })
+
+  it('accepts the minimum boundary 1900-01-01', () => {
+    expect(isReasonableDate('1900-01-01')).toBe(true)
+  })
+
+  it('rejects dates before 1900', () => {
+    expect(isReasonableDate('1899-12-31')).toBe(false)
+  })
+
+  it('rejects invalid format', () => {
+    expect(isReasonableDate('')).toBe(false)
+    expect(isReasonableDate('not-a-date')).toBe(false)
+    expect(isReasonableDate('2025/08/15')).toBe(false)
+  })
+
+  it('rejects non-existent dates like 2025-02-30', () => {
+    expect(isReasonableDate('2025-02-30')).toBe(false)
+  })
+
+  it('respects custom minYear', () => {
+    expect(isReasonableDate('1950-01-01', { minYear: 1950 })).toBe(true)
+    expect(isReasonableDate('1949-12-31', { minYear: 1950 })).toBe(false)
+  })
+
+  it('respects custom maxYearsFromNow', () => {
+    expect(isReasonableDate(`${currentYear + 3}-06-15`, { maxYearsFromNow: 5 })).toBe(true)
+    expect(isReasonableDate(`${currentYear + 6}-01-01`, { maxYearsFromNow: 5 })).toBe(false)
   })
 })

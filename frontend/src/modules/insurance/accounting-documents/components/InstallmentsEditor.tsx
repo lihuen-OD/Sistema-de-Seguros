@@ -1,6 +1,7 @@
 import { Calculator } from 'lucide-react'
 import { FormInput } from '../../../../shared/components/forms/FormSection'
 import { formatCurrencyFull } from '../../../../shared/utils/format'
+import { isReasonableDate } from '../../../../shared/utils/dateValidation'
 import type { Currency } from '../../../../shared/types'
 
 export interface InstallmentRowData {
@@ -82,16 +83,24 @@ export function InstallmentsEditor({ count, rows, computedTotal, currency, onCha
           <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-right">Importe</span>
         </div>
 
-        {rows.map((row, idx) => (
+        {rows.map((row, idx) => {
+          const dateError = row.dueDate && !isReasonableDate(row.dueDate)
+            ? 'Fecha fuera de rango (mín. 1900, máx. 10 años en el futuro)'
+            : null
+          return (
           <div key={row.installmentNumber} className="grid grid-cols-[40px_1fr_1fr] gap-3 items-center">
             <span className="text-xs font-bold text-slate-400 tabular-nums text-center">
               {String(row.installmentNumber).padStart(2, '0')}
             </span>
-            <FormInput
-              type="date"
-              value={row.dueDate}
-              onChange={(e) => updateRow(idx, 'dueDate', e.target.value)}
-            />
+            <div>
+              <FormInput
+                type="date"
+                value={row.dueDate}
+                onChange={(e) => updateRow(idx, 'dueDate', e.target.value)}
+                className={dateError ? 'border-red-300 focus:ring-red-500/20 focus:border-red-400' : undefined}
+              />
+              {dateError && <p className="mt-1 text-xs text-red-500">{dateError}</p>}
+            </div>
             <FormInput
               type="number"
               placeholder="0.00"
@@ -102,7 +111,8 @@ export function InstallmentsEditor({ count, rows, computedTotal, currency, onCha
               className="text-right"
             />
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

@@ -1,6 +1,41 @@
 export type ExpirationStatus = 'vigente' | 'proximo_vencer' | 'vencido'
 export type PolicyStatus = 'vigente' | 'proxima_a_vencer' | 'vencida' | 'de_baja'
 
+/**
+ * Checks whether a date string (YYYY-MM-DD) falls within a reasonable
+ * operational range.  Used by Zod schemas and business logic to reject
+ * absurdly future (or historically impossible) dates before they reach
+ * the database.
+ *
+ * Rules:
+ *  - Must be a valid date.
+ *  - Must not be earlier than `minYear`-01-01 (default 1900).
+ *  - Must not be more than `maxYearsFromNow` years in the future (default 10).
+ *
+ * Returns `true` when the date is acceptable.
+ */
+export function isReasonableDate(
+  dateStr: string,
+  opts?: { minYear?: number; maxYearsFromNow?: number },
+): boolean {
+  const minYear = opts?.minYear ?? 1900
+  const maxYearsFromNow = opts?.maxYearsFromNow ?? 10
+
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false
+
+  const year = Number(dateStr.slice(0, 4))
+  const currentYear = new Date().getFullYear()
+
+  if (year < minYear) return false
+  if (year > currentYear + maxYearsFromNow) return false
+
+  // Verify the date actually exists (reject e.g. 2025-02-30)
+  const parsed = new Date(dateStr + 'T00:00:00.000Z')
+  if (parsed.toISOString().slice(0, 10) !== dateStr) return false
+
+  return true
+}
+
 export function toISODate(date: Date = new Date()): string {
   return date.toISOString().slice(0, 10)
 }
