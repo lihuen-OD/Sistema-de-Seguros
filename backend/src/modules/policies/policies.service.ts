@@ -320,7 +320,11 @@ export const policiesService = {
     const policy = await prisma.policy.create({
       data: {
         ...policyData,
-        coverages: { create: resolvedCoverages },
+        // effectiveDate: el frontend todavía no manda una fecha de alta por
+        // línea (eso llega en la próxima fase) — hasta entonces, toda línea
+        // nueva hereda la fecha de inicio de la póliza que la contiene, mismo
+        // criterio que el backfill de líneas preexistentes.
+        coverages: { create: resolvedCoverages.map((c) => ({ ...c, effectiveDate: data.startDate })) },
       },
       include: POLICY_DETAIL_INCLUDE,
     })
@@ -417,7 +421,12 @@ export const policiesService = {
   // es nueva; las que ya no vienen en el array se borran (eso sí cascadea
   // sus adjuntos — es la salida esperada si se sacó ese activo de la póliza).
   async replaceCoverages(policyId: string, data: ReplaceCoveragesDTO) {
-    await assertPolicyExists(policyId)
+    // Reemplaza el chequeo genérico de assertPolicyExists por uno que además
+    // trae startDate — sin sumar una query nueva — porque una línea nueva
+    // (sin id, ver más abajo) necesita effectiveDate y el frontend todavía no
+    // manda una fecha de alta propia por línea (llega en la próxima fase).
+    const policy = await prisma.policy.findUnique({ where: { id: policyId }, select: { startDate: true } })
+    if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
     assertNoDuplicateAssets(data.coverages)
 
     const existing = await prisma.policyAssetCoverage.findMany({
@@ -450,7 +459,7 @@ export const policiesService = {
       ...resolved.map(({ id: lineId, ...rest }) =>
         lineId
           ? prisma.policyAssetCoverage.update({ where: { id: lineId }, data: rest })
-          : prisma.policyAssetCoverage.create({ data: { ...rest, policyId } }),
+          : prisma.policyAssetCoverage.create({ data: { ...rest, policyId, effectiveDate: policy.startDate } }),
       ),
     ])
 

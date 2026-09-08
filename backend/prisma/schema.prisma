@@ -491,6 +491,19 @@ model PolicyAssetCoverage {
   companyId              String?
   costCenterId           String?
   beneficiaryDescription String?
+  // Ciclo de vida de la línea dentro de la póliza (Fase 1 de historización).
+  // effectiveDate: fecha de alta del activo en esta línea/póliza — en filas
+  // preexistentes se backfillea con policy.startDate (no hay forma de saber
+  // la fecha real de alta histórica). bajaDate nulo = línea vigente; una vez
+  // seteada, la línea NUNCA se borra — solo queda historizada como dada de
+  // baja (ver deactivatedAt/deactivatedBy, el timestamp/usuario de la acción,
+  // distinto de bajaDate que es la fecha de negocio elegida por el usuario y
+  // puede ser retroactiva o futura).
+  effectiveDate DateTime  @db.Date
+  bajaDate      DateTime? @db.Date
+  bajaReason    String?
+  deactivatedAt DateTime?
+  deactivatedBy String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -502,11 +515,14 @@ model PolicyAssetCoverage {
   attachments   PolicyAttachment[]
   allocations   DocumentPolicyAllocation[]
 
-  // Evita que el mismo activo aparezca dos veces en la misma póliza. No
-  // bloquea varias líneas "sin activo": Postgres trata cada NULL como
-  // distinto en un unique constraint, así que (policyId, NULL) puede
-  // repetirse todas las veces que haga falta.
-  @@unique([policyId, assetId])
+  // Antes había un @@unique([policyId, assetId]) acá. Se reemplazó por un
+  // índice único PARCIAL creado a mano en la migración
+  // add_policy_asset_coverage_lifecycle: único activo por (policyId, assetId)
+  // solo cuando bajaDate IS NULL y assetId IS NOT NULL — así una línea dada
+  // de baja no bloquea una re-alta futura del mismo activo en la misma
+  // póliza. Prisma no representa índices únicos parciales en el schema;
+  // mismo patrón ya usado en AssetPledge (asset_pledges_one_active_per_asset)
+  // y en Asset.licensePlateNormalized (assets_licensePlateNormalized_unique).
   @@index([policyId])
   @@index([assetId])
   @@index([insuranceTypeId])
