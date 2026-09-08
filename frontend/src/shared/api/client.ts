@@ -9,7 +9,7 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
 export const apiClient = axios.create({
   baseURL: `${API_BASE}/api/v1`,
-  timeout: 15000,
+  timeout: 30_000,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -61,6 +61,17 @@ apiClient.interceptors.response.use(
     return res
   },
   (error) => {
+    // Timeout de Axios: detectar por código o por mensaje para no mostrar
+    // "timeout of 15000ms exceeded" al usuario.
+    const isTimeout = error.code === 'ECONNABORTED' || error.message?.includes('timeout')
+    if (isTimeout) {
+      if (import.meta.env.DEV) {
+        console.warn(`[API Timeout] ${error.config?.method?.toUpperCase()} ${error.config?.url} — ${error.message}`)
+      }
+      toast.error('La operación tardó más de lo esperado. Intentá nuevamente.', { duration: 8000 })
+      return Promise.reject(new Error('Timeout'))
+    }
+
     const message = buildErrorMessage(error)
     const details = error.response?.data?.error?.details
     // Token inválido/expirado: limpiar la sesión y mandar a /login. Un
