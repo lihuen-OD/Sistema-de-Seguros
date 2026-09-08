@@ -25,12 +25,13 @@ interface FormFieldProps {
   label: string
   required?: boolean
   error?: string
+  helperText?: string
   children: React.ReactNode
   className?: string
   fullWidth?: boolean
 }
 
-export function FormField({ label, required, error, children, className, fullWidth }: FormFieldProps) {
+export function FormField({ label, required, error, helperText, children, className, fullWidth }: FormFieldProps) {
   return (
     <div className={clsx('flex flex-col gap-1', fullWidth && 'sm:col-span-2', className)}>
       <label className="text-xs font-medium text-slate-600">
@@ -39,6 +40,7 @@ export function FormField({ label, required, error, children, className, fullWid
       </label>
       {children}
       {error && <p className="text-xs text-red-500">{error}</p>}
+      {!error && helperText && <p className="text-xs text-slate-400">{helperText}</p>}
     </div>
   )
 }

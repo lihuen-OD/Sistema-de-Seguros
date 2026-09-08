@@ -175,6 +175,17 @@ export interface SendDocumentEmailResult {
   to: string[]
 }
 
+export type DocumentEmailStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'CANCELLED'
+
+export interface DocumentEmailLog {
+  id: string; createdAt: string; sentAt: string | null; failedAt: string | null
+  status: DocumentEmailStatus
+  sentBy: { userId: string | null; email: string } | null
+  to: string[]; cc: string[]; bcc: string[]; subject: string; message: string | null
+  provider: string; providerMessageId: string | null; errorMessage: string | null
+  attachments: string[]; documentType: string | null; documentNumber: string | null
+}
+
 export interface DocumentTypesResponse {
   types: DocumentTypeDef[]
   adjustmentReasons: AdjustmentReasonOption[]
@@ -261,6 +272,11 @@ export const documentsApi = {
 
   async sendEmail(id: string, payload: SendDocumentEmailInput): Promise<SendDocumentEmailResult> {
     const res = await apiClient.post<{ data: SendDocumentEmailResult }>(`/documents/${id}/send-email`, payload)
+    return res.data.data
+  },
+
+  async getEmailLogs(id: string): Promise<DocumentEmailLog[]> {
+    const res = await apiClient.get<{ data: DocumentEmailLog[] }>(`/documents/${id}/email-logs`)
     return res.data.data
   },
 
@@ -375,6 +391,7 @@ export const documentKeys = {
   allocations: (id: string) => [...documentKeys.all, id, 'allocations'] as const,
   installments: (id: string) => [...documentKeys.all, id, 'installments'] as const,
   auditLog: (id: string) => [...documentKeys.all, id, 'audit-log'] as const,
+  emailLogs: (id: string) => [...documentKeys.all, id, 'email-logs'] as const,
   attachments: (id: string) => [...documentKeys.all, id, 'attachments'] as const,
   financial: (filters?: FinancialFilters) =>
     filters ? ([...documentKeys.all, 'financial', filters.from, filters.to] as const) : ([...documentKeys.all, 'financial'] as const),
@@ -428,6 +445,14 @@ export const documentQueries = {
       queryKey: documentKeys.auditLog(id),
       queryFn: () => documentsApi.getAuditLog(id),
       staleTime: 60 * 1000,
+      enabled: !!id,
+    }),
+  emailLogs: (id: string) =>
+    queryOptions({
+      queryKey: documentKeys.emailLogs(id),
+      queryFn: () => documentsApi.getEmailLogs(id),
+      staleTime: 30 * 1000,
+      refetchOnWindowFocus: true,
       enabled: !!id,
     }),
   attachments: (id: string) =>

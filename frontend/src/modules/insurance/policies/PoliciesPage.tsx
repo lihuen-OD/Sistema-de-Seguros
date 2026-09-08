@@ -318,7 +318,7 @@ export default function PoliciesPage() {
           >
             <Eye size={15} />
           </button>
-          {row.status === 'vencida' && (
+          {row.status !== 'de_baja' && (
             <button
               onClick={(e) => { e.stopPropagation(); setDeBajaId(row.id) }}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"

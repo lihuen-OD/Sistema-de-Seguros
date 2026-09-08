@@ -11,6 +11,8 @@ import {
   AddAttachmentSchema,
   UpdateAttachmentSchema,
   ListAssetsQuerySchema,
+  CreateAssetPledgeSchema,
+  CancelAssetPledgeSchema,
 } from './assets.schemas'
 import { assetsController } from './assets.controller'
 
@@ -46,6 +48,21 @@ assetsRouter.put(
 
 // Status history
 assetsRouter.get('/:id/status-history', requireModule('assets'), assetsController.getStatusHistory)
+
+// Prendas — historial append-only, sin edición ni borrado.
+assetsRouter.get('/:id/pledges', requireModule('assets'), assetsController.getPledges)
+assetsRouter.post(
+  '/:id/pledges',
+  requireModule('assets'),
+  validate(CreateAssetPledgeSchema),
+  assetsController.createPledge,
+)
+assetsRouter.patch(
+  '/:id/pledges/:pledgeId/cancel',
+  requireModule('assets'),
+  validate(CancelAssetPledgeSchema),
+  assetsController.cancelPledge,
+)
 
 // Value history
 assetsRouter.get('/:id/value-history', requireModule('assets'), assetsController.getValueHistory)

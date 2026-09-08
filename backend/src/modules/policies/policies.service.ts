@@ -15,6 +15,9 @@ import type {
   AddPolicyAttachmentDTO,
 } from './policies.schemas'
 
+const COVERAGE_ASSET_CHANGE_WITH_ATTACHMENTS_MESSAGE =
+  'No se puede cambiar el activo de esta cobertura porque ya tiene adjuntos cargados. Para cambiar el activo, eliminá primero los adjuntos de esta cobertura o creá una nueva línea de cobertura.'
+
 // La tarjeta de circulación (y cualquier otro adjunto) ahora cuelga de la
 // línea de cobertura, no de la póliza — así una póliza de flota con varios
 // vehículos sabe de qué activo es cada documento (antes quedaban todos
@@ -384,14 +387,11 @@ export const policiesService = {
     ])
   },
 
-  // Acción manual del admin — solo permitida desde "Vencida", nunca automática.
+  // Acción manual del admin — permitida para cualquier estado excepto ya dada de baja.
   async markAsDeBaja(id: string) {
-    const policy = await prisma.policy.findUnique({ where: { id }, select: { id: true, endDate: true, deactivatedAt: true } })
+    const policy = await prisma.policy.findUnique({ where: { id }, select: { id: true, deactivatedAt: true } })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
     if (policy.deactivatedAt) throw new AppError(409, 'La póliza ya está dada de baja', 'CONFLICT')
-    if (computePolicyStatus(policy.endDate) !== 'vencida') {
-      throw new AppError(400, 'Solo se puede dar de baja una póliza vencida', 'INVALID_STATE')
-    }
     const updated = await prisma.policy.update({
       where: { id },
       data: { deactivatedAt: new Date() },
@@ -420,12 +420,21 @@ export const policiesService = {
     await assertPolicyExists(policyId)
     assertNoDuplicateAssets(data.coverages)
 
-    const existing = await prisma.policyAssetCoverage.findMany({ where: { policyId }, select: { id: true } })
+    const existing = await prisma.policyAssetCoverage.findMany({
+      where: { policyId },
+      select: { id: true, assetId: true, _count: { select: { attachments: true } } },
+    })
     const existingIds = new Set(existing.map((c) => c.id))
+    const existingById = new Map(existing.map((c) => [c.id, c]))
 
     for (const c of data.coverages) {
       if (c.id && !existingIds.has(c.id)) {
         throw new AppError(400, 'Una de las líneas de cobertura no pertenece a esta póliza', 'INVALID_REFERENCE')
+      }
+
+      const persisted = c.id ? existingById.get(c.id) : undefined
+      if (persisted && persisted.assetId !== (c.assetId ?? null) && persisted._count.attachments > 0) {
+        throw new AppError(409, COVERAGE_ASSET_CHANGE_WITH_ATTACHMENTS_MESSAGE, 'COVERAGE_ASSET_CHANGE_BLOCKED')
       }
     }
 

@@ -13,6 +13,7 @@ jest.mock('../../../config/database', () => ({
       count:            jest.fn(),
       findUnique:       jest.fn(),
       findUniqueOrThrow: jest.fn(),
+      findFirst:        jest.fn(),
       create:           jest.fn(),
       update:           jest.fn(),
       delete:           jest.fn(),
@@ -124,6 +125,8 @@ const fakeAsset = {
 const validAssetBody = {
   name: 'Toyota Hilux',
   assetType: 'camioneta',
+  currency: 'USD',
+  exchangeRate: 1500,
   allocations: [{ companyId: COMPANY_ID, costCenterId: CC_ID, percentage: 100 }],
 }
 
@@ -351,6 +354,89 @@ describe('Assets API', () => {
       expect(res.status).toBe(400)
       expect(res.body.error.code).toBe('INVALID_REFERENCE')
     })
+
+    it('returns 409 when creating asset with duplicate license plate (same format)', async () => {
+      db.company.findMany.mockResolvedValue([fakeCompany])
+      db.costCenter.findMany.mockResolvedValue([fakeCostCenter])
+      db.$queryRaw.mockResolvedValue([{ nextval: 1n }])
+      // asset.findFirst returns existing asset with same normalized plate
+      db.asset.findFirst.mockResolvedValue({ id: OTHER_ID, name: 'Otra Hilux', code: 'ACT-00002' })
+
+      const res = await request(app)
+        .post('/api/v1/assets')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validAssetBody,
+          metadata: { plate: 'AB 123 CD' },
+        })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('DUPLICATE_LICENSE_PLATE')
+    })
+
+    it('returns 409 when creating asset with duplicate license plate (different format)', async () => {
+      db.company.findMany.mockResolvedValue([fakeCompany])
+      db.costCenter.findMany.mockResolvedValue([fakeCostCenter])
+      db.$queryRaw.mockResolvedValue([{ nextval: 1n }])
+      // Existing asset has "AB123CD", new one has "AB 123 CD" — both normalize to "AB123CD"
+      db.asset.findFirst.mockResolvedValue({ id: OTHER_ID, name: 'Otra Hilux', code: 'ACT-00002' })
+
+      const res = await request(app)
+        .post('/api/v1/assets')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validAssetBody,
+          metadata: { plate: 'AB 123 CD' },
+        })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('DUPLICATE_LICENSE_PLATE')
+    })
+
+    it('returns 201 when creating asset without license plate', async () => {
+      db.company.findMany.mockResolvedValue([fakeCompany])
+      db.costCenter.findMany.mockResolvedValue([fakeCostCenter])
+      db.$queryRaw.mockResolvedValue([{ nextval: 1n }])
+      db.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          asset: { create: jest.fn().mockResolvedValue(fakeAsset) },
+          assetAllocation: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+          assetStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        }),
+      )
+      db.asset.findUniqueOrThrow.mockResolvedValue(fakeAsset)
+
+      const res = await request(app)
+        .post('/api/v1/assets')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(validAssetBody) // no metadata.plate
+
+      expect(res.status).toBe(201)
+    })
+
+    it('returns 201 when creating asset with empty license plate', async () => {
+      db.company.findMany.mockResolvedValue([fakeCompany])
+      db.costCenter.findMany.mockResolvedValue([fakeCostCenter])
+      db.$queryRaw.mockResolvedValue([{ nextval: 1n }])
+      db.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          asset: { create: jest.fn().mockResolvedValue(fakeAsset) },
+          assetAllocation: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+          assetStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        }),
+      )
+      db.asset.findUniqueOrThrow.mockResolvedValue(fakeAsset)
+
+      const res = await request(app)
+        .post('/api/v1/assets')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          ...validAssetBody,
+          metadata: { plate: '' },
+        })
+
+      expect(res.status).toBe(201)
+    })
   })
 
   // ── PUT /api/v1/assets/:id ──────────────────────────────────────────────────
@@ -532,6 +618,64 @@ describe('Assets API', () => {
       const data = historyCreate.mock.calls[0][0].data
       expect(data.type).toBe('nuevo')
       expect(data.value).toBe(52000)
+    })
+
+    it('returns 200 when updating asset while keeping the same license plate', async () => {
+      db.asset.findUnique.mockResolvedValue(fakeAsset)
+      // No conflict — asset finds itself (excluded by id)
+      db.asset.findFirst.mockResolvedValue(null)
+      mockUpdateTransaction()
+
+      const res = await request(app)
+        .put(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ metadata: { plate: 'AB 123 CD' } })
+
+      expect(res.status).toBe(200)
+    })
+
+    it('returns 200 when changing plate format on same asset (AB123CD → AB 123 CD)', async () => {
+      // Asset already has plate "AB123CD" — editing to "AB 123 CD" (same normalized)
+      const assetWithPlate = { ...fakeAsset, metadata: { plate: 'AB123CD' } }
+      db.asset.findUnique.mockResolvedValue(assetWithPlate)
+      // findFirst excludes current asset by id → no conflict
+      db.asset.findFirst.mockResolvedValue(null)
+      mockUpdateTransaction()
+
+      const res = await request(app)
+        .put(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ metadata: { plate: 'AB 123 CD' } })
+
+      expect(res.status).toBe(200)
+    })
+
+    it('returns 409 when updating asset to a license plate belonging to another asset', async () => {
+      db.asset.findUnique.mockResolvedValue(fakeAsset)
+      // Conflict — another asset has this plate
+      db.asset.findFirst.mockResolvedValue({ id: OTHER_ID, name: 'Otra Hilux', code: 'ACT-00002' })
+
+      const res = await request(app)
+        .put(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ metadata: { plate: 'AB 123 CD' } })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('DUPLICATE_LICENSE_PLATE')
+    })
+
+    it('returns 409 when updating to plate with different format but same normalized value', async () => {
+      db.asset.findUnique.mockResolvedValue(fakeAsset)
+      // Existing plate "AB123CD" normalizes to same as "AB 123 CD"
+      db.asset.findFirst.mockResolvedValue({ id: OTHER_ID, name: 'Otra Hilux', code: 'ACT-00002' })
+
+      const res = await request(app)
+        .put(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ metadata: { plate: 'AB 123 CD' } })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('DUPLICATE_LICENSE_PLATE')
     })
   })
 

@@ -144,6 +144,11 @@ export const emailService = {
       entityType: input.entityType,
       entityId: input.entityId,
       actor: input.actor,
+      metadata: {
+        documentType: templateData.documentType,
+        documentNumber: templateData.documentNumber,
+        ...(input.message?.trim() ? { message: input.message.trim() } : {}),
+      },
     })
   },
 }

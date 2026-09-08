@@ -79,6 +79,7 @@ documentsRouter.post(
   validate(SendDocumentEmailSchema),
   documentsController.sendEmail,
 )
+documentsRouter.get('/:id/email-logs', requireModule('documents'), documentsController.getEmailLogs)
 
 // ── Auditoría (Fase 4) ────────────────────────────────────────────────────────
 documentsRouter.get('/:id/audit-log', requireModule('documents'), documentsController.getAuditLog)

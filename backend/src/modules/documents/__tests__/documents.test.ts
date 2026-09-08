@@ -107,6 +107,7 @@ const validDocumentBody = {
   netAmount: 1000,
   vatAmount: 210,
   otherTaxesAmount: 50,
+  exchangeRate: 1,
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -461,6 +462,7 @@ describe('Documents API', () => {
           netAmount: -100,
           vatAmount: 0,
           otherTaxesAmount: 0,
+          exchangeRate: 1,
           linkedDocumentId: DOC_ID,
           adjustmentReason: 'ROUNDING_DIFFERENCE',
           adjustmentSign: 'NEGATIVE',

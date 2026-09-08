@@ -19,7 +19,7 @@ const PolicyAssetCoverageInputSchema = z.object({
   coverageIds: z.array(z.string()).default([]),
   insuredAmount: z.number().min(0).default(0),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
-  exchangeRate: z.number().min(0).default(1),
+  exchangeRate: z.number().positive('El tipo de cambio debe ser mayor a 0'),
   companyId: z.string().uuid('ID de empresa inválido').optional().nullable(),
   costCenterId: z.string().uuid('ID de centro de costo inválido').optional().nullable(),
   beneficiaryDescription: z.string().max(2000).optional().nullable(),

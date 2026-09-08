@@ -1,12 +1,14 @@
 import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { assetsService } from './assets.service'
+import { assetPledgesService } from './asset-pledges.service'
 import { AppError } from '../../shared/errors/AppError'
 import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
-import type { ListAssetsQueryDTO, UpdateAttachmentDTO } from './assets.schemas'
+import type { CancelAssetPledgeDTO, CreateAssetPledgeDTO, ListAssetsQueryDTO, UpdateAttachmentDTO } from './assets.schemas'
 
 type IdParam = { id: string }
 type AttachmentParam = { id: string; attachmentId: string }
+type PledgeParam = { id: string; pledgeId: string }
 
 export const assetsController = {
   list: asyncHandler(async (req: Request, res: Response) => {
@@ -52,6 +54,21 @@ export const assetsController = {
   getStatusHistory: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     const history = await assetsService.findStatusHistory(req.params.id)
     res.json({ data: history })
+  }),
+
+  getPledges: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const pledges = await assetPledgesService.findAll(req.params.id)
+    res.json({ data: pledges })
+  }),
+
+  createPledge: asyncHandler(async (req: Request<IdParam, unknown, CreateAssetPledgeDTO>, res: Response) => {
+    const pledge = await assetPledgesService.create(req.params.id, req.body, req.user?.email)
+    res.status(201).json({ data: pledge })
+  }),
+
+  cancelPledge: asyncHandler(async (req: Request<PledgeParam, unknown, CancelAssetPledgeDTO>, res: Response) => {
+    const pledge = await assetPledgesService.cancel(req.params.id, req.params.pledgeId, req.body, req.user?.email)
+    res.json({ data: pledge })
   }),
 
   // Value history

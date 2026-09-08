@@ -36,7 +36,7 @@ const DocumentBaseSchema = z.object({
   vatAmount: z.number().default(0),
   otherTaxesAmount: z.number().default(0),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
-  exchangeRate: z.number().positive().default(1),
+  exchangeRate: z.number().positive('El tipo de cambio debe ser mayor a 0'),
   description: z.string().max(1000).optional().nullable(),
   insuranceCompany: z.string().max(300).optional().nullable(),
   paymentMethod: z.string().max(100).optional().nullable(),

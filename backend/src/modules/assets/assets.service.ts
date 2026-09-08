@@ -7,6 +7,8 @@ import { toDateStr } from '../../shared/utils/dates'
 import { deleteFromCloudinary } from '../../config/cloudinary'
 import { computeDualAmounts } from '../../shared/utils/currency'
 import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
+import { isPledgeEligibleAssetType } from './asset-pledge-eligibility'
+import { normalizeLicensePlate } from '../../shared/utils/normalize'
 import type {
   CreateAssetDTO,
   UpdateAssetDTO,
@@ -79,7 +81,32 @@ function handleUpdateNotFound(e: unknown) {
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
     throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
   }
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+    throw new AppError(409, DUPLICATE_LICENSE_PLATE_MESSAGE, 'DUPLICATE_LICENSE_PLATE')
+  }
   throw e
+}
+
+function extractPlateFromMetadata(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null
+  const plate = (metadata as Record<string, unknown>).plate
+  return typeof plate === 'string' ? plate : null
+}
+
+const DUPLICATE_LICENSE_PLATE_MESSAGE = 'Ya existe un activo registrado con esta patente. Revisá si corresponde al mismo bien.'
+
+async function assertNoDuplicateLicensePlate(
+  normalized: string | null,
+  excludeAssetId?: string,
+): Promise<void> {
+  if (!normalized) return
+  const where = excludeAssetId
+    ? { licensePlateNormalized: normalized, id: { not: excludeAssetId } }
+    : { licensePlateNormalized: normalized }
+  const conflict = await prisma.asset.findFirst({ where, select: { id: true, name: true, code: true } })
+  if (conflict) {
+    throw new AppError(409, DUPLICATE_LICENSE_PLATE_MESSAGE, 'DUPLICATE_LICENSE_PLATE')
+  }
 }
 
 // Traza el historial de valuación en base a la fecha de valuación (assetId +
@@ -177,7 +204,11 @@ export const assetsService = {
       include: ASSET_DETAIL_INCLUDE,
     })
     if (!asset) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
-    return { ...asset, attachments: asset.attachments.map(mapAttachment) }
+    return {
+      ...asset,
+      pledgeEligible: isPledgeEligibleAssetType(asset.assetType),
+      attachments: asset.attachments.map(mapAttachment),
+    }
   },
 
   async create(data: CreateAssetDTO) {
@@ -201,6 +232,11 @@ export const assetsService = {
     const code = `ACT-${String(Number(seqResult[0].nextval)).padStart(5, '0')}`
     const fixedAssetCode = await resolveFixedAssetCode(assetData.fixedAssetId)
 
+    // Validación de patente duplicada — normaliza y verifica que no exista
+    const plateFromMetadata = extractPlateFromMetadata(assetData.metadata)
+    const licensePlateNormalized = normalizeLicensePlate(plateFromMetadata)
+    await assertNoDuplicateLicensePlate(licensePlateNormalized)
+
     // Cierre en ambas monedas de currentValue/patrimonialValueNew al momento
     // de guardar (ver shared/utils/currency.ts#computeDualAmounts) — mismo
     // criterio que Policy.premiumArs/Usd. Se reutiliza el mismo resultado
@@ -218,6 +254,7 @@ export const assetsService = {
           ...assetData,
           code,
           fixedAssetCode,
+          licensePlateNormalized,
           metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
           ...(currentDual && { currentValueArs: currentDual.amountArs, currentValueUsd: currentDual.amountUsd }),
           ...(newDual && { patrimonialValueNewArs: newDual.amountArs, patrimonialValueNewUsd: newDual.amountUsd }),
@@ -279,7 +316,11 @@ export const assetsService = {
       where: { id: created },
       include: ASSET_DETAIL_INCLUDE,
     })
-    return { ...asset, attachments: asset.attachments.map(mapAttachment) }
+    return {
+      ...asset,
+      pledgeEligible: isPledgeEligibleAssetType(asset.assetType),
+      attachments: asset.attachments.map(mapAttachment),
+    }
   },
 
   async update(id: string, data: UpdateAssetDTO) {
@@ -288,11 +329,33 @@ export const assetsService = {
 
     const current = await prisma.asset.findUnique({
       where: { id },
-      select: { id: true, status: true, currency: true, exchangeRate: true, purchaseDate: true },
+      select: { id: true, status: true, assetType: true, currency: true, exchangeRate: true, purchaseDate: true },
     })
     if (!current) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
 
+    if (assetData.assetType && assetData.assetType !== current.assetType && !isPledgeEligibleAssetType(assetData.assetType)) {
+      const activePledge = await prisma.assetPledge.findFirst({
+        where: { assetId: id, cancelledAt: null },
+        select: { id: true },
+      })
+      if (activePledge) {
+        throw new AppError(
+          409,
+          'No se puede cambiar a un tipo no elegible mientras el activo tenga una prenda activa.',
+          'ACTIVE_PLEDGE_TYPE_CHANGE',
+        )
+      }
+    }
+
     const fixedAssetCode = await resolveFixedAssetCode(assetData.fixedAssetId)
+
+    // Validación de patente duplicada — solo si se está cambiando la patente
+    let licensePlateNormalized: string | null | undefined
+    if (assetData.metadata !== undefined) {
+      const plateFromMetadata = extractPlateFromMetadata(assetData.metadata)
+      licensePlateNormalized = normalizeLicensePlate(plateFromMetadata)
+      await assertNoDuplicateLicensePlate(licensePlateNormalized, id)
+    }
 
     // Actualización parcial: solo se recalcula el cierre en ambas monedas
     // cuando el valor viene en este payload, usando la moneda/TC efectivos
@@ -328,6 +391,7 @@ export const assetsService = {
         data: {
           ...assetDataWithoutValues,
           ...(fixedAssetCode !== undefined && { fixedAssetCode }),
+          ...(licensePlateNormalized !== undefined && { licensePlateNormalized }),
           metadata: assetData.metadata ? (assetData.metadata as Prisma.InputJsonValue) : undefined,
         },
         select: { id: true },
@@ -376,9 +440,9 @@ export const assetsService = {
     return { id }
   },
 
-  // Elimina el activo por completo (no es soft-delete) — a diferencia de
-  // policies.service.ts#hardDelete, acá no hay ninguna FK RESTRICT que
-  // resolver a mano: allocations/valueHistory/statusHistory/attachments/
+  // Elimina el activo por completo (no es soft-delete). AssetPledge usa
+  // RESTRICT para preservar su historial, por eso se rechaza antes con un
+  // AppError claro. allocations/valueHistory/statusHistory/attachments/
   // renewalProjectionOverrides/insuranceAudits (y sus adjuntos) se borran
   // solos vía onDelete: Cascade; FireExtinguisher.assetId, Claim.assetId y
   // PolicyAssetCoverage.assetId quedan en null vía onDelete: SetNull — esos
@@ -391,11 +455,19 @@ export const assetsService = {
       where: { id },
       select: {
         id: true,
+        _count: { select: { pledges: true } },
         attachments: { select: { cloudinaryPublicId: true } },
         insuranceAudits: { select: { attachments: { select: { cloudinaryPublicId: true } } } },
       },
     })
     if (!asset) throw new AppError(404, 'Activo no encontrado', 'NOT_FOUND')
+    if (asset._count?.pledges > 0) {
+      throw new AppError(
+        409,
+        'No se puede eliminar un activo que tiene historial de prendas.',
+        'ASSET_HAS_PLEDGE_HISTORY',
+      )
+    }
 
     const cloudinaryIds = [
       ...asset.attachments.map((a) => a.cloudinaryPublicId),

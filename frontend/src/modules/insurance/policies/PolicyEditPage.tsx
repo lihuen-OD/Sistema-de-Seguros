@@ -48,6 +48,7 @@ interface PolicyForm {
 interface CoverageLineForm {
   formId: string
   coverageId?: string
+  attachmentsCount: number
   association: AssociationType
   assetId: string
   insuranceType: string
@@ -64,6 +65,7 @@ function coverageToLine(c: PolicyCoverage): CoverageLineForm {
   return {
     formId: crypto.randomUUID(),
     coverageId: c.id,
+    attachmentsCount: c.attachmentsCount ?? 0,
     association: c.assetId ? 'activo' : 'sin_activo',
     assetId: c.assetId ?? '',
     insuranceType: c.insuranceType,
@@ -77,9 +79,10 @@ function coverageToLine(c: PolicyCoverage): CoverageLineForm {
   }
 }
 
-function createEmptyLine(defaultExchangeRate = ''): CoverageLineForm {
+function createEmptyLine(defaultExchangeRate = '0'): CoverageLineForm {
   return {
     formId: crypto.randomUUID(),
+    attachmentsCount: 0,
     association: 'activo',
     assetId: '',
     insuranceType: '',
@@ -368,7 +371,7 @@ function PolicyEditForm({
         coverageIds: line.coverageTypes,
         insuredAmount: parseFloat(line.insuredAmount) || 0,
         currency: line.currency,
-        exchangeRate: parseFloat(line.exchangeRate) || 1,
+        exchangeRate: parseFloat(line.exchangeRate) || 0,
         companyId: line.association === 'sin_activo' ? line.companyId : null,
         costCenterId: line.association === 'sin_activo' ? line.costCenterId || null : null,
         beneficiaryDescription: line.association === 'sin_activo' ? line.beneficiaryDescription.trim() || null : null,
@@ -464,6 +467,7 @@ function PolicyEditForm({
             const isAP = line.coverageTypes.length > 0 && line.insuranceType.toLowerCase().includes('personal')
             const showBeneficiaryField = isAP && line.association === 'sin_activo'
             const selectedAsset = activeAssets.find((a) => a.id === line.assetId)
+            const isAssetLocked = !!line.coverageId && line.attachmentsCount > 0
 
             return (
               <SectionCard
@@ -491,10 +495,11 @@ function PolicyEditForm({
                         <button
                           key={opt}
                           type="button"
+                          disabled={isAssetLocked}
                           onClick={() => updateLine(line.formId, {
                             association: opt, assetId: '', companyId: '', costCenterId: '', beneficiaryDescription: '',
                           })}
-                          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all disabled:cursor-not-allowed ${
                             line.association === opt ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                           }`}
                         >
@@ -516,9 +521,15 @@ function PolicyEditForm({
                             }))}
                           value={line.assetId}
                           onChange={(v) => updateLine(line.formId, { assetId: v })}
+                          disabled={isAssetLocked}
                           placeholder="Seleccionar activo…"
                           searchPlaceholder="Buscar por nombre, código, patente, bien de uso…"
                         />
+                        {isAssetLocked && (
+                          <p className="text-xs text-slate-500 mt-1">
+                            No se puede cambiar el activo de esta cobertura porque ya tiene adjuntos cargados. Para cambiar el activo, eliminá primero los adjuntos de esta cobertura o creá una nueva línea de cobertura.
+                          </p>
+                        )}
                       </FormField>
                     ) : (
                       <div className="space-y-4">

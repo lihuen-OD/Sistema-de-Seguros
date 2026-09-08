@@ -322,8 +322,25 @@ export interface Asset {
   fireExtinguisherAuditable: boolean
   /** Habilita el activo para la Auditoría de Seguros (tarjeta de circulación) */
   insuranceAuditable: boolean
+  /** Calculado por backend; tipos desconocidos/ambiguos devuelven false. */
+  pledgeEligible: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface AssetPledge {
+  id: string
+  assetId: string
+  creditorName: string
+  startDate: string
+  endDate: string | null
+  notes: string | null
+  status: 'ACTIVE' | 'CANCELLED'
+  cancelledAt: string | null
+  cancellationReason: string | null
+  createdBy: string | null
+  cancelledBy: string | null
+  createdAt: string
 }
 
 export interface AccountingDocumentAttachment {

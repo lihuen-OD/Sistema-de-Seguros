@@ -160,8 +160,8 @@ describe('Policies API', () => {
         .send({
           ...validPolicyBody,
           coverages: [
-            { insuranceTypeId: TYPE_ID, assetId: ASSET_ID, insuredAmount: 100 },
-            { insuranceTypeId: TYPE_ID, assetId: ASSET_ID, insuredAmount: 200 },
+            { insuranceTypeId: TYPE_ID, assetId: ASSET_ID, insuredAmount: 100, exchangeRate: 1000 },
+            { insuranceTypeId: TYPE_ID, assetId: ASSET_ID, insuredAmount: 200, exchangeRate: 1000 },
           ],
         })
 
@@ -298,7 +298,7 @@ describe('Policies API', () => {
     it('updates an existing line in place when it comes with an id (preserves its attachments)', async () => {
       db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
       db.policyAssetCoverage.findMany
-        .mockResolvedValueOnce([{ id: COVERAGE_ID }]) // existing lines for this policy
+        .mockResolvedValueOnce([{ id: COVERAGE_ID, assetId: null, _count: { attachments: 2 } }]) // existing lines for this policy
         .mockResolvedValueOnce([ // findCoverages() re-read at the end
           {
             id: COVERAGE_ID, assetId: null, insuranceTypeId: TYPE_ID, coverageIds: [],
@@ -329,7 +329,10 @@ describe('Policies API', () => {
       db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
       const REMOVED_COVERAGE_ID = '60000000-0000-0000-0000-000000000002'
       db.policyAssetCoverage.findMany
-        .mockResolvedValueOnce([{ id: COVERAGE_ID }, { id: REMOVED_COVERAGE_ID }])
+        .mockResolvedValueOnce([
+          { id: COVERAGE_ID, assetId: null, _count: { attachments: 0 } },
+          { id: REMOVED_COVERAGE_ID, assetId: null, _count: { attachments: 0 } },
+        ])
         .mockResolvedValueOnce([])
       db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
       db.$transaction.mockResolvedValue([])
@@ -337,7 +340,7 @@ describe('Policies API', () => {
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ coverages: [{ id: COVERAGE_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000 }] })
+        .send({ coverages: [{ id: COVERAGE_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1000 }] })
 
       expect(res.status).toBe(200)
       expect(db.policyAssetCoverage.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [REMOVED_COVERAGE_ID] } } })
@@ -345,15 +348,192 @@ describe('Policies API', () => {
 
     it('returns 400 when a coverage id does not belong to this policy', async () => {
       db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
-      db.policyAssetCoverage.findMany.mockResolvedValueOnce([{ id: COVERAGE_ID }])
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([
+        { id: COVERAGE_ID, assetId: null, _count: { attachments: 0 } },
+      ])
 
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ coverages: [{ id: OTHER_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000 }] })
+        .send({ coverages: [{ id: OTHER_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1000 }] })
 
       expect(res.status).toBe(400)
       expect(res.body.error.code).toBe('INVALID_REFERENCE')
+    })
+
+    it('returns 409 when an existing line with attachments changes assetId', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([
+        { id: COVERAGE_ID, assetId: ASSET_ID, _count: { attachments: 1 } },
+      ])
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ id: COVERAGE_ID, assetId: OTHER_ID, insuranceTypeId: TYPE_ID, exchangeRate: 1000 }] })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error).toEqual({
+        code: 'COVERAGE_ASSET_CHANGE_BLOCKED',
+        message: 'No se puede cambiar el activo de esta cobertura porque ya tiene adjuntos cargados. Para cambiar el activo, eliminá primero los adjuntos de esta cobertura o creá una nueva línea de cobertura.',
+      })
+      expect(db.$transaction).not.toHaveBeenCalled()
+    })
+
+    it('allows editing other fields when an existing line has attachments and assetId is unchanged', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
+      db.policyAssetCoverage.findMany
+        .mockResolvedValueOnce([{ id: COVERAGE_ID, assetId: ASSET_ID, _count: { attachments: 1 } }])
+        .mockResolvedValueOnce([])
+      db.asset.findFirst.mockResolvedValue({ id: ASSET_ID })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ id: COVERAGE_ID, assetId: ASSET_ID, insuranceTypeId: TYPE_ID, insuredAmount: 2500, exchangeRate: 1000 }] })
+
+      expect(res.status).toBe(200)
+      expect(db.policyAssetCoverage.update).toHaveBeenCalled()
+    })
+
+    it('allows changing assetId when an existing line has no attachments', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
+      db.policyAssetCoverage.findMany
+        .mockResolvedValueOnce([{ id: COVERAGE_ID, assetId: ASSET_ID, _count: { attachments: 0 } }])
+        .mockResolvedValueOnce([])
+      db.asset.findFirst.mockResolvedValue({ id: OTHER_ID })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ id: COVERAGE_ID, assetId: OTHER_ID, insuranceTypeId: TYPE_ID, exchangeRate: 1000 }] })
+
+      expect(res.status).toBe(200)
+      expect(db.policyAssetCoverage.update).toHaveBeenCalled()
+    })
+
+    it('allows a new line to choose an assetId', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([])
+      db.asset.findFirst.mockResolvedValue({ id: ASSET_ID })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ assetId: ASSET_ID, insuranceTypeId: TYPE_ID, exchangeRate: 1000 }] })
+
+      expect(res.status).toBe(200)
+      expect(db.policyAssetCoverage.create).toHaveBeenCalled()
+    })
+  })
+
+  // ── POST /api/v1/policies/:id/de-baja ────────────────────────────────────────
+
+  describe('POST /api/v1/policies/:id/de-baja', () => {
+    const UPDATED_AT = new Date('2026-07-27T12:00:00.000Z')
+
+    function mockDeBajaUpdate(overrides: Record<string, unknown> = {}) {
+      db.policy.update.mockResolvedValue({
+        id: POLICY_ID,
+        policyNumber: 'POL-TEST-001',
+        insuredName: 'La Segunda',
+        startDate: new Date('2026-01-01T00:00:00.000Z'),
+        endDate: new Date('2026-12-31T00:00:00.000Z'),
+        description: null,
+        isActive: true,
+        deactivatedAt: UPDATED_AT,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: UPDATED_AT,
+        producer: null,
+        coverages: [],
+        ...overrides,
+      })
+    }
+
+    it('returns 200 when deactivating a vigente policy', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: null })
+      mockDeBajaUpdate()
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.status).toBe('de_baja')
+      expect(res.body.data.deactivatedAt).toBeTruthy()
+    })
+
+    it('returns 200 when deactivating a proxima_a_vencer policy', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: null })
+      mockDeBajaUpdate()
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.status).toBe('de_baja')
+    })
+
+    it('returns 200 when deactivating a vencida policy', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: null })
+      mockDeBajaUpdate()
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.status).toBe('de_baja')
+    })
+
+    it('returns 409 when the policy is already deactivated', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: UPDATED_AT })
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(409)
+      expect(db.policy.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 404 when the policy does not exist', async () => {
+      db.policy.findUnique.mockResolvedValue(null)
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(404)
+    })
+
+    it('sets deactivatedAt on the updated policy', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: null })
+      mockDeBajaUpdate()
+
+      await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const updateCall = db.policy.update.mock.calls[0][0]
+      expect(updateCall.data.deactivatedAt).toBeInstanceOf(Date)
+    })
+
+    it('does not delete coverages or related data', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, deactivatedAt: null })
+      mockDeBajaUpdate()
+
+      await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(db.policyAssetCoverage.deleteMany).not.toHaveBeenCalled()
+      expect(db.policyAttachment.delete).not.toHaveBeenCalled()
+      expect(db.documentPolicyAllocation.deleteMany).not.toHaveBeenCalled()
     })
   })
 

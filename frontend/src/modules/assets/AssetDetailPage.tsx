@@ -33,6 +33,7 @@ import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
 import { AssociateFireExtinguisherModal } from './AssociateFireExtinguisherModal'
 import { AddValuationModal } from './AddValuationModal'
+import { AssetPledgeSection } from './components/AssetPledgeSection'
 
 const TABS = ['Pólizas', 'Doc. Contables', 'Matafuegos', 'Siniestros', 'Valuaciones', 'Adjuntos'] as const
 type Tab = (typeof TABS)[number]
@@ -797,6 +798,8 @@ export default function AssetDetailPage() {
           )}
 
           {/* Historial de Estado */}
+          {asset.pledgeEligible && <AssetPledgeSection assetId={asset.id} />}
+
           <SectionCard title="Historial de Estado">
             <div className="space-y-0">
               {displayHistory.map((entry, idx) => {
@@ -1106,4 +1109,3 @@ function InfoRow({ label, value, icon: Icon, mono }: {
     </div>
   )
 }
-

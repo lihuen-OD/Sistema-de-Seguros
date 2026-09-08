@@ -784,6 +784,15 @@ export const documentsService = {
     const doc = await this.findById(id)
     const typeDef = getDocumentTypeDef(doc.documentType)
 
+    const [ownPolicy, linkedDocument] = await Promise.all([
+      doc.policyId
+        ? prisma.policy.findUnique({ where: { id: doc.policyId }, select: { policyNumber: true } })
+        : Promise.resolve(null),
+      doc.linkedDocumentId
+        ? prisma.accountingDocument.findUnique({ where: { id: doc.linkedDocumentId }, select: { documentNumber: true } })
+        : Promise.resolve(null),
+    ])
+
     // Bien de Uso + Centro de Costo de cada asignación — se resuelven acá
     // (no vienen en DOCUMENT_DETAIL_INCLUDE) porque están asociados al
     // Activo (o, en líneas "sin activo", directo a la línea de cobertura),
@@ -856,12 +865,30 @@ export const documentsService = {
     // documento — nunca con montos/distribución que pudiera mandar el
     // cliente en el body de este endpoint.
     const templateData: ManualDocumentEmailData = {
+      documentType: doc.documentType,
       documentTypeLabel: typeDef?.label ?? doc.documentType,
       documentNumber: doc.documentNumber,
+      issueDate: toDateStr(doc.issueDate),
+      dueDate: doc.installments.map((installment) => installment.dueDate as string).sort()[0] ?? null,
       insuranceCompany: doc.insuranceCompany,
       paymentMethod: doc.paymentMethod,
       currency: doc.currency,
       totalAmount: doc.totalAmount,
+      policyNumbers: [...new Set([
+        ...doc.allocations.map((allocation) => allocation.policy?.policyNumber).filter((value): value is string => !!value),
+        ...(ownPolicy?.policyNumber ? [ownPolicy.policyNumber] : []),
+      ])],
+      linkedDocumentNumber: linkedDocument?.documentNumber ?? null,
+      description: doc.description,
+      adjustmentReason: doc.adjustmentReason
+        ? (ADJUSTMENT_REASONS[doc.adjustmentReason] ?? doc.adjustmentReason)
+        : null,
+      endorsementType: doc.endorsementType
+        ? (ENDORSEMENT_TYPES[doc.endorsementType] ?? doc.endorsementType)
+        : null,
+      endorsementEffectiveDate: doc.endorsementEffectiveDate
+        ? toDateStr(doc.endorsementEffectiveDate)
+        : null,
       costCenters: [...groups.values()],
       attachments: [],
     }
@@ -884,6 +911,39 @@ export const documentsService = {
       templateData: templateData as unknown as Record<string, unknown>,
       attachments,
       actor,
+    })
+  },
+
+  async getEmailLogs(id: string) {
+    await this.assertDocumentExists(id)
+    const logs = await prisma.emailLog.findMany({
+      where: { entityType: 'AccountingDocument', entityId: id },
+      select: {
+        id: true, status: true, provider: true, toAddresses: true, ccAddresses: true,
+        bccAddresses: true, subject: true, triggeredByUserId: true, triggeredByEmail: true,
+        sentAt: true, failedAt: true, errorMessage: true, providerMessageId: true,
+        metadata: true, createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    return logs.map((log) => {
+      const metadata = log.metadata && typeof log.metadata === 'object' && !Array.isArray(log.metadata)
+        ? log.metadata as Record<string, unknown>
+        : {}
+      const stringArray = (value: unknown) =>
+        Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+      return {
+        id: log.id, createdAt: log.createdAt, sentAt: log.sentAt, failedAt: log.failedAt,
+        status: log.status,
+        sentBy: log.triggeredByEmail ? { userId: log.triggeredByUserId, email: log.triggeredByEmail } : null,
+        to: log.toAddresses, cc: log.ccAddresses, bcc: log.bccAddresses, subject: log.subject,
+        message: typeof metadata.message === 'string' ? metadata.message : null,
+        provider: log.provider, providerMessageId: log.providerMessageId,
+        errorMessage: log.errorMessage, attachments: stringArray(metadata.attachmentNames),
+        documentType: typeof metadata.documentType === 'string' ? metadata.documentType : null,
+        documentNumber: typeof metadata.documentNumber === 'string' ? metadata.documentNumber : null,
+      }
     })
   },
 
