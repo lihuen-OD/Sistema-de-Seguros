@@ -57,6 +57,31 @@ export const policiesController = {
     res.json({ data: coverages })
   }),
 
+  addCoverage: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const coverage = await policiesService.addCoverage(req.params.id, req.body)
+    res.status(201).json({ data: coverage })
+  }),
+
+  updateCoverage: asyncHandler(async (req: Request<CoverageParam>, res: Response) => {
+    const coverage = await policiesService.updateCoverage(req.params.id, req.params.coverageId, req.body)
+    res.json({ data: coverage })
+  }),
+
+  deleteCoverage: asyncHandler(async (req: Request<CoverageParam>, res: Response) => {
+    await policiesService.deleteCoveragePhysical(req.params.id, req.params.coverageId)
+    res.json({ data: { message: 'Línea de cobertura eliminada correctamente' } })
+  }),
+
+  deactivateCoverage: asyncHandler(async (req: Request<CoverageParam>, res: Response) => {
+    const coverage = await policiesService.deactivateCoverage(
+      req.params.id,
+      req.params.coverageId,
+      req.body,
+      req.user?.email ?? 'sistema',
+    )
+    res.json({ data: coverage })
+  }),
+
   // Attachments (por línea de cobertura)
   getAttachments: asyncHandler(async (req: Request<CoverageParam>, res: Response) => {
     const attachments = await policiesService.findAttachments(req.params.id, req.params.coverageId)

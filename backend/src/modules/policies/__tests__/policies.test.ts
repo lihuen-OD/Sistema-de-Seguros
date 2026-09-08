@@ -18,6 +18,7 @@ jest.mock('../../../config/database', () => ({
       findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
       deleteMany: jest.fn(),
     },
     policyAttachment: {
@@ -62,6 +63,7 @@ const ASSET_ID = '40000000-0000-0000-0000-000000000001'
 const TYPE_ID = '50000000-0000-0000-0000-000000000001'
 const COVERAGE_ID = '60000000-0000-0000-0000-000000000001'
 const BASE_DATE = new Date('2026-01-01T00:00:00.000Z')
+const END_DATE = new Date('2026-12-31T00:00:00.000Z')
 
 const fakeInsuranceType = { id: TYPE_ID, name: 'Automotor', isActive: true, coverages: [] }
 
@@ -427,6 +429,356 @@ describe('Policies API', () => {
 
       expect(res.status).toBe(200)
       expect(db.policyAssetCoverage.create).toHaveBeenCalled()
+    })
+
+    it('returns 409 and does not delete when a line being removed already has attachments', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, startDate: BASE_DATE })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([
+        { id: COVERAGE_ID, assetId: null, _count: { attachments: 1, allocations: 0 } },
+      ])
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1000 }] })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('COVERAGE_HAS_HISTORY')
+      expect(db.$transaction).not.toHaveBeenCalled()
+    })
+
+    it('returns 409 and does not delete when a line being removed already has allocations', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, startDate: BASE_DATE })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([
+        { id: COVERAGE_ID, assetId: null, _count: { attachments: 0, allocations: 1 } },
+      ])
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1000 }] })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('COVERAGE_HAS_HISTORY')
+      expect(db.$transaction).not.toHaveBeenCalled()
+    })
+
+    it('returns 409 and does not create when a new line overlaps an existing line with a future bajaDate for the same asset', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, startDate: BASE_DATE })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([
+        {
+          id: COVERAGE_ID, assetId: ASSET_ID,
+          effectiveDate: BASE_DATE, bajaDate: new Date('2026-12-01T00:00:00.000Z'),
+          _count: { attachments: 0, allocations: 0 },
+        },
+      ])
+      db.asset.findFirst.mockResolvedValue({ id: ASSET_ID })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ assetId: ASSET_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1000 }] })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('COVERAGE_OVERLAP')
+      expect(db.$transaction).not.toHaveBeenCalled()
+      expect(db.policyAssetCoverage.create).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── POST /api/v1/policies/:id/coverages ──────────────────────────────────────
+
+  describe('POST /api/v1/policies/:id/coverages', () => {
+    it('returns 201 when effectiveDate is within the policy validity range', async () => {
+      db.policy.findUnique.mockResolvedValue({ startDate: BASE_DATE, endDate: END_DATE })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+      db.policyAssetCoverage.create.mockResolvedValue({
+        id: COVERAGE_ID, assetId: null, insuranceTypeId: TYPE_ID, coverageIds: [],
+        insuredAmount: 1000, currency: 'ARS', exchangeRate: 1,
+        insuredAmountArs: 1000, insuredAmountUsd: 1, companyId: null, costCenterId: null,
+        beneficiaryDescription: null, effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
+        bajaDate: null, bajaReason: null,
+        insuranceType: fakeInsuranceType, company: null, costCenter: null, asset: null,
+        attachments: [], _count: { attachments: 0 },
+      })
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1, effectiveDate: '2026-03-01' })
+
+      expect(res.status).toBe(201)
+      const createCall = db.policyAssetCoverage.create.mock.calls[0][0]
+      expect(createCall.data.effectiveDate).toEqual(new Date('2026-03-01T00:00:00.000Z'))
+    })
+
+    it('returns 400 when effectiveDate is before policy.startDate', async () => {
+      db.policy.findUnique.mockResolvedValue({ startDate: BASE_DATE, endDate: END_DATE })
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1, effectiveDate: '2025-12-31' })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('INVALID_DATE_RANGE')
+      expect(db.policyAssetCoverage.create).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when effectiveDate is after policy.endDate', async () => {
+      db.policy.findUnique.mockResolvedValue({ startDate: BASE_DATE, endDate: END_DATE })
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1, effectiveDate: '2027-01-01' })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('INVALID_DATE_RANGE')
+      expect(db.policyAssetCoverage.create).not.toHaveBeenCalled()
+    })
+
+    it('allows re-alta of the same asset when the previous line already ended before the new effectiveDate', async () => {
+      db.policy.findUnique.mockResolvedValue({ startDate: BASE_DATE, endDate: END_DATE })
+      db.asset.findFirst.mockResolvedValue({ id: ASSET_ID })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+      db.policyAssetCoverage.findMany.mockResolvedValue([
+        { effectiveDate: new Date('2026-01-01T00:00:00.000Z'), bajaDate: new Date('2026-05-01T00:00:00.000Z') },
+      ])
+      db.policyAssetCoverage.create.mockResolvedValue({
+        id: '60000000-0000-0000-0000-000000000003', assetId: ASSET_ID, insuranceTypeId: TYPE_ID, coverageIds: [],
+        insuredAmount: 1000, currency: 'ARS', exchangeRate: 1, insuredAmountArs: 1000, insuredAmountUsd: 1,
+        companyId: null, costCenterId: null, beneficiaryDescription: null,
+        effectiveDate: new Date('2026-06-01T00:00:00.000Z'), bajaDate: null, bajaReason: null,
+        insuranceType: fakeInsuranceType, company: null, costCenter: null, asset: { id: ASSET_ID },
+        attachments: [], _count: { attachments: 0 },
+      })
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ assetId: ASSET_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1, effectiveDate: '2026-06-01' })
+
+      expect(res.status).toBe(201)
+      expect(db.policyAssetCoverage.create).toHaveBeenCalled()
+    })
+
+    it('returns 409 when the new line overlaps an existing active line for the same asset', async () => {
+      db.policy.findUnique.mockResolvedValue({ startDate: BASE_DATE, endDate: END_DATE })
+      db.asset.findFirst.mockResolvedValue({ id: ASSET_ID })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+      db.policyAssetCoverage.findMany.mockResolvedValue([
+        { effectiveDate: new Date('2026-01-01T00:00:00.000Z'), bajaDate: null },
+      ])
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ assetId: ASSET_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1, effectiveDate: '2026-06-01' })
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('COVERAGE_OVERLAP')
+      expect(db.policyAssetCoverage.create).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── PUT /api/v1/policies/:id/coverages/:coverageId ───────────────────────────
+
+  describe('PUT /api/v1/policies/:id/coverages/:coverageId', () => {
+    it('updates fields of an active line', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({
+        id: COVERAGE_ID, assetId: null, effectiveDate: BASE_DATE, bajaDate: null,
+        _count: { attachments: 0 },
+      })
+      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+      db.policyAssetCoverage.update.mockResolvedValue({
+        id: COVERAGE_ID, assetId: null, insuranceTypeId: TYPE_ID, coverageIds: [],
+        insuredAmount: 2000, currency: 'ARS', exchangeRate: 1, insuredAmountArs: 2000, insuredAmountUsd: 2,
+        companyId: null, costCenterId: null, beneficiaryDescription: null,
+        insuranceType: fakeInsuranceType, company: null, costCenter: null, asset: null,
+        attachments: [], _count: { attachments: 0 },
+      })
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ insuranceTypeId: TYPE_ID, insuredAmount: 2000, exchangeRate: 1 })
+
+      expect(res.status).toBe(200)
+      expect(db.policyAssetCoverage.update).toHaveBeenCalled()
+    })
+
+    it('returns 409 when trying to edit a line that is already de baja', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({
+        id: COVERAGE_ID, assetId: null, effectiveDate: BASE_DATE,
+        bajaDate: new Date('2026-06-01T00:00:00.000Z'),
+        _count: { attachments: 0 },
+      })
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ insuranceTypeId: TYPE_ID, insuredAmount: 2000, exchangeRate: 1 })
+
+      expect(res.status).toBe(409)
+      expect(db.policyAssetCoverage.update).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── DELETE /api/v1/policies/:id/coverages/:coverageId ────────────────────────
+
+  describe('DELETE /api/v1/policies/:id/coverages/:coverageId', () => {
+    it('returns 409 when the coverage has attachments', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({ id: COVERAGE_ID, _count: { attachments: 1, allocations: 0 } })
+
+      const res = await request(app)
+        .delete(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('COVERAGE_HAS_ATTACHMENTS')
+      expect(db.policyAssetCoverage.delete).not.toHaveBeenCalled()
+    })
+
+    it('returns 409 when the coverage has allocations', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({ id: COVERAGE_ID, _count: { attachments: 0, allocations: 1 } })
+
+      const res = await request(app)
+        .delete(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('COVERAGE_HAS_ALLOCATIONS')
+      expect(db.policyAssetCoverage.delete).not.toHaveBeenCalled()
+    })
+
+    it('allows physical deletion when the coverage has no attachments nor allocations', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({ id: COVERAGE_ID, _count: { attachments: 0, allocations: 0 } })
+      db.policyAssetCoverage.delete.mockResolvedValue({ id: COVERAGE_ID })
+
+      const res = await request(app)
+        .delete(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.policyAssetCoverage.delete).toHaveBeenCalledWith({ where: { id: COVERAGE_ID } })
+    })
+  })
+
+  // ── POST /api/v1/policies/:id/coverages/:coverageId/de-baja ──────────────────
+
+  describe('POST /api/v1/policies/:id/coverages/:coverageId/de-baja', () => {
+    it('returns 200 with a valid bajaDate and bajaReason', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({
+        id: COVERAGE_ID, effectiveDate: BASE_DATE, bajaDate: null, policy: { endDate: END_DATE },
+      })
+      db.policyAssetCoverage.update.mockResolvedValue({
+        id: COVERAGE_ID, assetId: null, insuranceTypeId: TYPE_ID, coverageIds: [],
+        insuredAmount: 1000, currency: 'ARS', exchangeRate: 1, insuredAmountArs: 1000, insuredAmountUsd: 1,
+        companyId: null, costCenterId: null, beneficiaryDescription: null,
+        effectiveDate: BASE_DATE, bajaDate: new Date('2026-06-15T00:00:00.000Z'), bajaReason: 'Venta del activo',
+        deactivatedAt: new Date(), deactivatedBy: 'admin@test.com',
+        insuranceType: fakeInsuranceType, company: null, costCenter: null, asset: null,
+        attachments: [], _count: { attachments: 0 },
+      })
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ bajaDate: '2026-06-15', bajaReason: 'Venta del activo' })
+
+      expect(res.status).toBe(200)
+      const updateCall = db.policyAssetCoverage.update.mock.calls[0][0]
+      expect(updateCall.data.bajaReason).toBe('Venta del activo')
+      expect(updateCall.data.bajaDate).toEqual(new Date('2026-06-15T00:00:00.000Z'))
+    })
+
+    it('returns 422 when bajaReason is missing', async () => {
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ bajaDate: '2026-06-15' })
+
+      expect(res.status).toBe(422)
+      expect(db.policyAssetCoverage.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when bajaDate is before effectiveDate', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({
+        id: COVERAGE_ID, effectiveDate: new Date('2026-06-01T00:00:00.000Z'), bajaDate: null, policy: { endDate: END_DATE },
+      })
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ bajaDate: '2026-05-01', bajaReason: 'Error de carga' })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('INVALID_DATE_RANGE')
+      expect(db.policyAssetCoverage.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when bajaDate is after policy.endDate', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({
+        id: COVERAGE_ID, effectiveDate: BASE_DATE, bajaDate: null, policy: { endDate: END_DATE },
+      })
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ bajaDate: '2027-01-15', bajaReason: 'Renovación futura' })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('INVALID_DATE_RANGE')
+      expect(db.policyAssetCoverage.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 409 when the line is already deactivated', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({
+        id: COVERAGE_ID, effectiveDate: BASE_DATE, bajaDate: new Date('2026-05-01T00:00:00.000Z'),
+        policy: { endDate: END_DATE },
+      })
+
+      const res = await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ bajaDate: '2026-06-01', bajaReason: 'Intento de doble baja' })
+
+      expect(res.status).toBe(409)
+      expect(db.policyAssetCoverage.update).not.toHaveBeenCalled()
+    })
+
+    it('never touches attachments when deactivating', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({
+        id: COVERAGE_ID, effectiveDate: BASE_DATE, bajaDate: null, policy: { endDate: END_DATE },
+      })
+      db.policyAssetCoverage.update.mockResolvedValue({
+        id: COVERAGE_ID, insuranceType: fakeInsuranceType, coverageIds: [], attachments: [], _count: { attachments: 0 },
+      })
+
+      await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ bajaDate: '2026-06-15', bajaReason: 'Venta' })
+
+      expect(db.policyAttachment.delete).not.toHaveBeenCalled()
+    })
+
+    it('never touches document allocations when deactivating', async () => {
+      db.policyAssetCoverage.findFirst.mockResolvedValue({
+        id: COVERAGE_ID, effectiveDate: BASE_DATE, bajaDate: null, policy: { endDate: END_DATE },
+      })
+      db.policyAssetCoverage.update.mockResolvedValue({
+        id: COVERAGE_ID, insuranceType: fakeInsuranceType, coverageIds: [], attachments: [], _count: { attachments: 0 },
+      })
+
+      await request(app)
+        .post(`/api/v1/policies/${POLICY_ID}/coverages/${COVERAGE_ID}/de-baja`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ bajaDate: '2026-06-15', bajaReason: 'Venta' })
+
+      expect(db.documentPolicyAllocation.deleteMany).not.toHaveBeenCalled()
     })
   })
 

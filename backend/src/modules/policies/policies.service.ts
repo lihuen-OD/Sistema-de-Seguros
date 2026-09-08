@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
@@ -11,9 +12,21 @@ import type {
   UpdatePolicyDTO,
   ReplaceCoveragesDTO,
   PolicyAssetCoverageInputDTO,
+  AddCoverageDTO,
+  UpdateCoverageDTO,
+  DeactivateCoverageDTO,
   ListPoliciesQueryDTO,
   AddPolicyAttachmentDTO,
 } from './policies.schemas'
+
+// Fecha "sin fin" para tratar una línea sin bajaDate como vigente hacia
+// adelante indefinidamente al comparar rangos de vigencia (ver
+// assertNoOverlappingCoverage).
+const OPEN_ENDED = new Date('9999-12-31T00:00:00.000Z')
+
+function isPrismaKnownError(err: unknown, code: string): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === code
+}
 
 const COVERAGE_ASSET_CHANGE_WITH_ATTACHMENTS_MESSAGE =
   'No se puede cambiar el activo de esta cobertura porque ya tiene adjuntos cargados. Para cambiar el activo, eliminá primero los adjuntos de esta cobertura o creá una nueva línea de cobertura.'
@@ -194,11 +207,88 @@ async function resolveCoverageInput(input: PolicyAssetCoverageInputDTO) {
   }
 }
 
+// Usado por create() y replaceCoverages() — alcanza para evitar duplicados
+// dentro de una misma póliza nueva sin un chequeo de solapamiento aparte:
+// create() solo puede generar líneas con bajaDate null (no hay forma de
+// mandar bajaDate al crear una póliza), así que dos líneas del mismo activo
+// en la misma alta siempre chocan también contra el índice único parcial de
+// Fase 1 (bajaDate IS NULL) — y como la póliza es nueva, no puede haber
+// ninguna línea previa con baja futura contra la cual solapar. El gap real
+// de solapamiento (línea existente con baja a futuro) solo puede darse
+// contra líneas YA persistidas, algo que create() nunca tiene.
 function assertNoDuplicateAssets(coverages: PolicyAssetCoverageInputDTO[]) {
   const assetIds = coverages.map((c) => c.assetId).filter((id): id is string => !!id)
   if (new Set(assetIds).size !== assetIds.length) {
     throw new AppError(400, 'Un mismo activo no puede repetirse en la misma póliza', 'INVALID_REFERENCE')
   }
+}
+
+// ── Ciclo de vida de la línea de cobertura (Fase 2) ──────────────────────────
+
+function assertEffectiveDateWithinPolicy(effectiveDate: Date, policy: { startDate: Date; endDate: Date }) {
+  if (effectiveDate < policy.startDate || effectiveDate > policy.endDate) {
+    throw new AppError(
+      400,
+      'La fecha de alta debe estar dentro de la vigencia de la póliza',
+      'INVALID_DATE_RANGE',
+    )
+  }
+}
+
+function assertBajaDateValid(bajaDate: Date, effectiveDate: Date, policyEndDate: Date) {
+  if (bajaDate < effectiveDate) {
+    throw new AppError(400, 'La fecha de baja no puede ser anterior a la fecha de alta', 'INVALID_DATE_RANGE')
+  }
+  if (bajaDate > policyEndDate) {
+    throw new AppError(400, 'La fecha de baja no puede ser posterior al vencimiento de la póliza', 'INVALID_DATE_RANGE')
+  }
+}
+
+// Comparación pura de rangos — separada de assertNoOverlappingCoverage para
+// poder reusarla en replaceCoverages sobre datos ya traídos en memoria (la
+// lista `existing`), sin pagar una query de más por cada línea nueva.
+function assertRangeNotOverlapping(
+  effectiveDate: Date,
+  bajaDate: Date | null,
+  siblings: { effectiveDate: Date; bajaDate: Date | null }[],
+) {
+  const newEnd = bajaDate ?? OPEN_ENDED
+  const overlaps = siblings.some((s) => {
+    const siblingEnd = s.bajaDate ?? OPEN_ENDED
+    return s.effectiveDate <= newEnd && effectiveDate <= siblingEnd
+  })
+
+  if (overlaps) {
+    throw new AppError(
+      409,
+      'Ya existe otra línea de este activo en esta póliza cuya vigencia se superpone con las fechas indicadas',
+      'COVERAGE_OVERLAP',
+    )
+  }
+}
+
+// Dos líneas del mismo activo en la misma póliza no pueden tener vigencias
+// solapadas — bajaDate null se trata como "sin fin" (OPEN_ENDED). Cubre tanto
+// el caso simple (otra línea sigue activa) como el de baja programada a
+// futuro, que el índice único parcial de Fase 1 (solo bajaDate IS NULL) no
+// alcanza a bloquear por sí solo.
+async function assertNoOverlappingCoverage(
+  policyId: string,
+  assetId: string,
+  effectiveDate: Date,
+  bajaDate: Date | null,
+  excludeCoverageId?: string,
+) {
+  const siblings = await prisma.policyAssetCoverage.findMany({
+    where: {
+      policyId,
+      assetId,
+      ...(excludeCoverageId && { id: { not: excludeCoverageId } }),
+    },
+    select: { effectiveDate: true, bajaDate: true },
+  })
+
+  assertRangeNotOverlapping(effectiveDate, bajaDate, siblings)
 }
 
 export const policiesService = {
@@ -431,7 +521,10 @@ export const policiesService = {
 
     const existing = await prisma.policyAssetCoverage.findMany({
       where: { policyId },
-      select: { id: true, assetId: true, _count: { select: { attachments: true } } },
+      select: {
+        id: true, assetId: true, effectiveDate: true, bajaDate: true,
+        _count: { select: { attachments: true, allocations: true } },
+      },
     })
     const existingIds = new Set(existing.map((c) => c.id))
     const existingById = new Map(existing.map((c) => [c.id, c]))
@@ -450,20 +543,195 @@ export const policiesService = {
     const incomingIds = new Set(data.coverages.filter((c) => c.id).map((c) => c.id as string))
     const toDeleteIds = [...existingIds].filter((id) => !incomingIds.has(id))
 
+    // Una línea persistida que sale del array solo se puede borrar
+    // físicamente acá si no tiene historial — si ya tiene adjuntos o
+    // asignaciones de documentos, hay que darla de baja explícitamente
+    // (POST .../de-baja), nunca sacarla en silencio de un PUT masivo.
+    const blockedDeletion = toDeleteIds
+      .map((id) => existingById.get(id)!)
+      .find((c) => c._count.attachments > 0 || c._count.allocations > 0)
+    if (blockedDeletion) {
+      throw new AppError(
+        409,
+        'No se puede quitar una línea de cobertura que ya tiene adjuntos o documentos asociados. Dala de baja en lugar de eliminarla.',
+        'COVERAGE_HAS_HISTORY',
+      )
+    }
+
+    // Una línea NUEVA (sin id) que elige un activo no puede solaparse en el
+    // tiempo con NINGUNA línea existente de ese mismo activo — incluidas las
+    // que este mismo request va a borrar más abajo (toDeleteIds): si esa
+    // línea ya tiene una baja formal (bajaDate/bajaReason reales, aunque sea
+    // a futuro), un PUT masivo no puede pisarla en silencio con un
+    // delete+create. Mismo chequeo que addCoverage, pero en memoria sobre
+    // `existing` (ya traído arriba) en vez de una query nueva por línea.
+    for (const c of data.coverages) {
+      if (!c.id && c.assetId) {
+        const siblings = existing
+          .filter((e) => e.assetId === c.assetId)
+          .map((e) => ({ effectiveDate: e.effectiveDate, bajaDate: e.bajaDate }))
+        assertRangeNotOverlapping(policy.startDate, null, siblings)
+      }
+    }
+
     const resolved = await Promise.all(
       data.coverages.map(async (c) => ({ id: c.id, ...(await resolveCoverageInput(c)) })),
     )
 
-    await prisma.$transaction([
-      ...(toDeleteIds.length > 0 ? [prisma.policyAssetCoverage.deleteMany({ where: { id: { in: toDeleteIds } } })] : []),
-      ...resolved.map(({ id: lineId, ...rest }) =>
-        lineId
-          ? prisma.policyAssetCoverage.update({ where: { id: lineId }, data: rest })
-          : prisma.policyAssetCoverage.create({ data: { ...rest, policyId, effectiveDate: policy.startDate } }),
-      ),
-    ])
+    try {
+      await prisma.$transaction([
+        ...(toDeleteIds.length > 0 ? [prisma.policyAssetCoverage.deleteMany({ where: { id: { in: toDeleteIds } } })] : []),
+        ...resolved.map(({ id: lineId, ...rest }) =>
+          lineId
+            ? prisma.policyAssetCoverage.update({ where: { id: lineId }, data: rest })
+            : prisma.policyAssetCoverage.create({ data: { ...rest, policyId, effectiveDate: policy.startDate } }),
+        ),
+      ])
+    } catch (err) {
+      if (isPrismaKnownError(err, 'P2002') || isPrismaKnownError(err, 'P2003')) {
+        throw new AppError(
+          409,
+          'No se pudo guardar la póliza: alguna línea de cobertura quedó en conflicto con datos existentes',
+          'CONFLICT',
+        )
+      }
+      throw err
+    }
 
     return this.findCoverages(policyId)
+  },
+
+  // Alta explícita de una línea nueva, con fecha de alta elegida por quien la
+  // carga (a diferencia de create()/replaceCoverages(), que siguen
+  // completando effectiveDate con policy.startDate por compatibilidad con el
+  // frontend viejo).
+  async addCoverage(policyId: string, data: AddCoverageDTO) {
+    const policy = await prisma.policy.findUnique({ where: { id: policyId }, select: { startDate: true, endDate: true } })
+    if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
+
+    assertEffectiveDateWithinPolicy(data.effectiveDate, policy)
+
+    const resolved = await resolveCoverageInput(data)
+
+    if (resolved.assetId) {
+      await assertNoOverlappingCoverage(policyId, resolved.assetId, data.effectiveDate, null)
+    }
+
+    try {
+      const created = await prisma.policyAssetCoverage.create({
+        data: { ...resolved, policyId, effectiveDate: data.effectiveDate },
+        include: COVERAGE_DETAIL_INCLUDE,
+      })
+      return withSelectedCoverages(created)
+    } catch (err) {
+      if (isPrismaKnownError(err, 'P2002')) {
+        throw new AppError(409, 'Ya existe una línea activa para este activo en esta póliza', 'CONFLICT')
+      }
+      throw err
+    }
+  },
+
+  // Baja histórica — nunca borra la línea, sus adjuntos ni sus asignaciones
+  // de documentos. Queda marcada con bajaDate/bajaReason (fecha y motivo de
+  // negocio) y deactivatedAt/deactivatedBy (auditoría de cuándo/quién
+  // ejecutó la acción).
+  async deactivateCoverage(policyId: string, coverageId: string, data: DeactivateCoverageDTO, performedBy: string) {
+    const coverage = await prisma.policyAssetCoverage.findFirst({
+      where: { id: coverageId, policyId },
+      select: { id: true, effectiveDate: true, bajaDate: true, policy: { select: { endDate: true } } },
+    })
+    if (!coverage) throw new AppError(404, 'Línea de cobertura no encontrada', 'NOT_FOUND')
+    if (coverage.bajaDate) throw new AppError(409, 'La línea ya está dada de baja', 'CONFLICT')
+
+    assertBajaDateValid(data.bajaDate, coverage.effectiveDate, coverage.policy.endDate)
+
+    const updated = await prisma.policyAssetCoverage.update({
+      where: { id: coverageId },
+      data: {
+        bajaDate: data.bajaDate,
+        bajaReason: data.bajaReason,
+        deactivatedAt: new Date(),
+        deactivatedBy: performedBy,
+      },
+      include: COVERAGE_DETAIL_INCLUDE,
+    })
+    return withSelectedCoverages(updated)
+  },
+
+  // Edita los datos propios de una línea ACTIVA (monto, tipo de seguro,
+  // coberturas, activo, imputación) — nunca toca effectiveDate/bajaDate, eso
+  // es acción exclusiva de alta/baja. Una línea ya dada de baja queda
+  // congelada: no se edita para no alterar su historial.
+  async updateCoverage(policyId: string, coverageId: string, data: UpdateCoverageDTO) {
+    const existing = await prisma.policyAssetCoverage.findFirst({
+      where: { id: coverageId, policyId },
+      select: {
+        id: true, assetId: true, effectiveDate: true, bajaDate: true,
+        _count: { select: { attachments: true } },
+      },
+    })
+    if (!existing) throw new AppError(404, 'Línea de cobertura no encontrada', 'NOT_FOUND')
+    if (existing.bajaDate) throw new AppError(409, 'No se puede editar una línea dada de baja', 'CONFLICT')
+
+    const resolved = await resolveCoverageInput(data)
+
+    if (existing.assetId !== resolved.assetId) {
+      if (existing._count.attachments > 0) {
+        throw new AppError(409, COVERAGE_ASSET_CHANGE_WITH_ATTACHMENTS_MESSAGE, 'COVERAGE_ASSET_CHANGE_BLOCKED')
+      }
+      if (resolved.assetId) {
+        await assertNoOverlappingCoverage(policyId, resolved.assetId, existing.effectiveDate, existing.bajaDate, coverageId)
+      }
+    }
+
+    try {
+      const updated = await prisma.policyAssetCoverage.update({
+        where: { id: coverageId },
+        data: resolved,
+        include: COVERAGE_DETAIL_INCLUDE,
+      })
+      return withSelectedCoverages(updated)
+    } catch (err) {
+      if (isPrismaKnownError(err, 'P2002')) {
+        throw new AppError(409, 'Ya existe una línea activa para este activo en esta póliza', 'CONFLICT')
+      }
+      throw err
+    }
+  },
+
+  // Borrado físico real — reservado para corregir un alta cargada por error,
+  // nunca para dar de baja una línea con historial (para eso existe
+  // deactivateCoverage). Solo se permite si no tiene adjuntos ni
+  // asignaciones de documentos.
+  async deleteCoveragePhysical(policyId: string, coverageId: string) {
+    const coverage = await prisma.policyAssetCoverage.findFirst({
+      where: { id: coverageId, policyId },
+      select: { id: true, _count: { select: { attachments: true, allocations: true } } },
+    })
+    if (!coverage) throw new AppError(404, 'Línea de cobertura no encontrada', 'NOT_FOUND')
+    if (coverage._count.attachments > 0) {
+      throw new AppError(
+        409,
+        'No se puede eliminar una línea que tiene adjuntos cargados. Usá la acción de dar de baja en su lugar.',
+        'COVERAGE_HAS_ATTACHMENTS',
+      )
+    }
+    if (coverage._count.allocations > 0) {
+      throw new AppError(
+        409,
+        'No se puede eliminar una línea que ya tiene documentos asociados. Usá la acción de dar de baja en su lugar.',
+        'COVERAGE_HAS_ALLOCATIONS',
+      )
+    }
+
+    try {
+      await prisma.policyAssetCoverage.delete({ where: { id: coverageId } })
+    } catch (err) {
+      if (isPrismaKnownError(err, 'P2003')) {
+        throw new AppError(409, 'No se puede eliminar la línea porque tiene datos relacionados', 'CONFLICT')
+      }
+      throw err
+    }
   },
 
   // ── Attachments (por línea de cobertura) ─────────────────────────────────────

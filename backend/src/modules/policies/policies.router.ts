@@ -7,6 +7,9 @@ import {
   CreatePolicySchema,
   UpdatePolicySchema,
   ReplaceCoveragesSchema,
+  AddCoverageSchema,
+  UpdateCoverageSchema,
+  DeactivateCoverageSchema,
   AddPolicyAttachmentSchema,
   ListPoliciesQuerySchema,
 } from './policies.schemas'
@@ -44,6 +47,31 @@ policiesRouter.put(
   requireModule('policies'),
   validate(ReplaceCoveragesSchema),
   policiesController.replaceCoverages,
+)
+
+// Alta/edición/baja explícita de una línea puntual (Fase 2 de historización)
+policiesRouter.post(
+  '/:id/coverages',
+  requireModule('policies'),
+  validate(AddCoverageSchema),
+  policiesController.addCoverage,
+)
+policiesRouter.put(
+  '/:id/coverages/:coverageId',
+  requireModule('policies'),
+  validate(UpdateCoverageSchema),
+  policiesController.updateCoverage,
+)
+policiesRouter.delete(
+  '/:id/coverages/:coverageId',
+  requireModule('policies'),
+  policiesController.deleteCoverage,
+)
+policiesRouter.post(
+  '/:id/coverages/:coverageId/de-baja',
+  requireModule('policies'),
+  validate(DeactivateCoverageSchema),
+  policiesController.deactivateCoverage,
 )
 
 // Attachments — por línea de cobertura, no por póliza (una póliza de flota
