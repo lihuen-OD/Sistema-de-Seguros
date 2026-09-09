@@ -1,4 +1,4 @@
-import { CalendarClock, Eye, EyeOff, FileSpreadsheet, History, RotateCcw, TrendingUp } from 'lucide-react'
+import { CalendarClock, Eye, EyeOff, FileSpreadsheet, History, RotateCcw, TrendingUp, AlertTriangle } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -44,6 +44,7 @@ export function RenewalProjectionLayout({
   rows,
   axis,
   lastRealMonthKey,
+  maxMonthKey,
   horizonEndMonthKey,
   kpis,
   projectedDisplay,
@@ -51,12 +52,22 @@ export function RenewalProjectionLayout({
   handleResetRow,
   handleResetAll,
   handleExportExcel,
+  filteredAbsurdDates,
 }: RenewalProjectionLayoutProps) {
   if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>
       <PageHeader title={title} subtitle={subtitle} />
+
+      {filteredAbsurdDates > 0 && (
+        <div className="mb-4 flex items-start gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg">
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+          <span>
+            Se ignoraron {filteredAbsurdDates} registro{filteredAbsurdDates !== 1 ? 's' : ''} con fechas fuera de rango esperado (mayor a {new Date().getFullYear() + 10}). Los datos históricos normales no se afectaron.
+          </span>
+        </div>
+      )}
 
       <MetricGrid cols={3} className="mb-6">
         <KpiCard
@@ -109,6 +120,7 @@ export function RenewalProjectionLayout({
             horizonYears={horizonYears}
             customEndMonthKey={customEnd}
             lastRealMonthKey={lastRealMonthKey}
+            maxMonthKey={maxMonthKey}
             onSelectPreset={(years) => {
               setHorizonYears(years)
               setCustomEnd(null)

@@ -18,7 +18,7 @@ import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
 import { formatCurrencyFull } from '../../../../shared/utils/format'
-import { isFutureDate } from '../../../../shared/utils/dateValidation'
+import { isFutureDate, isReasonableDate } from '../../../../shared/utils/dateValidation'
 import type { AccountingDocument, AdjustmentSign, DocumentType, Currency } from '../../../../shared/types'
 
 const ADJUSTABLE_TYPES: DocumentType[] = ['INVOICE', 'DEBIT_NOTE', 'CREDIT_NOTE', 'ENDORSEMENT']
@@ -104,6 +104,7 @@ export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsie
     if (!form.insuranceCompany) next.insuranceCompany = 'Requerido'
     if (!form.documentNumber.trim()) next.documentNumber = 'Requerido'
     if (!form.issueDate) next.issueDate = 'Requerido'
+    else if (!isReasonableDate(form.issueDate)) next.issueDate = 'La fecha de emisión no es válida (mínimo 1900, máximo 10 años en el futuro)'
     if (!form.linkedDocumentId) next.linkedDocumentId = 'El documento a ajustar es requerido'
     else if (!linkedDocument?.paymentMethod) {
       next.linkedDocumentId = 'El documento asociado no tiene forma de pago'

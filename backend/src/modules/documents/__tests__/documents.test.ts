@@ -46,6 +46,7 @@ jest.mock('../../../config/database', () => ({
       deleteMany: jest.fn(),
     },
     policy: { findMany: jest.fn() },
+    policyAssetCoverage: { findMany: jest.fn() },
     $transaction: jest.fn(),
   },
 }))
@@ -773,6 +774,212 @@ describe('Documents API', () => {
       expect(res.status).toBe(201)
       const createCall = db.accountingDocument.create.mock.calls[0][0]
       expect(createCall.data.documentStatus).toBe('ISSUED')
+    })
+  })
+
+  // ── Coverage validity — vigencia por fecha de emisión (Fase 4) ──────────────
+  // Una línea de PolicyAssetCoverage solo puede asignarse a un documento si
+  // effectiveDate <= issueDate && (bajaDate es null || bajaDate >= issueDate),
+  // salvo que ya estuviera asignada al documento (histórica) — ver
+  // validateCoverageRefs en documents.service.ts.
+  describe('Coverage validity — vigencia por fecha de emisión (Fase 4)', () => {
+    const COVERAGE_ID = '30000000-0000-0000-0000-000000000001'
+    const NEW_COVERAGE_ID = '30000000-0000-0000-0000-000000000002'
+    const HIST_COVERAGE_ID = '30000000-0000-0000-0000-000000000003'
+
+    describe('POST /api/v1/documents (create)', () => {
+      it('creates a document with a coverage line active on issueDate', async () => {
+        db.accountingDocument.findUnique.mockResolvedValue(null)
+        db.accountingDocument.create.mockResolvedValue(fakeDocument)
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: COVERAGE_ID, effectiveDate: new Date('2025-06-01'), bajaDate: null },
+        ])
+
+        const res = await request(app)
+          .post('/api/v1/documents')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            ...validDocumentBody,
+            allocations: [{ policyAssetCoverageId: COVERAGE_ID, allocatedAmount: 1260, allocationPercentage: 100 }],
+          })
+
+        expect(res.status).toBe(201)
+      })
+
+      it('rejects a coverage line whose bajaDate is before issueDate', async () => {
+        db.accountingDocument.findUnique.mockResolvedValue(null)
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2025-12-31') },
+        ])
+
+        const res = await request(app)
+          .post('/api/v1/documents')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            ...validDocumentBody, // issueDate: '2026-01-01'
+            allocations: [{ policyAssetCoverageId: COVERAGE_ID, allocatedAmount: 1260, allocationPercentage: 100 }],
+          })
+
+        expect(res.status).toBe(400)
+        expect(res.body.error.code).toBe('COVERAGE_NOT_ACTIVE')
+        expect(res.body.error.message).toBe('La cobertura no estaba vigente para la fecha del documento.')
+        expect(db.accountingDocument.create).not.toHaveBeenCalled()
+      })
+
+      it('rejects a coverage line whose effectiveDate is after issueDate', async () => {
+        db.accountingDocument.findUnique.mockResolvedValue(null)
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: COVERAGE_ID, effectiveDate: new Date('2026-06-01'), bajaDate: null },
+        ])
+
+        const res = await request(app)
+          .post('/api/v1/documents')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            ...validDocumentBody, // issueDate: '2026-01-01'
+            allocations: [{ policyAssetCoverageId: COVERAGE_ID, allocatedAmount: 1260, allocationPercentage: 100 }],
+          })
+
+        expect(res.status).toBe(400)
+        expect(res.body.error.code).toBe('COVERAGE_NOT_ACTIVE')
+        expect(db.accountingDocument.create).not.toHaveBeenCalled()
+      })
+
+      it('accepts a coverage line whose bajaDate equals issueDate (inclusive boundary)', async () => {
+        db.accountingDocument.findUnique.mockResolvedValue(null)
+        db.accountingDocument.create.mockResolvedValue(fakeDocument)
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2026-01-01') },
+        ])
+
+        const res = await request(app)
+          .post('/api/v1/documents')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            ...validDocumentBody, // issueDate: '2026-01-01'
+            allocations: [{ policyAssetCoverageId: COVERAGE_ID, allocatedAmount: 1260, allocationPercentage: 100 }],
+          })
+
+        expect(res.status).toBe(201)
+      })
+
+      it('accepts a coverage line whose effectiveDate equals issueDate (inclusive boundary)', async () => {
+        db.accountingDocument.findUnique.mockResolvedValue(null)
+        db.accountingDocument.create.mockResolvedValue(fakeDocument)
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: COVERAGE_ID, effectiveDate: new Date('2026-01-01'), bajaDate: null },
+        ])
+
+        const res = await request(app)
+          .post('/api/v1/documents')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            ...validDocumentBody, // issueDate: '2026-01-01'
+            allocations: [{ policyAssetCoverageId: COVERAGE_ID, allocatedAmount: 1260, allocationPercentage: 100 }],
+          })
+
+        expect(res.status).toBe(201)
+      })
+
+      it('applies the same rule to an ENDORSEMENT create with allocations', async () => {
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: COVERAGE_ID, effectiveDate: new Date('2026-06-01'), bajaDate: null },
+        ])
+
+        const res = await request(app)
+          .post('/api/v1/documents')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            ...validDocumentBody, // issueDate: '2026-01-01'
+            documentType: 'ENDORSEMENT',
+            documentNumber: 'END-900',
+            allocations: [{ policyAssetCoverageId: COVERAGE_ID, allocatedAmount: 1260, allocationPercentage: 100 }],
+          })
+
+        expect(res.status).toBe(400)
+        expect(res.body.error.code).toBe('COVERAGE_NOT_ACTIVE')
+      })
+    })
+
+    describe('PUT /api/v1/documents/:id (update, sin tocar allocations)', () => {
+      it('does not fail when the document has an allocation whose coverage is now de baja', async () => {
+        // update() nunca toca allocations (las descarta del body) — no debe
+        // ni siquiera consultar policyAssetCoverage.
+        db.accountingDocument.findUnique.mockResolvedValue(fakeDocument)
+        db.accountingDocument.update.mockResolvedValue({
+          ...fakeDocument,
+          netAmount: 2000,
+          installments: [],
+          allocations: [],
+          attachments: [],
+        })
+
+        const res = await request(app)
+          .put(`/api/v1/documents/${DOC_ID}`)
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({ netAmount: 2000 })
+
+        expect(res.status).toBe(200)
+        expect(db.policyAssetCoverage.findMany).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('PUT /api/v1/documents/:id/allocations (replaceAllocations)', () => {
+      it('rejects adding a new out-of-date line alongside a historical one', async () => {
+        db.accountingDocument.findUnique.mockResolvedValue(fakeDocument) // issueDate 2026-01-01
+        db.documentPolicyAllocation.findMany.mockResolvedValueOnce([
+          { policyAssetCoverageId: HIST_COVERAGE_ID },
+        ])
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: HIST_COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2025-06-01') },
+          { id: NEW_COVERAGE_ID, effectiveDate: new Date('2026-06-01'), bajaDate: null },
+        ])
+
+        const res = await request(app)
+          .put(`/api/v1/documents/${DOC_ID}/allocations`)
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            allocations: [
+              { policyAssetCoverageId: HIST_COVERAGE_ID, allocatedAmount: 630, allocationPercentage: 50 },
+              { policyAssetCoverageId: NEW_COVERAGE_ID, allocatedAmount: 630, allocationPercentage: 50 },
+            ],
+          })
+
+        expect(res.status).toBe(400)
+        expect(res.body.error.code).toBe('COVERAGE_NOT_ACTIVE')
+        expect(db.documentPolicyAllocation.deleteMany).not.toHaveBeenCalled()
+      })
+
+      it('keeps a historical coverage line that is today de baja', async () => {
+        db.accountingDocument.findUnique.mockResolvedValue(fakeDocument) // issueDate 2026-01-01
+        db.documentPolicyAllocation.findMany
+          .mockResolvedValueOnce([{ policyAssetCoverageId: HIST_COVERAGE_ID }]) // chequeo de exención
+          .mockResolvedValueOnce([
+            {
+              id: INST_ID,
+              accountingDocumentId: DOC_ID,
+              policyAssetCoverageId: HIST_COVERAGE_ID,
+              allocatedAmount: 1260,
+              allocationPercentage: 100,
+              policyAssetCoverage: { policyId: POLICY_ID, assetId: null },
+            },
+          ]) // lectura post-reemplazo
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: HIST_COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2025-06-01') },
+        ])
+        db.documentPolicyAllocation.deleteMany.mockResolvedValue({ count: 1 })
+        db.documentPolicyAllocation.createMany.mockResolvedValue({ count: 1 })
+
+        const res = await request(app)
+          .put(`/api/v1/documents/${DOC_ID}/allocations`)
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            allocations: [{ policyAssetCoverageId: HIST_COVERAGE_ID, allocatedAmount: 1260, allocationPercentage: 100 }],
+          })
+
+        expect(res.status).toBe(200)
+        expect(db.documentPolicyAllocation.deleteMany).toHaveBeenCalled()
+      })
     })
   })
 

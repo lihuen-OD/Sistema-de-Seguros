@@ -2,10 +2,14 @@ import { z } from 'zod'
 import { PaginationSchema } from '../../shared/schemas/common'
 import { EmailRecipientsSchema } from '../email/email.schemas'
 import { isValidDocumentType } from './document-types'
+import { isReasonableDate } from '../../shared/utils/dates'
 
 const ISODate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido. Usar YYYY-MM-DD')
+  .refine((s) => isReasonableDate(s), {
+    message: 'La fecha está fuera del rango permitido (mínimo 1900, máximo 10 años en el futuro)',
+  })
   .transform((s) => new Date(s + 'T00:00:00.000Z'))
 
 const InstallmentInputSchema = z.object({

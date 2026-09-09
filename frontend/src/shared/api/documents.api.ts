@@ -208,7 +208,7 @@ export const documentsApi = {
     const res = await apiClient.get<{ data: (Omit<BackendDocument, 'allocations'> & {
       installments: BackendInstallment[]
       allocations: BackendAllocation[]
-    })[] }>('/documents/financial', { params })
+    })[] }>('/documents/financial', { params, timeout: 60_000 })
     return res.data.data.map((b) => ({
       ...mapDocument(b),
       installments: b.installments.map((i) => ({

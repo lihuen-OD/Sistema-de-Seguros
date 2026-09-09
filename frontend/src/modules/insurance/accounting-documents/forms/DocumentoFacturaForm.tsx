@@ -18,7 +18,7 @@ import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
 import { formatCurrencyFull } from '../../../../shared/utils/format'
-import { isFutureDate } from '../../../../shared/utils/dateValidation'
+import { isFutureDate, isReasonableDate } from '../../../../shared/utils/dateValidation'
 import { CURRENCY_OPTIONS } from '../../../../shared/constants'
 import type { AccountingDocument, Currency, Policy } from '../../../../shared/types'
 
@@ -220,6 +220,7 @@ function DocumentoFacturaFormBody({ initialDoc, sourcePolicy }: DocumentoFactura
     if (!form.insuranceCompany) next.insuranceCompany = 'Requerido'
     if (!form.documentNumber.trim()) next.documentNumber = 'Requerido'
     if (!form.issueDate) next.issueDate = 'Requerido'
+    else if (!isReasonableDate(form.issueDate)) next.issueDate = 'La fecha de emisión no es válida (mínimo 1900, máximo 10 años en el futuro)'
     if (!form.currency) next.currency = 'Requerido'
     if (!form.exchangeRate || parseFloat(form.exchangeRate) <= 0) next.exchangeRate = 'Requerido'
     if (!form.paymentMethod) next.paymentMethod = 'Requerido'
@@ -461,6 +462,8 @@ function DocumentoFacturaFormBody({ initialDoc, sourcePolicy }: DocumentoFactura
             onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
             currency={form.currency || 'ARS'}
             documentTotal={computedTotal}
+            issueDate={form.issueDate}
+            historicalCoverageIds={existingAllocations.map((a) => a.policyAssetCoverageId)}
             emptyMessage={!form.insuranceCompany ? 'Seleccioná una compañía aseguradora para ver sus pólizas.' : `No hay pólizas para ${form.insuranceCompany}.`}
           />
         </SectionCard>
@@ -495,8 +498,8 @@ function DocumentoFacturaFormBody({ initialDoc, sourcePolicy }: DocumentoFactura
       {emailModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => emailStatus !== 'sending' && setEmailModalOpen(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg max-h-[calc(100vh-2rem)] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center">
                   <Mail size={16} className="text-brand-600" />
@@ -532,7 +535,7 @@ function DocumentoFacturaFormBody({ initialDoc, sourcePolicy }: DocumentoFactura
                 </button>
               </div>
             ) : (
-              <div className="px-6 py-5 space-y-4">
+              <div className="px-6 py-5 space-y-4 overflow-y-auto min-h-0">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-medium text-slate-600">Para <span className="text-red-500">*</span></label>
@@ -608,7 +611,7 @@ function DocumentoFacturaFormBody({ initialDoc, sourcePolicy }: DocumentoFactura
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex items-center gap-2 pt-1 shrink-0 border-t border-slate-100 mt-2">
                   <button type="button" onClick={handleSendEmail} disabled={emailTo.length === 0 || emailStatus === 'sending'}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                     <Mail size={14} /> {emailStatus === 'sending' ? 'Enviando…' : 'Enviar'}

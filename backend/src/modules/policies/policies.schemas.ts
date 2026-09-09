@@ -50,6 +50,25 @@ export const ReplaceCoveragesSchema = z.object({
   coverages: z.array(PolicyAssetCoverageInputSchema).min(1, 'Agregá al menos una línea de cobertura'),
 })
 
+// Alta de una línea nueva — a diferencia de PolicyAssetCoverageInputSchema
+// (usado por create()/replaceCoverages(), que todavía no piden fecha de alta
+// y la completan con policy.startDate por compatibilidad), acá effectiveDate
+// es obligatorio y lo elige quien da de alta la línea. No tiene `id` porque
+// siempre crea una fila nueva.
+export const AddCoverageSchema = PolicyAssetCoverageInputSchema.omit({ id: true }).extend({
+  effectiveDate: ISODate,
+})
+
+// Edición de campos de una línea ya existente (monto, tipo de seguro,
+// coberturas, etc.) — nunca toca effectiveDate/bajaDate, eso es acción
+// exclusiva de alta/baja.
+export const UpdateCoverageSchema = PolicyAssetCoverageInputSchema.omit({ id: true })
+
+export const DeactivateCoverageSchema = z.object({
+  bajaDate: ISODate,
+  bajaReason: z.string().min(1, 'El motivo de baja es obligatorio').max(1000),
+})
+
 export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
   search: z.string().optional(),
   status: z.enum(['vigente', 'proxima_a_vencer', 'vencida', 'de_baja']).optional(),
@@ -76,5 +95,8 @@ export type PolicyAssetCoverageInputDTO = z.infer<typeof PolicyAssetCoverageInpu
 export type CreatePolicyDTO = z.infer<typeof CreatePolicySchema>
 export type UpdatePolicyDTO = z.infer<typeof UpdatePolicySchema>
 export type ReplaceCoveragesDTO = z.infer<typeof ReplaceCoveragesSchema>
+export type AddCoverageDTO = z.infer<typeof AddCoverageSchema>
+export type UpdateCoverageDTO = z.infer<typeof UpdateCoverageSchema>
+export type DeactivateCoverageDTO = z.infer<typeof DeactivateCoverageSchema>
 export type ListPoliciesQueryDTO = z.infer<typeof ListPoliciesQuerySchema>
 export type AddPolicyAttachmentDTO = z.infer<typeof AddPolicyAttachmentSchema>

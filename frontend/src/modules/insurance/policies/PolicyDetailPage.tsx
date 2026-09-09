@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Building2, User, Calendar, Hash, Link2,
   Plus, ChevronDown, ChevronUp, ArrowUpRight, Archive,
-  Paperclip, IdCard,
+  Paperclip, IdCard, ShieldOff, Clock, History,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -22,6 +22,9 @@ import {
   formatPercent,
   formatDate,
   daysUntil,
+  // Alias: esta página ya tiene un `isExpired` local (si la póliza entera
+  // venció) — este es el de shared/utils/format.ts, para líneas de cobertura.
+  isExpired as isCoverageBajaEffective,
 } from '../../../shared/utils/format'
 import {
   computePolicyInvoicedTotal,
@@ -35,10 +38,11 @@ import { documentsApi, documentKeys, documentQueries } from '../../../shared/api
 import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
+import { DeactivateCoverageModal } from './DeactivateCoverageModal'
 import { FacturaCard } from './components/FacturaCard'
 import { StandaloneDocCard } from './components/StandaloneDocCard'
 import { EndorsementCard } from './components/EndorsementCard'
-import type { AccountingDocument, Installment, InstallmentUpdate, ProducerTask, TableColumn } from '../../../shared/types'
+import type { AccountingDocument, Installment, InstallmentUpdate, PolicyCoverage, ProducerTask, TableColumn } from '../../../shared/types'
 
 // Orden por severidad/ciclo de vida al ordenar las columnas "Prioridad" y
 // "Estado" de la tabla de tareas — alfabético dejaría, por ejemplo, "alta"
@@ -112,6 +116,11 @@ export default function PolicyDetailPage() {
   // Línea de cobertura con el desglose de documentos abierto — una sola a la
   // vez, mismo criterio que el resto de los acordeones de esta página.
   const [expandedCoverageId, setExpandedCoverageId] = useState<string | null>(null)
+  // Línea de cobertura sobre la que se abrió el modal de baja histórica.
+  const [deactivateTarget, setDeactivateTarget] = useState<PolicyCoverage | null>(null)
+  // "Activos dados de baja" arranca colapsada si hay líneas — igual queda
+  // accesible con un clic, no oculta información.
+  const [showDeBajaCoverages, setShowDeBajaCoverages] = useState(false)
 
   const handleDeBaja = async () => {
     await policiesApi.markAsDeBaja(id!)
@@ -143,6 +152,11 @@ export default function PolicyDetailPage() {
 
   const producer = producers.find((p) => p.id === policy.producerId) ?? null
   const coverages = policy.coverages ?? []
+  // Vigente hoy: sin baja, o con baja programada a futuro (bajaDate >= hoy).
+  // Dado de baja: baja ya efectiva (bajaDate < hoy) — nunca se borra, solo
+  // se historiza (ver PolicyAssetCoverage.bajaDate).
+  const vigentCoverages = coverages.filter((c) => !c.bajaDate || !isCoverageBajaEffective(c.bajaDate))
+  const deBajaCoverages = coverages.filter((c) => c.bajaDate && isCoverageBajaEffective(c.bajaDate))
 
   const documents = allDocuments.filter((d) => d.policyIds.includes(id!))
 
@@ -330,6 +344,16 @@ export default function PolicyDetailPage() {
         onCancel={() => setShowDeBajaConfirm(false)}
       />
 
+      {deactivateTarget && (
+        <DeactivateCoverageModal
+          policyId={policy.id}
+          policyEndDate={policy.endDate}
+          coverage={deactivateTarget}
+          onClose={() => setDeactivateTarget(null)}
+          onSuccess={() => setDeactivateTarget(null)}
+        />
+      )}
+
       {/* Main 2-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
 
@@ -372,128 +396,68 @@ export default function PolicyDetailPage() {
           </SectionCard>
 
           {/* Líneas de cobertura — cada una es un activo (o "sin activo") con su
-              propio tipo de seguro, coberturas y suma asegurada. */}
+              propio tipo de seguro, coberturas y suma asegurada. Separadas en
+              vigentes / dadas de baja: una baja nunca borra la línea, solo la
+              historiza (ver PolicyAssetCoverage.bajaDate). */}
           <SectionCard
-            title="Activos Cubiertos"
-            subtitle={`${coverages.length} línea${coverages.length !== 1 ? 's' : ''} de cobertura`}
+            title="Activos Vigentes"
+            subtitle={`${vigentCoverages.length} línea${vigentCoverages.length !== 1 ? 's' : ''} de cobertura`}
           >
-            {coverages.length === 0 ? (
-              <p className="text-sm text-slate-400">Esta póliza no tiene líneas de cobertura.</p>
+            {vigentCoverages.length === 0 ? (
+              <p className="text-sm text-slate-400">Esta póliza no tiene activos vigentes.</p>
             ) : (
               <div className="space-y-2">
-                {coverages.map((coverage) => {
-                  const lineDocs = canShowLineDocuments ? coverageDocuments(coverage.id) : []
-                  const isExpanded = expandedCoverageId === coverage.id
-                  return (
-                  <div key={coverage.id} className="bg-slate-50 rounded-lg border border-slate-100 overflow-hidden">
-                    <div className="flex items-start gap-3 p-3">
-                      <div className="w-8 h-8 bg-brand-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <ShieldCheck size={16} className="text-brand-600" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-800">
-                          {coverage.asset ? coverage.asset.name : 'Sin activo asociado'}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {coverage.asset
-                            ? `${coverage.asset.internalCode} — ${coverage.asset.assetType}`
-                            : [coverage.companyName, coverage.costCenterName].filter(Boolean).join(' · ') || 'Sin empresa/centro de costo'}
-                        </p>
-                        {coverage.asset && (coverage.asset.fixedAssetName || (coverage.asset.costCenters?.length ?? 0) > 0) && (
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            {coverage.asset.fixedAssetName && <>Bien de Uso: {coverage.asset.fixedAssetName}</>}
-                            {coverage.asset.fixedAssetName && (coverage.asset.costCenters?.length ?? 0) > 0 && ' · '}
-                            {coverage.asset.costCenters && coverage.asset.costCenters.length > 0 && (
-                              <>
-                                Centro de costo: {coverage.asset.costCenters
-                                  .map((cc) => (coverage.asset!.costCenters!.length > 1 ? `${cc.name} (${cc.percentage}%)` : cc.name))
-                                  .join(', ')}
-                              </>
-                            )}
-                          </p>
-                        )}
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {coverage.insuranceType}
-                          {coverage.coverageNames && coverage.coverageNames.length > 0 && ` · ${coverage.coverageNames.join(', ')}`}
-                        </p>
-                        {coverage.beneficiaryDescription && (
-                          <p className="text-xs text-slate-400 mt-0.5 italic">{coverage.beneficiaryDescription}</p>
-                        )}
-                      </div>
-                      <div className="flex-shrink-0 text-right">
-                        <p className="text-sm font-bold text-slate-900 tabular-nums">
-                          {formatCurrencyCompact(coverage.insuredAmountUsd, 'USD')}
-                        </p>
-                        <p className="text-xs text-slate-400 tabular-nums">
-                          {formatCurrencyCompact(coverage.insuredAmountArs, 'ARS')}
-                        </p>
-                        {coverage.circulationCardAttachment?.fileUrl && (
-                          <a
-                            href={coverage.circulationCardAttachment.fileUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline mt-1"
-                          >
-                            <IdCard size={11} />
-                            Tarjeta
-                          </a>
-                        )}
-                        {coverage.asset && (
-                          <button
-                            onClick={() => navigate(`/assets/${coverage.asset!.id}`)}
-                            className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium mt-1"
-                          >
-                            <Link2 size={12} />
-                            Ver activo
-                          </button>
-                        )}
-                        {canShowLineDocuments && (
-                          <button
-                            onClick={() => setExpandedCoverageId(isExpanded ? null : coverage.id)}
-                            className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 font-medium mt-1"
-                          >
-                            {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                            Documentos ({lineDocs.length})
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    {canShowLineDocuments && isExpanded && (
-                      <div className="border-t border-slate-200 bg-white px-3 py-2">
-                        {lineDocs.length === 0 ? (
-                          <p className="text-xs text-slate-400 py-1">Sin documentos facturados en esta línea.</p>
-                        ) : (
-                          <div className="divide-y divide-slate-100">
-                            {lineDocs.map(({ doc, allocation }) => (
-                              <div
-                                key={doc.id}
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => navigate(`/insurance/documents/${doc.id}`)}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/insurance/documents/${doc.id}`) }}
-                                className="flex items-center justify-between gap-3 py-2 cursor-pointer hover:bg-slate-50 -mx-1 px-1 rounded"
-                              >
-                                <div className="min-w-0">
-                                  <p className="text-xs font-medium text-slate-700 truncate">
-                                    {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType} {doc.documentNumber}
-                                  </p>
-                                  <p className="text-xs text-slate-400">{formatDate(doc.issueDate)}</p>
-                                </div>
-                                <p className="text-xs font-semibold text-slate-700 tabular-nums flex-shrink-0">
-                                  {formatCurrencyCompact(allocation.allocatedAmount, doc.currency)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  )
-                })}
+                {vigentCoverages.map((coverage) => (
+                  <CoverageLineCard
+                    key={coverage.id}
+                    coverage={coverage}
+                    variant="vigente"
+                    navigate={navigate}
+                    canShowLineDocuments={canShowLineDocuments}
+                    lineDocs={canShowLineDocuments ? coverageDocuments(coverage.id) : []}
+                    isExpanded={expandedCoverageId === coverage.id}
+                    onToggleExpand={() => setExpandedCoverageId(expandedCoverageId === coverage.id ? null : coverage.id)}
+                    onDeactivate={() => setDeactivateTarget(coverage)}
+                  />
+                ))}
               </div>
             )}
           </SectionCard>
+
+          {deBajaCoverages.length > 0 && (
+            <SectionCard noPadding>
+              <button
+                type="button"
+                onClick={() => setShowDeBajaCoverages((v) => !v)}
+                className="flex items-center justify-between w-full px-5 py-4 text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <History size={15} className="text-slate-400" />
+                  <span className="text-sm font-semibold text-slate-800">Activos Dados de Baja</span>
+                  <span className="text-xs font-medium px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">
+                    {deBajaCoverages.length}
+                  </span>
+                </div>
+                {showDeBajaCoverages ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+              </button>
+              {showDeBajaCoverages && (
+                <div className="px-5 pb-5 space-y-2">
+                  {deBajaCoverages.map((coverage) => (
+                    <CoverageLineCard
+                      key={coverage.id}
+                      coverage={coverage}
+                      variant="de_baja"
+                      navigate={navigate}
+                      canShowLineDocuments={canShowLineDocuments}
+                      lineDocs={canShowLineDocuments ? coverageDocuments(coverage.id) : []}
+                      isExpanded={expandedCoverageId === coverage.id}
+                      onToggleExpand={() => setExpandedCoverageId(expandedCoverageId === coverage.id ? null : coverage.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          )}
         </div>
 
         {/* Right: Financial KPIs */}
@@ -680,17 +644,33 @@ export default function PolicyDetailPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {coverages.map((coverage) => (
+              {coverages.map((coverage) => {
+                const isDeBaja = !!coverage.bajaDate && isCoverageBajaEffective(coverage.bajaDate)
+                return (
                 <div key={coverage.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-                  <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60">
-                    <p className="text-sm font-semibold text-slate-800">
-                      {coverage.asset ? coverage.asset.name : 'Sin activo asociado'}
-                    </p>
-                    <p className="text-xs text-slate-400">{coverage.insuranceType}</p>
+                  <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">
+                        {coverage.asset ? coverage.asset.name : 'Sin activo asociado'}
+                      </p>
+                      <p className="text-xs text-slate-400">{coverage.insuranceType}</p>
+                    </div>
+                    {isDeBaja && (
+                      <span className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                        <History size={10} />
+                        Dado de baja
+                      </span>
+                    )}
                   </div>
-                  <PolicyAttachmentsSection policyId={policy.id} coverageId={coverage.id} policyEndDate={policy.endDate} />
+                  <PolicyAttachmentsSection
+                    policyId={policy.id}
+                    coverageId={coverage.id}
+                    policyEndDate={policy.endDate}
+                    readOnly={isDeBaja}
+                  />
                 </div>
-              ))}
+                )
+              })}
             </div>
           )
         )}
@@ -700,6 +680,186 @@ export default function PolicyDetailPage() {
 }
 
 // â”€â”€â”€ Helper components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+interface CoverageLineDoc {
+  doc: AccountingDocument
+  allocation: NonNullable<AccountingDocument['allocations']>[number]
+}
+
+interface CoverageLineCardProps {
+  coverage: PolicyCoverage
+  variant: 'vigente' | 'de_baja'
+  navigate: (path: string) => void
+  canShowLineDocuments: boolean
+  lineDocs: CoverageLineDoc[]
+  isExpanded: boolean
+  onToggleExpand: () => void
+  /** Solo se pasa para líneas vigentes — una línea de baja no puede volverse a dar de baja. */
+  onDeactivate?: () => void
+}
+
+// Una línea de cobertura, en su variante vigente o dada de baja — comparten
+// casi todo el contenido (activo, tipo de seguro, suma asegurada, adjuntos y
+// documentos facturados); lo que cambia es la info de ciclo de vida y si
+// ofrece la acción de dar de baja.
+function CoverageLineCard({
+  coverage, variant, navigate, canShowLineDocuments, lineDocs, isExpanded, onToggleExpand, onDeactivate,
+}: CoverageLineCardProps) {
+  // Vigente con baja YA cargada pero con fecha futura — sigue vigente hoy,
+  // pero ya se sabe que va a dejar de estarlo.
+  const bajaProgramada = variant === 'vigente' && coverage.bajaDate ? coverage.bajaDate : null
+
+  return (
+    <div className={clsx(
+      'rounded-lg border overflow-hidden',
+      variant === 'de_baja' ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100',
+    )}>
+      <div className="flex items-start gap-3 p-3">
+        <div className={clsx(
+          'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5',
+          variant === 'de_baja' ? 'bg-slate-100' : 'bg-brand-50',
+        )}>
+          {variant === 'de_baja'
+            ? <ShieldOff size={16} className="text-slate-400" />
+            : <ShieldCheck size={16} className="text-brand-600" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-slate-800">
+            {coverage.asset ? coverage.asset.name : 'Sin activo asociado'}
+          </p>
+          <p className="text-xs text-slate-500">
+            {coverage.asset
+              ? `${coverage.asset.internalCode} — ${coverage.asset.assetType}`
+              : [coverage.companyName, coverage.costCenterName].filter(Boolean).join(' · ') || 'Sin empresa/centro de costo'}
+          </p>
+          {coverage.asset && (coverage.asset.fixedAssetName || (coverage.asset.costCenters?.length ?? 0) > 0) && (
+            <p className="text-xs text-slate-400 mt-0.5">
+              {coverage.asset.fixedAssetName && <>Bien de Uso: {coverage.asset.fixedAssetName}</>}
+              {coverage.asset.fixedAssetName && (coverage.asset.costCenters?.length ?? 0) > 0 && ' · '}
+              {coverage.asset.costCenters && coverage.asset.costCenters.length > 0 && (
+                <>
+                  Centro de costo: {coverage.asset.costCenters
+                    .map((cc) => (coverage.asset!.costCenters!.length > 1 ? `${cc.name} (${cc.percentage}%)` : cc.name))
+                    .join(', ')}
+                </>
+              )}
+            </p>
+          )}
+          <p className="text-xs text-slate-400 mt-0.5">
+            {coverage.insuranceType}
+            {coverage.coverageNames && coverage.coverageNames.length > 0 && ` · ${coverage.coverageNames.join(', ')}`}
+          </p>
+          {coverage.beneficiaryDescription && (
+            <p className="text-xs text-slate-400 mt-0.5 italic">{coverage.beneficiaryDescription}</p>
+          )}
+
+          {/* Ciclo de vida de la línea */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+            <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+              <Calendar size={10} />
+              Alta: {formatDate(coverage.effectiveDate)}
+            </span>
+            {bajaProgramada && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                <Clock size={10} />
+                Baja programada: {formatDate(bajaProgramada)}
+              </span>
+            )}
+            {variant === 'de_baja' && coverage.bajaDate && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                <History size={10} />
+                Baja: {formatDate(coverage.bajaDate)}
+              </span>
+            )}
+          </div>
+          {variant === 'de_baja' && coverage.bajaReason && (
+            <p className="text-xs text-slate-500 mt-1">
+              <span className="font-medium text-slate-600">Motivo:</span> {coverage.bajaReason}
+            </p>
+          )}
+        </div>
+        <div className="flex-shrink-0 text-right">
+          <p className="text-sm font-bold text-slate-900 tabular-nums">
+            {formatCurrencyCompact(coverage.insuredAmountUsd, 'USD')}
+          </p>
+          <p className="text-xs text-slate-400 tabular-nums">
+            {formatCurrencyCompact(coverage.insuredAmountArs, 'ARS')}
+          </p>
+          {coverage.circulationCardAttachment?.fileUrl && (
+            <a
+              href={coverage.circulationCardAttachment.fileUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline mt-1"
+            >
+              <IdCard size={11} />
+              Tarjeta
+            </a>
+          )}
+          {coverage.asset && (
+            <button
+              onClick={() => navigate(`/assets/${coverage.asset!.id}`)}
+              className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium mt-1"
+            >
+              <Link2 size={12} />
+              Ver activo
+            </button>
+          )}
+          {canShowLineDocuments && (
+            <button
+              onClick={onToggleExpand}
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 font-medium mt-1"
+            >
+              {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              Documentos ({lineDocs.length})
+            </button>
+          )}
+          {/* Si ya tiene una baja cargada (aunque sea a futuro), no se ofrece
+              la acción de nuevo — el backend la rechazaría con 409. */}
+          {variant === 'vigente' && onDeactivate && !bajaProgramada && (
+            <button
+              onClick={onDeactivate}
+              className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600 font-medium mt-1.5"
+            >
+              <ShieldOff size={12} />
+              Dar de baja
+            </button>
+          )}
+        </div>
+      </div>
+      {canShowLineDocuments && isExpanded && (
+        <div className="border-t border-slate-200 bg-white px-3 py-2">
+          {lineDocs.length === 0 ? (
+            <p className="text-xs text-slate-400 py-1">Sin documentos facturados en esta línea.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {lineDocs.map(({ doc, allocation }) => (
+                <div
+                  key={doc.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/insurance/documents/${doc.id}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/insurance/documents/${doc.id}`) }}
+                  className="flex items-center justify-between gap-3 py-2 cursor-pointer hover:bg-slate-50 -mx-1 px-1 rounded"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-slate-700 truncate">
+                      {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType} {doc.documentNumber}
+                    </p>
+                    <p className="text-xs text-slate-400">{formatDate(doc.issueDate)}</p>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-700 tabular-nums flex-shrink-0">
+                    {formatCurrencyCompact(allocation.allocatedAmount, doc.currency)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 
 

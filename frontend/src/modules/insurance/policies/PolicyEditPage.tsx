@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save, X, Settings, CheckSquare, Plus, Trash2 } from 'lucide-react'
+import { Save, X, Settings, CheckSquare, Plus, Trash2, ShieldOff, History } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -16,6 +16,7 @@ import {
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { SearchableSelect } from '../../../shared/components/forms/SearchableSelect'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
+import { DeactivateCoverageModal } from './DeactivateCoverageModal'
 import { policiesApi, policyKeys, policyQueries, type PolicyCoverageInput } from '../../../shared/api/policies.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
@@ -24,7 +25,7 @@ import { assetQueries } from '../../../shared/api/assets.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
-import { formatCurrencyFull } from '../../../shared/utils/format'
+import { formatCurrencyFull, formatDate, isExpired } from '../../../shared/utils/format'
 import { buildAssetSearchKeywords } from '../../../shared/utils/assetSearch'
 import { CURRENCY_OPTIONS } from '../../../shared/constants'
 import type { Policy, PolicyCoverage, Producer, Asset, Company, CostCenter } from '../../../shared/types'
@@ -59,6 +60,15 @@ interface CoverageLineForm {
   companyId: string
   costCenterId: string
   beneficiaryDescription: string
+  // Ciclo de vida (Fase 3) — effectiveDate solo es editable en una línea
+  // nueva (sin coverageId): en una ya persistida no hay forma de que este
+  // save la modifique (replaceCoverages no la toca), así que se muestra de
+  // solo lectura. bajaDate != null bloquea la acción de baja desde acá
+  // (evita un doble intento — ver el botón de la card). bajaReason solo se
+  // usa para mostrarlo cuando la baja ya es efectiva (ver isEffectivelyDeBaja).
+  effectiveDate: string
+  bajaDate: string | null
+  bajaReason: string | null
 }
 
 function coverageToLine(c: PolicyCoverage): CoverageLineForm {
@@ -76,6 +86,9 @@ function coverageToLine(c: PolicyCoverage): CoverageLineForm {
     companyId: c.companyId ?? '',
     costCenterId: c.costCenterId ?? '',
     beneficiaryDescription: c.beneficiaryDescription ?? '',
+    effectiveDate: c.effectiveDate,
+    bajaDate: c.bajaDate,
+    bajaReason: c.bajaReason,
   }
 }
 
@@ -93,6 +106,9 @@ function createEmptyLine(defaultExchangeRate = '0'): CoverageLineForm {
     companyId: '',
     costCenterId: '',
     beneficiaryDescription: '',
+    effectiveDate: '',
+    bajaDate: null,
+    bajaReason: null,
   }
 }
 
@@ -106,12 +122,14 @@ function CoverageSelector({
   selected,
   onChange,
   error,
+  disabled,
 }: {
   insuranceType: string
   insuranceTypes: InsuranceTypeConfig[]
   selected: string[]
   onChange: (v: string[]) => void
   error?: string
+  disabled?: boolean
 }) {
   const config = insuranceTypes.find((t) => t.label === insuranceType)
 
@@ -138,6 +156,7 @@ function CoverageSelector({
   const coverageItems = config.coverageObjects ?? config.coverages.map((c) => ({ id: c, name: c }))
 
   const toggle = (id: string) => {
+    if (disabled) return
     onChange(
       selected.includes(id)
         ? selected.filter((c) => c !== id)
@@ -146,7 +165,10 @@ function CoverageSelector({
   }
 
   const allSelected = coverageItems.every((c) => selected.includes(c.id))
-  const toggleAll = () => onChange(allSelected ? [] : coverageItems.map((c) => c.id))
+  const toggleAll = () => {
+    if (disabled) return
+    onChange(allSelected ? [] : coverageItems.map((c) => c.id))
+  }
 
   return (
     <div>
@@ -156,12 +178,14 @@ function CoverageSelector({
             ? 'Ninguna seleccionada'
             : `${selected.length} de ${coverageItems.length} seleccionada${selected.length !== 1 ? 's' : ''}`}
         </p>
-        <button type="button" onClick={toggleAll} className="text-xs text-brand-600 hover:text-brand-700 font-medium">
-          {allSelected ? 'Deseleccionar todas' : 'Seleccionar todas'}
-        </button>
+        {!disabled && (
+          <button type="button" onClick={toggleAll} className="text-xs text-brand-600 hover:text-brand-700 font-medium">
+            {allSelected ? 'Deseleccionar todas' : 'Seleccionar todas'}
+          </button>
+        )}
       </div>
 
-      <div className="rounded-xl border border-slate-200 overflow-hidden">
+      <div className={`rounded-xl border border-slate-200 overflow-hidden ${disabled ? 'opacity-70' : ''}`}>
         <div className="grid grid-cols-1 sm:grid-cols-2">
           {coverageItems.map((coverage, idx) => {
             const checked = selected.includes(coverage.id)
@@ -170,8 +194,9 @@ function CoverageSelector({
               <label
                 key={coverage.id}
                 className={[
-                  'relative flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors select-none',
-                  checked ? 'bg-brand-50' : 'bg-white hover:bg-slate-50',
+                  'relative flex items-center gap-2.5 px-3 py-2 transition-colors select-none',
+                  disabled ? 'cursor-not-allowed' : 'cursor-pointer',
+                  checked ? 'bg-brand-50' : disabled ? 'bg-slate-50' : 'bg-white hover:bg-slate-50',
                   idx % 2 === 0 && idx < coverageItems.length - 1 ? 'sm:border-r border-slate-100' : '',
                   !isLastRow ? 'border-b border-slate-100' : '',
                 ].join(' ')}
@@ -187,7 +212,7 @@ function CoverageSelector({
                     </svg>
                   )}
                 </div>
-                <input type="checkbox" checked={checked} onChange={() => toggle(coverage.id)} className="sr-only" />
+                <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(coverage.id)} className="sr-only" />
                 <span className={`text-sm leading-snug ${checked ? 'text-brand-800 font-medium' : 'text-slate-700'}`}>
                   {coverage.name}
                 </span>
@@ -286,6 +311,10 @@ function PolicyEditForm({
   const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm, string>>>({})
   const [lines, setLines] = useState<CoverageLineForm[]>(() => (policy.coverages ?? []).map(coverageToLine))
   const [lineErrors, setLineErrors] = useState<Record<string, LineErrors>>({})
+  // Línea persistida sobre la que se abrió el modal de baja histórica —
+  // guarda tanto el PolicyCoverage original (lo que necesita el modal) como
+  // el formId local (para sacarla de `lines` cuando la baja se confirma).
+  const [deactivateTarget, setDeactivateTarget] = useState<{ formId: string; coverage: PolicyCoverage } | null>(null)
 
   const updatePolicyMutation = useMutation({
     mutationFn: (input: Parameters<typeof policiesApi.update>[1]) => policiesApi.update(id!, input),
@@ -293,6 +322,9 @@ function PolicyEditForm({
   const replaceCoveragesMutation = useMutation({
     mutationFn: (coverages: PolicyCoverageInput[]) => policiesApi.replaceCoverages(id!, coverages),
   })
+  // Alta de líneas nuevas (una llamada por línea, en paralelo) — no encaja
+  // en un único useMutation porque la cantidad de llamadas varía por submit.
+  const [isAddingCoverages, setIsAddingCoverages] = useState(false)
 
   const activeAssets = useMemo(() => allAssets.filter((a) => a.status === 'activo'), [allAssets])
   const activeCompanies = useMemo(() => companies.filter((c) => c.status === 'activo'), [companies])
@@ -321,8 +353,29 @@ function PolicyEditForm({
     setLines((prev) => [...prev, createEmptyLine(prev[0]?.exchangeRate)])
   }
 
+  // Solo para líneas nuevas todavía sin guardar (sin coverageId) — una línea
+  // persistida NUNCA se saca así, ver requestDeactivate().
   function removeLine(formId: string) {
     setLines((prev) => prev.filter((l) => l.formId !== formId))
+  }
+
+  // Línea persistida: abre el modal de baja histórica en vez de tocar el
+  // estado local — la baja se confirma contra el backend (POST .../de-baja),
+  // nunca se asume acá.
+  function requestDeactivate(line: CoverageLineForm) {
+    const original = (policy.coverages ?? []).find((c) => c.id === line.coverageId)
+    if (!original) return
+    setDeactivateTarget({ formId: line.formId, coverage: original })
+  }
+
+  // Al confirmarse la baja, la línea ya quedó dada de baja en el backend —
+  // se saca del set editable de esta pantalla (no vuelve a viajar en el
+  // próximo replaceCoverages) y se refresca el detalle.
+  function handleDeactivated() {
+    if (deactivateTarget) {
+      setLines((prev) => prev.filter((l) => l.formId !== deactivateTarget.formId))
+    }
+    setDeactivateTarget(null)
   }
 
   function validate(): boolean {
@@ -347,6 +400,14 @@ function PolicyEditForm({
           lineErr.beneficiaryDescription = 'Describí a quién corresponde este seguro'
         }
       }
+      // effectiveDate solo se valida (y solo se manda) para líneas nuevas —
+      // una persistida ya tiene la suya y no se toca desde este formulario.
+      if (!line.coverageId) {
+        if (!line.effectiveDate) lineErr.effectiveDate = 'Requerido'
+        else if (line.effectiveDate < form.startDate || line.effectiveDate > form.endDate) {
+          lineErr.effectiveDate = 'Debe estar dentro de la vigencia de la póliza'
+        }
+      }
       if (Object.keys(lineErr).length > 0) nextLineErrors[line.formId] = lineErr
     }
     setLineErrors(nextLineErrors)
@@ -358,25 +419,36 @@ function PolicyEditForm({
     return !hasErrors
   }
 
+  function buildCoverageInput(line: CoverageLineForm) {
+    const insuranceTypeObj = insuranceTypes.find((t) => t.label === line.insuranceType)
+    return {
+      assetId: line.association === 'activo' ? line.assetId : null,
+      insuranceTypeId: insuranceTypeObj?.id ?? '',
+      coverageIds: line.coverageTypes,
+      insuredAmount: parseFloat(line.insuredAmount) || 0,
+      currency: line.currency,
+      exchangeRate: parseFloat(line.exchangeRate) || 0,
+      companyId: line.association === 'sin_activo' ? line.companyId : null,
+      costCenterId: line.association === 'sin_activo' ? line.costCenterId || null : null,
+      beneficiaryDescription: line.association === 'sin_activo' ? line.beneficiaryDescription.trim() || null : null,
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
 
-    const coverages: PolicyCoverageInput[] = lines.map((line) => {
-      const insuranceTypeObj = insuranceTypes.find((t) => t.label === line.insuranceType)
-      return {
-        id: line.coverageId,
-        assetId: line.association === 'activo' ? line.assetId : null,
-        insuranceTypeId: insuranceTypeObj?.id ?? '',
-        coverageIds: line.coverageTypes,
-        insuredAmount: parseFloat(line.insuredAmount) || 0,
-        currency: line.currency,
-        exchangeRate: parseFloat(line.exchangeRate) || 0,
-        companyId: line.association === 'sin_activo' ? line.companyId : null,
-        costCenterId: line.association === 'sin_activo' ? line.costCenterId || null : null,
-        beneficiaryDescription: line.association === 'sin_activo' ? line.beneficiaryDescription.trim() || null : null,
-      }
-    })
+    // Persistidas → replaceCoverages (solo edita campos, nunca alta/baja).
+    // Nuevas → addCoverage, una por una, con su propia fecha de alta — este
+    // es el único camino que hoy respeta effectiveDate; replaceCoverages
+    // sigue completándolo con policy.startDate por compatibilidad vieja.
+    const existingLines = lines.filter((l) => l.coverageId)
+    const newLines = lines.filter((l) => !l.coverageId)
+
+    const coverages: PolicyCoverageInput[] = existingLines.map((line) => ({
+      id: line.coverageId,
+      ...buildCoverageInput(line),
+    }))
 
     try {
       await updatePolicyMutation.mutateAsync({
@@ -386,7 +458,15 @@ function PolicyEditForm({
         endDate: form.endDate,
         description: form.description.trim() || undefined,
       })
-      await replaceCoveragesMutation.mutateAsync(coverages)
+      if (coverages.length > 0) {
+        await replaceCoveragesMutation.mutateAsync(coverages)
+      }
+      if (newLines.length > 0) {
+        setIsAddingCoverages(true)
+        await Promise.all(
+          newLines.map((line) => policiesApi.addCoverage(id!, { ...buildCoverageInput(line), effectiveDate: line.effectiveDate })),
+        )
+      }
 
       queryClient.invalidateQueries({ queryKey: policyKeys.all })
       queryClient.invalidateQueries({ queryKey: policyKeys.detail(id!) })
@@ -395,12 +475,24 @@ function PolicyEditForm({
       navigate(`/insurance/policies/${id}`)
     } catch {
       // errors are shown via the global axios interceptor toast
+    } finally {
+      setIsAddingCoverages(false)
     }
   }
 
-  const isSaving = updatePolicyMutation.isPending || replaceCoveragesMutation.isPending
+  const isSaving = updatePolicyMutation.isPending || replaceCoveragesMutation.isPending || isAddingCoverages
 
   return (
+    <>
+      {deactivateTarget && (
+        <DeactivateCoverageModal
+          policyId={id!}
+          policyEndDate={form.endDate}
+          coverage={deactivateTarget.coverage}
+          onClose={() => setDeactivateTarget(null)}
+          onSuccess={handleDeactivated}
+        />
+      )}
       <form onSubmit={handleSubmit} className="max-w-5xl space-y-5">
 
         {/* 1. Datos de la Póliza */}
@@ -468,6 +560,11 @@ function PolicyEditForm({
             const showBeneficiaryField = isAP && line.association === 'sin_activo'
             const selectedAsset = activeAssets.find((a) => a.id === line.assetId)
             const isAssetLocked = !!line.coverageId && line.attachmentsCount > 0
+            // Baja YA efectiva (no solo programada) — la línea es historial:
+            // todos sus campos quedan de solo lectura. Mismo criterio que
+            // PolicyDetailPage/PolicyAttachmentsSection (isExpired sobre bajaDate).
+            const isEffectivelyDeBaja = !!line.bajaDate && isExpired(line.bajaDate)
+            const fieldsDisabled = isAssetLocked || isEffectivelyDeBaja
 
             return (
               <SectionCard
@@ -475,19 +572,59 @@ function PolicyEditForm({
                 title={`Línea ${idx + 1}${selectedAsset ? ` — ${selectedAsset.name}` : ''}`}
                 subtitle={line.association === 'sin_activo' ? 'Sin activo asociado' : undefined}
                 actions={
-                  lines.length > 1 ? (
+                  !line.coverageId ? (
+                    // Todavía no existe en el backend — sí se puede sacar del
+                    // estado local sin más trámite.
                     <button
                       type="button"
                       onClick={() => removeLine(line.formId)}
                       className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Quitar esta línea"
+                      title="Quitar esta línea (todavía no guardada)"
                     >
                       <Trash2 size={15} />
                     </button>
-                  ) : undefined
+                  ) : line.bajaDate ? (
+                    // Ya tiene una baja registrada (efectiva o programada) —
+                    // no se puede volver a dar de baja, solo se informa.
+                    <span
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-400"
+                      title="Esta línea ya tiene una baja registrada"
+                    >
+                      <History size={13} />
+                      {isEffectivelyDeBaja ? 'Dada de baja' : 'Baja programada'}
+                    </span>
+                  ) : (
+                    // Persistida y vigente — la única salida es la baja
+                    // histórica, nunca un borrado silencioso.
+                    <button
+                      type="button"
+                      onClick={() => requestDeactivate(line)}
+                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Dar de baja esta línea de la póliza"
+                    >
+                      <ShieldOff size={15} />
+                    </button>
+                  )
                 }
               >
                 <div className="space-y-5">
+                  {/* Línea dada de baja efectiva: historial de solo lectura —
+                      se avisa arriba de todo, antes de cualquier campo. */}
+                  {isEffectivelyDeBaja && (
+                    <div className="flex items-start gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                      <History size={15} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-700">
+                          Dado de baja — línea de historial, de solo lectura
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Baja: {formatDate(line.bajaDate)}
+                          {line.bajaReason && <> · Motivo: {line.bajaReason}</>}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Asociación */}
                   <div>
                     <div className="flex items-center gap-1 mb-3 bg-slate-100 rounded-lg p-1 w-fit">
@@ -495,11 +632,11 @@ function PolicyEditForm({
                         <button
                           key={opt}
                           type="button"
-                          disabled={isAssetLocked}
+                          disabled={fieldsDisabled}
                           onClick={() => updateLine(line.formId, {
                             association: opt, assetId: '', companyId: '', costCenterId: '', beneficiaryDescription: '',
                           })}
-                          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all disabled:cursor-not-allowed ${
+                          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                             line.association === opt ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                           }`}
                         >
@@ -521,11 +658,11 @@ function PolicyEditForm({
                             }))}
                           value={line.assetId}
                           onChange={(v) => updateLine(line.formId, { assetId: v })}
-                          disabled={isAssetLocked}
+                          disabled={fieldsDisabled}
                           placeholder="Seleccionar activo…"
                           searchPlaceholder="Buscar por nombre, código, patente, bien de uso…"
                         />
-                        {isAssetLocked && (
+                        {isAssetLocked && !isEffectivelyDeBaja && (
                           <p className="text-xs text-slate-500 mt-1">
                             No se puede cambiar el activo de esta cobertura porque ya tiene adjuntos cargados. Para cambiar el activo, eliminá primero los adjuntos de esta cobertura o creá una nueva línea de cobertura.
                           </p>
@@ -535,7 +672,12 @@ function PolicyEditForm({
                       <div className="space-y-4">
                         <FormSection title="">
                           <FormField label="Empresa" required error={err.companyId}>
-                            <FormSelect value={line.companyId} onChange={(e) => updateLine(line.formId, { companyId: e.target.value })} required>
+                            <FormSelect
+                              value={line.companyId}
+                              onChange={(e) => updateLine(line.formId, { companyId: e.target.value })}
+                              disabled={fieldsDisabled}
+                              required
+                            >
                               <option value="">Seleccionar empresa…</option>
                               {activeCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </FormSelect>
@@ -544,7 +686,7 @@ function PolicyEditForm({
                             <FormSelect
                               value={line.costCenterId}
                               onChange={(e) => updateLine(line.formId, { costCenterId: e.target.value })}
-                              disabled={!line.companyId}
+                              disabled={fieldsDisabled || !line.companyId}
                               required
                             >
                               <option value="">{line.companyId ? 'Seleccionar centro…' : 'Primero empresa'}</option>
@@ -559,6 +701,7 @@ function PolicyEditForm({
                               placeholder="Ej: Empleados del establecimiento Las Vertientes — Personal en relación de dependencia"
                               value={line.beneficiaryDescription}
                               onChange={(e) => updateLine(line.formId, { beneficiaryDescription: e.target.value })}
+                              disabled={fieldsDisabled}
                               rows={2}
                             />
                             <p className="text-xs text-slate-400 mt-1">
@@ -570,6 +713,27 @@ function PolicyEditForm({
                     )}
                   </div>
 
+                  {/* Fecha de alta en póliza — editable solo en líneas nuevas;
+                      una persistida ya tiene la suya y este formulario no
+                      tiene forma de modificarla (ver buildCoverageInput). */}
+                  <div className="border-t border-slate-100 pt-5">
+                    <FormField
+                      label="Fecha de Alta en Póliza"
+                      required={!line.coverageId}
+                      error={err.effectiveDate}
+                      helperText={line.coverageId ? 'No se puede modificar una vez guardada la línea' : undefined}
+                    >
+                      <FormInput
+                        type="date"
+                        value={line.effectiveDate}
+                        min={form.startDate}
+                        max={form.endDate}
+                        disabled={!!line.coverageId}
+                        onChange={(e) => updateLine(line.formId, { effectiveDate: e.target.value })}
+                      />
+                    </FormField>
+                  </div>
+
                   {/* Tipo de seguro + coberturas */}
                   <div className="border-t border-slate-100 pt-5">
                     <FormField label="Tipo de Seguro" required error={err.insuranceType}>
@@ -578,6 +742,7 @@ function PolicyEditForm({
                           <FormSelect
                             value={line.insuranceType}
                             onChange={(e) => updateLine(line.formId, { insuranceType: e.target.value, coverageTypes: [] })}
+                            disabled={isEffectivelyDeBaja}
                             required
                           >
                             <option value="">Seleccionar tipo…</option>
@@ -602,6 +767,7 @@ function PolicyEditForm({
                         selected={line.coverageTypes}
                         onChange={(v) => updateLine(line.formId, { coverageTypes: v })}
                         error={err.coverageTypes}
+                        disabled={isEffectivelyDeBaja}
                       />
                     </div>
                   </div>
@@ -611,7 +777,11 @@ function PolicyEditForm({
                     <p className="text-sm font-semibold text-slate-800 mb-3">Suma Asegurada</p>
                     <FormSection title="">
                       <FormField label="Moneda">
-                        <FormSelect value={line.currency} onChange={(e) => updateLine(line.formId, { currency: e.target.value as 'ARS' | 'USD' })}>
+                        <FormSelect
+                          value={line.currency}
+                          onChange={(e) => updateLine(line.formId, { currency: e.target.value as 'ARS' | 'USD' })}
+                          disabled={isEffectivelyDeBaja}
+                        >
                           {CURRENCY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                         </FormSelect>
                       </FormField>
@@ -620,6 +790,7 @@ function PolicyEditForm({
                           type="number" placeholder="Ej: 30000000" min="0" step="1"
                           value={line.insuredAmount}
                           onChange={(e) => updateLine(line.formId, { insuredAmount: e.target.value })}
+                          disabled={isEffectivelyDeBaja}
                         />
                       </FormField>
                       <FormField label="Tipo de Cambio (ARS/USD)">
@@ -627,6 +798,7 @@ function PolicyEditForm({
                           type="number" placeholder="Ej: 970" min="0" step="0.01"
                           value={line.exchangeRate}
                           onChange={(e) => updateLine(line.formId, { exchangeRate: e.target.value })}
+                          disabled={isEffectivelyDeBaja}
                         />
                       </FormField>
                       <FormField label={`Suma Asegurada (${equivalentCurrencyLabel})`}>
@@ -644,7 +816,12 @@ function PolicyEditForm({
                   {line.coverageId ? (
                     <div className="border-t border-slate-100 pt-5">
                       <p className="text-sm font-semibold text-slate-800 mb-3">Documentación</p>
-                      <PolicyAttachmentsSection policyId={policy.id} coverageId={line.coverageId} policyEndDate={form.endDate} />
+                      <PolicyAttachmentsSection
+                        policyId={policy.id}
+                        coverageId={line.coverageId}
+                        policyEndDate={form.endDate}
+                        readOnly={isEffectivelyDeBaja}
+                      />
                     </div>
                   ) : (
                     <div className="border-t border-slate-100 pt-5">
@@ -689,5 +866,6 @@ function PolicyEditForm({
           </button>
         </div>
       </form>
+    </>
   )
 }

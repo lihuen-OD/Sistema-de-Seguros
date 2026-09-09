@@ -3,6 +3,7 @@ export function formatCurrencyCompact(value: number, currency: string = 'ARS'): 
   // número completo sin abreviar, lo que desbordaba KPIs y ejes de gráficos
   // con montos grandes (ver docs/PROJECT_CONTEXT.md: "AR$ 266,5M" es el
   // formato esperado, igual que "US$ 23,0M").
+  if (!Number.isFinite(value)) return '—'
   const prefix = currency === 'ARS' ? 'AR$' : 'US$'
   const abs = Math.abs(value)
   const sign = value < 0 ? '-' : ''
@@ -26,11 +27,13 @@ export function formatCurrencyCompact(value: number, currency: string = 'ARS'): 
  * KpiCard), no abreviando el número.
  */
 export function formatCurrencyInteger(value: number, currency: string = 'ARS'): string {
+  if (!Number.isFinite(value)) return '—'
   const prefix = currency === 'ARS' ? 'AR$' : 'US$'
   return `${prefix} ${Math.round(value).toLocaleString('es-AR')}`
 }
 
 export function formatCurrencyFull(value: number, currency: string = 'ARS'): string {
+  if (!Number.isFinite(value)) return '—'
   const prefix = currency === 'ARS' ? 'AR$' : 'US$'
   return `${prefix} ${value.toLocaleString('es-AR', {
     minimumFractionDigits: 2,
@@ -39,10 +42,12 @@ export function formatCurrencyFull(value: number, currency: string = 'ARS'): str
 }
 
 export function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) return '—'
   return value.toLocaleString('es-AR')
 }
 
 export function formatPercent(value: number, decimals = 1): string {
+  if (!Number.isFinite(value)) return '—'
   return `${value.toFixed(decimals).replace('.', ',')}%`
 }
 

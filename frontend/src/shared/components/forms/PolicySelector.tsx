@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { Plus, Trash2, ListPlus, AlertTriangle } from 'lucide-react'
 import { FormSelect, FormInput } from './FormSection'
+import { Badge } from '../badges/Badge'
 import { formatCurrencyFull } from '../../utils/format'
 import { buildAssetLabel } from '../../utils/assetMetadata'
+import { isCoverageActiveOn } from '../../utils/expiration'
 import type { Policy, PolicyCoverage, Currency } from '../../types'
 
 export interface PolicyAllocationRow {
@@ -37,6 +39,18 @@ interface PolicySelectorMultiProps {
   // suma de lo ya asignado, para que una distribución incompleta se vea
   // como incompleta (no como un 100% engañoso).
   documentTotal: number
+  // Fecha de emisión del documento — si se pasa, solo se ofrecen líneas
+  // vigentes a esa fecha (effectiveDate <= issueDate && (bajaDate es null ||
+  // bajaDate >= issueDate)); si además es '', el selector se bloquea con un
+  // aviso. Si se omite (undefined), no se aplica ningún filtro — usado por
+  // NC/ND/Ajuste, que todavía heredan la distribución del documento vinculado
+  // sin este control.
+  issueDate?: string
+  // policyAssetCoverageId de las allocations que el documento YA tenía
+  // guardadas al abrir la pantalla — se siguen mostrando (con badge) aunque
+  // hoy estén fuera de vigencia para issueDate, para no romper documentos
+  // históricos.
+  historicalCoverageIds?: string[]
   emptyMessage?: string
 }
 
@@ -67,6 +81,19 @@ export function PolicySelector(props: PolicySelectorProps) {
   // valor derivado ya reconciliado (por si documentTotal cambió mientras tanto).
   const [pctDrafts, setPctDrafts] = useState<Record<string, string>>({})
 
+  // issueDate === '' (pasado explícitamente, no omitido) bloquea el selector
+  // antes de cualquier otro chequeo — sin fecha de emisión no hay forma de
+  // saber qué líneas están vigentes.
+  if (props.mode === 'multi' && props.issueDate !== undefined && !props.issueDate) {
+    return (
+      <div className="rounded-xl border-2 border-dashed border-slate-200 py-6 text-center">
+        <p className="text-sm text-slate-400">
+          Completá primero la fecha de emisión para ver las coberturas vigentes.
+        </p>
+      </div>
+    )
+  }
+
   if (props.policies.length === 0) {
     return (
       <div className="rounded-xl border-2 border-dashed border-slate-200 py-6 text-center">
@@ -90,11 +117,28 @@ export function PolicySelector(props: PolicySelectorProps) {
     )
   }
 
-  const { policies, rows, onRowsChange, currency, documentTotal } = props
+  const { policies, rows, onRowsChange, currency, documentTotal, issueDate, historicalCoverageIds } = props
   const totalAllocated = rows.reduce((s, r) => s + (parseFloat(r.allocatedAmount) || 0), 0)
   const policiesWithCoverages = policies.filter((p) => (p.coverages ?? []).length > 0)
   const remaining = documentTotal - totalAllocated
   const isBalanced = Math.abs(remaining) < 0.01
+
+  // Filtro de vigencia por fecha de emisión (issueDate === undefined => sin
+  // filtro, comportamiento actual, usado por NC/ND/Ajuste). Una línea ya
+  // asignada al documento (historicalCoverageIds) se sigue ofreciendo aunque
+  // hoy esté fuera de vigencia, para no romper documentos históricos.
+  const historicalSet = new Set(historicalCoverageIds ?? [])
+  const coverageAllowed = (c: PolicyCoverage) =>
+    issueDate === undefined || isCoverageActiveOn(c, issueDate) || historicalSet.has(c.id)
+  const coverageIsHistorical = (c: PolicyCoverage) =>
+    issueDate !== undefined && !isCoverageActiveOn(c, issueDate) && historicalSet.has(c.id)
+  // Caso borde: una línea recién elegida en esta sesión (no histórica) que
+  // quedó fuera de rango porque el usuario cambió issueDate después de
+  // elegirla. El backend la va a rechazar igual al guardar; el badge es solo
+  // para avisar antes de intentarlo.
+  const coverageIsOutOfRange = (c: PolicyCoverage) =>
+    issueDate !== undefined && !isCoverageActiveOn(c, issueDate) && !historicalSet.has(c.id)
+  const coverageById = new Map(policies.flatMap((p) => (p.coverages ?? []).map((c) => [c.id, c] as const)))
 
   const updateRow = (rowId: string, field: 'policyAssetCoverageId' | 'allocatedAmount', value: string) => {
     onRowsChange(rows.map((r) => (r.id === rowId ? { ...r, [field]: value } : r)))
@@ -134,7 +178,7 @@ export function PolicySelector(props: PolicySelectorProps) {
 
     const existingCoverageIds = new Set(rows.map((r) => r.policyAssetCoverageId).filter(Boolean))
     const newRows = (policy.coverages ?? [])
-      .filter((c) => !existingCoverageIds.has(c.id))
+      .filter((c) => !existingCoverageIds.has(c.id) && coverageAllowed(c))
       .map((c) => ({ id: crypto.randomUUID(), policyAssetCoverageId: c.id, allocatedAmount: '' }))
     if (newRows.length === 0) return
 
@@ -142,21 +186,22 @@ export function PolicySelector(props: PolicySelectorProps) {
     onRowsChange([...remainingRows, ...newRows])
   }
 
+  const policiesWithAllowedCoverages = policiesWithCoverages
+    .map((p) => ({ policy: p, allowed: (p.coverages ?? []).filter(coverageAllowed) }))
+    .filter(({ allowed }) => allowed.length > 0)
+
   return (
     <div className="space-y-3">
-      {policiesWithCoverages.length > 0 && (
+      {policiesWithAllowedCoverages.length > 0 && (
         <div className="flex items-center gap-2.5 p-3 bg-brand-50/60 border border-brand-100 rounded-xl">
           <ListPlus size={15} className="text-brand-500 flex-shrink-0" />
           <FormSelect value={policyToAdd} onChange={handleAddPolicy} className="flex-1 bg-white">
             <option value="">Agregar todos los activos de una póliza…</option>
-            {policiesWithCoverages.map((p) => {
-              const count = (p.coverages ?? []).length
-              return (
-                <option key={p.id} value={p.id}>
-                  {p.policyNumber} — {policyTypeLabel(p)} ({count} activo{count !== 1 ? 's' : ''})
-                </option>
-              )
-            })}
+            {policiesWithAllowedCoverages.map(({ policy: p, allowed }) => (
+              <option key={p.id} value={p.id}>
+                {p.policyNumber} — {policyTypeLabel(p)} ({allowed.length} activo{allowed.length !== 1 ? 's' : ''})
+              </option>
+            ))}
           </FormSelect>
         </div>
       )}
@@ -180,23 +225,36 @@ export function PolicySelector(props: PolicySelectorProps) {
         // a centavos.
         const pctValue = allocated === 0 ? '' : String(Math.round(pct * 10000) / 10000)
         const displayPctValue = pctDrafts[row.id] ?? pctValue
+        const selectedCoverage = row.policyAssetCoverageId ? coverageById.get(row.policyAssetCoverageId) : undefined
+        const isHistorical = !!selectedCoverage && coverageIsHistorical(selectedCoverage)
+        const isOutOfRange = !!selectedCoverage && coverageIsOutOfRange(selectedCoverage)
         return (
           <div key={row.id} className="grid grid-cols-[1fr_160px_100px_32px] gap-3 items-center">
-            <FormSelect
-              value={row.policyAssetCoverageId}
-              onChange={(e) => updateRow(row.id, 'policyAssetCoverageId', e.target.value)}
-            >
-              <option value="">Seleccionar activo…</option>
-              {policiesWithCoverages.map((p) => (
-                <optgroup key={p.id} label={`${p.policyNumber} — ${policyTypeLabel(p)}`}>
-                  {(p.coverages ?? []).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {coverageLabel(c)}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </FormSelect>
+            <div className="flex flex-col gap-1">
+              <FormSelect
+                value={row.policyAssetCoverageId}
+                onChange={(e) => updateRow(row.id, 'policyAssetCoverageId', e.target.value)}
+              >
+                <option value="">Seleccionar activo…</option>
+                {policiesWithCoverages.map((p) => {
+                  const options = (p.coverages ?? []).filter(
+                    (c) => coverageAllowed(c) || c.id === row.policyAssetCoverageId,
+                  )
+                  if (options.length === 0) return null
+                  return (
+                    <optgroup key={p.id} label={`${p.policyNumber} — ${policyTypeLabel(p)}`}>
+                      {options.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {coverageLabel(c)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )
+                })}
+              </FormSelect>
+              {isHistorical && <Badge variant="default">Dada de baja</Badge>}
+              {isOutOfRange && <Badge variant="warning">Fuera de fecha</Badge>}
+            </div>
 
             <FormInput
               type="number"

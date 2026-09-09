@@ -20,6 +20,7 @@ import {
   addMonthsToKey,
   nextMonthKey,
   buildMonthRange,
+  isReasonableMonthKey,
 } from '../../../shared/utils/renewalProjectionCalc'
 import { monthLabel } from './RenewalProjectionTable'
 import type { AssetRowData } from './RenewalProjectionTable'
@@ -129,19 +130,29 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
   )
 
   const today = todayMonthKey()
-  const { firstRealMonthKey, lastRealMonthKey } = useMemo(() => {
+  const { firstRealMonthKey, lastRealMonthKey, filteredAbsurdDates } = useMemo(() => {
     let first: string | null = null
     let last: string | null = null
+    let filtered = 0
     for (const { realTimeline } of perAssetData) {
       for (const monthKey of realTimeline.keys()) {
+        if (!isReasonableMonthKey(monthKey)) {
+          filtered++
+          continue
+        }
         if (!first || monthKey < first) first = monthKey
         if (!last || monthKey > last) last = monthKey
       }
     }
-    return { firstRealMonthKey: first ?? today, lastRealMonthKey: last ?? today }
+    return { firstRealMonthKey: first ?? today, lastRealMonthKey: last ?? today, filteredAbsurdDates: filtered }
   }, [perAssetData, today])
 
-  const horizonEndMonthKey = customEnd ?? addMonthsToKey(lastRealMonthKey > today ? lastRealMonthKey : today, horizonYears * 12)
+  // maxMonthKey: el mes más lejano permitido para proyectar (hoy + 10 años).
+  const maxMonthKey = useMemo(() => addMonthsToKey(today, 120), [today])
+
+  // Si customEnd viene fuera de rango, ignorarlo y usar el preset.
+  const safeCustomEnd = customEnd && customEnd > today && customEnd <= maxMonthKey ? customEnd : null
+  const horizonEndMonthKey = safeCustomEnd ?? addMonthsToKey(lastRealMonthKey > today ? lastRealMonthKey : today, horizonYears * 12)
   const axis = useMemo(() => buildMonthRange(firstRealMonthKey, horizonEndMonthKey), [firstRealMonthKey, horizonEndMonthKey])
 
   // ─── Filas (valores efectivos = override ?? automático + proyección) ────────
@@ -303,7 +314,7 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
     isError,
     currency, setCurrency,
     horizonYears, setHorizonYears,
-    customEnd, setCustomEnd,
+    customEnd: safeCustomEnd, setCustomEnd,
     breakdownFields, toggleBreakdownField,
     hideAssetPanel, setHideAssetPanel,
     exchangeRate,
@@ -311,9 +322,11 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
     rows,
     axis,
     lastRealMonthKey,
+    maxMonthKey,
     horizonEndMonthKey,
     kpis,
     projectedDisplay,
+    filteredAbsurdDates,
     handleCommitField,
     handleResetRow,
     handleResetAll,

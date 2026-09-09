@@ -411,6 +411,14 @@ export interface PolicyCoverage {
   beneficiaryDescription?: string | null
   attachmentsCount?: number
   circulationCardAttachment?: { id: string; fileUrl?: string; name: string } | null
+  // Ciclo de vida de la línea (Fase 1/2 de historización) — bajaDate null =
+  // vigente; una vez seteada, la línea sigue existiendo, solo queda
+  // historizada (ver PolicyDetailPage: vigentes vs. dadas de baja).
+  effectiveDate: string
+  bajaDate: string | null
+  bajaReason: string | null
+  deactivatedAt?: string | null
+  deactivatedBy?: string | null
 }
 
 export interface Policy {

@@ -9,7 +9,7 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
 export const apiClient = axios.create({
   baseURL: `${API_BASE}/api/v1`,
-  timeout: 15000,
+  timeout: 30_000,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -61,6 +61,29 @@ apiClient.interceptors.response.use(
     return res
   },
   (error) => {
+    // Timeout de Axios: detectar por código o por mensaje para no mostrar
+    // "timeout of 15000ms exceeded" al usuario.
+    const isTimeout = error.code === 'ECONNABORTED' || error.message?.includes('timeout')
+    if (isTimeout) {
+      if (import.meta.env.DEV) {
+        console.warn(`[API Timeout] ${error.config?.method?.toUpperCase()} ${error.config?.url} — ${error.message}`)
+      }
+      toast.error('La operación tardó más de lo esperado. Intentá nuevamente.', { duration: 8000 })
+      return Promise.reject(new Error('Timeout'))
+    }
+
+    // Rate limit: mensaje amigable propio (no el técnico del backend) y sin
+    // pasar por buildErrorMessage/401 — `.status = 429` es lo que queryClient
+    // lee para no reintentar automáticamente y solo sumar otro request al
+    // límite que acaba de rechazarnos.
+    if (error.response?.status === 429) {
+      const rateLimitMessage = 'La app recibió demasiadas solicitudes en poco tiempo. Esperá unos segundos e intentá nuevamente.'
+      toast.error(rateLimitMessage)
+      const rateLimitError = new Error(rateLimitMessage) as Error & { status?: number }
+      rateLimitError.status = 429
+      return Promise.reject(rateLimitError)
+    }
+
     const message = buildErrorMessage(error)
     const details = error.response?.data?.error?.details
     // Token inválido/expirado: limpiar la sesión y mandar a /login. Un
