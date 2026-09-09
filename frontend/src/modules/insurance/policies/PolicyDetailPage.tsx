@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Building2, User, Calendar, Hash, Link2,
   Plus, ChevronDown, ChevronUp, ArrowUpRight, Archive,
-  Paperclip, IdCard, ShieldOff, Clock, History,
+  Paperclip, IdCard, ShieldOff, Clock, History, PlusCircle,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -16,6 +16,7 @@ import { DataTable } from '../../../shared/components/data-table/DataTable'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
+import { ActionMenu } from '../../../shared/components/menus/ActionMenu'
 import {
   formatCurrencyFull,
   formatCurrencyCompact,
@@ -39,6 +40,7 @@ import { DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
 import { DeactivateCoverageModal } from './DeactivateCoverageModal'
+import { ReAddCoverageModal } from './ReAddCoverageModal'
 import { FacturaCard } from './components/FacturaCard'
 import { StandaloneDocCard } from './components/StandaloneDocCard'
 import { EndorsementCard } from './components/EndorsementCard'
@@ -118,6 +120,10 @@ export default function PolicyDetailPage() {
   const [expandedCoverageId, setExpandedCoverageId] = useState<string | null>(null)
   // Línea de cobertura sobre la que se abrió el modal de baja histórica.
   const [deactivateTarget, setDeactivateTarget] = useState<PolicyCoverage | null>(null)
+  // Línea de cobertura dada de baja sobre la que se abrió el modal de
+  // reincorporación — sirve de plantilla, la reincorporación crea una línea
+  // nueva y nunca la toca (ver ReAddCoverageModal).
+  const [reAddTarget, setReAddTarget] = useState<PolicyCoverage | null>(null)
   // "Activos dados de baja" arranca colapsada si hay líneas — igual queda
   // accesible con un clic, no oculta información.
   const [showDeBajaCoverages, setShowDeBajaCoverages] = useState(false)
@@ -157,6 +163,15 @@ export default function PolicyDetailPage() {
   // se historiza (ver PolicyAssetCoverage.bajaDate).
   const vigentCoverages = coverages.filter((c) => !c.bajaDate || !isCoverageBajaEffective(c.bajaDate))
   const deBajaCoverages = coverages.filter((c) => c.bajaDate && isCoverageBajaEffective(c.bajaDate))
+
+  // Activos con más de una línea (ej. dado de baja + reincorporado) — se usa
+  // para avisar "Tiene historial de cobertura" en vez de dejar que dos cards
+  // con el mismo nombre de activo parezcan un duplicado cargado por error.
+  const coverageCountByAssetId = new Map<string, number>()
+  for (const c of coverages) {
+    if (c.assetId) coverageCountByAssetId.set(c.assetId, (coverageCountByAssetId.get(c.assetId) ?? 0) + 1)
+  }
+  const hasCoverageHistory = (c: PolicyCoverage) => !!c.assetId && (coverageCountByAssetId.get(c.assetId) ?? 0) > 1
 
   const documents = allDocuments.filter((d) => d.policyIds.includes(id!))
 
@@ -354,6 +369,17 @@ export default function PolicyDetailPage() {
         />
       )}
 
+      {reAddTarget && (
+        <ReAddCoverageModal
+          policyId={policy.id}
+          policyStartDate={policy.startDate}
+          policyEndDate={policy.endDate}
+          coverage={reAddTarget}
+          onClose={() => setReAddTarget(null)}
+          onSuccess={() => setReAddTarget(null)}
+        />
+      )}
+
       {/* Main 2-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
 
@@ -418,6 +444,7 @@ export default function PolicyDetailPage() {
                     isExpanded={expandedCoverageId === coverage.id}
                     onToggleExpand={() => setExpandedCoverageId(expandedCoverageId === coverage.id ? null : coverage.id)}
                     onDeactivate={() => setDeactivateTarget(coverage)}
+                    hasHistory={hasCoverageHistory(coverage)}
                   />
                 ))}
               </div>
@@ -452,6 +479,8 @@ export default function PolicyDetailPage() {
                       lineDocs={canShowLineDocuments ? coverageDocuments(coverage.id) : []}
                       isExpanded={expandedCoverageId === coverage.id}
                       onToggleExpand={() => setExpandedCoverageId(expandedCoverageId === coverage.id ? null : coverage.id)}
+                      hasHistory={hasCoverageHistory(coverage)}
+                      onReAdd={() => setReAddTarget(coverage)}
                     />
                   ))}
                 </div>
@@ -533,14 +562,16 @@ export default function PolicyDetailPage() {
           ))}
           <div className="flex-1" />
           {activeDocTab === 'documentos' && (
-            <button
-              type="button"
-              onClick={() => navigate(`/insurance/documents/new?policyId=${id}`)}
-              className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
-            >
-              <Plus size={13} />
-              Nuevo documento
-            </button>
+            <ActionMenu
+              triggerLabel="Nuevo documento"
+              triggerIcon={Plus}
+              triggerClassName="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
+              align="right"
+              options={[
+                { label: 'Crear Factura', onClick: () => navigate(`${ROUTES.DOCUMENTS_NEW}?policyId=${id}&type=INVOICE`) },
+                { label: 'Crear Endoso', onClick: () => navigate(`${ROUTES.DOCUMENTS_NEW}?policyId=${id}&type=ENDORSEMENT`) },
+              ]}
+            />
           )}
           {activeDocTab === 'adjuntos' && (
             <span className="text-xs text-slate-400">Archivos PDF, imágenes y certificados</span>
@@ -557,14 +588,16 @@ export default function PolicyDetailPage() {
                 <p className="text-xs text-slate-400 mb-4">
                   Esta póliza no tiene facturas ni documentos asociados.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/insurance/documents/new?policyId=${id}`)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  <Plus size={14} />
-                  Agregar documento
-                </button>
+                <ActionMenu
+                  triggerLabel="Agregar documento"
+                  triggerIcon={Plus}
+                  triggerClassName="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
+                  className="relative inline-block"
+                  options={[
+                    { label: 'Crear Factura', onClick: () => navigate(`${ROUTES.DOCUMENTS_NEW}?policyId=${id}&type=INVOICE`) },
+                    { label: 'Crear Endoso', onClick: () => navigate(`${ROUTES.DOCUMENTS_NEW}?policyId=${id}&type=ENDORSEMENT`) },
+                  ]}
+                />
               </div>
             ) : (
               <>
@@ -696,14 +729,18 @@ interface CoverageLineCardProps {
   onToggleExpand: () => void
   /** Solo se pasa para líneas vigentes — una línea de baja no puede volverse a dar de baja. */
   onDeactivate?: () => void
+  /** Solo se pasa para líneas ya dadas de baja (baja efectiva, no programada) — abre el modal de reincorporación. */
+  onReAdd?: () => void
+  /** true si este activo tiene más de una línea en la póliza (ej. una vieja dada de baja + una reincorporada) — evita que dos cards con el mismo activo parezcan un duplicado cargado por error. */
+  hasHistory?: boolean
 }
 
 // Una línea de cobertura, en su variante vigente o dada de baja — comparten
 // casi todo el contenido (activo, tipo de seguro, suma asegurada, adjuntos y
 // documentos facturados); lo que cambia es la info de ciclo de vida y si
-// ofrece la acción de dar de baja.
+// ofrece la acción de dar de baja/reincorporar.
 function CoverageLineCard({
-  coverage, variant, navigate, canShowLineDocuments, lineDocs, isExpanded, onToggleExpand, onDeactivate,
+  coverage, variant, navigate, canShowLineDocuments, lineDocs, isExpanded, onToggleExpand, onDeactivate, onReAdd, hasHistory,
 }: CoverageLineCardProps) {
   // Vigente con baja YA cargada pero con fecha futura — sigue vigente hoy,
   // pero ya se sabe que va a dejar de estarlo.
@@ -724,8 +761,17 @@ function CoverageLineCard({
             : <ShieldCheck size={16} className="text-brand-600" />}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-slate-800">
+          <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5 flex-wrap">
             {coverage.asset ? coverage.asset.name : 'Sin activo asociado'}
+            {hasHistory && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-violet-50 text-violet-600 border border-violet-200"
+                title="Este activo tiene más de un período de cobertura en esta póliza"
+              >
+                <History size={9} />
+                Tiene historial de cobertura
+              </span>
+            )}
           </p>
           <p className="text-xs text-slate-500">
             {coverage.asset
@@ -759,6 +805,16 @@ function CoverageLineCard({
               <Calendar size={10} />
               Alta: {formatDate(coverage.effectiveDate)}
             </span>
+            {variant === 'vigente' && hasHistory && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Reincorporado
+              </span>
+            )}
+            {variant === 'de_baja' && hasHistory && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                Período anterior
+              </span>
+            )}
             {bajaProgramada && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
                 <Clock size={10} />
@@ -823,6 +879,18 @@ function CoverageLineCard({
             >
               <ShieldOff size={12} />
               Dar de baja
+            </button>
+          )}
+          {/* Solo en variant de_baja: acá la baja ya es efectiva (no
+              programada a futuro, esas quedan en vigentCoverages) — crea una
+              línea NUEVA, nunca toca esta. */}
+          {variant === 'de_baja' && onReAdd && (
+            <button
+              onClick={onReAdd}
+              className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium mt-1.5"
+            >
+              <PlusCircle size={12} />
+              Reincorporar a cobertura
             </button>
           )}
         </div>

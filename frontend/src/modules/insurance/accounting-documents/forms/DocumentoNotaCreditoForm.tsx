@@ -25,6 +25,34 @@ import type { AccountingDocument, Currency } from '../../../../shared/types'
 
 interface DocumentoNotaCreditoFormProps {
   initialDoc?: AccountingDocument
+  sourceLinkedDocumentId?: string
+}
+
+// `sourceLinkedDocumentId` viene de "Crear documento relacionado" desde una
+// Factura — se resuelve ACÁ, antes de montar el formulario editable, para
+// poder plegar el prefill directo en el estado inicial de abajo sin
+// necesitar un efecto (mismo patrón que sourcePolicy en DocumentoFacturaForm).
+export default function DocumentoNotaCreditoForm({ initialDoc, sourceLinkedDocumentId }: DocumentoNotaCreditoFormProps) {
+  const isEdit = !!initialDoc
+  const { data: sourceLinkedDocument, isLoading: sourceLoading } = useQuery({
+    ...documentQueries.detail(sourceLinkedDocumentId!),
+    enabled: !isEdit && !!sourceLinkedDocumentId,
+  })
+
+  if (!isEdit && sourceLinkedDocumentId && (sourceLoading || !sourceLinkedDocument)) {
+    return (
+      <PageContent>
+        <p className="text-sm text-slate-400 py-10 text-center">Cargando datos de la factura base…</p>
+      </PageContent>
+    )
+  }
+
+  return <DocumentoNotaCreditoFormBody initialDoc={initialDoc} sourceLinkedDocument={!isEdit ? sourceLinkedDocument ?? null : null} />
+}
+
+interface DocumentoNotaCreditoFormBodyProps {
+  initialDoc?: AccountingDocument
+  sourceLinkedDocument: AccountingDocument | null
 }
 
 interface FormState {
@@ -42,17 +70,17 @@ interface FormState {
 
 type FormErrors = Partial<Record<keyof FormState | 'policies', string>>
 
-export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCreditoFormProps) {
+function DocumentoNotaCreditoFormBody({ initialDoc, sourceLinkedDocument }: DocumentoNotaCreditoFormBodyProps) {
   const isEdit = !!initialDoc
   const queryClient = useQueryClient()
 
   const [form, setForm] = useState<FormState>({
-    insuranceCompany: initialDoc?.insuranceCompany ?? '',
+    insuranceCompany: initialDoc?.insuranceCompany ?? sourceLinkedDocument?.insuranceCompany ?? '',
     documentNumber: initialDoc?.documentNumber ?? '',
     issueDate: initialDoc?.issueDate ?? '',
-    linkedDocumentId: initialDoc?.linkedDocumentId ?? '',
-    currency: initialDoc?.currency ?? '',
-    exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : '0',
+    linkedDocumentId: initialDoc?.linkedDocumentId ?? sourceLinkedDocument?.id ?? '',
+    currency: initialDoc?.currency ?? sourceLinkedDocument?.currency ?? '',
+    exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : sourceLinkedDocument ? String(sourceLinkedDocument.exchangeRate) : '0',
     netAmount: initialDoc ? String(initialDoc.netAmount) : '',
     vatAmount: initialDoc ? String(initialDoc.vatAmount) : '0',
     otherTaxesAmount: initialDoc ? String(initialDoc.otherTaxesAmount) : '0',
@@ -80,7 +108,9 @@ export default function DocumentoNotaCreditoForm({ initialDoc }: DocumentoNotaCr
     })),
   })
   const linkableInvoices = candidateInvoices.filter((inv, idx) => {
-    if (isEdit && inv.id === form.linkedDocumentId) return true // ya vinculada, aunque su saldo actual sea 0
+    // Ya vinculada (edición) o precargada por contexto ("Crear documento
+    // relacionado" desde la Factura) — no ocultar aunque su saldo actual sea 0.
+    if (inv.id === form.linkedDocumentId) return true
     const balance = balanceQueries[idx]?.data
     return balance ? balance.effectiveAmount > 0 : true // mientras carga, no ocultar
   })

@@ -8,14 +8,19 @@ import { DocumentFormRouter } from './forms/DocumentFormRouter'
 import type { DocumentType } from '../../../shared/types'
 
 // Página de entrada para crear un documento contable. El tipo se elige una
-// sola vez (acá o vía el shortcut "Nuevo documento" de una póliza) y a partir
-// de ahí queda fijo — cada tipo tiene su propio formulario dedicado, ver
-// DocumentFormRouter.
+// sola vez (acá, vía el shortcut de una póliza, o vía "Crear documento
+// relacionado" desde una Factura) y a partir de ahí queda fijo — cada tipo
+// tiene su propio formulario dedicado, ver DocumentFormRouter.
 export default function DocumentNewPage() {
   const [searchParams] = useSearchParams()
   const fromPolicyId = searchParams.get('policyId') ?? ''
-  // El shortcut "Nuevo documento" desde una póliza siempre crea una Factura.
-  const [selectedType, setSelectedType] = useState<DocumentType | null>(fromPolicyId ? 'INVOICE' : null)
+  const fromLinkedDocumentId = searchParams.get('linkedDocumentId') ?? ''
+  const typeParam = searchParams.get('type') as DocumentType | null
+  // Compatibilidad: un link viejo con `policyId` y sin `type` sigue creando
+  // Factura, exactamente como antes — los accesos nuevos (menú de la póliza,
+  // "Crear documento relacionado" de una Factura) siempre mandan `type`
+  // explícito, así que este fallback solo cubre URLs ya existentes.
+  const [selectedType, setSelectedType] = useState<DocumentType | null>(typeParam ?? (fromPolicyId ? 'INVOICE' : null))
 
   const { data: documentTypesData, isLoading } = useQuery(documentQueries.types())
 
@@ -38,10 +43,14 @@ export default function DocumentNewPage() {
     )
   }
 
+  const isPolicySourced = selectedType === 'INVOICE' || selectedType === 'ENDORSEMENT'
+  const isLinkedDocumentSourced = selectedType === 'CREDIT_NOTE' || selectedType === 'DEBIT_NOTE' || selectedType === 'ADJUSTMENT_ENTRY'
+
   return (
     <DocumentFormRouter
       documentType={selectedType}
-      sourcePolicyId={selectedType === 'INVOICE' ? fromPolicyId || undefined : undefined}
+      sourcePolicyId={isPolicySourced ? fromPolicyId || undefined : undefined}
+      sourceLinkedDocumentId={isLinkedDocumentSourced ? fromLinkedDocumentId || undefined : undefined}
     />
   )
 }

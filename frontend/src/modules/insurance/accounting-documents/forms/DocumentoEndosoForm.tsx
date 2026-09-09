@@ -21,10 +21,38 @@ import { formatCurrencyFull } from '../../../../shared/utils/format'
 import { isFutureDate, isReasonableDate } from '../../../../shared/utils/dateValidation'
 import { pruneOutOfRangeRows } from '../../../../shared/utils/expiration'
 import { CURRENCY_OPTIONS } from '../../../../shared/constants'
-import type { AccountingDocument, Currency, EconomicImpactType } from '../../../../shared/types'
+import type { AccountingDocument, Currency, EconomicImpactType, Policy } from '../../../../shared/types'
 
 interface DocumentoEndosoFormProps {
   initialDoc?: AccountingDocument
+  sourcePolicyId?: string
+}
+
+// `sourcePolicyId` viene del shortcut "Crear Endoso" de una póliza — se
+// resuelve ACÁ, antes de montar el formulario editable, para poder plegar el
+// prefill directo en el estado inicial de abajo sin necesitar un efecto
+// (mismo patrón que sourcePolicy en DocumentoFacturaForm.tsx).
+export default function DocumentoEndosoForm({ initialDoc, sourcePolicyId }: DocumentoEndosoFormProps) {
+  const isEdit = !!initialDoc
+  const { data: sourcePolicy, isLoading: sourcePolicyLoading } = useQuery({
+    ...policyQueries.detail(sourcePolicyId!),
+    enabled: !isEdit && !!sourcePolicyId,
+  })
+
+  if (!isEdit && sourcePolicyId && (sourcePolicyLoading || !sourcePolicy)) {
+    return (
+      <PageContent>
+        <p className="text-sm text-slate-400 py-10 text-center">Cargando datos de la póliza…</p>
+      </PageContent>
+    )
+  }
+
+  return <DocumentoEndosoFormBody initialDoc={initialDoc} sourcePolicy={!isEdit ? sourcePolicy ?? null : null} />
+}
+
+interface DocumentoEndosoFormBodyProps {
+  initialDoc?: AccountingDocument
+  sourcePolicy: Policy | null
 }
 
 interface FormState {
@@ -46,15 +74,15 @@ interface FormState {
 
 type FormErrors = Partial<Record<keyof FormState | 'policies', string>>
 
-export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormProps) {
+function DocumentoEndosoFormBody({ initialDoc, sourcePolicy }: DocumentoEndosoFormBodyProps) {
   const isEdit = !!initialDoc
   const queryClient = useQueryClient()
 
   const [form, setForm] = useState<FormState>({
-    insuranceCompany: initialDoc?.insuranceCompany ?? '',
+    insuranceCompany: initialDoc?.insuranceCompany ?? sourcePolicy?.insuranceCompany ?? '',
     documentNumber: initialDoc?.documentNumber ?? '',
     issueDate: initialDoc?.issueDate ?? '',
-    policyId: initialDoc?.policyId ?? '',
+    policyId: initialDoc?.policyId ?? sourcePolicy?.id ?? '',
     endorsementType: initialDoc?.endorsementType ?? '',
     endorsementEffectiveDate: initialDoc?.endorsementEffectiveDate ?? '',
     description: initialDoc?.description ?? '',

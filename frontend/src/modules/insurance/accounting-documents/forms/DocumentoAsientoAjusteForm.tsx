@@ -25,6 +25,34 @@ const ADJUSTABLE_TYPES: DocumentType[] = ['INVOICE', 'DEBIT_NOTE', 'CREDIT_NOTE'
 
 interface DocumentoAsientoAjusteFormProps {
   initialDoc?: AccountingDocument
+  sourceLinkedDocumentId?: string
+}
+
+// `sourceLinkedDocumentId` viene de "Crear documento relacionado" desde una
+// Factura — se resuelve ACÁ, antes de montar el formulario editable, para
+// poder plegar el prefill directo en el estado inicial de abajo sin
+// necesitar un efecto (mismo patrón que sourcePolicy en DocumentoFacturaForm).
+export default function DocumentoAsientoAjusteForm({ initialDoc, sourceLinkedDocumentId }: DocumentoAsientoAjusteFormProps) {
+  const isEdit = !!initialDoc
+  const { data: sourceLinkedDocument, isLoading: sourceLoading } = useQuery({
+    ...documentQueries.detail(sourceLinkedDocumentId!),
+    enabled: !isEdit && !!sourceLinkedDocumentId,
+  })
+
+  if (!isEdit && sourceLinkedDocumentId && (sourceLoading || !sourceLinkedDocument)) {
+    return (
+      <PageContent>
+        <p className="text-sm text-slate-400 py-10 text-center">Cargando datos del documento base…</p>
+      </PageContent>
+    )
+  }
+
+  return <DocumentoAsientoAjusteFormBody initialDoc={initialDoc} sourceLinkedDocument={!isEdit ? sourceLinkedDocument ?? null : null} />
+}
+
+interface DocumentoAsientoAjusteFormBodyProps {
+  initialDoc?: AccountingDocument
+  sourceLinkedDocument: AccountingDocument | null
 }
 
 interface FormState {
@@ -40,15 +68,15 @@ interface FormState {
 
 type FormErrors = Partial<Record<keyof FormState | 'policies', string>>
 
-export default function DocumentoAsientoAjusteForm({ initialDoc }: DocumentoAsientoAjusteFormProps) {
+function DocumentoAsientoAjusteFormBody({ initialDoc, sourceLinkedDocument }: DocumentoAsientoAjusteFormBodyProps) {
   const isEdit = !!initialDoc
   const queryClient = useQueryClient()
 
   const [form, setForm] = useState<FormState>({
-    insuranceCompany: initialDoc?.insuranceCompany ?? '',
+    insuranceCompany: initialDoc?.insuranceCompany ?? sourceLinkedDocument?.insuranceCompany ?? '',
     documentNumber: initialDoc?.documentNumber ?? '',
     issueDate: initialDoc?.issueDate ?? '',
-    linkedDocumentId: initialDoc?.linkedDocumentId ?? '',
+    linkedDocumentId: initialDoc?.linkedDocumentId ?? sourceLinkedDocument?.id ?? '',
     adjustmentReason: initialDoc?.adjustmentReason ?? '',
     adjustmentSign: (initialDoc?.adjustmentSign as AdjustmentSign) ?? '',
     amount: initialDoc ? String(initialDoc.netAmount) : '',

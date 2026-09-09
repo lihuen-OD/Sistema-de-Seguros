@@ -24,6 +24,7 @@ import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
+import { ActionMenu } from '../../../shared/components/menus/ActionMenu'
 import {
   formatCurrencyFull,
   formatCurrencyCompact,
@@ -404,6 +405,20 @@ export default function DocumentDetailPage() {
               <FileDown size={15} />
               Ficha PDF
             </button>
+            {doc.documentType === 'INVOICE' && (
+              <ActionMenu
+                triggerLabel="Crear documento relacionado"
+                triggerIcon={Link2}
+                triggerClassName="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors w-full"
+                className="relative w-full xl:w-auto"
+                align="right"
+                options={[
+                  { label: 'Nota de Crédito', onClick: () => navigate(`${ROUTES.DOCUMENTS_NEW}?type=CREDIT_NOTE&linkedDocumentId=${doc.id}`) },
+                  { label: 'Nota de Débito', onClick: () => navigate(`${ROUTES.DOCUMENTS_NEW}?type=DEBIT_NOTE&linkedDocumentId=${doc.id}`) },
+                  { label: 'Asiento de Ajuste', onClick: () => navigate(`${ROUTES.DOCUMENTS_NEW}?type=ADJUSTMENT_ENTRY&linkedDocumentId=${doc.id}`) },
+                ]}
+              />
+            )}
             {canApply && (
               <button
                 onClick={() => setApplyConfirmOpen(true)}
