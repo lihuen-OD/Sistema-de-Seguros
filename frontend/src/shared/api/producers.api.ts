@@ -126,10 +126,12 @@ export const producerQueries = {
       queryKey: producerKeys.all,
       queryFn: () => producersApi.findAll(),
       staleTime: 60 * 1000,
-      // Se usa como origen de varios desplegables (Tareas, Pólizas,
-      // Siniestros) además de su propia página de listado — puede editarse
-      // en otra pestaña mientras un formulario queda abierto acá.
-      refetchOnWindowFocus: 'always',
+      // 'true' (no 'always'): con staleTime de 60s, 'always' casi nunca
+      // aportaba nada por sobre 'true' (la mayoría de los regresos de foco
+      // ya superan el minuto), pero sí forzaba un refetch en cada vuelta de
+      // foco en las 6+ pantallas que consumen esta lista (Dashboard,
+      // Pólizas, Detalle de Póliza, etc.) — ver auditoría Performance & RateLimit Fase C.
+      refetchOnWindowFocus: true,
     }),
   detail: (id: string) =>
     queryOptions({

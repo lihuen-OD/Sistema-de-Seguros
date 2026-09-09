@@ -185,19 +185,24 @@ export default function AssetDetailPage() {
     enabled: !!id && canClaims,
   })
 
+  // enabled: !!id (no !!asset) — ninguna de estas 4 queries depende de
+  // ningún campo del activo, solo se cruzan con asset.companyId/assetId más
+  // abajo una vez resuelto. Esperar a `asset` completo antes de dispararlas
+  // era una cascada innecesaria (Performance & RateLimit Fase C): ahora
+  // corren en paralelo con assetQueries.detail(id) en vez de encolarse detrás.
   const { data: allCompanies = [] } = useQuery({
     ...companyQueries.list(),
-    enabled: !!asset,
+    enabled: !!id,
   })
 
   const { data: allCostCenters = [] } = useQuery({
     ...costCenterQueries.list(),
-    enabled: !!asset,
+    enabled: !!id,
   })
 
   const { data: allDocuments = [] } = useQuery({
     ...documentQueries.list(),
-    enabled: !!asset && canDocuments,
+    enabled: !!id && canDocuments,
   })
 
   // Trae allocations (con allocationPercentage por póliza) embebidas — a
@@ -205,7 +210,7 @@ export default function AssetDetailPage() {
   // Se usa exclusivamente para prorratear la columna "P/SA".
   const { data: financialDocs = [] } = useQuery({
     ...documentQueries.financial(),
-    enabled: !!asset && canFinancial,
+    enabled: !!id && canFinancial,
   })
 
   // Gateado por `documents` en el backend (GET /documents/types) — solo hace

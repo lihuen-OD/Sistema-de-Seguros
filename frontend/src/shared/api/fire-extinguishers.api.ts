@@ -182,7 +182,6 @@ export const fireExtinguisherQueries = {
       queryFn: () => fireExtinguishersApi.getDashboardSummary(),
       staleTime: 30 * 1000,
       gcTime: 5 * 60 * 1000,
-      refetchOnMount: 'always' as const,
     }),
 }
 
