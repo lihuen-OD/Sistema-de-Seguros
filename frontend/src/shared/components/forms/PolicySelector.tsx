@@ -4,7 +4,7 @@ import { FormSelect, FormInput } from './FormSection'
 import { Badge } from '../badges/Badge'
 import { formatCurrencyFull } from '../../utils/format'
 import { buildAssetLabel } from '../../utils/assetMetadata'
-import { isCoverageActiveOn } from '../../utils/expiration'
+import { isCoverageActiveOn, coverageReferenceDate } from '../../utils/expiration'
 import type { Policy, PolicyCoverage, Currency } from '../../types'
 
 export interface PolicyAllocationRow {
@@ -127,17 +127,27 @@ export function PolicySelector(props: PolicySelectorProps) {
   // filtro, comportamiento actual, usado por NC/ND/Ajuste). Una línea ya
   // asignada al documento (historicalCoverageIds) se sigue ofreciendo aunque
   // hoy esté fuera de vigencia, para no romper documentos históricos.
+  //
+  // La fecha contra la que se valida cada línea no siempre es issueDate: una
+  // factura puede emitirse antes de que arranque la vigencia de la póliza
+  // (facturación anticipada). En ese caso se valida contra el inicio de la
+  // póliza, no contra una fecha en la que la póliza todavía ni existía —
+  // mismo criterio que coverageReferenceDate en documents.service.ts (backend).
+  const policyStartDateById = new Map(policies.map((p) => [p.id, p.startDate]))
+  const refDateFor = (c: PolicyCoverage, atIssueDate: string): string =>
+    coverageReferenceDate(policyStartDateById.get(c.policyId) ?? '', atIssueDate)
   const historicalSet = new Set(historicalCoverageIds ?? [])
   const coverageAllowed = (c: PolicyCoverage) =>
-    issueDate === undefined || isCoverageActiveOn(c, issueDate) || historicalSet.has(c.id)
+    issueDate === undefined || isCoverageActiveOn(c, refDateFor(c, issueDate)) || historicalSet.has(c.id)
   const coverageIsHistorical = (c: PolicyCoverage) =>
-    issueDate !== undefined && !isCoverageActiveOn(c, issueDate) && historicalSet.has(c.id)
+    issueDate !== undefined && !isCoverageActiveOn(c, refDateFor(c, issueDate)) && historicalSet.has(c.id)
   // Caso borde: una línea recién elegida en esta sesión (no histórica) que
   // quedó fuera de rango porque el usuario cambió issueDate después de
-  // elegirla. El backend la va a rechazar igual al guardar; el badge es solo
-  // para avisar antes de intentarlo.
+  // elegirla sin que todavía corriera pruneOutOfRangeRows (ej. edición, donde
+  // nunca se poda solo). El backend la va a rechazar igual al guardar; el
+  // badge es solo para avisar antes de intentarlo.
   const coverageIsOutOfRange = (c: PolicyCoverage) =>
-    issueDate !== undefined && !isCoverageActiveOn(c, issueDate) && !historicalSet.has(c.id)
+    issueDate !== undefined && !isCoverageActiveOn(c, refDateFor(c, issueDate)) && !historicalSet.has(c.id)
   const coverageById = new Map(policies.flatMap((p) => (p.coverages ?? []).map((c) => [c.id, c] as const)))
 
   const updateRow = (rowId: string, field: 'policyAssetCoverageId' | 'allocatedAmount', value: string) => {

@@ -34,3 +34,52 @@ export function isCoverageActiveOn(
   const asOf = asOfDate.slice(0, 10)
   return effective <= asOf && (baja === null || baja >= asOf)
 }
+
+// max(issueDate, policy.startDate) — una factura puede emitirse antes de que
+// arranque la vigencia de la póliza (facturación anticipada); en ese caso la
+// vigencia de una línea de cobertura se valida contra el inicio de la
+// póliza, no contra una fecha en la que la póliza todavía ni existía. Mismo
+// criterio que coverageReferenceDate en documents.service.ts (backend).
+export function coverageReferenceDate(policyStartDate: string, issueDate: string): string {
+  return policyStartDate && policyStartDate > issueDate ? policyStartDate : issueDate
+}
+
+// Poda `rows` a las que siguen vigentes contra `issueDate` (o están en
+// `historicalCoverageIds`) — misma regla que PolicySelector usa adentro para
+// permitir/mostrar una línea (coverageAllowed). Pensada para llamarse desde
+// el onChange de issueDate en Factura/Endoso cuando se está creando un
+// documento NUEVO: ahí no hay histórico que preservar, así que una selección
+// (manual, de "Agregar todos", o precargada desde una póliza de origen) que
+// deja de estar vigente se saca sola en vez de quedar "Fuera de fecha" para
+// siempre sin que nadie la remueva. En edición NO se llama — las líneas ya
+// guardadas (y cualquier otra que el usuario haya tocado) se preservan
+// siempre; el aviso de fuera de rango queda solo en el badge.
+interface CoverageWithLifecycle {
+  id: string
+  policyId: string
+  effectiveDate: string
+  bajaDate: string | null
+}
+interface PolicyWithCoverages {
+  id: string
+  startDate: string
+  coverages?: CoverageWithLifecycle[]
+}
+export function pruneOutOfRangeRows<T extends { policyAssetCoverageId: string }>(
+  rows: T[],
+  policies: PolicyWithCoverages[],
+  issueDate: string,
+  historicalCoverageIds: string[] = [],
+): T[] {
+  if (!issueDate) return rows
+  const historicalSet = new Set(historicalCoverageIds)
+  const coverageById = new Map(policies.flatMap((p) => (p.coverages ?? []).map((c) => [c.id, c] as const)))
+  const policyStartDateById = new Map(policies.map((p) => [p.id, p.startDate]))
+  const stillValid = rows.filter((r) => {
+    if (!r.policyAssetCoverageId) return true
+    const c = coverageById.get(r.policyAssetCoverageId)
+    if (!c || historicalSet.has(c.id)) return true
+    return isCoverageActiveOn(c, coverageReferenceDate(policyStartDateById.get(c.policyId) ?? '', issueDate))
+  })
+  return stillValid.length === rows.length ? rows : stillValid
+}

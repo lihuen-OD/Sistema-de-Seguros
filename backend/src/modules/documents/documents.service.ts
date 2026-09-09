@@ -1607,10 +1607,18 @@ export const documentsService = {
   // Para las asignaciones de un documento (ahora apuntan a una línea de
   // cobertura, no directo a la póliza) — la línea tiene que existir, su
   // póliza estar activa, y (salvo que esté exceptuada por ser una allocation
-  // histórica ya guardada) estar vigente para issueDate: effectiveDate <=
-  // issueDate && (bajaDate es null || bajaDate >= issueDate). Las exceptuadas
-  // dejan seguir guardando el documento sin romper asignaciones históricas
-  // aunque la línea haya sido dada de baja después.
+  // histórica ya guardada) estar vigente para coverageReferenceDate:
+  // effectiveDate <= coverageReferenceDate && (bajaDate es null || bajaDate
+  // >= coverageReferenceDate). Las exceptuadas dejan seguir guardando el
+  // documento sin romper asignaciones históricas aunque la línea haya sido
+  // dada de baja después.
+  //
+  // coverageReferenceDate = max(issueDate, policy.startDate): issueDate es la
+  // fecha administrativa/contable del documento, no necesariamente la fecha
+  // real de cobertura — una factura puede emitirse antes de que arranque la
+  // vigencia de la póliza (ej. facturación anticipada). En ese caso se valida
+  // la línea contra el inicio de la póliza, no contra una fecha en la que la
+  // póliza todavía ni existía.
   async validateCoverageRefs(
     coverageIds: string[],
     issueDate: Date,
@@ -1618,7 +1626,7 @@ export const documentsService = {
   ) {
     const found = await prisma.policyAssetCoverage.findMany({
       where: { id: { in: coverageIds }, policy: { isActive: true } },
-      select: { id: true, effectiveDate: true, bajaDate: true },
+      select: { id: true, effectiveDate: true, bajaDate: true, policy: { select: { startDate: true } } },
     })
     if (found.length !== coverageIds.length) {
       throw new AppError(
@@ -1627,9 +1635,12 @@ export const documentsService = {
         'INVALID_REFERENCE',
       )
     }
-    const outOfRange = found.find(
-      (c) => !exemptCoverageIds.has(c.id) && !isCoverageActiveOn(c, issueDate),
-    )
+    const outOfRange = found.find((c) => {
+      if (exemptCoverageIds.has(c.id)) return false
+      const coverageReferenceDate =
+        toDateStr(issueDate) > toDateStr(c.policy.startDate) ? issueDate : c.policy.startDate
+      return !isCoverageActiveOn(c, coverageReferenceDate)
+    })
     if (outOfRange) {
       throw new AppError(
         400,

@@ -19,6 +19,7 @@ import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
 import { calculateAllocationPercentage } from '../../../../shared/utils/allocationPercentage'
 import { formatCurrencyFull } from '../../../../shared/utils/format'
 import { isFutureDate, isReasonableDate } from '../../../../shared/utils/dateValidation'
+import { pruneOutOfRangeRows } from '../../../../shared/utils/expiration'
 import { CURRENCY_OPTIONS } from '../../../../shared/constants'
 import type { AccountingDocument, Currency, EconomicImpactType } from '../../../../shared/types'
 
@@ -148,6 +149,18 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
       otherTaxesAmount: nextHasImpact ? prev.otherTaxesAmount : '0',
     }))
     if (!nextHasImpact) setPolicyRows([createEmptyPolicyRow()])
+    markUnsaved()
+  }
+
+  // En un alta nueva no hay histórico que preservar — si la fecha de emisión
+  // cambia y una línea ya elegida deja de estar vigente, se saca sola en vez
+  // de quedar "Fuera de fecha" para siempre. En edición no se poda: las
+  // allocations ya guardadas se preservan siempre, sin importar la fecha.
+  const handleIssueDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextIssueDate = e.target.value
+    setForm((prev) => ({ ...prev, issueDate: nextIssueDate }))
+    if (!isEdit) setPolicyRows((prev) => pruneOutOfRangeRows(prev, distributionPolicies, nextIssueDate))
+    if (errors.issueDate) setErrors((prev) => ({ ...prev, issueDate: undefined }))
     markUnsaved()
   }
 
@@ -305,7 +318,7 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
             </FormField>
 
             <FormField label="Fecha de Emisión" required error={errors.issueDate}>
-              <FormInput type="date" value={form.issueDate} onChange={set('issueDate')} required />
+              <FormInput type="date" value={form.issueDate} onChange={handleIssueDateChange} required />
               {isFutureDate(form.issueDate) && (
                 <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
                   <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
