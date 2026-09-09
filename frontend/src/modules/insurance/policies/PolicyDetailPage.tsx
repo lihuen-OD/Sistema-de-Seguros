@@ -242,16 +242,26 @@ export default function PolicyDetailPage() {
       next.set(docId, current.map((i) => (i.id === instId ? { ...i, ...updates } : i)))
       return next
     })
+    // Puntual en vez de documentKeys.all (que por prefijo refresca el
+    // detail/attachments/etc. de TODO documento en cache, no solo el que
+    // cambió): balance/detail/installments de este documento puntual +
+    // financial() (afecta los agregados de Análisis Económico/Financiero,
+    // que esta misma página usa para "Total facturado"/P/SA) + el listado
+    // con exact:true (columna "Estado Pago" de DocumentsPage), sin invalidar
+    // el resto de los documentos en cache.
+    const invalidateAfterInstallmentChange = () => {
+      queryClient.invalidateQueries({ queryKey: documentKeys.detail(docId) })
+      queryClient.invalidateQueries({ queryKey: documentKeys.balance(docId) })
+      queryClient.invalidateQueries({ queryKey: documentKeys.installments(docId) })
+      queryClient.invalidateQueries({ queryKey: documentKeys.financial() })
+      queryClient.invalidateQueries({ queryKey: documentKeys.all, exact: true })
+    }
     try {
       await documentsApi.updateInstallment(docId, instId, updates)
-      // documentKeys.all por prefijo cubre detail/list/balance/financial de
-      // CUALQUIER documento — sin esto, DocumentDetailPage, DocumentsPage,
-      // FinancialAnalysisPage/EconomicAnalysisPage y el Dashboard quedaban con
-      // el estado de pago viejo hasta que expirara su staleTime.
-      queryClient.invalidateQueries({ queryKey: documentKeys.all })
+      invalidateAfterInstallmentChange()
       clearLocalOverride()
     } catch {
-      queryClient.invalidateQueries({ queryKey: documentKeys.all })
+      invalidateAfterInstallmentChange()
       clearLocalOverride()
     }
   }

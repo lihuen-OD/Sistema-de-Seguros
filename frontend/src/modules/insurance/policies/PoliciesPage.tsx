@@ -54,28 +54,45 @@ export default function PoliciesPage() {
   const [filterDateTo, setFilterDateTo] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deBajaId, setDeBajaId] = useState<string | null>(null)
+  // En vuelo (no "cuál fila tiene el diálogo abierto", eso ya es deleteId/
+  // deBajaId) — gatea el botón "Confirmar" del ConfirmDialog para que un
+  // doble click no dispare dos DELETE/POST seguidos para el mismo id (el
+  // segundo llegaba a un recurso que el primero ya había borrado/dado de
+  // baja, y el backend respondía 404).
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [isDeactivating, setIsDeactivating] = useState(false)
 
   const { data: allPolicies = [], isLoading, isError } = useQuery(policyQueries.list())
   const { data: allProducers = [] } = useQuery(producerQueries.list())
 
   async function handleDelete(id: string) {
-    await policiesApi.hardDelete(id)
-    queryClient.invalidateQueries({ queryKey: policyKeys.all })
-    // Eliminar la póliza la desvincula (sin borrarlos) de los documentos
-    // contables que la referencian — sin esto, DocumentsPage y el detalle de
-    // esos documentos seguían mostrando la distribución/póliza vieja.
-    queryClient.invalidateQueries({ queryKey: documentKeys.all })
-    setDeleteId(null)
+    setIsDeleting(true)
+    try {
+      await policiesApi.hardDelete(id)
+      queryClient.invalidateQueries({ queryKey: policyKeys.all })
+      // Eliminar la póliza la desvincula (sin borrarlos) de los documentos
+      // contables que la referencian — sin esto, DocumentsPage y el detalle de
+      // esos documentos seguían mostrando la distribución/póliza vieja.
+      queryClient.invalidateQueries({ queryKey: documentKeys.all })
+      setDeleteId(null)
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   async function handleDeBaja(id: string) {
-    await policiesApi.markAsDeBaja(id)
-    queryClient.invalidateQueries({ queryKey: policyKeys.all })
-    // policyKeys.detail (['policy', id]) es un árbol de caché separado de
-    // policyKeys.all (['policies']) — sin invalidarlo, PolicyDetailPage
-    // seguía mostrando el estado "vencida" viejo hasta recargar la página.
-    queryClient.invalidateQueries({ queryKey: policyKeys.detail(id) })
-    setDeBajaId(null)
+    setIsDeactivating(true)
+    try {
+      await policiesApi.markAsDeBaja(id)
+      queryClient.invalidateQueries({ queryKey: policyKeys.all })
+      // policyKeys.detail (['policy', id]) es un árbol de caché separado de
+      // policyKeys.all (['policies']) — sin invalidarlo, PolicyDetailPage
+      // seguía mostrando el estado "vencida" viejo hasta recargar la página.
+      queryClient.invalidateQueries({ queryKey: policyKeys.detail(id) })
+      setDeBajaId(null)
+    } finally {
+      setIsDeactivating(false)
+    }
   }
 
   const filtered = useMemo(() => {
@@ -441,6 +458,7 @@ export default function PoliciesPage() {
         title="Eliminar póliza"
         description={`¿Eliminar la póliza "${allPolicies.find((p) => p.id === deleteId)?.policyNumber ?? ''}" de forma permanente? Esta acción no se puede deshacer. Se van a eliminar sus líneas de cobertura y adjuntos, y se va a desvincular (sin borrarlos) de los documentos contables, siniestros y tareas que la referencian — esos registros quedan, pero sin esta póliza asociada, y las Facturas/Notas/Endosos ya cargados pierden la distribución por activo que tenían contra ella.`}
         confirmLabel="Eliminar definitivamente"
+        loading={isDeleting}
         onConfirm={() => deleteId && handleDelete(deleteId)}
         onCancel={() => setDeleteId(null)}
       />
@@ -449,6 +467,7 @@ export default function PoliciesPage() {
         title="Dar de baja la póliza"
         description={`¿Dar de baja la póliza "${allPolicies.find((p) => p.id === deBajaId)?.policyNumber ?? ''}"? Pasará a estado "De Baja" de forma permanente.`}
         confirmLabel="Dar de baja"
+        loading={isDeactivating}
         onConfirm={() => deBajaId && handleDeBaja(deBajaId)}
         onCancel={() => setDeBajaId(null)}
       />

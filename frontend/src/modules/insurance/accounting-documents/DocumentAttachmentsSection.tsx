@@ -175,13 +175,15 @@ export function DocumentAttachmentsSection({ documentId }: DocumentAttachmentsSe
 
   const [showModal, setShowModal] = useState(false)
 
-  // documentKeys.all por prefijo cubre también documentKeys.detail(documentId)
-  // — sin esto, doc.attachmentsCount (mostrado en el subtítulo de esta
-  // sección y en la columna "Adjuntos" de DocumentsPage) quedaba desactualizado
-  // al agregar o borrar un adjunto.
+  // Puntual en vez de documentKeys.all: attachments(documentId) refresca esta
+  // tabla, detail(documentId) refresca doc.attachmentsCount (subtítulo de esta
+  // sección en DocumentDetailPage), y documentKeys.all con exact:true solo
+  // golpea la query del listado (para la columna "Adjuntos" de DocumentsPage)
+  // sin invalidar detail/balance/installments/attachments de otros documentos.
   const invalidateAttachments = () => {
     queryClient.invalidateQueries({ queryKey: attachmentsKey })
-    queryClient.invalidateQueries({ queryKey: documentKeys.all })
+    queryClient.invalidateQueries({ queryKey: documentKeys.detail(documentId) })
+    queryClient.invalidateQueries({ queryKey: documentKeys.all, exact: true })
   }
 
   const deleteMutation = useMutation({

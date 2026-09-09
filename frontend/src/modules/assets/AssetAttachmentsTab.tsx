@@ -445,18 +445,23 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
   const [showModal, setShowModal] = useState(false)
   const [editingAttachment, setEditingAttachment] = useState<AssetAttachment | null>(null)
 
+  // Puntual en vez de assetKeys.all: attachments(assetId) refresca esta
+  // tabla, detail(assetId) refresca asset.attachmentsCount si se muestra en
+  // la ficha, y assetKeys.all con exact:true solo golpea la query del
+  // listado (columna "Adjuntos" de AssetsPage) sin invalidar el detail de
+  // otros activos.
+  const invalidateAttachments = () => {
+    queryClient.invalidateQueries({ queryKey: attachmentsKey })
+    queryClient.invalidateQueries({ queryKey: assetKeys.detail(assetId) })
+    queryClient.invalidateQueries({ queryKey: assetKeys.all, exact: true })
+  }
+
   const deleteMutation = useMutation({
     mutationFn: (attachmentId: string) => assetsApi.deleteAttachment(assetId, attachmentId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: attachmentsKey })
-      queryClient.invalidateQueries({ queryKey: assetKeys.all })
-    },
+    onSuccess: invalidateAttachments,
   })
 
-  const handleSuccess = () => {
-    queryClient.invalidateQueries({ queryKey: attachmentsKey })
-    queryClient.invalidateQueries({ queryKey: assetKeys.all })
-  }
+  const handleSuccess = invalidateAttachments
 
   const handleRemove = (id: string) => deleteMutation.mutate(id)
 
@@ -566,7 +571,8 @@ export function AssetAttachmentsTab({ assetId }: AssetAttachmentsTabProps) {
                       <button
                         title="Eliminar"
                         onClick={() => handleRemove(att.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        disabled={deleteMutation.isPending}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
                       >
                         <X size={14} />
                       </button>
