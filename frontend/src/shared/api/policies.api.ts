@@ -31,6 +31,11 @@ interface BackendPolicyCoverage {
   asset?: BackendPolicyAsset | null
   attachments?: BackendCirculationCard[]
   _count?: { attachments: number }
+  effectiveDate: string
+  bajaDate: string | null
+  bajaReason: string | null
+  deactivatedAt?: string | null
+  deactivatedBy?: string | null
 }
 interface BackendAssetCoverageSummary {
   id: string; insuranceTypeId: string; insuranceTypeName: string
@@ -132,6 +137,11 @@ function mapCoverage(c: BackendPolicyCoverage): PolicyCoverage {
     beneficiaryDescription: c.beneficiaryDescription,
     attachmentsCount: c._count?.attachments ?? 0,
     circulationCardAttachment: c.attachments?.[0] ?? null,
+    effectiveDate: c.effectiveDate.slice(0, 10),
+    bajaDate: c.bajaDate ? c.bajaDate.slice(0, 10) : null,
+    bajaReason: c.bajaReason ?? null,
+    deactivatedAt: c.deactivatedAt ?? null,
+    deactivatedBy: c.deactivatedBy ?? null,
   }
 }
 
@@ -200,6 +210,19 @@ export interface PolicyCreateInput {
 
 export type PolicyUpdateInput = Partial<Omit<PolicyCreateInput, 'policyNumber' | 'coverages'>>
 
+// Alta explícita de una línea nueva (POST /coverages) — a diferencia de
+// PolicyCoverageInput (usado por create()/replaceCoverages(), que todavía
+// completan effectiveDate con policy.startDate), acá la fecha de alta la
+// elige quien la carga.
+export interface AddCoverageInput extends Omit<PolicyCoverageInput, 'id'> {
+  effectiveDate: string
+}
+
+export interface DeactivateCoverageInput {
+  bajaDate: string
+  bajaReason: string
+}
+
 export const policiesApi = {
   async findAll(filters?: { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }): Promise<Policy[]> {
     const res = await apiClient.get<Paginated<BackendPolicy>>('/policies', { params: { limit: 200, ...filters } })
@@ -241,6 +264,30 @@ export const policiesApi = {
   async replaceCoverages(policyId: string, coverages: PolicyCoverageInput[]): Promise<PolicyCoverage[]> {
     const res = await apiClient.put<{ data: BackendPolicyCoverage[] }>(`/policies/${policyId}/coverages`, { coverages })
     return res.data.data.map(mapCoverage)
+  },
+
+  // Alta de una línea puntual, con fecha de alta propia (Fase 3).
+  async addCoverage(policyId: string, input: AddCoverageInput): Promise<PolicyCoverage> {
+    const res = await apiClient.post<{ data: BackendPolicyCoverage }>(`/policies/${policyId}/coverages`, input)
+    return mapCoverage(res.data.data)
+  },
+
+  // Edita los campos de una línea activa (nunca effectiveDate/bajaDate).
+  async updateCoverage(policyId: string, coverageId: string, input: Omit<PolicyCoverageInput, 'id'>): Promise<PolicyCoverage> {
+    const res = await apiClient.put<{ data: BackendPolicyCoverage }>(`/policies/${policyId}/coverages/${coverageId}`, input)
+    return mapCoverage(res.data.data)
+  },
+
+  // Baja histórica — nunca borra la línea, sus adjuntos ni sus documentos.
+  async deactivateCoverage(policyId: string, coverageId: string, input: DeactivateCoverageInput): Promise<PolicyCoverage> {
+    const res = await apiClient.post<{ data: BackendPolicyCoverage }>(`/policies/${policyId}/coverages/${coverageId}/de-baja`, input)
+    return mapCoverage(res.data.data)
+  },
+
+  // Borrado físico real — solo permitido por el backend si la línea no tiene
+  // adjuntos ni asignaciones de documentos (errores de carga sin historial).
+  async deleteCoveragePhysical(policyId: string, coverageId: string): Promise<void> {
+    await apiClient.delete(`/policies/${policyId}/coverages/${coverageId}`)
   },
 
   async findAttachments(policyId: string, coverageId: string): Promise<PolicyAttachment[]> {

@@ -233,9 +233,15 @@ interface PolicyAttachmentsSectionProps {
   coverageId: string
   /** Los adjuntos no tienen vencimiento propio — siempre vencen junto con la póliza. */
   policyEndDate: string
+  /**
+   * Línea dada de baja: los adjuntos siguen visibles/descargables, pero no
+   * se pueden subir nuevos ni eliminar los existentes — la línea queda
+   * historizada, no se toca.
+   */
+  readOnly?: boolean
 }
 
-export function PolicyAttachmentsSection({ policyId, coverageId, policyEndDate }: PolicyAttachmentsSectionProps) {
+export function PolicyAttachmentsSection({ policyId, coverageId, policyEndDate, readOnly = false }: PolicyAttachmentsSectionProps) {
   const queryClient = useQueryClient()
 
   const { data: attachments = [] } = useQuery(policyQueries.attachments(policyId, coverageId))
@@ -273,22 +279,26 @@ export function PolicyAttachmentsSection({ policyId, coverageId, policyEndDate }
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
-        >
-          <Plus size={14} />
-          Adjuntar archivo
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
+          >
+            <Plus size={14} />
+            Adjuntar archivo
+          </button>
+        )}
       </div>
 
       {attachments.length === 0 ? (
         <EmptyState
           title="Sin adjuntos"
-          description="Adjuntá la póliza, certificados, habilitaciones u otros documentos."
+          description={readOnly
+            ? 'Esta línea está dada de baja y no tiene adjuntos cargados.'
+            : 'Adjuntá la póliza, certificados, habilitaciones u otros documentos.'}
           icon={Paperclip}
-          action={
+          action={!readOnly ? (
             <button
               type="button"
               onClick={() => setShowModal(true)}
@@ -297,7 +307,7 @@ export function PolicyAttachmentsSection({ policyId, coverageId, policyEndDate }
               <Plus size={14} />
               Adjuntar primer archivo
             </button>
-          }
+          ) : undefined}
         />
       ) : (
         <div className="rounded-xl border border-slate-200 overflow-hidden">
@@ -358,15 +368,17 @@ export function PolicyAttachmentsSection({ policyId, coverageId, policyEndDate }
                       >
                         <Download size={14} />
                       </button>
-                      <button
-                        type="button"
-                        title="Eliminar"
-                        onClick={() => handleRemove(att.id)}
-                        disabled={deleteMutation.isPending}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
-                      >
-                        <X size={14} />
-                      </button>
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          title="Eliminar"
+                          onClick={() => handleRemove(att.id)}
+                          disabled={deleteMutation.isPending}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
