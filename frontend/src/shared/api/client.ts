@@ -72,6 +72,18 @@ apiClient.interceptors.response.use(
       return Promise.reject(new Error('Timeout'))
     }
 
+    // Rate limit: mensaje amigable propio (no el técnico del backend) y sin
+    // pasar por buildErrorMessage/401 — `.status = 429` es lo que queryClient
+    // lee para no reintentar automáticamente y solo sumar otro request al
+    // límite que acaba de rechazarnos.
+    if (error.response?.status === 429) {
+      const rateLimitMessage = 'La app recibió demasiadas solicitudes en poco tiempo. Esperá unos segundos e intentá nuevamente.'
+      toast.error(rateLimitMessage)
+      const rateLimitError = new Error(rateLimitMessage) as Error & { status?: number }
+      rateLimitError.status = 429
+      return Promise.reject(rateLimitError)
+    }
+
     const message = buildErrorMessage(error)
     const details = error.response?.data?.error?.details
     // Token inválido/expirado: limpiar la sesión y mandar a /login. Un

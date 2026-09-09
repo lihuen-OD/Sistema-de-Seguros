@@ -94,11 +94,31 @@ app.use(
     max: 300,
     standardHeaders: true,
     legacyHeaders: false,
-    message: {
-      error: {
-        code: 'RATE_LIMIT_EXCEEDED',
-        message: 'Demasiadas solicitudes. Esperá unos minutos.',
-      },
+    // Este middleware corre antes que morgan (más abajo) y corta la cadena sin
+    // llamar next() cuando bloquea — sin este handler, un 429 acá no deja
+    // ningún rastro en los logs. req.user nunca está seteado en este punto
+    // (authMiddleware corre después, dentro de cada router), se deja el
+    // optional chaining por si el orden cambia a futuro. Nunca loguear
+    // Authorization/token/body.
+    handler: (req, res, _next, options) => {
+      console.warn('[RateLimit] 429', {
+        method: req.method,
+        path: req.originalUrl,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        userId: req.user?.userId,
+        userEmail: req.user?.email,
+        limit: options.limit,
+        windowMs: options.windowMs,
+        env: env.NODE_ENV,
+        timestamp: new Date().toISOString(),
+      })
+      res.status(options.statusCode).json({
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Demasiadas solicitudes. Esperá unos minutos.',
+        },
+      })
     },
   }),
 )
