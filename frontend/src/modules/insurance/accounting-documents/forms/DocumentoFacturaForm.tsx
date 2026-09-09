@@ -462,6 +462,8 @@ function DocumentoFacturaFormBody({ initialDoc, sourcePolicy }: DocumentoFactura
             onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
             currency={form.currency || 'ARS'}
             documentTotal={computedTotal}
+            issueDate={form.issueDate}
+            historicalCoverageIds={existingAllocations.map((a) => a.policyAssetCoverageId)}
             emptyMessage={!form.insuranceCompany ? 'Seleccioná una compañía aseguradora para ver sus pólizas.' : `No hay pólizas para ${form.insuranceCompany}.`}
           />
         </SectionCard>

@@ -478,6 +478,8 @@ export default function DocumentoEndosoForm({ initialDoc }: DocumentoEndosoFormP
                 onRowsChange={(rows) => { setPolicyRows(rows); markUnsaved() }}
                 currency={form.currency || 'ARS'}
                 documentTotal={computedTotal}
+                issueDate={form.issueDate}
+                historicalCoverageIds={existingAllocations.map((a) => a.policyAssetCoverageId)}
                 emptyMessage="Seleccioná primero la póliza asociada."
               />
             </SectionCard>

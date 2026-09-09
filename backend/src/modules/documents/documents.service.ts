@@ -3,7 +3,7 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
-import { toDateStr } from '../../shared/utils/dates'
+import { toDateStr, isCoverageActiveOn } from '../../shared/utils/dates'
 import { deleteFromCloudinary } from '../../config/cloudinary'
 import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
 import {
@@ -303,7 +303,7 @@ export const documentsService = {
     const { installments, allocations, ...docData } = data
 
     if (allocations.length > 0) {
-      await this.validateCoverageRefs(allocations.map((a) => a.policyAssetCoverageId))
+      await this.validateCoverageRefs(allocations.map((a) => a.policyAssetCoverageId), docData.issueDate)
     }
 
     const typeDef = getDocumentTypeDef(docData.documentType)
@@ -1106,10 +1106,22 @@ export const documentsService = {
   },
 
   async replaceAllocations(documentId: string, data: ReplaceAllocationsDTO) {
-    await this.assertDocumentExists(documentId)
+    const existing = await this.assertDocumentExists(documentId)
 
     if (data.allocations.length > 0) {
-      await this.validateCoverageRefs(data.allocations.map((a) => a.policyAssetCoverageId))
+      // Las coverageIds que el documento YA tiene guardadas en este momento
+      // quedan exceptuadas de la validación de vigencia — así una línea
+      // histórica (hoy de baja) puede seguir viajando en cada save sin
+      // romper, mientras que una línea nueva fuera de fecha sí se rechaza.
+      const current = await prisma.documentPolicyAllocation.findMany({
+        where: { accountingDocumentId: documentId },
+        select: { policyAssetCoverageId: true },
+      })
+      await this.validateCoverageRefs(
+        data.allocations.map((a) => a.policyAssetCoverageId),
+        existing.issueDate,
+        new Set(current.map((a) => a.policyAssetCoverageId)),
+      )
     }
 
     await prisma.$transaction([
@@ -1240,6 +1252,7 @@ export const documentsService = {
         paymentMethod: true,
         documentType: true,
         documentStatus: true,
+        issueDate: true,
         linkedDocumentId: true,
         adjustmentReason: true,
         adjustmentSign: true,
@@ -1592,18 +1605,36 @@ export const documentsService = {
   },
 
   // Para las asignaciones de un documento (ahora apuntan a una línea de
-  // cobertura, no directo a la póliza) — la línea tiene que existir y su
-  // póliza estar activa.
-  async validateCoverageRefs(coverageIds: string[]) {
+  // cobertura, no directo a la póliza) — la línea tiene que existir, su
+  // póliza estar activa, y (salvo que esté exceptuada por ser una allocation
+  // histórica ya guardada) estar vigente para issueDate: effectiveDate <=
+  // issueDate && (bajaDate es null || bajaDate >= issueDate). Las exceptuadas
+  // dejan seguir guardando el documento sin romper asignaciones históricas
+  // aunque la línea haya sido dada de baja después.
+  async validateCoverageRefs(
+    coverageIds: string[],
+    issueDate: Date,
+    exemptCoverageIds: ReadonlySet<string> = new Set(),
+  ) {
     const found = await prisma.policyAssetCoverage.findMany({
       where: { id: { in: coverageIds }, policy: { isActive: true } },
-      select: { id: true },
+      select: { id: true, effectiveDate: true, bajaDate: true },
     })
     if (found.length !== coverageIds.length) {
       throw new AppError(
         400,
         'Una o más líneas de cobertura referenciadas no existen o no pertenecen a una póliza activa',
         'INVALID_REFERENCE',
+      )
+    }
+    const outOfRange = found.find(
+      (c) => !exemptCoverageIds.has(c.id) && !isCoverageActiveOn(c, issueDate),
+    )
+    if (outOfRange) {
+      throw new AppError(
+        400,
+        'La cobertura no estaba vigente para la fecha del documento.',
+        'COVERAGE_NOT_ACTIVE',
       )
     }
   },

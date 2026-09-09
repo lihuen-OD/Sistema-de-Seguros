@@ -118,6 +118,21 @@ export function computePolicyStatus(endDate: Date | string, daysWarning = 30): P
 }
 
 /**
+ * ¿Una línea de cobertura (PolicyAssetCoverage) estaba vigente en la fecha dada?
+ * Regla: effectiveDate <= asOfDate && (bajaDate es null || bajaDate >= asOfDate).
+ * Comparación por string YYYY-MM-DD (vía toDateStr), sin husos horarios.
+ */
+export function isCoverageActiveOn(
+  coverage: { effectiveDate: Date | string; bajaDate: Date | string | null },
+  asOfDate: Date | string,
+): boolean {
+  const effective = toDateStr(coverage.effectiveDate)
+  const baja = coverage.bajaDate ? toDateStr(coverage.bajaDate) : null
+  const asOf = toDateStr(asOfDate)
+  return effective <= asOf && (baja === null || baja >= asOf)
+}
+
+/**
  * Filtro Prisma WHERE para pólizas por status.
  * Usa Date objects (requerido por DateTime @db.Date en Prisma).
  *
