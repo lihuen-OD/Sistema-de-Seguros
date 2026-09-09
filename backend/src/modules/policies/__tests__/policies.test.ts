@@ -78,6 +78,25 @@ const validPolicyBody = {
 }
 
 describe('Policies API', () => {
+  // ── GET /api/v1/policies ────────────────────────────────────────────────────
+
+  describe('GET /api/v1/policies', () => {
+    it('selects the coverage lifecycle fields in the list — regression test for the missing effectiveDate that crashed FinancialAnalysis/EconomicAnalysis/RenewalProjection/InsuranceDashboard on the frontend', async () => {
+      db.policy.findMany.mockResolvedValueOnce([])
+      db.policy.count.mockResolvedValueOnce(0)
+
+      await request(app).get('/api/v1/policies').set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.policy.findMany.mock.calls[0][0]
+      expect(findManyCall.include.coverages.select).toMatchObject({
+        effectiveDate: true,
+        bajaDate: true,
+        bajaReason: true,
+        deactivatedAt: true,
+      })
+    })
+  })
+
   // ── POST /api/v1/policies ────────────────────────────────────────────────────
 
   describe('POST /api/v1/policies', () => {

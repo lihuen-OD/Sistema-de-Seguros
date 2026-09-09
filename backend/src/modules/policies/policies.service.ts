@@ -72,6 +72,10 @@ const COVERAGE_LIST_SELECT = {
   insuredAmountUsd: true,
   companyId: true,
   costCenterId: true,
+  effectiveDate: true,
+  bajaDate: true,
+  bajaReason: true,
+  deactivatedAt: true,
   insuranceType: { select: { id: true, name: true } },
   asset: { select: { id: true, name: true } },
   attachments: {
