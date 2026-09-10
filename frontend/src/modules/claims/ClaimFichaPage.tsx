@@ -22,7 +22,11 @@ export default function ClaimFichaPage() {
 
   const { data: claim } = useQuery(claimQueries.detail(id!))
   const { data: assets = [] } = useQuery(assetQueries.list())
-  const { data: policies = [] } = useQuery(policyQueries.list())
+  // includeCoverages: true — trae effectiveDate/bajaDate por línea, ya
+  // agregados a la proyección liviana del backend, para que
+  // pickActiveCoverageForAsset pueda elegir la vigente en vez de mostrar
+  // "Sin tipo" o (peor) una línea histórica dada de baja.
+  const { data: policies = [] } = useQuery(policyQueries.list({ includeCoverages: true }))
 
   if (!claim) {
     return (

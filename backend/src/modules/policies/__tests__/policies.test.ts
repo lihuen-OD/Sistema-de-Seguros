@@ -209,6 +209,45 @@ describe('Policies API', () => {
       expect(res.body.data[0].assetCoverage.id).toBe(NEW_COVERAGE_ID)
       expect(res.body.data[0].assetCoverage.bajaDate).not.toBeNull()
     })
+
+    it('includes effectiveDate and bajaDate per line when includeCoverages=true — regression: the lightweight projection used to omit them, so a frontend consumer (ClaimFichaPage) could not tell a de-baja line from the currently active one', async () => {
+      const deactivated = fakeCoverage({
+        id: OLD_COVERAGE_ID,
+        effectiveDate: daysFromToday(-400),
+        bajaDate: daysFromToday(-30),
+      })
+      const active = fakeCoverage({
+        id: NEW_COVERAGE_ID,
+        effectiveDate: daysFromToday(-20),
+        bajaDate: null,
+      })
+
+      db.policy.findMany.mockResolvedValueOnce([fakePolicyWithCoverages([deactivated, active])])
+      db.policy.count.mockResolvedValueOnce(1)
+
+      const res = await request(app)
+        .get('/api/v1/policies')
+        .query({ includeCoverages: 'true' })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const [oldLine, newLine] = res.body.data[0].coverages
+      expect(oldLine.id).toBe(OLD_COVERAGE_ID)
+      expect(oldLine.bajaDate).not.toBeNull()
+      expect(newLine.id).toBe(NEW_COVERAGE_ID)
+      expect(newLine.effectiveDate).toBeTruthy()
+      expect(newLine.bajaDate).toBeNull()
+    })
+
+    it('does not include a coverages array when includeCoverages is not passed (default unchanged)', async () => {
+      db.policy.findMany.mockResolvedValueOnce([fakePolicyWithCoverages([fakeCoverage({})])])
+      db.policy.count.mockResolvedValueOnce(1)
+
+      const res = await request(app).get('/api/v1/policies').set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].coverages).toBeUndefined()
+    })
   })
 
   // ── POST /api/v1/policies ────────────────────────────────────────────────────

@@ -468,6 +468,11 @@ export const policiesService = {
               insuredAmountUsd: c.insuredAmountUsd,
               companyId: c.companyId,
               costCenterId: c.costCenterId,
+              // Sin esto, un consumidor que necesite elegir la línea vigente
+              // de un activo (ver pickActiveCoverageForAsset en el frontend)
+              // no puede distinguirla de una histórica dada de baja.
+              effectiveDate: toDateStr(c.effectiveDate),
+              bajaDate: c.bajaDate ? toDateStr(c.bajaDate) : null,
             })),
           }),
           assetCoverage: assetCoverage
