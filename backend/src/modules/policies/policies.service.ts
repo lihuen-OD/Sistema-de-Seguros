@@ -218,6 +218,84 @@ async function resolveCoverageInput(input: PolicyAssetCoverageInputDTO) {
   }
 }
 
+type ResolvedCoverageInput = Awaited<ReturnType<typeof resolveCoverageInput>>
+
+// Versión en batch de resolveCoverageInput — misma validación, mismos
+// mensajes/códigos de error, línea por línea, pero resolviendo las
+// referencias (tipo de seguro, activo, empresa, centro de costo) con un solo
+// findMany por entidad en vez de 4 queries POR LÍNEA. Pensada para create()
+// y replaceCoverages(), que reciben un array de líneas de una sola vez — en
+// una póliza de flota con muchas líneas, esto pasa de ~4×N queries a 4.
+// addCoverage()/updateCoverage() siguen usando resolveCoverageInput() tal
+// cual: procesan una sola línea por request, no hay N+1 que agrupar ahí.
+async function resolveCoverageInputsBatch(
+  inputs: PolicyAssetCoverageInputDTO[],
+): Promise<ResolvedCoverageInput[]> {
+  const insuranceTypeIds = [...new Set(inputs.map((i) => i.insuranceTypeId))]
+  const assetIds = [...new Set(inputs.map((i) => i.assetId).filter((id): id is string => !!id))]
+  const companyIds = [...new Set(inputs.map((i) => i.companyId).filter((id): id is string => !!id))]
+  const costCenterIds = [...new Set(inputs.map((i) => i.costCenterId).filter((id): id is string => !!id))]
+
+  const [insuranceTypes, assets, companies, costCenters] = await Promise.all([
+    prisma.insuranceType.findMany({
+      where: { id: { in: insuranceTypeIds }, isActive: true },
+      select: { id: true, coverages: { select: { id: true } } },
+    }),
+    assetIds.length > 0
+      ? prisma.asset.findMany({ where: { id: { in: assetIds }, isActive: true }, select: { id: true } })
+      : Promise.resolve([]),
+    companyIds.length > 0
+      ? prisma.company.findMany({ where: { id: { in: companyIds }, isActive: true }, select: { id: true } })
+      : Promise.resolve([]),
+    costCenterIds.length > 0
+      ? prisma.costCenter.findMany({ where: { id: { in: costCenterIds }, isActive: true }, select: { id: true } })
+      : Promise.resolve([]),
+  ])
+
+  const insuranceTypeById = new Map(insuranceTypes.map((t) => [t.id, t]))
+  const activeAssetIds = new Set(assets.map((a) => a.id))
+  const activeCompanyIds = new Set(companies.map((c) => c.id))
+  const activeCostCenterIds = new Set(costCenters.map((c) => c.id))
+
+  return inputs.map((input) => {
+    const insuranceType = insuranceTypeById.get(input.insuranceTypeId)
+    if (!insuranceType) throw new AppError(400, 'Tipo de seguro no encontrado o inactivo', 'INVALID_REFERENCE')
+    if (input.assetId && !activeAssetIds.has(input.assetId)) {
+      throw new AppError(400, 'Activo no encontrado o inactivo', 'INVALID_REFERENCE')
+    }
+    if (input.companyId && !activeCompanyIds.has(input.companyId)) {
+      throw new AppError(400, 'Empresa no encontrada o inactiva', 'INVALID_REFERENCE')
+    }
+    if (input.costCenterId && !activeCostCenterIds.has(input.costCenterId)) {
+      throw new AppError(400, 'Centro de costo no encontrado o inactivo', 'INVALID_REFERENCE')
+    }
+
+    if (input.coverageIds.length > 0) {
+      const validIds = new Set(insuranceType.coverages.map((c) => c.id))
+      const invalid = input.coverageIds.filter((id) => !validIds.has(id))
+      if (invalid.length > 0) {
+        throw new AppError(400, 'Una o más coberturas no pertenecen al tipo de seguro seleccionado', 'INVALID_REFERENCE')
+      }
+    }
+
+    const { amountArs, amountUsd } = computeDualAmounts(input.insuredAmount, input.currency, input.exchangeRate)
+
+    return {
+      assetId: input.assetId ?? null,
+      insuranceTypeId: input.insuranceTypeId,
+      coverageIds: input.coverageIds,
+      insuredAmount: input.insuredAmount,
+      currency: input.currency,
+      exchangeRate: input.exchangeRate,
+      insuredAmountArs: amountArs,
+      insuredAmountUsd: amountUsd,
+      companyId: input.companyId ?? null,
+      costCenterId: input.costCenterId ?? null,
+      beneficiaryDescription: input.beneficiaryDescription ?? null,
+    }
+  })
+}
+
 // Usado por create() y replaceCoverages() — alcanza para evitar duplicados
 // dentro de una misma póliza nueva sin un chequeo de solapamiento aparte:
 // create() solo puede generar líneas con bajaDate null (no hay forma de
@@ -415,7 +493,7 @@ export const policiesService = {
     }
 
     assertNoDuplicateAssets(data.coverages)
-    const resolvedCoverages = await Promise.all(data.coverages.map((c) => resolveCoverageInput(c)))
+    const resolvedCoverages = await resolveCoverageInputsBatch(data.coverages)
 
     const { coverages: _coverages, ...policyData } = data
     const policy = await prisma.policy.create({
@@ -585,9 +663,12 @@ export const policiesService = {
       }
     }
 
-    const resolved = await Promise.all(
-      data.coverages.map(async (c) => ({ id: c.id, ...(await resolveCoverageInput(c)) })),
-    )
+    // Batch en vez de un resolveCoverageInput por línea — resolveCoverageInputsBatch
+    // conserva el orden de entrada, así que se puede zipear por índice con el
+    // `id` original de cada línea (create()/update() más abajo dependen de
+    // saber si la línea es nueva o existente).
+    const batchResolved = await resolveCoverageInputsBatch(data.coverages)
+    const resolved = data.coverages.map((c, i) => ({ id: c.id, ...batchResolved[i] }))
 
     try {
       await prisma.$transaction([
