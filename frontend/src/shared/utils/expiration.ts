@@ -35,6 +35,29 @@ export function isCoverageActiveOn(
   return effective <= asOf && (baja === null || baja >= asOf)
 }
 
+// Elige, entre las líneas de cobertura de una póliza, la vigente hoy para un
+// activo dado (o para "sin activo" si assetId es null) — mismo criterio que
+// pickCurrentAssetCoverage en el backend (policies.service.ts), para no
+// asociar un siniestro nuevo a una línea vieja dada de baja cuando el activo
+// fue reincorporado con una línea nueva. Si ninguna línea que matchea está
+// vigente hoy, devuelve null en vez de caer a una histórica — el llamador ya
+// maneja "sin cobertura" (ej. "Sin tipo", sin chips) sin necesidad de un
+// mensaje nuevo.
+interface CoverageForAssetPick {
+  assetId: string | null
+  effectiveDate: string
+  bajaDate: string | null
+}
+export function pickActiveCoverageForAsset<T extends CoverageForAssetPick>(
+  coverages: T[] | undefined,
+  assetId: string | null,
+  today: string = new Date().toISOString().slice(0, 10),
+): T | null {
+  if (!coverages) return null
+  const matching = coverages.filter((c) => (assetId ? c.assetId === assetId : !c.assetId))
+  return matching.find((c) => isCoverageActiveOn(c, today)) ?? null
+}
+
 // max(issueDate, policy.startDate) — una factura puede emitirse antes de que
 // arranque la vigencia de la póliza (facturación anticipada); en ese caso la
 // vigencia de una línea de cobertura se valida contra el inicio de la
