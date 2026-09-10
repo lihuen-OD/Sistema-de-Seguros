@@ -24,6 +24,7 @@ import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { InstallmentRow } from '../../../shared/components/installments/InstallmentRow'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
+import { ActionMenu } from '../../../shared/components/menus/ActionMenu'
 import {
   formatCurrencyFull,
   formatCurrencyCompact,
@@ -91,6 +92,10 @@ export default function DocumentDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // Gatea "Sí, eliminar" para que un doble click no dispare dos softDelete
+  // seguidos del mismo documento — el segundo llegaba a un recurso ya
+  // borrado y el backend respondía 404.
+  const [deletingDocument, setDeletingDocument] = useState(false)
 
   const [applyConfirmOpen, setApplyConfirmOpen] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -218,7 +223,10 @@ export default function DocumentDetailPage() {
     queryClient.invalidateQueries({ queryKey: documentKeys.detail(id!) })
     queryClient.invalidateQueries({ queryKey: documentKeys.balance(id!) })
     queryClient.invalidateQueries({ queryKey: documentKeys.auditLog(id!) })
-    queryClient.invalidateQueries({ queryKey: documentKeys.all })
+    // exact:true: solo la query del listado (puede cambiar el paymentStatus
+    // visible en DocumentsPage si este documento o el vinculado se recalculan),
+    // sin invalidar detail/attachments/etc. de otros documentos en cache.
+    queryClient.invalidateQueries({ queryKey: documentKeys.all, exact: true })
     // Aplicar/cancelar un documento afecta los totales agregados de Análisis
     // Económico/Financiero — sin esto quedaban stale hasta que expirara el staleTime.
     queryClient.invalidateQueries({ queryKey: documentKeys.financial() })
@@ -268,14 +276,14 @@ export default function DocumentDetailPage() {
     } finally {
       queryClient.invalidateQueries({ queryKey: documentKeys.installments(id!) })
       queryClient.invalidateQueries({ queryKey: documentKeys.balance(id!) })
+      queryClient.invalidateQueries({ queryKey: documentKeys.detail(id!) })
       // Cambiar el estado de pago de una cuota también afecta los agregados
       // de Análisis Económico/Financiero.
       queryClient.invalidateQueries({ queryKey: documentKeys.financial() })
-      // documentKeys.all por prefijo cubre además el detail de este documento
-      // y su entrada en la lista — sin esto, DocumentsPage (columna "Estado
-      // Pago") y cualquier card basada en documentQueries.list() quedaban con
-      // el estado viejo hasta que expirara su staleTime.
-      queryClient.invalidateQueries({ queryKey: documentKeys.all })
+      // exact:true — solo la query del listado (columna "Estado Pago" de
+      // DocumentsPage), sin invalidar detail/attachments/etc. de otros
+      // documentos que estén en cache.
+      queryClient.invalidateQueries({ queryKey: documentKeys.all, exact: true })
     }
   }
 
@@ -404,6 +412,20 @@ export default function DocumentDetailPage() {
               <FileDown size={15} />
               Ficha PDF
             </button>
+            {doc.documentType === 'INVOICE' && (
+              <ActionMenu
+                triggerLabel="Crear documento relacionado"
+                triggerIcon={Link2}
+                triggerClassName="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors w-full"
+                className="relative w-full xl:w-auto"
+                align="right"
+                options={[
+                  { label: 'Nota de Crédito', onClick: () => navigate(`${ROUTES.DOCUMENTS_NEW}?type=CREDIT_NOTE&linkedDocumentId=${doc.id}`) },
+                  { label: 'Nota de Débito', onClick: () => navigate(`${ROUTES.DOCUMENTS_NEW}?type=DEBIT_NOTE&linkedDocumentId=${doc.id}`) },
+                  { label: 'Asiento de Ajuste', onClick: () => navigate(`${ROUTES.DOCUMENTS_NEW}?type=ADJUSTMENT_ENTRY&linkedDocumentId=${doc.id}`) },
+                ]}
+              />
+            )}
             {canApply && (
               <button
                 onClick={() => setApplyConfirmOpen(true)}
@@ -427,17 +449,27 @@ export default function DocumentDetailPage() {
                 <span className="text-xs font-medium text-red-700">¿Eliminar documento?</span>
                 <button
                   onClick={async () => {
-                    await documentsApi.softDelete(doc.id)
-                    queryClient.invalidateQueries({ queryKey: documentKeys.all })
-                    navigate('/insurance/documents')
+                    setDeletingDocument(true)
+                    try {
+                      await documentsApi.softDelete(doc.id)
+                      // exact:true: solo la query del listado, este documento
+                      // deja de existir así que no hace falta invalidar el
+                      // detail/attachments/etc. de ningún otro documento.
+                      queryClient.invalidateQueries({ queryKey: documentKeys.all, exact: true })
+                      navigate('/insurance/documents')
+                    } catch {
+                      setDeletingDocument(false)
+                    }
                   }}
-                  className="px-2.5 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+                  disabled={deletingDocument}
+                  className="px-2.5 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:opacity-50"
                 >
-                  Sí, eliminar
+                  {deletingDocument ? 'Eliminando…' : 'Sí, eliminar'}
                 </button>
                 <button
                   onClick={() => setConfirmDelete(false)}
-                  className="px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-white rounded-md transition-colors"
+                  disabled={deletingDocument}
+                  className="px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-white rounded-md transition-colors disabled:opacity-50"
                 >
                   Cancelar
                 </button>

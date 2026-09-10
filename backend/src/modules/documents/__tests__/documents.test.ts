@@ -779,20 +779,30 @@ describe('Documents API', () => {
 
   // ── Coverage validity — vigencia por fecha de emisión (Fase 4) ──────────────
   // Una línea de PolicyAssetCoverage solo puede asignarse a un documento si
-  // effectiveDate <= issueDate && (bajaDate es null || bajaDate >= issueDate),
-  // salvo que ya estuviera asignada al documento (histórica) — ver
-  // validateCoverageRefs en documents.service.ts.
+  // effectiveDate <= coverageReferenceDate && (bajaDate es null || bajaDate >=
+  // coverageReferenceDate), salvo que ya estuviera asignada al documento
+  // (histórica) — ver validateCoverageRefs en documents.service.ts.
+  // coverageReferenceDate = max(issueDate, policy.startDate): issueDate es la
+  // fecha administrativa/contable del documento, no necesariamente la fecha
+  // real de cobertura — una factura puede emitirse antes de que arranque la
+  // vigencia de la póliza (facturación anticipada), y en ese caso se valida
+  // contra el inicio de la póliza, no contra una fecha en la que todavía ni
+  // existía.
   describe('Coverage validity — vigencia por fecha de emisión (Fase 4)', () => {
     const COVERAGE_ID = '30000000-0000-0000-0000-000000000001'
     const NEW_COVERAGE_ID = '30000000-0000-0000-0000-000000000002'
     const HIST_COVERAGE_ID = '30000000-0000-0000-0000-000000000003'
+    // Todos los casos "clásicos" (issueDate >= policy.startDate) usan una
+    // póliza que ya arrancó bien antes de la factura, para que
+    // coverageReferenceDate === issueDate como siempre.
+    const POLICY_STARTED_BEFORE_ISSUE = { startDate: new Date('2020-01-01') }
 
     describe('POST /api/v1/documents (create)', () => {
       it('creates a document with a coverage line active on issueDate', async () => {
         db.accountingDocument.findUnique.mockResolvedValue(null)
         db.accountingDocument.create.mockResolvedValue(fakeDocument)
         db.policyAssetCoverage.findMany.mockResolvedValue([
-          { id: COVERAGE_ID, effectiveDate: new Date('2025-06-01'), bajaDate: null },
+          { id: COVERAGE_ID, effectiveDate: new Date('2025-06-01'), bajaDate: null, policy: POLICY_STARTED_BEFORE_ISSUE },
         ])
 
         const res = await request(app)
@@ -809,7 +819,7 @@ describe('Documents API', () => {
       it('rejects a coverage line whose bajaDate is before issueDate', async () => {
         db.accountingDocument.findUnique.mockResolvedValue(null)
         db.policyAssetCoverage.findMany.mockResolvedValue([
-          { id: COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2025-12-31') },
+          { id: COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2025-12-31'), policy: POLICY_STARTED_BEFORE_ISSUE },
         ])
 
         const res = await request(app)
@@ -829,7 +839,7 @@ describe('Documents API', () => {
       it('rejects a coverage line whose effectiveDate is after issueDate', async () => {
         db.accountingDocument.findUnique.mockResolvedValue(null)
         db.policyAssetCoverage.findMany.mockResolvedValue([
-          { id: COVERAGE_ID, effectiveDate: new Date('2026-06-01'), bajaDate: null },
+          { id: COVERAGE_ID, effectiveDate: new Date('2026-06-01'), bajaDate: null, policy: POLICY_STARTED_BEFORE_ISSUE },
         ])
 
         const res = await request(app)
@@ -849,7 +859,7 @@ describe('Documents API', () => {
         db.accountingDocument.findUnique.mockResolvedValue(null)
         db.accountingDocument.create.mockResolvedValue(fakeDocument)
         db.policyAssetCoverage.findMany.mockResolvedValue([
-          { id: COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2026-01-01') },
+          { id: COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2026-01-01'), policy: POLICY_STARTED_BEFORE_ISSUE },
         ])
 
         const res = await request(app)
@@ -867,7 +877,7 @@ describe('Documents API', () => {
         db.accountingDocument.findUnique.mockResolvedValue(null)
         db.accountingDocument.create.mockResolvedValue(fakeDocument)
         db.policyAssetCoverage.findMany.mockResolvedValue([
-          { id: COVERAGE_ID, effectiveDate: new Date('2026-01-01'), bajaDate: null },
+          { id: COVERAGE_ID, effectiveDate: new Date('2026-01-01'), bajaDate: null, policy: POLICY_STARTED_BEFORE_ISSUE },
         ])
 
         const res = await request(app)
@@ -883,7 +893,7 @@ describe('Documents API', () => {
 
       it('applies the same rule to an ENDORSEMENT create with allocations', async () => {
         db.policyAssetCoverage.findMany.mockResolvedValue([
-          { id: COVERAGE_ID, effectiveDate: new Date('2026-06-01'), bajaDate: null },
+          { id: COVERAGE_ID, effectiveDate: new Date('2026-06-01'), bajaDate: null, policy: POLICY_STARTED_BEFORE_ISSUE },
         ])
 
         const res = await request(app)
@@ -898,6 +908,68 @@ describe('Documents API', () => {
 
         expect(res.status).toBe(400)
         expect(res.body.error.code).toBe('COVERAGE_NOT_ACTIVE')
+      })
+    })
+
+    // Factura emitida antes de que arranque la vigencia de la póliza
+    // (facturación anticipada) — coverageReferenceDate = max(issueDate,
+    // policy.startDate) pasa a ser policy.startDate, no issueDate.
+    describe('coverageReferenceDate = max(issueDate, policy.startDate) — facturación anticipada', () => {
+      const ANTICIPADA_BODY = { ...validDocumentBody, issueDate: '2026-08-25' } // policy.startDate: 2026-09-01
+
+      it('allows an invoice issued before policy.startDate when the coverage is active at policy.startDate', async () => {
+        db.accountingDocument.findUnique.mockResolvedValue(null)
+        db.accountingDocument.create.mockResolvedValue(fakeDocument)
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: COVERAGE_ID, effectiveDate: new Date('2026-06-01'), bajaDate: null, policy: { startDate: new Date('2026-09-01') } },
+        ])
+
+        const res = await request(app)
+          .post('/api/v1/documents')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            ...ANTICIPADA_BODY,
+            allocations: [{ policyAssetCoverageId: COVERAGE_ID, allocatedAmount: 1260, allocationPercentage: 100 }],
+          })
+
+        expect(res.status).toBe(201)
+      })
+
+      it('rejects an invoice issued before policy.startDate when the coverage only starts after policy.startDate', async () => {
+        db.accountingDocument.findUnique.mockResolvedValue(null)
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: COVERAGE_ID, effectiveDate: new Date('2026-09-15'), bajaDate: null, policy: { startDate: new Date('2026-09-01') } },
+        ])
+
+        const res = await request(app)
+          .post('/api/v1/documents')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            ...ANTICIPADA_BODY,
+            allocations: [{ policyAssetCoverageId: COVERAGE_ID, allocatedAmount: 1260, allocationPercentage: 100 }],
+          })
+
+        expect(res.status).toBe(400)
+        expect(res.body.error.code).toBe('COVERAGE_NOT_ACTIVE')
+        expect(db.accountingDocument.create).not.toHaveBeenCalled()
+      })
+
+      it('accepts a coverage line whose bajaDate equals coverageReferenceDate (policy.startDate, not issueDate)', async () => {
+        db.accountingDocument.findUnique.mockResolvedValue(null)
+        db.accountingDocument.create.mockResolvedValue(fakeDocument)
+        db.policyAssetCoverage.findMany.mockResolvedValue([
+          { id: COVERAGE_ID, effectiveDate: new Date('2026-01-01'), bajaDate: new Date('2026-09-01'), policy: { startDate: new Date('2026-09-01') } },
+        ])
+
+        const res = await request(app)
+          .post('/api/v1/documents')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({
+            ...ANTICIPADA_BODY,
+            allocations: [{ policyAssetCoverageId: COVERAGE_ID, allocatedAmount: 1260, allocationPercentage: 100 }],
+          })
+
+        expect(res.status).toBe(201)
       })
     })
 
@@ -931,8 +1003,8 @@ describe('Documents API', () => {
           { policyAssetCoverageId: HIST_COVERAGE_ID },
         ])
         db.policyAssetCoverage.findMany.mockResolvedValue([
-          { id: HIST_COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2025-06-01') },
-          { id: NEW_COVERAGE_ID, effectiveDate: new Date('2026-06-01'), bajaDate: null },
+          { id: HIST_COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2025-06-01'), policy: POLICY_STARTED_BEFORE_ISSUE },
+          { id: NEW_COVERAGE_ID, effectiveDate: new Date('2026-06-01'), bajaDate: null, policy: POLICY_STARTED_BEFORE_ISSUE },
         ])
 
         const res = await request(app)
@@ -965,7 +1037,7 @@ describe('Documents API', () => {
             },
           ]) // lectura post-reemplazo
         db.policyAssetCoverage.findMany.mockResolvedValue([
-          { id: HIST_COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2025-06-01') },
+          { id: HIST_COVERAGE_ID, effectiveDate: new Date('2025-01-01'), bajaDate: new Date('2025-06-01'), policy: POLICY_STARTED_BEFORE_ISSUE },
         ])
         db.documentPolicyAllocation.deleteMany.mockResolvedValue({ count: 1 })
         db.documentPolicyAllocation.createMany.mockResolvedValue({ count: 1 })
@@ -1224,6 +1296,117 @@ describe('Documents API', () => {
         paymentMethod: 'E-Cheq',
         paidAt: '2026-01-01',
       })
+    })
+
+    // ── Fase D4: includeInstallments ──────────────────────────────────────────
+
+    it('includeInstallments=true (explícito) keeps installments in the Prisma include, same as the default', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=true')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.include).toHaveProperty('installments')
+      expect(findManyCall.include).toHaveProperty('allocations')
+    })
+
+    it('includeInstallments=false omits installments from the Prisma include but keeps allocations', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.include).not.toHaveProperty('installments')
+      expect(findManyCall.include).toHaveProperty('allocations')
+    })
+
+    it('includeInstallments=false returns installments: [] in the response — never omits the field', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([{ ...fakeDocument, allocations: [] }])
+
+      const res = await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0]).toHaveProperty('installments')
+      expect(res.body.data[0].installments).toEqual([])
+    })
+
+    it('includeInstallments=false keeps allocations mapped the same way as the full version', async () => {
+      const COVERAGE_ID = '20000000-0000-0000-0000-000000000020'
+      const ASSET_ID = '30000000-0000-0000-0000-000000000030'
+      db.accountingDocument.findMany.mockResolvedValue([{
+        ...fakeDocument,
+        allocations: [{
+          id: '40000000-0000-0000-0000-000000000040',
+          accountingDocumentId: DOC_ID,
+          policyAssetCoverageId: COVERAGE_ID,
+          allocatedAmount: 500,
+          allocationPercentage: 50,
+          policyAssetCoverage: { policyId: POLICY_ID, assetId: ASSET_ID },
+        }],
+      }])
+
+      const res = await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.body.data[0].allocations).toEqual([{
+        id: '40000000-0000-0000-0000-000000000040',
+        accountingDocumentId: DOC_ID,
+        policyAssetCoverageId: COVERAGE_ID,
+        policyId: POLICY_ID,
+        assetId: ASSET_ID,
+        allocatedAmount: 500,
+        allocationPercentage: 50,
+      }])
+    })
+
+    it('includeInstallments=false still excludes CANCELLED documents (where unchanged)', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.where).toMatchObject({ documentStatus: { not: 'CANCELLED' } })
+    })
+
+    it('includeInstallments=false with from/to still filters by installments.dueDate in the where clause, even though installments are not included', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false&from=2026-02&to=2026-03')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.where).toMatchObject({
+        installments: {
+          some: {
+            dueDate: {
+              gte: new Date('2026-02-01T00:00:00.000Z'),
+              lt: new Date('2026-04-01T00:00:00.000Z'),
+            },
+          },
+        },
+      })
+      expect(findManyCall.include).not.toHaveProperty('installments')
+    })
+
+    it('includeInstallments=false keeps take: 2000', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.take).toBe(2000)
     })
   })
 

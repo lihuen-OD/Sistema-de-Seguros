@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { X, FileWarning } from 'lucide-react'
+import { detectFileType } from '../file-upload/AttachmentListEditor'
 
 export interface FileViewerModalProps {
   open: boolean
@@ -13,20 +14,41 @@ export interface FileViewerModalProps {
 // sujeta a la restricción de seguridad de Cloudinary sobre PDF/ZIP y termina
 // en una descarga forzada en vez de mostrarse. Un Blob renderizado vía
 // `URL.createObjectURL` no depende de esa URL ni de ningún header
-// Content-Disposition — el tipo se decide por `blob.type` (el Content-Type
-// real que reenvía el backend), no por la extensión del nombre.
+// Content-Disposition. El tipo se decide primero por `blob.type` (el
+// Content-Type real que reenvía el backend) y, si no alcanza, por la
+// extensión del nombre — ver el detalle junto a `kind` más abajo.
 export function FileViewerModal({ open, onClose, blob, name }: FileViewerModalProps) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
+
+  // El Content-Type que reenvía el backend debería alcanzar, pero los PDF se
+  // suben a Cloudinary como resource_type "raw" (ver config/cloudinary.ts) —
+  // en la práctica esa entrega a veces vuelve con un Content-Type genérico
+  // (ej. application/octet-stream) en vez de application/pdf. La extensión
+  // del nombre real del archivo es el fallback, nunca la única fuente.
+  const extType = detectFileType(name)
+  const isImage = !!blob?.type.startsWith('image/') || extType === 'image'
+  const isPdf = !!blob?.type.startsWith('application/pdf') || extType === 'pdf'
 
   useEffect(() => {
     if (!blob) {
       setObjectUrl(null)
       return
     }
-    const url = URL.createObjectURL(blob)
+    // Un <iframe> que navega a un blob: URL decide si renderiza inline o
+    // dispara una descarga según el `type` REAL del Blob — no según `kind`
+    // (que acá abajo solo elige qué JSX pintar). Si el Content-Type que
+    // llegó no dice application/pdf pero la extensión confirma que lo es,
+    // hay que re-tipar el Blob antes de crear la URL: sin esto, el
+    // navegador no sabe mostrarlo inline, el modal queda en blanco y
+    // dispara una descarga automática por su cuenta — nunca a través de
+    // triggerBlobDownload, que solo llama el botón de descargar.
+    const typedBlob = isPdf && !blob.type.startsWith('application/pdf')
+      ? new Blob([blob], { type: 'application/pdf' })
+      : blob
+    const url = URL.createObjectURL(typedBlob)
     setObjectUrl(url)
     return () => URL.revokeObjectURL(url)
-  }, [blob])
+  }, [blob, isPdf])
 
   useEffect(() => {
     if (!open) return
@@ -43,7 +65,7 @@ export function FileViewerModal({ open, onClose, blob, name }: FileViewerModalPr
 
   if (!open) return null
 
-  const kind = blob?.type.startsWith('image/') ? 'image' : blob?.type === 'application/pdf' ? 'pdf' : 'other'
+  const kind = isImage ? 'image' : isPdf ? 'pdf' : 'other'
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 flex flex-col" onClick={onClose} role="dialog" aria-modal="true">

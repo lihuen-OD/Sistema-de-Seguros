@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { producersService } from './producers.service'
-import type { ListProducersQueryDTO } from './producers.schemas'
+import type { ListProducersQueryDTO, ListOverdueTasksQueryDTO } from './producers.schemas'
 
 type IdParam = { id: string }
 type TaskParam = { id: string; taskId: string }
@@ -36,6 +36,12 @@ export const producersController = {
   getTasks: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     const tasks = await producersService.findTasks(req.params.id)
     res.json({ data: tasks })
+  }),
+
+  getOverdueTasks: asyncHandler(async (req: Request, res: Response) => {
+    const { limit } = req.query as unknown as ListOverdueTasksQueryDTO
+    const result = await producersService.findOverdueTasksForDashboard(limit)
+    res.json({ data: result })
   }),
 
   createTask: asyncHandler(async (req: Request<IdParam>, res: Response) => {

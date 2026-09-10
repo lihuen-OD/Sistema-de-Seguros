@@ -320,6 +320,7 @@ export const fireExtinguishersService = {
     if (data.associatedAssetId) {
       const asset = await prisma.asset.findFirst({
         where: { id: data.associatedAssetId, isActive: true },
+        select: { id: true },
       })
       if (!asset) throw new AppError(400, 'Activo no encontrado o inactivo', 'INVALID_REFERENCE')
     }
@@ -387,6 +388,7 @@ export const fireExtinguishersService = {
     if (data.associatedAssetId) {
       const asset = await prisma.asset.findFirst({
         where: { id: data.associatedAssetId, isActive: true },
+        select: { id: true },
       })
       if (!asset) throw new AppError(400, 'Activo no encontrado o inactivo', 'INVALID_REFERENCE')
     }
@@ -555,7 +557,7 @@ export const fireExtinguishersService = {
   // ── History ───────────────────────────────────────────────────────────────────
 
   async findHistory(fireExtinguisherId: string) {
-    await this.assertExists(fireExtinguisherId)
+    await this.assertExistsLight(fireExtinguisherId)
     const history = await prisma.fireExtinguisherHistory.findMany({
       where: { fireExtinguisherId },
       orderBy: { date: 'desc' },
@@ -564,7 +566,7 @@ export const fireExtinguishersService = {
   },
 
   async addHistory(fireExtinguisherId: string, data: AddHistoryDTO) {
-    await this.assertExists(fireExtinguisherId)
+    await this.assertExistsLight(fireExtinguisherId)
 
     const entry = await prisma.fireExtinguisherHistory.create({
       data: {
@@ -584,6 +586,16 @@ export const fireExtinguishersService = {
 
   async assertExists(id: string) {
     const fe = await prisma.fireExtinguisher.findUnique({ where: { id } })
+    if (!fe) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
+    return fe
+  },
+
+  // Versión liviana de assertExists — solo para llamadores que descartan el
+  // resultado completo (findHistory/addHistory: únicamente necesitan saber
+  // que el matafuego existe). No usar donde se necesite `isActive` u otro
+  // campo de la fila (assertActive/reactivate siguen usando assertExists).
+  async assertExistsLight(id: string) {
+    const fe = await prisma.fireExtinguisher.findUnique({ where: { id }, select: { id: true } })
     if (!fe) throw new AppError(404, 'Matafuego no encontrado', 'NOT_FOUND')
     return fe
   },

@@ -29,10 +29,14 @@ jest.mock('../../../config/database', () => ({
     },
     documentPolicyAllocation: { deleteMany: jest.fn() },
     producer: { findFirst: jest.fn() },
-    insuranceType: { findFirst: jest.fn() },
-    asset: { findFirst: jest.fn() },
-    company: { findFirst: jest.fn() },
-    costCenter: { findFirst: jest.fn() },
+    // findMany además de findFirst: replaceCoverages()/create() resuelven
+    // estas referencias en batch (resolveCoverageInputsBatch), mientras que
+    // addCoverage()/updateCoverage() siguen usando resolveCoverageInput()
+    // línea por línea (findFirst) — ver policies.service.ts.
+    insuranceType: { findFirst: jest.fn(), findMany: jest.fn() },
+    asset: { findFirst: jest.fn(), findMany: jest.fn() },
+    company: { findFirst: jest.fn(), findMany: jest.fn() },
+    costCenter: { findFirst: jest.fn(), findMany: jest.fn() },
     producerTask: { findMany: jest.fn(), updateMany: jest.fn() },
     $transaction: jest.fn(),
   },
@@ -60,8 +64,10 @@ beforeEach(() => {
 const POLICY_ID = '30000000-0000-0000-0000-000000000001'
 const OTHER_ID = '30000000-0000-0000-0000-000000000099'
 const ASSET_ID = '40000000-0000-0000-0000-000000000001'
+const ASSET_ID_2 = '40000000-0000-0000-0000-000000000002'
 const TYPE_ID = '50000000-0000-0000-0000-000000000001'
 const COVERAGE_ID = '60000000-0000-0000-0000-000000000001'
+const COMPANY_ID = '70000000-0000-0000-0000-000000000001'
 const BASE_DATE = new Date('2026-01-01T00:00:00.000Z')
 const END_DATE = new Date('2026-12-31T00:00:00.000Z')
 
@@ -78,12 +84,178 @@ const validPolicyBody = {
 }
 
 describe('Policies API', () => {
+  // ── GET /api/v1/policies ────────────────────────────────────────────────────
+
+  describe('GET /api/v1/policies', () => {
+    it('selects the coverage lifecycle fields in the list — regression test for the missing effectiveDate that crashed FinancialAnalysis/EconomicAnalysis/RenewalProjection/InsuranceDashboard on the frontend', async () => {
+      db.policy.findMany.mockResolvedValueOnce([])
+      db.policy.count.mockResolvedValueOnce(0)
+
+      await request(app).get('/api/v1/policies').set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.policy.findMany.mock.calls[0][0]
+      expect(findManyCall.include.coverages.select).toMatchObject({
+        effectiveDate: true,
+        bajaDate: true,
+        bajaReason: true,
+        deactivatedAt: true,
+      })
+    })
+
+    // Fechas relativas a "hoy" (no fijas en 2026) — pickCurrentAssetCoverage
+    // usa todayDate(), que es el reloj real, así que el fixture tiene que
+    // moverse con la fecha en la que corre el test, no quedar fijo en el
+    // pasado o el futuro.
+    const daysFromToday = (days: number) => {
+      const d = new Date()
+      d.setUTCDate(d.getUTCDate() + days)
+      d.setUTCHours(0, 0, 0, 0)
+      return d
+    }
+
+    const OLD_COVERAGE_ID = '60000000-0000-0000-0000-000000000010'
+    const NEW_COVERAGE_ID = '60000000-0000-0000-0000-000000000011'
+
+    function fakeCoverage(overrides: Record<string, unknown>) {
+      return {
+        id: COVERAGE_ID,
+        assetId: ASSET_ID,
+        insuranceTypeId: TYPE_ID,
+        coverageIds: [],
+        insuredAmount: 10000,
+        currency: 'USD',
+        exchangeRate: 1000,
+        insuredAmountArs: 10000000,
+        insuredAmountUsd: 10000,
+        companyId: null,
+        costCenterId: null,
+        bajaReason: null,
+        deactivatedAt: null,
+        insuranceType: fakeInsuranceType,
+        asset: { id: ASSET_ID, name: 'Camioneta' },
+        attachments: [],
+        _count: { attachments: 0 },
+        ...overrides,
+      }
+    }
+
+    function fakePolicyWithCoverages(coverages: unknown[]) {
+      return {
+        id: POLICY_ID,
+        policyNumber: 'POL-TEST-002',
+        insuredName: 'La Segunda',
+        producerId: null,
+        startDate: BASE_DATE,
+        endDate: END_DATE,
+        description: null,
+        isActive: true,
+        deactivatedAt: null,
+        createdAt: BASE_DATE,
+        updatedAt: BASE_DATE,
+        producer: null,
+        coverages,
+        _count: { coverages: coverages.length },
+      }
+    }
+
+    it('picks the currently active coverage line as assetCoverage when the asset was given de baja and later re-added (regression: used to return whichever line came first, ignoring bajaDate)', async () => {
+      const oldDeactivated = fakeCoverage({
+        id: OLD_COVERAGE_ID,
+        effectiveDate: daysFromToday(-400),
+        bajaDate: daysFromToday(-30), // baja ya efectiva
+      })
+      const newActive = fakeCoverage({
+        id: NEW_COVERAGE_ID,
+        effectiveDate: daysFromToday(-20), // reincorporado después de la baja
+        bajaDate: null,
+      })
+
+      // Orden deliberado (vieja primero) — antes un .find() ciego se hubiera
+      // quedado con esta por ser la primera en matchear el assetId.
+      db.policy.findMany.mockResolvedValueOnce([fakePolicyWithCoverages([oldDeactivated, newActive])])
+      db.policy.count.mockResolvedValueOnce(1)
+
+      const res = await request(app)
+        .get('/api/v1/policies')
+        .query({ assetId: ASSET_ID })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].assetCoverage.id).toBe(NEW_COVERAGE_ID)
+      expect(res.body.data[0].assetCoverage.bajaDate).toBeNull()
+    })
+
+    it('falls back to the most recent historical line as assetCoverage when the asset has no currently active coverage', async () => {
+      const olderDeactivated = fakeCoverage({
+        id: OLD_COVERAGE_ID,
+        effectiveDate: daysFromToday(-400),
+        bajaDate: daysFromToday(-300),
+      })
+      const mostRecentDeactivated = fakeCoverage({
+        id: NEW_COVERAGE_ID,
+        effectiveDate: daysFromToday(-200),
+        bajaDate: daysFromToday(-30),
+      })
+
+      db.policy.findMany.mockResolvedValueOnce([fakePolicyWithCoverages([olderDeactivated, mostRecentDeactivated])])
+      db.policy.count.mockResolvedValueOnce(1)
+
+      const res = await request(app)
+        .get('/api/v1/policies')
+        .query({ assetId: ASSET_ID })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].assetCoverage.id).toBe(NEW_COVERAGE_ID)
+      expect(res.body.data[0].assetCoverage.bajaDate).not.toBeNull()
+    })
+
+    it('includes effectiveDate and bajaDate per line when includeCoverages=true — regression: the lightweight projection used to omit them, so a frontend consumer (ClaimFichaPage) could not tell a de-baja line from the currently active one', async () => {
+      const deactivated = fakeCoverage({
+        id: OLD_COVERAGE_ID,
+        effectiveDate: daysFromToday(-400),
+        bajaDate: daysFromToday(-30),
+      })
+      const active = fakeCoverage({
+        id: NEW_COVERAGE_ID,
+        effectiveDate: daysFromToday(-20),
+        bajaDate: null,
+      })
+
+      db.policy.findMany.mockResolvedValueOnce([fakePolicyWithCoverages([deactivated, active])])
+      db.policy.count.mockResolvedValueOnce(1)
+
+      const res = await request(app)
+        .get('/api/v1/policies')
+        .query({ includeCoverages: 'true' })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const [oldLine, newLine] = res.body.data[0].coverages
+      expect(oldLine.id).toBe(OLD_COVERAGE_ID)
+      expect(oldLine.bajaDate).not.toBeNull()
+      expect(newLine.id).toBe(NEW_COVERAGE_ID)
+      expect(newLine.effectiveDate).toBeTruthy()
+      expect(newLine.bajaDate).toBeNull()
+    })
+
+    it('does not include a coverages array when includeCoverages is not passed (default unchanged)', async () => {
+      db.policy.findMany.mockResolvedValueOnce([fakePolicyWithCoverages([fakeCoverage({})])])
+      db.policy.count.mockResolvedValueOnce(1)
+
+      const res = await request(app).get('/api/v1/policies').set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].coverages).toBeUndefined()
+    })
+  })
+
   // ── POST /api/v1/policies ────────────────────────────────────────────────────
 
   describe('POST /api/v1/policies', () => {
     it('returns 201 when ADMIN creates a policy with a coverage line', async () => {
       db.policy.findUnique.mockResolvedValue(null) // no duplicate policyNumber
-      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+      db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType])
       db.policy.create.mockResolvedValue({
         id: POLICY_ID,
         ...validPolicyBody,
@@ -142,7 +314,7 @@ describe('Policies API', () => {
 
     it('returns 400 when a coverage references an inactive or missing insurance type', async () => {
       db.policy.findUnique.mockResolvedValue(null)
-      db.insuranceType.findFirst.mockResolvedValue(null)
+      db.insuranceType.findMany.mockResolvedValue([])
 
       const res = await request(app)
         .post('/api/v1/policies')
@@ -168,7 +340,7 @@ describe('Policies API', () => {
         })
 
       expect(res.status).toBe(400)
-      expect(db.insuranceType.findFirst).not.toHaveBeenCalled()
+      expect(db.insuranceType.findMany).not.toHaveBeenCalled()
     })
 
     it('returns 422 when no coverage line is provided', async () => {
@@ -311,7 +483,7 @@ describe('Policies API', () => {
             attachments: [], _count: { attachments: 2 },
           },
         ])
-      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+      db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType])
       db.$transaction.mockResolvedValue([])
 
       const res = await request(app)
@@ -336,7 +508,7 @@ describe('Policies API', () => {
           { id: REMOVED_COVERAGE_ID, assetId: null, _count: { attachments: 0 } },
         ])
         .mockResolvedValueOnce([])
-      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+      db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType])
       db.$transaction.mockResolvedValue([])
 
       const res = await request(app)
@@ -387,8 +559,8 @@ describe('Policies API', () => {
       db.policyAssetCoverage.findMany
         .mockResolvedValueOnce([{ id: COVERAGE_ID, assetId: ASSET_ID, _count: { attachments: 1 } }])
         .mockResolvedValueOnce([])
-      db.asset.findFirst.mockResolvedValue({ id: ASSET_ID })
-      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+      db.asset.findMany.mockResolvedValue([{ id: ASSET_ID }])
+      db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType])
 
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
@@ -404,8 +576,8 @@ describe('Policies API', () => {
       db.policyAssetCoverage.findMany
         .mockResolvedValueOnce([{ id: COVERAGE_ID, assetId: ASSET_ID, _count: { attachments: 0 } }])
         .mockResolvedValueOnce([])
-      db.asset.findFirst.mockResolvedValue({ id: OTHER_ID })
-      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+      db.asset.findMany.mockResolvedValue([{ id: OTHER_ID }])
+      db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType])
 
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
@@ -419,8 +591,8 @@ describe('Policies API', () => {
     it('allows a new line to choose an assetId', async () => {
       db.policy.findUnique.mockResolvedValue({ id: POLICY_ID })
       db.policyAssetCoverage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([])
-      db.asset.findFirst.mockResolvedValue({ id: ASSET_ID })
-      db.insuranceType.findFirst.mockResolvedValue(fakeInsuranceType)
+      db.asset.findMany.mockResolvedValue([{ id: ASSET_ID }])
+      db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType])
 
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
@@ -484,6 +656,85 @@ describe('Policies API', () => {
       expect(res.body.error.code).toBe('COVERAGE_OVERLAP')
       expect(db.$transaction).not.toHaveBeenCalled()
       expect(db.policyAssetCoverage.create).not.toHaveBeenCalled()
+    })
+
+    // ── Fase D1b: resolveCoverageInputsBatch ───────────────────────────────────
+
+    it('validates several new lines in a single batch call per entity instead of one findFirst per line', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, startDate: BASE_DATE })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([])
+      db.asset.findMany.mockResolvedValue([{ id: ASSET_ID }, { id: ASSET_ID_2 }])
+      db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType])
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          coverages: [
+            { assetId: ASSET_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1000 },
+            { assetId: ASSET_ID_2, insuranceTypeId: TYPE_ID, insuredAmount: 2000, exchangeRate: 1000 },
+          ],
+        })
+
+      expect(res.status).toBe(200)
+      expect(db.policyAssetCoverage.create).toHaveBeenCalledTimes(2)
+      // El punto del batch: 2 líneas nuevas, pero 1 sola llamada a
+      // asset.findMany/insuranceType.findMany (no 2, una por línea) — y
+      // ningún findFirst individual de por medio.
+      expect(db.asset.findMany).toHaveBeenCalledTimes(1)
+      expect(db.insuranceType.findMany).toHaveBeenCalledTimes(1)
+      expect(db.asset.findFirst).not.toHaveBeenCalled()
+      expect(db.insuranceType.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('rejects a coverageId that does not belong to the selected insurance type', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, startDate: BASE_DATE })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([])
+      db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType]) // fakeInsuranceType.coverages === []
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ insuranceTypeId: TYPE_ID, coverageIds: [OTHER_ID], insuredAmount: 1000, exchangeRate: 1000 }] })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('INVALID_REFERENCE')
+      expect(res.body.error.message).toBe('Una o más coberturas no pertenecen al tipo de seguro seleccionado')
+      expect(db.$transaction).not.toHaveBeenCalled()
+    })
+
+    it('rejects an invalid or inactive assetId', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, startDate: BASE_DATE })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([])
+      db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType])
+      db.asset.findMany.mockResolvedValue([]) // ni existe ni está activo
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ assetId: ASSET_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1000 }] })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('INVALID_REFERENCE')
+      expect(res.body.error.message).toBe('Activo no encontrado o inactivo')
+      expect(db.$transaction).not.toHaveBeenCalled()
+    })
+
+    it('rejects an invalid or inactive companyId (same code path covers costCenterId)', async () => {
+      db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, startDate: BASE_DATE })
+      db.policyAssetCoverage.findMany.mockResolvedValueOnce([])
+      db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType])
+      db.company.findMany.mockResolvedValue([]) // ni existe ni está activa
+
+      const res = await request(app)
+        .put(`/api/v1/policies/${POLICY_ID}/coverages`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ coverages: [{ companyId: COMPANY_ID, insuranceTypeId: TYPE_ID, insuredAmount: 1000, exchangeRate: 1000 }] })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error.code).toBe('INVALID_REFERENCE')
+      expect(res.body.error.message).toBe('Empresa no encontrada o inactiva')
+      expect(db.$transaction).not.toHaveBeenCalled()
     })
   })
 

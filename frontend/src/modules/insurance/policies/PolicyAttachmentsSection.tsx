@@ -252,12 +252,24 @@ export function PolicyAttachmentsSection({ policyId, coverageId, policyEndDate, 
   // policyKeys.all (['policies']) — invalidar solo attachments no alcanzaba
   // para refrescar la ficha de la póliza ni, sobre todo, la ficha del Activo
   // (AssetDetailPage), que muestra la tarjeta de circulación vía
-  // policy.assetCoverage.circulationCardAttachment.
+  // policyQueries.list({ assetId }) → policy.assetCoverage.circulationCardAttachment.
+  //
+  // En vez de policyKeys.all (que por prefijo también refresca
+  // coverages/attachments/tasks de OTRAS líneas de cobertura de esta misma
+  // póliza cuando hay varias secciones de adjuntos montadas a la vez, ej. la
+  // pestaña "Adjuntos" del detalle con varias coberturas), el predicate de
+  // abajo solo apunta a las queries con forma de "listado": el listado sin
+  // filtro (['policies']) y cualquier variante filtrada (['policies', {…}]),
+  // como la que usa AssetDetailPage.
   const invalidateAttachments = () => {
     queryClient.invalidateQueries({ queryKey: policyKeys.attachments(policyId, coverageId) })
-    queryClient.invalidateQueries({ queryKey: policyKeys.all })
     queryClient.invalidateQueries({ queryKey: policyKeys.detail(policyId) })
     queryClient.invalidateQueries({ queryKey: policyKeys.coverages(policyId) })
+    queryClient.invalidateQueries({
+      predicate: (query) =>
+        query.queryKey[0] === 'policies' &&
+        (query.queryKey.length === 1 || (query.queryKey.length === 2 && typeof query.queryKey[1] === 'object')),
+    })
   }
 
   const deleteMutation = useMutation({

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, FileText, CheckCircle2, Clock, AlertCircle, Eye, Edit2, Trash2, X } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
@@ -132,10 +132,22 @@ export default function DocumentsPage() {
     })
   }, [allDocuments, search, filterType, filterStatus, filterDateFrom, filterDateTo])
 
-  async function handleDelete(id: string) {
-    await documentsApi.softDelete(id)
-    queryClient.invalidateQueries({ queryKey: documentKeys.all })
-    setConfirmDeleteId(null)
+  // useMutation (en vez de un async function suelto) para tener isPending y
+  // poder bloquear los botones de "Eliminar" mientras hay un borrado en
+  // curso — sin esto, confirmar "Sí" en varias filas seguidas disparaba
+  // varios DELETE en paralelo sin ningún freno.
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => documentsApi.softDelete(id),
+    onSuccess: () => {
+      // exact:true: solo la query del listado (este doc desaparece de acá),
+      // no el detail/balance/installments/attachments de otros documentos.
+      queryClient.invalidateQueries({ queryKey: documentKeys.all, exact: true })
+      setConfirmDeleteId(null)
+    },
+  })
+
+  function handleDelete(id: string) {
+    deleteMutation.mutate(id)
   }
 
   const ALL_COLUMNS: TableColumn<AccountingDocument>[] = useMemo(() => [
@@ -316,7 +328,8 @@ export default function DocumentsPage() {
               <span className="text-xs text-red-600 font-medium mr-1">¿Eliminar?</span>
               <button
                 onClick={(e) => { e.stopPropagation(); handleDelete(row.id) }}
-                className="px-2 py-1 rounded-lg text-xs font-medium text-white bg-red-600 hover:bg-red-700 transition-colors"
+                disabled={deleteMutation.isPending}
+                className="px-2 py-1 rounded-lg text-xs font-medium text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-50"
               >
                 Sí
               </button>
@@ -345,7 +358,8 @@ export default function DocumentsPage() {
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(row.id) }}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                disabled={deleteMutation.isPending}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
                 title="Eliminar"
               >
                 <Trash2 size={15} />
@@ -356,7 +370,7 @@ export default function DocumentsPage() {
       ),
       className: 'w-36',
     },
-  ], [navigate, confirmDeleteId, documentTypeLabels])
+  ], [navigate, confirmDeleteId, documentTypeLabels, deleteMutation.isPending])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('documents', ALL_COLUMNS)
 

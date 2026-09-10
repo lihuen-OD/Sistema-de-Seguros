@@ -8,7 +8,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useQueries } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
@@ -71,11 +71,14 @@ export default function DashboardPage() {
   const { data: financialDocs = [] } = useQuery(documentQueries.financial())
   const { data: allCompanies = [] } = useQuery(companyQueries.list())
   const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
-  const { data: allProducers = [] } = useQuery(producerQueries.list())
-
-  const taskQueries = useQueries({
-    queries: allProducers.map((p) => producerQueries.tasks(p.id)),
-  })
+  // Reemplaza el fan-out anterior (1 GET /producers + 1 GET /producers/:id/tasks
+  // por cada productor) por una sola request al endpoint agregado — ver
+  // auditoría Performance & RateLimit Fase D2. El Dashboard nunca necesitó la
+  // lista de productores en sí, solo sus tareas vencidas.
+  const { data: overdueTasksResult } = useQuery(producerQueries.overdueTasks())
+  // useMemo (no `?? []` suelto) para que la referencia sea estable entre
+  // renders y no invalide el useMemo de overdueTasks más abajo en cada render.
+  const overdueTaskItems = useMemo(() => overdueTasksResult?.items ?? [], [overdueTasksResult])
 
   const selectedCompanyIds = useMemo(
     () => new Set(filterCompanies),
@@ -318,22 +321,19 @@ export default function DashboardPage() {
   const expiredFe = filteredFireExtinguishers.filter((f) => f.status === 'vencido')
   const expiringFe = filteredFireExtinguishers.filter((f) => f.status === 'proximo_vencer')
 
-  const allTasks = useMemo(
-    () => taskQueries.flatMap((query) => query.data ?? []),
-    [taskQueries],
-  )
-
+  // overdueTaskItems ya viene filtrado a "vencida" desde el backend (status
+  // pendiente + dueDate < hoy) — acá solo queda aplicar el mismo filtro de
+  // alcance (empresa/centro de costo/tipo de activo) que ya se aplicaba antes.
   const overdueTasks = useMemo(
     () =>
-      allTasks.filter((task) => {
-        if (task.status !== 'vencida') return false
+      overdueTaskItems.filter((task) => {
         if (!hasScopeFilters) return true
         return (
           (task.policyId !== null && filteredPolicyIds.has(task.policyId)) ||
           (task.assetId !== null && filteredAssetIds.has(task.assetId))
         )
       }),
-    [allTasks, filteredAssetIds, filteredPolicyIds, hasScopeFilters],
+    [overdueTaskItems, filteredAssetIds, filteredPolicyIds, hasScopeFilters],
   )
 
   const allInstallments = useMemo(

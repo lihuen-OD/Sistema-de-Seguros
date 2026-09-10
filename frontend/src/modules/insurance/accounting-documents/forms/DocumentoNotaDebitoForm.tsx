@@ -24,6 +24,34 @@ import type { AccountingDocument, Currency } from '../../../../shared/types'
 
 interface DocumentoNotaDebitoFormProps {
   initialDoc?: AccountingDocument
+  sourceLinkedDocumentId?: string
+}
+
+// `sourceLinkedDocumentId` viene de "Crear documento relacionado" desde una
+// Factura — se resuelve ACÁ, antes de montar el formulario editable, para
+// poder plegar el prefill directo en el estado inicial de abajo sin
+// necesitar un efecto (mismo patrón que sourcePolicy en DocumentoFacturaForm).
+export default function DocumentoNotaDebitoForm({ initialDoc, sourceLinkedDocumentId }: DocumentoNotaDebitoFormProps) {
+  const isEdit = !!initialDoc
+  const { data: sourceLinkedDocument, isLoading: sourceLoading } = useQuery({
+    ...documentQueries.detail(sourceLinkedDocumentId!),
+    enabled: !isEdit && !!sourceLinkedDocumentId,
+  })
+
+  if (!isEdit && sourceLinkedDocumentId && (sourceLoading || !sourceLinkedDocument)) {
+    return (
+      <PageContent>
+        <p className="text-sm text-slate-400 py-10 text-center">Cargando datos de la factura base…</p>
+      </PageContent>
+    )
+  }
+
+  return <DocumentoNotaDebitoFormBody initialDoc={initialDoc} sourceLinkedDocument={!isEdit ? sourceLinkedDocument ?? null : null} />
+}
+
+interface DocumentoNotaDebitoFormBodyProps {
+  initialDoc?: AccountingDocument
+  sourceLinkedDocument: AccountingDocument | null
 }
 
 interface FormState {
@@ -42,18 +70,18 @@ interface FormState {
 
 type FormErrors = Partial<Record<keyof FormState | 'policies', string>>
 
-export default function DocumentoNotaDebitoForm({ initialDoc }: DocumentoNotaDebitoFormProps) {
+function DocumentoNotaDebitoFormBody({ initialDoc, sourceLinkedDocument }: DocumentoNotaDebitoFormBodyProps) {
   const isEdit = !!initialDoc
   const queryClient = useQueryClient()
 
   const [form, setForm] = useState<FormState>({
-    insuranceCompany: initialDoc?.insuranceCompany ?? '',
+    insuranceCompany: initialDoc?.insuranceCompany ?? sourceLinkedDocument?.insuranceCompany ?? '',
     documentNumber: initialDoc?.documentNumber ?? '',
     issueDate: initialDoc?.issueDate ?? '',
-    linkedDocumentId: initialDoc?.linkedDocumentId ?? '',
-    currency: initialDoc?.currency ?? '',
-    exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : '0',
-    paymentMethod: initialDoc?.paymentMethod ?? '',
+    linkedDocumentId: initialDoc?.linkedDocumentId ?? sourceLinkedDocument?.id ?? '',
+    currency: initialDoc?.currency ?? sourceLinkedDocument?.currency ?? '',
+    exchangeRate: initialDoc ? String(initialDoc.exchangeRate) : sourceLinkedDocument ? String(sourceLinkedDocument.exchangeRate) : '0',
+    paymentMethod: initialDoc?.paymentMethod ?? sourceLinkedDocument?.paymentMethod ?? '',
     netAmount: initialDoc ? String(initialDoc.netAmount) : '',
     vatAmount: initialDoc ? String(initialDoc.vatAmount) : '0',
     otherTaxesAmount: initialDoc ? String(initialDoc.otherTaxesAmount) : '0',

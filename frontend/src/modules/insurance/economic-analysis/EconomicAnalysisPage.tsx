@@ -95,8 +95,11 @@ export default function EconomicAnalysisPage() {
 
   // ─── Remote data ─────────────────────────────────────────────────────────────
 
-  // Una sola request que devuelve documentos + installments + allocations embebidos
-  const { data: financialDocs = [], isError: isErrorDocs } = useQuery(documentQueries.financial())
+  // Una sola request que devuelve documentos + allocations embebidos —
+  // includeInstallments:false (Fase D4, Performance & RateLimit): esta
+  // pantalla nunca lee `.installments` (confirmado por auditoría), así que
+  // pide la versión liviana para no traer cuotas que se descartarían igual.
+  const { data: financialDocs = [], isError: isErrorDocs } = useQuery(documentQueries.financial({ includeInstallments: false }))
   // includeCoverages:true — buildDocumentAllocationContexts necesita, para las
   // asignaciones "sin activo", la empresa/centro de costo propios de esa línea.
   const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list({ includeCoverages: true }))

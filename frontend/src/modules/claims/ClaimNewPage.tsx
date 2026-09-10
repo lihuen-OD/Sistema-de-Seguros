@@ -27,6 +27,7 @@ import { catalogQueries } from '../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { computeEquivalent } from '../../shared/utils/currency'
 import { formatCurrencyFull } from '../../shared/utils/format'
+import { pickActiveCoverageForAsset } from '../../shared/utils/expiration'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
 import { CURRENCY_OPTIONS } from '../../shared/constants'
 import type { ClaimOwnershipType, Currency } from '../../shared/types'
@@ -138,10 +139,10 @@ export default function ClaimNewPage() {
     ...policyQueries.detail(policyId),
     enabled: !!policyId,
   })
-  const selectedCoverage =
-    selectedPolicyDetail?.coverages?.find((c) => (assetId ? c.assetId === assetId : !c.assetId))
-    ?? selectedPolicyDetail?.coverages?.[0]
-    ?? null
+  // Vigente hoy sobre la histórica dada de baja — un activo dado de baja de
+  // esta póliza y reincorporado con una línea nueva no debe mostrar acá el
+  // tipo de seguro/coberturas de la línea vieja (ver pickActiveCoverageForAsset).
+  const selectedCoverage = pickActiveCoverageForAsset(selectedPolicyDetail?.coverages, assetId || null)
 
   // El backend cierra ambas monedas (ARS/USD) a partir del monto crudo +
   // currency + exchangeRate — acá solo se decide el prefijo de moneda para

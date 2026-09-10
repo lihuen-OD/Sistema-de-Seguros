@@ -41,6 +41,7 @@ interface BackendAssetCoverageSummary {
   id: string; insuranceTypeId: string; insuranceTypeName: string
   insuredAmount: number; currency: string; exchangeRate: number
   insuredAmountArs: number | null; insuredAmountUsd: number | null
+  effectiveDate: string; bajaDate: string | null
   circulationCardAttachment?: BackendCirculationCard | null
 }
 interface BackendPolicy {
@@ -114,6 +115,20 @@ function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
   }
 }
 
+// effectiveDate es NOT NULL en la base — si llega undefined es un select del
+// backend que se olvidó de pedirlo (ya pasó una vez, ver COVERAGE_LIST_SELECT
+// en policies.service.ts), no un dato real ausente. Fallback a '' en vez de
+// explotar toda la pantalla por un campo faltante de un listado.
+function mapCoverageEffectiveDate(c: BackendPolicyCoverage): string {
+  if (!c.effectiveDate) {
+    if (import.meta.env.DEV) {
+      console.warn(`[mapCoverage] effectiveDate faltante en coverage ${c.id} — revisar el select del endpoint`)
+    }
+    return ''
+  }
+  return c.effectiveDate.slice(0, 10)
+}
+
 function mapCoverage(c: BackendPolicyCoverage): PolicyCoverage {
   return {
     id: c.id,
@@ -137,7 +152,7 @@ function mapCoverage(c: BackendPolicyCoverage): PolicyCoverage {
     beneficiaryDescription: c.beneficiaryDescription,
     attachmentsCount: c._count?.attachments ?? 0,
     circulationCardAttachment: c.attachments?.[0] ?? null,
-    effectiveDate: c.effectiveDate.slice(0, 10),
+    effectiveDate: mapCoverageEffectiveDate(c),
     bajaDate: c.bajaDate ? c.bajaDate.slice(0, 10) : null,
     bajaReason: c.bajaReason ?? null,
     deactivatedAt: c.deactivatedAt ?? null,
@@ -176,6 +191,8 @@ function mapPolicy(b: BackendPolicy): Policy {
           exchangeRate: b.assetCoverage.exchangeRate,
           insuredAmountArs: b.assetCoverage.insuredAmountArs,
           insuredAmountUsd: b.assetCoverage.insuredAmountUsd,
+          effectiveDate: b.assetCoverage.effectiveDate?.slice(0, 10) ?? '',
+          bajaDate: b.assetCoverage.bajaDate ? b.assetCoverage.bajaDate.slice(0, 10) : null,
           circulationCardAttachment: b.assetCoverage.circulationCardAttachment ?? null,
         }
       : b.assetCoverage === null ? null : undefined,

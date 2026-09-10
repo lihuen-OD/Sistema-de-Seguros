@@ -14,6 +14,7 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
+import { pickActiveCoverageForAsset } from '../../shared/utils/expiration'
 import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import type { ClaimAttachment, Currency } from '../../shared/types'
 import { assetQueries } from '../../shared/api/assets.api'
@@ -584,7 +585,10 @@ export default function ClaimDetailPage() {
                     <p className="text-sm font-mono font-semibold text-slate-800 mb-0.5">{policy.policyNumber}</p>
                     <p className="text-xs text-slate-500 mb-1">
                       {(() => {
-                        const coverage = policy.coverages?.find((c) => (claim?.assetId ? c.assetId === claim.assetId : !c.assetId)) ?? policy.coverages?.[0]
+                        // Vigente hoy sobre la histórica dada de baja — un activo
+                        // reincorporado con una línea nueva no debe mostrar acá el
+                        // tipo/coberturas de la línea vieja (ver pickActiveCoverageForAsset).
+                        const coverage = pickActiveCoverageForAsset(policy.coverages, claim?.assetId ?? null)
                         return coverage ? `${coverage.insuranceType} · ${(coverage.coverageNames ?? []).join(', ') || 'Sin coberturas'}` : 'Sin tipo'
                       })()}
                     </p>

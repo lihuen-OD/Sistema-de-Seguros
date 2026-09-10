@@ -91,6 +91,12 @@ const DOCUMENT_DETAIL_INCLUDE = {
 }
 
 // Include para análisis financiero: incluye installments y allocations en lista
+const FINANCIAL_ALLOCATIONS_SELECT = {
+  id: true, accountingDocumentId: true, policyAssetCoverageId: true,
+  allocatedAmount: true, allocationPercentage: true,
+  policyAssetCoverage: { select: { policyId: true, assetId: true } },
+} as const
+
 const DOCUMENT_FINANCIAL_INCLUDE = {
   installments: {
     select: {
@@ -100,13 +106,32 @@ const DOCUMENT_FINANCIAL_INCLUDE = {
     },
     orderBy: { installmentNumber: 'asc' as const },
   },
-  allocations: {
-    select: {
-      id: true, accountingDocumentId: true, policyAssetCoverageId: true,
-      allocatedAmount: true, allocationPercentage: true,
-      policyAssetCoverage: { select: { policyId: true, assetId: true } },
-    },
-  },
+  allocations: { select: FINANCIAL_ALLOCATIONS_SELECT },
+}
+
+// Versión liviana (Fase D4, Performance & RateLimit) — para consumidores que
+// nunca leen `installments` (Análisis Económico, Detalle de Póliza, Detalle
+// de Activo): mismo `allocations`, sin el join/select de installments.
+const DOCUMENT_FINANCIAL_INCLUDE_LIGHT = {
+  allocations: { select: FINANCIAL_ALLOCATIONS_SELECT },
+}
+
+// Compartido por ambas ramas de findAllForFinancial — mismo aplanado que ya
+// usa DOCUMENT_LIST_INCLUDE/findAll, evita repetirlo en las dos ramas.
+function mapFinancialAllocations(allocations: {
+  id: string; accountingDocumentId: string; policyAssetCoverageId: string
+  allocatedAmount: number; allocationPercentage: number
+  policyAssetCoverage: { policyId: string; assetId: string | null }
+}[]) {
+  return allocations.map((a) => ({
+    id: a.id,
+    accountingDocumentId: a.accountingDocumentId,
+    policyAssetCoverageId: a.policyAssetCoverageId,
+    policyId: a.policyAssetCoverage.policyId,
+    assetId: a.policyAssetCoverage.assetId,
+    allocatedAmount: a.allocatedAmount,
+    allocationPercentage: a.allocationPercentage,
+  }))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -249,7 +274,7 @@ export const documentsService = {
     )
   },
 
-  async findAllForFinancial(params?: { from?: string; to?: string }) {
+  async findAllForFinancial(params?: { from?: string; to?: string; includeInstallments?: boolean }) {
     // Excluye documentos anulados — este endpoint solo lo consumen Análisis
     // Financiero y Análisis Económico, y un documento CANCELLED nunca debe
     // impactar esos reportes.
@@ -265,9 +290,28 @@ export const documentsService = {
       // Siempre por fecha de vencimiento de la cuota, esté pagada o no — el
       // Análisis Financiero posiciona cada cuota por cuándo correspondía
       // vencer, nunca por cuándo se terminó pagando (ver
-      // getInstallmentEffectiveDate en FinancialAnalysisPage.tsx).
+      // getInstallmentEffectiveDate en FinancialAnalysisPage.tsx). Este
+      // filtro se mantiene idéntico sin importar includeInstallments: sigue
+      // decidiendo QUÉ documentos entran, aunque no se devuelvan sus cuotas.
       where.installments = { some: { dueDate: range } }
     }
+
+    // Default true — sin este parámetro, comportamiento idéntico al de
+    // siempre (ver Fase D4 de Performance & RateLimit).
+    if (params?.includeInstallments === false) {
+      const docs = await prisma.accountingDocument.findMany({
+        where,
+        orderBy: { issueDate: 'asc' },
+        include: DOCUMENT_FINANCIAL_INCLUDE_LIGHT,
+        take: 2000,
+      })
+      return docs.map((doc) => ({
+        ...withTotalAmount(doc),
+        installments: [] as ReturnType<typeof mapInstallment>[],
+        allocations: mapFinancialAllocations(doc.allocations),
+      }))
+    }
+
     const docs = await prisma.accountingDocument.findMany({
       where,
       orderBy: { issueDate: 'asc' },
@@ -277,15 +321,7 @@ export const documentsService = {
     return docs.map((doc) => ({
       ...withTotalAmount(doc),
       installments: doc.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
-      allocations: doc.allocations.map((a) => ({
-        id: a.id,
-        accountingDocumentId: a.accountingDocumentId,
-        policyAssetCoverageId: a.policyAssetCoverageId,
-        policyId: a.policyAssetCoverage.policyId,
-        assetId: a.policyAssetCoverage.assetId,
-        allocatedAmount: a.allocatedAmount,
-        allocationPercentage: a.allocationPercentage,
-      })),
+      allocations: mapFinancialAllocations(doc.allocations),
     }))
   },
 
@@ -1382,6 +1418,12 @@ export const documentsService = {
     if (applications.length === 0) return
 
     let linkedDocumentId: string | null = null
+    // Mismo trade-off que redistributeAdjustmentAcrossInstallments: cada
+    // cuota vuelve a un monto propio (su amount actual menos su propio
+    // deltaAmount), así que el update no se puede batchear en una sola
+    // sentencia — es un update por cuota aceptado a propósito (el lote
+    // suele ser chico, acotado a las cuotas que tocó el ajuste original),
+    // no un N+1 sin revisar.
     for (const app of applications) {
       const inst = app.installment
       linkedDocumentId = inst.accountingDocumentId
@@ -1607,10 +1649,18 @@ export const documentsService = {
   // Para las asignaciones de un documento (ahora apuntan a una línea de
   // cobertura, no directo a la póliza) — la línea tiene que existir, su
   // póliza estar activa, y (salvo que esté exceptuada por ser una allocation
-  // histórica ya guardada) estar vigente para issueDate: effectiveDate <=
-  // issueDate && (bajaDate es null || bajaDate >= issueDate). Las exceptuadas
-  // dejan seguir guardando el documento sin romper asignaciones históricas
-  // aunque la línea haya sido dada de baja después.
+  // histórica ya guardada) estar vigente para coverageReferenceDate:
+  // effectiveDate <= coverageReferenceDate && (bajaDate es null || bajaDate
+  // >= coverageReferenceDate). Las exceptuadas dejan seguir guardando el
+  // documento sin romper asignaciones históricas aunque la línea haya sido
+  // dada de baja después.
+  //
+  // coverageReferenceDate = max(issueDate, policy.startDate): issueDate es la
+  // fecha administrativa/contable del documento, no necesariamente la fecha
+  // real de cobertura — una factura puede emitirse antes de que arranque la
+  // vigencia de la póliza (ej. facturación anticipada). En ese caso se valida
+  // la línea contra el inicio de la póliza, no contra una fecha en la que la
+  // póliza todavía ni existía.
   async validateCoverageRefs(
     coverageIds: string[],
     issueDate: Date,
@@ -1618,7 +1668,7 @@ export const documentsService = {
   ) {
     const found = await prisma.policyAssetCoverage.findMany({
       where: { id: { in: coverageIds }, policy: { isActive: true } },
-      select: { id: true, effectiveDate: true, bajaDate: true },
+      select: { id: true, effectiveDate: true, bajaDate: true, policy: { select: { startDate: true } } },
     })
     if (found.length !== coverageIds.length) {
       throw new AppError(
@@ -1627,9 +1677,12 @@ export const documentsService = {
         'INVALID_REFERENCE',
       )
     }
-    const outOfRange = found.find(
-      (c) => !exemptCoverageIds.has(c.id) && !isCoverageActiveOn(c, issueDate),
-    )
+    const outOfRange = found.find((c) => {
+      if (exemptCoverageIds.has(c.id)) return false
+      const coverageReferenceDate =
+        toDateStr(issueDate) > toDateStr(c.policy.startDate) ? issueDate : c.policy.startDate
+      return !isCoverageActiveOn(c, coverageReferenceDate)
+    })
     if (outOfRange) {
       throw new AppError(
         400,

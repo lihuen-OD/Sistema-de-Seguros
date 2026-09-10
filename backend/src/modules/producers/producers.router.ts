@@ -8,6 +8,7 @@ import {
   CreateTaskSchema,
   UpdateTaskSchema,
   ListProducersQuerySchema,
+  ListOverdueTasksQuerySchema,
 } from './producers.schemas'
 import { producersController } from './producers.controller'
 
@@ -36,6 +37,16 @@ producersRouter.put(
 producersRouter.delete('/:id', requireModule('producers'), producersController.remove)
 
 // Tasks — agregado también por Tareas y Dashboard (tareas de todos los productores)
+
+// Ruta estática ANTES de /:id/tasks — mismo permiso que esa, agregado de
+// tareas vencidas de TODOS los productores en una sola request (reemplaza,
+// para el Dashboard, el fan-out de un GET /:id/tasks por productor).
+producersRouter.get(
+  '/tasks/overdue',
+  requireModule('producers', 'tasks', 'dashboard'),
+  validateQuery(ListOverdueTasksQuerySchema),
+  producersController.getOverdueTasks,
+)
 producersRouter.get('/:id/tasks', requireModule('producers', 'tasks', 'dashboard'), producersController.getTasks)
 producersRouter.post(
   '/:id/tasks',

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { Receipt, ChevronDown, ChevronUp, FileEdit, TrendingDown, TrendingUp, CheckCircle2 } from 'lucide-react'
 import { StatusPill } from '../../../../shared/components/badges/StatusPill'
@@ -6,6 +7,7 @@ import { InstallmentRow } from '../../../../shared/components/installments/Insta
 import { formatDate, formatCurrencyFull } from '../../../../shared/utils/format'
 import { getDirectionSign, type TypeDirectionMap } from '../../../../shared/utils/policyInvoicedTotal'
 import { DOCUMENT_TYPE_LABELS } from '../../../../shared/constants'
+import { ROUTES } from '../../../../app/routes'
 import type { AccountingDocument, Installment, InstallmentUpdate } from '../../../../shared/types'
 
 export function FacturaCard({
@@ -23,6 +25,7 @@ export function FacturaCard({
   typeDefsByKey: TypeDirectionMap
   onInstallmentUpdate: (docId: string, instId: string, updates: InstallmentUpdate) => void
 }) {
+  const navigate = useNavigate()
   const [expanded, setExpanded] = useState(false)
   const currency = factura.currency === 'USD' ? 'US$' : 'AR$'
 
@@ -65,18 +68,19 @@ export function FacturaCard({
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-4 hover:bg-slate-50/60 transition-colors text-left"
-      >
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="w-full flex items-center justify-between gap-3 px-5 py-4 hover:bg-slate-50/60 transition-colors">
+        <button
+          type="button"
+          onClick={() => navigate(ROUTES.DOCUMENTS_DETAIL(factura.id))}
+          className="flex items-center gap-3 min-w-0 text-left"
+          title="Ver detalle del documento"
+        >
           <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
             <Receipt size={15} className="text-brand-600" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-sm font-bold text-slate-800 font-mono tracking-wide">
+              <p className="text-sm font-bold text-slate-800 font-mono tracking-wide hover:text-brand-600 transition-colors">
                 {factura.documentNumber}
               </p>
               <span className="text-xs text-slate-400">·</span>
@@ -89,8 +93,13 @@ export function FacturaCard({
               {linkedMods.length > 0 && ` · ${linkedMods.length} modificación${linkedMods.length !== 1 ? 'es' : ''}`}
             </p>
           </div>
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
+        </button>
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-3 flex-shrink-0"
+          title={expanded ? 'Ocultar cuotas' : 'Ver cuotas'}
+        >
           {appliedMods.length > 0 && (
             <div className="text-right hidden sm:block">
               <p className="text-[10px] text-slate-400 uppercase tracking-wider leading-tight">
@@ -117,8 +126,8 @@ export function FacturaCard({
             ? <ChevronUp size={15} className="text-slate-400 flex-shrink-0" />
             : <ChevronDown size={15} className="text-slate-400 flex-shrink-0" />
           }
-        </div>
-      </button>
+        </button>
+      </div>
 
       {expanded && (
         <>

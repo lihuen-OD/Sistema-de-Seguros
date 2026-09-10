@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FileDown, Edit2, ShieldCheck, Flame, Paperclip,
   MapPin, Building2, Download, ShieldAlert, TrendingUp,
-  Calendar, ExternalLink, Box, FileText, Plus, Link2, IdCard,
+  Calendar, ExternalLink, Box, FileText, Plus, Link2, IdCard, History,
 } from 'lucide-react'
 import { useCurrentUser } from '../../app/auth/AuthContext'
 import { hasModule } from '../../app/auth/roleScope'
@@ -18,7 +18,7 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { SummaryRow } from '../../shared/components/cards/SummaryRow'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
-import { formatCurrencyFull, formatCurrencyCompact, formatPercent, formatDate } from '../../shared/utils/format'
+import { formatCurrencyFull, formatCurrencyCompact, formatPercent, formatDate, isExpired } from '../../shared/utils/format'
 import { computeCoverageInvoicedTotal, computePsaPercentage } from '../../shared/utils/policyInvoicedTotal'
 import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
@@ -185,27 +185,33 @@ export default function AssetDetailPage() {
     enabled: !!id && canClaims,
   })
 
+  // enabled: !!id (no !!asset) — ninguna de estas 4 queries depende de
+  // ningún campo del activo, solo se cruzan con asset.companyId/assetId más
+  // abajo una vez resuelto. Esperar a `asset` completo antes de dispararlas
+  // era una cascada innecesaria (Performance & RateLimit Fase C): ahora
+  // corren en paralelo con assetQueries.detail(id) en vez de encolarse detrás.
   const { data: allCompanies = [] } = useQuery({
     ...companyQueries.list(),
-    enabled: !!asset,
+    enabled: !!id,
   })
 
   const { data: allCostCenters = [] } = useQuery({
     ...costCenterQueries.list(),
-    enabled: !!asset,
+    enabled: !!id,
   })
 
   const { data: allDocuments = [] } = useQuery({
     ...documentQueries.list(),
-    enabled: !!asset && canDocuments,
+    enabled: !!id && canDocuments,
   })
 
   // Trae allocations (con allocationPercentage por póliza) embebidas — a
   // diferencia de documentQueries.list(), que solo trae policyIds sin monto.
   // Se usa exclusivamente para prorratear la columna "P/SA".
+  // includeInstallments:false (Fase D4) — esta página nunca lee `.installments`.
   const { data: financialDocs = [] } = useQuery({
-    ...documentQueries.financial(),
-    enabled: !!asset && canFinancial,
+    ...documentQueries.financial({ includeInstallments: false }),
+    enabled: !!id && canFinancial,
   })
 
   // Gateado por `documents` en el backend (GET /documents/types) — solo hace
@@ -458,9 +464,24 @@ export default function AssetDetailPage() {
       render: (v, row) => {
         const circulationCard = row.assetCoverage?.circulationCardAttachment
         const coverageId = row.assetCoverage?.id
+        // Si esta línea de cobertura del activo no está vigente hoy (no hay
+        // ninguna vigente para este activo en esta póliza, ver
+        // pickCurrentAssetCoverage en el backend), se muestra igual como
+        // antecedente pero marcada — nunca se debe confundir con la vigente.
+        const coverageBajaDate = row.assetCoverage?.bajaDate
+        const isHistoricalCoverage = !!coverageBajaDate && isExpired(coverageBajaDate)
         return (
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             <StatusPill status={v as string} size="sm" />
+            {isHistoricalCoverage && (
+              <span
+                title="Esta línea de cobertura del activo está dada de baja — se muestra como antecedente"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500 border border-slate-200"
+              >
+                <History size={10} />
+                Histórico
+              </span>
+            )}
             {circulationCard && coverageId && (
               <div className="flex items-center gap-1">
                 <IdCard size={12} className="text-slate-400" />

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema } from '../../shared/schemas/common'
+import { PaginationSchema, booleanFromString } from '../../shared/schemas/common'
 import { EmailRecipientsSchema } from '../email/email.schemas'
 import { isValidDocumentType } from './document-types'
 import { isReasonableDate } from '../../shared/utils/dates'
@@ -127,6 +127,12 @@ const YearMonth = z.string().regex(/^\d{4}-\d{2}$/, 'Formato inválido. Usar YYY
 export const FinancialQuerySchema = z.object({
   from: YearMonth.optional(),
   to: YearMonth.optional(),
+  // Default true (ver documents.service.ts#findAllForFinancial) — sin este
+  // parámetro o con includeInstallments=true, la respuesta es idéntica a la
+  // de siempre. Con =false, se omite el include de installments para las
+  // pantallas que nunca los usan (Económico, Detalle de Póliza, Detalle de
+  // Activo) — ver auditoría Performance & RateLimit Fase D4.
+  includeInstallments: booleanFromString.optional(),
 })
 
 export type CreateDocumentDTO = z.infer<typeof CreateDocumentSchema>
