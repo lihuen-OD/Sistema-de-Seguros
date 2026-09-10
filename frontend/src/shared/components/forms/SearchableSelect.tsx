@@ -20,6 +20,8 @@ interface SearchableSelectProps {
   emptyOptionLabel?: string
   noResultsMessage?: string
   disabled?: boolean
+  /** Opciones todavía en camino (ej. useQuery en curso) — reemplaza la lista por un mensaje de carga. */
+  loading?: boolean
 }
 
 // Select de valor único con buscador integrado, para listas largas donde un
@@ -36,11 +38,17 @@ export function SearchableSelect({
   emptyOptionLabel = '— Ninguno —',
   noResultsMessage = 'Ningún resultado coincide con la búsqueda',
   disabled,
+  loading,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  // Índice resaltado por teclado dentro de la lista navegable (fila "vacío"
+  // + opciones filtradas, mismo orden en que se ven) — independiente de cuál
+  // esté seleccionada (value).
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const optionRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
 
   useEffect(() => {
     if (!open) return
@@ -70,19 +78,69 @@ export function SearchableSelect({
     )
   }, [options, query])
 
+  // Fila "vacío" siempre primero, igual que se renderiza el panel — permite
+  // navegar con flechas por las mismas filas que se ven, incluida esa.
+  const navigableOptions = useMemo(
+    () => [{ value: '', label: emptyOptionLabel } as SearchableSelectOption, ...filteredOptions],
+    [filteredOptions, emptyOptionLabel],
+  )
+
+  useEffect(() => {
+    if (!open || loading) return
+    optionRefs.current.get(highlightedIndex)?.scrollIntoView({ block: 'nearest' })
+  }, [highlightedIndex, open, loading])
+
+  // El resaltado arranca de nuevo arriba de todo junto con la acción que lo
+  // invalida (tipear en el buscador, abrir el panel) — en el mismo handler,
+  // no vía efecto: tras filtrar, el índice viejo podía apuntar a una fila que
+  // ya no está.
+  function handleQueryChange(v: string) {
+    setQuery(v)
+    setHighlightedIndex(0)
+  }
+
+  function toggleOpen() {
+    setOpen((v) => !v)
+    setHighlightedIndex(0)
+  }
+
   function handleSelect(v: string) {
     onChange(v)
     setOpen(false)
     setQuery('')
   }
 
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setOpen(false)
+      setQuery('')
+      buttonRef.current?.focus()
+      return
+    }
+    if (!open || loading) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlightedIndex((i) => Math.min(i + 1, navigableOptions.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlightedIndex((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const opt = navigableOptions[highlightedIndex]
+      if (opt) handleSelect(opt.value)
+    }
+  }
+
   return (
-    <div className="relative">
+    <div className="relative" onKeyDown={handleKeyDown}>
       <button
         ref={buttonRef}
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
+        aria-expanded={open}
+        aria-haspopup="listbox"
         className={clsx(
           'w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm bg-white border rounded-lg text-left transition-all',
           open ? 'border-brand-400 ring-2 ring-brand-500/20' : 'border-slate-200',
@@ -119,44 +177,60 @@ export function SearchableSelect({
       {open && (
         <div
           ref={panelRef}
+          role="listbox"
           className="absolute left-0 right-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden"
         >
           <div className="p-2 border-b border-slate-100">
-            <SearchInput value={query} onChange={setQuery} placeholder={searchPlaceholder} />
+            <SearchInput value={query} onChange={handleQueryChange} placeholder={searchPlaceholder} />
           </div>
           <div className="py-1 max-h-64 overflow-y-auto">
-            <button
-              type="button"
-              onClick={() => handleSelect('')}
-              className={clsx(
-                'w-full flex items-center px-3 py-2 text-sm text-left hover:bg-slate-50 transition-colors',
-                value === '' ? 'font-medium text-slate-700' : 'text-slate-400',
-              )}
-            >
-              {emptyOptionLabel}
-            </button>
-            {filteredOptions.length === 0 ? (
-              <p className="px-3 py-4 text-sm text-slate-400 text-center">{noResultsMessage}</p>
+            {loading ? (
+              <p className="px-3 py-4 text-sm text-slate-400 text-center">Cargando…</p>
             ) : (
-              filteredOptions.map((o) => {
-                const isSelected = o.value === value
-                return (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => handleSelect(o.value)}
-                    className={clsx(
-                      'w-full flex items-center px-3 py-2 text-sm text-left transition-colors',
-                      isSelected ? 'bg-brand-50 text-brand-800 font-medium' : 'text-slate-700 hover:bg-slate-50',
-                    )}
-                  >
-                    <span className="truncate">
-                      {o.label}
-                      {o.sublabel && <span className={clsx('ml-1.5 text-xs', isSelected ? 'text-brand-500' : 'text-slate-400')}>({o.sublabel})</span>}
-                    </span>
-                  </button>
-                )
-              })
+              <>
+                <button
+                  ref={(el) => { if (el) optionRefs.current.set(0, el); else optionRefs.current.delete(0) }}
+                  type="button"
+                  role="option"
+                  aria-selected={value === ''}
+                  onClick={() => handleSelect('')}
+                  className={clsx(
+                    'w-full flex items-center px-3 py-2 text-sm text-left transition-colors',
+                    value === '' ? 'font-medium text-slate-700' : 'text-slate-400',
+                    highlightedIndex === 0 && 'bg-slate-100',
+                  )}
+                >
+                  {emptyOptionLabel}
+                </button>
+                {filteredOptions.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-slate-400 text-center">{noResultsMessage}</p>
+                ) : (
+                  filteredOptions.map((o, i) => {
+                    const navIndex = i + 1
+                    const isSelected = o.value === value
+                    const isHighlighted = highlightedIndex === navIndex
+                    return (
+                      <button
+                        key={o.value}
+                        ref={(el) => { if (el) optionRefs.current.set(navIndex, el); else optionRefs.current.delete(navIndex) }}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        onClick={() => handleSelect(o.value)}
+                        className={clsx(
+                          'w-full flex items-center px-3 py-2 text-sm text-left transition-colors',
+                          isSelected ? 'bg-brand-50 text-brand-800 font-medium' : isHighlighted ? 'bg-slate-100 text-slate-800' : 'text-slate-700 hover:bg-slate-50',
+                        )}
+                      >
+                        <span className="truncate">
+                          {o.label}
+                          {o.sublabel && <span className={clsx('ml-1.5 text-xs', isSelected ? 'text-brand-500' : 'text-slate-400')}>({o.sublabel})</span>}
+                        </span>
+                      </button>
+                    )
+                  })
+                )}
+              </>
             )}
           </div>
         </div>

@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { Plus, Trash2, ListPlus, AlertTriangle } from 'lucide-react'
 import { FormSelect, FormInput } from './FormSection'
+import { SearchableSelect } from './SearchableSelect'
 import { Badge } from '../badges/Badge'
 import { formatCurrencyFull } from '../../utils/format'
 import { buildAssetLabel } from '../../utils/assetMetadata'
+import { buildPolicySearchKeywords } from '../../utils/policySearch'
 import { isCoverageActiveOn, coverageReferenceDate } from '../../utils/expiration'
 import type { Policy, PolicyCoverage, Currency } from '../../types'
 
@@ -180,8 +182,7 @@ export function PolicySelector(props: PolicySelectorProps) {
   // Es aditivo (no pisa filas ya cargadas) y no duplica líneas ya presentes;
   // sí descarta la fila vacía inicial sin usar, para no dejarla como línea
   // suelta sin sentido.
-  const handleAddPolicy = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const policyId = e.target.value
+  const handleAddPolicy = (policyId: string) => {
     setPolicyToAdd('')
     const policy = policiesWithCoverages.find((p) => p.id === policyId)
     if (!policy) return
@@ -205,14 +206,21 @@ export function PolicySelector(props: PolicySelectorProps) {
       {policiesWithAllowedCoverages.length > 0 && (
         <div className="flex items-center gap-2.5 p-3 bg-brand-50/60 border border-brand-100 rounded-xl">
           <ListPlus size={15} className="text-brand-500 flex-shrink-0" />
-          <FormSelect value={policyToAdd} onChange={handleAddPolicy} className="flex-1 bg-white">
-            <option value="">Agregar todos los activos de una póliza…</option>
-            {policiesWithAllowedCoverages.map(({ policy: p, allowed }) => (
-              <option key={p.id} value={p.id}>
-                {p.policyNumber} — {policyTypeLabel(p)} ({allowed.length} activo{allowed.length !== 1 ? 's' : ''})
-              </option>
-            ))}
-          </FormSelect>
+          <div className="flex-1">
+            <SearchableSelect
+              value={policyToAdd}
+              onChange={handleAddPolicy}
+              placeholder="Agregar todos los activos de una póliza…"
+              searchPlaceholder="Buscar por número, tipo, aseguradora…"
+              emptyOptionLabel="Agregar todos los activos de una póliza…"
+              options={policiesWithAllowedCoverages.map(({ policy: p, allowed }) => ({
+                value: p.id,
+                label: `${p.policyNumber} — ${policyTypeLabel(p)}`,
+                sublabel: `${allowed.length} activo${allowed.length !== 1 ? 's' : ''}`,
+                keywords: buildPolicySearchKeywords(p),
+              }))}
+            />
+          </div>
         </div>
       )}
 
