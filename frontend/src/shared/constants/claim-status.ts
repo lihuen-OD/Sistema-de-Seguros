@@ -2,6 +2,7 @@ import { FileSearch, Clock, CheckCircle2, XCircle, HelpCircle } from 'lucide-rea
 import type { ElementType } from 'react'
 
 export const CLAIM_STATUS_STYLES: Record<string, string> = {
+  'Sin denunciar': 'bg-slate-100 text-slate-600 border-slate-200',
   'Denunciado':  'bg-brand-50 text-brand-700 border-brand-200',
   'En trámite':  'bg-amber-50 text-amber-700 border-amber-200',
   'Liquidado':   'bg-emerald-50 text-emerald-700 border-emerald-200',

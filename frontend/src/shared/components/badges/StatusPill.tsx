@@ -65,6 +65,7 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   alta:                    { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   pendiente_documentacion: { bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200' },
   // Claims (Siniestros) — claves en español porque son el propio texto a mostrar
+  'Sin denunciar':         { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
   'Denunciado':            { bg: 'bg-brand-50',    text: 'text-brand-700',    border: 'border-brand-200'   },
   'En trámite':            { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
   'Liquidado':             { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },

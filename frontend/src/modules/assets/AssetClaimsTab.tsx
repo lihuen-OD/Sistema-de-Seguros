@@ -6,7 +6,7 @@ import type { Claim, Policy } from '../../shared/types'
 import { formatCurrencyFull, formatDate } from '../../shared/utils/format'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
-import { CLAIM_STATUS_ICONS, CLAIM_STATUS_DEFAULT_ICON } from '../../shared/constants/claim-status'
+import { resolveClaimStatusKey, getClaimStatusIcon } from '../../shared/utils/claimStatus'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -101,8 +101,9 @@ export function AssetClaimsTab({ assetId, policies: _policies, claims }: AssetCl
                   </td>
                   <td className="px-4 py-3">
                     <StatusPill
-                      status={String(claim.status)}
-                      icon={CLAIM_STATUS_ICONS[String(claim.status)] ?? CLAIM_STATUS_DEFAULT_ICON}
+                      status={resolveClaimStatusKey(claim.status)}
+                      label={claim.status}
+                      icon={getClaimStatusIcon(claim.status)}
                       size="sm"
                     />
                   </td>

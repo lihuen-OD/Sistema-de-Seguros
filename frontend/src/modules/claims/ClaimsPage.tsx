@@ -2,12 +2,13 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Plus, ShieldAlert, Clock, CheckCircle2, Eye, Edit2, Trash2, X,
+  Plus, ShieldAlert, ClipboardList, CheckCircle2, Eye, Edit2, Trash2, X,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
+import { ChartCard } from '../../shared/components/cards/ChartCard'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
 import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
@@ -20,22 +21,17 @@ import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
+import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
+import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
-import { CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS, CLAIM_STATUS_DEFAULT_ICON } from '../../shared/constants/claim-status'
+import {
+  normalizeClaimStatusText, claimStatusEquals, resolveClaimStatusKey,
+  getClaimStatusIcon, getClaimStatusChartColor,
+} from '../../shared/utils/claimStatus'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { Claim, TableColumn } from '../../shared/types'
-
-const STATUS_OPTIONS = Object.keys(CLAIM_STATUS_STYLES).map((s) => ({ value: s, label: s }))
-
-// Orden por severidad al ordenar la columna "Estado" — alfabético pondría
-// "Cerrado" antes que "Denunciado", mezclando el fin del ciclo de vida con su
-// inicio. Mismo orden que ya define CLAIM_STATUS_STYLES (denuncia → gestión →
-// resolución).
-const CLAIM_STATUS_SORT_ORDER: Record<string, number> = Object.fromEntries(
-  Object.keys(CLAIM_STATUS_STYLES).map((key, idx) => [key, idx]),
-)
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -52,11 +48,46 @@ export default function ClaimsPage() {
   const { data: all = [], isLoading, isError } = useQuery(claimQueries.list())
   const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  const { data: claimStatusCatalog = [] } = useQuery(catalogQueries.byCategory('claim_status'))
 
   const TYPE_OPTIONS = useMemo(() => {
     const unique = [...new Set(all.map((c) => c.claimType))].sort()
     return unique.map((v) => ({ value: v, label: v }))
   }, [all])
+
+  // Estados reales para el filtro — primero los del catálogo (respeta su
+  // sortOrder), después cualquier valor presente en los siniestros cargados
+  // que el catálogo no contemple (ej. quedó de un estado ya renombrado/
+  // borrado del catálogo pero sigue en datos viejos). Nunca una lista fija:
+  // si el admin agrega "En pericia" al catálogo, aparece acá solo.
+  const STATUS_OPTIONS = useMemo(() => {
+    const seen = new Set<string>()
+    const options: { value: string; label: string }[] = []
+    for (const item of [...claimStatusCatalog].sort((a, b) => a.sortOrder - b.sortOrder)) {
+      const key = normalizeClaimStatusText(item.label)
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      options.push({ value: item.label, label: item.label })
+    }
+    for (const c of all) {
+      const key = normalizeClaimStatusText(c.status)
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      options.push({ value: c.status, label: c.status })
+    }
+    return options
+  }, [claimStatusCatalog, all])
+
+  // Orden por severidad al ordenar la columna "Estado" — el orden real del
+  // catálogo (sortOrder), comparado de forma normalizada. Un estado que no
+  // está en el catálogo cae al final (99), igual que antes.
+  const statusSortOrder = useMemo(() => {
+    const order = new Map<string, number>()
+    ;[...claimStatusCatalog]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .forEach((item, idx) => order.set(normalizeClaimStatusText(item.label), idx))
+    return order
+  }, [claimStatusCatalog])
 
   async function handleDelete(id: string) {
     await claimsApi.softDelete(id)
@@ -64,13 +95,18 @@ export default function ClaimsPage() {
     setDeleteId(null)
   }
 
-  const counts = useMemo(() => ({
-    denunciado: all.filter((c) => c.status === 'Denunciado').length,
-    en_tramite: all.filter((c) => c.status === 'En trámite').length,
-    liquidado: all.filter((c) => c.status === 'Liquidado').length,
-    rechazado: all.filter((c) => c.status === 'Rechazado').length,
-    cerrado: all.filter((c) => c.status === 'Cerrado').length,
-  }), [all])
+  // Distribución real por estado — agrupa por el texto tal cual está en cada
+  // siniestro (nunca se relabelea ni se inventa una categoría), ordenada de
+  // mayor a menor para el gráfico "Siniestros por estado".
+  const statusDistribution = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const c of all) counts.set(c.status, (counts.get(c.status) ?? 0) + 1)
+    const total = all.length
+    return [...counts.entries()]
+      .map(([status, count]) => ({ status, count, pct: total > 0 ? (count / total) * 100 : 0 }))
+      .sort((a, b) => b.count - a.count)
+  }, [all])
+  const topStatus = statusDistribution[0] ?? null
 
   const totals = useMemo(() => ({
     totalClaimed: all.reduce((s, c) => s + c.claimedAmountArs, 0),
@@ -90,7 +126,7 @@ export default function ClaimsPage() {
         c.insuranceCompany.toLowerCase().includes(q) ||
         (asset?.name.toLowerCase().includes(q) ?? false) ||
         c.claimType.toLowerCase().includes(q)
-      const matchStatus = filterStatus.length === 0 || filterStatus.includes(c.status)
+      const matchStatus = filterStatus.length === 0 || filterStatus.some((fs) => claimStatusEquals(fs, c.status))
       const matchType   = filterType.length === 0   || filterType.includes(c.claimType)
       const date = c.occurrenceDate ?? ''
       const matchDateFrom = !filterDateFrom || date.slice(0, 7) >= filterDateFrom
@@ -98,8 +134,6 @@ export default function ClaimsPage() {
       return matchSearch && matchStatus && matchType && matchDateFrom && matchDateTo
     })
   }, [all, assetById, search, filterStatus, filterType, filterDateFrom, filterDateTo])
-
-  const inProgress = counts.denunciado + counts.en_tramite
 
   const ALL_COLUMNS: TableColumn<Claim>[] = useMemo(() => [
     {
@@ -232,9 +266,9 @@ export default function ClaimsPage() {
       label: 'Estado',
       defaultVisible: true,
       sortable: true,
-      sortValue: (row) => CLAIM_STATUS_SORT_ORDER[row.status] ?? 99,
+      sortValue: (row) => statusSortOrder.get(normalizeClaimStatusText(row.status)) ?? 99,
       render: (v) => (
-        <StatusPill status={String(v)} icon={CLAIM_STATUS_ICONS[String(v)] ?? CLAIM_STATUS_DEFAULT_ICON} size="sm" />
+        <StatusPill status={resolveClaimStatusKey(String(v))} label={String(v)} icon={getClaimStatusIcon(String(v))} size="sm" />
       ),
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
@@ -356,7 +390,7 @@ export default function ClaimsPage() {
         </div>
       ),
     },
-  ], [navigate, assetById, policyById])
+  ], [navigate, assetById, policyById, statusSortOrder])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('claims', ALL_COLUMNS)
 
@@ -378,22 +412,63 @@ export default function ClaimsPage() {
         }
       />
 
-      <MetricGrid cols={4} className="mb-5">
-        <KpiCard label="En Gestión" value={inProgress} description="Denunciados o en trámite" icon={Clock} variant={inProgress > 0 ? 'warning' : 'default'} />
-        <KpiCard label="Liquidados" value={counts.liquidado} description="Con indemnización aprobada" icon={CheckCircle2} variant="success" />
+      <MetricGrid cols={3} className="mb-5">
+        <KpiCard label="Total de Siniestros" value={all.length} description="Siniestros registrados" icon={ClipboardList} variant="info" />
         <KpiCard label="Monto Reclamado" value={formatCurrencyCompact(totals.totalClaimed, 'ARS')} description="Total histórico reclamado" icon={ShieldAlert} variant="info" />
         <KpiCard label="Monto Liquidado" value={formatCurrencyCompact(totals.totalSettled, 'ARS')} description="Total indemnizado efectivo" icon={CheckCircle2} variant={totals.totalSettled > 0 ? 'success' : 'default'} />
       </MetricGrid>
 
-      {inProgress > 0 && (
-        <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-          <Clock size={16} className="mt-0.5 flex-shrink-0" />
-          <span>
-            <strong>{inProgress} siniestro{inProgress !== 1 ? 's' : ''}</strong> en gestión activa requieren
-            seguimiento con la aseguradora.
-          </span>
-        </div>
-      )}
+      <ChartCard
+        title="Siniestros por estado"
+        subtitle={
+          topStatus
+            ? `Estado más frecuente: "${topStatus.status}" — ${topStatus.count} (${topStatus.pct.toFixed(0)}%)`
+            : 'Distribución de siniestros por su estado real'
+        }
+        className="mb-5"
+        height={statusDistribution.length > 0 ? Math.max(220, statusDistribution.length * 52 + 24) : 200}
+      >
+        {statusDistribution.length === 0 ? (
+          <div className="h-full flex items-center justify-center">
+            <EmptyState
+              title="Sin siniestros"
+              description="Todavía no hay siniestros registrados para mostrar la distribución por estado."
+              icon={ShieldAlert}
+            />
+          </div>
+        ) : (
+          // Barras propias en HTML/CSS en vez de Recharts — con estados
+          // dinámicos (el admin agrega los que quiera) el alto por fila queda
+          // bajo control directo acá, sin depender de que ResponsiveContainer
+          // reparta bien el espacio disponible entre categorías (ahí es
+          // donde Recharts venía quedando apretado/desalineado).
+          <div className="h-full overflow-y-auto pr-1 space-y-2.5">
+            {statusDistribution.map((item) => {
+              const barPct = topStatus && topStatus.count > 0 ? (item.count / topStatus.count) * 100 : 0
+              const color = getClaimStatusChartColor(item.status)
+              return (
+                <div
+                  key={item.status}
+                  className="grid grid-cols-[6rem_1fr_auto] sm:grid-cols-[9rem_1fr_auto] lg:grid-cols-[11rem_1fr_auto] items-center gap-3 sm:gap-4 px-2 py-2 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  <span className="text-sm font-medium text-slate-700 truncate" title={item.status}>
+                    {item.status}
+                  </span>
+                  <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${Math.max(barPct, 4)}%`, backgroundColor: color }}
+                    />
+                  </div>
+                  <span className="text-xs text-slate-500 tabular-nums whitespace-nowrap text-right">
+                    {item.count} · {item.pct.toFixed(0)}%
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </ChartCard>
 
       <SectionCard noPadding>
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">

@@ -21,18 +21,19 @@ import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ClaimExpensesCard } from './ClaimExpensesCard'
-import {
-  CLAIM_STATUS_STYLES, CLAIM_STATUS_ICONS,
-  CLAIM_STATUS_DEFAULT_STYLE, CLAIM_STATUS_DEFAULT_ICON,
-} from '../../shared/constants/claim-status'
+import { CLAIM_STATUS_ICONS, CLAIM_STATUS_DEFAULT_ICON } from '../../shared/constants/claim-status'
+import { resolveClaimStatusKey, getClaimStatusStyle, claimStatusEquals } from '../../shared/utils/claimStatus'
 import { ROUTES } from '../../app/routes'
 import type { ClaimEvent, ClaimEventType } from '../../shared/types'
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
-  const Icon = CLAIM_STATUS_ICONS[status] ?? CLAIM_STATUS_DEFAULT_ICON
-  const style = CLAIM_STATUS_STYLES[status] ?? CLAIM_STATUS_DEFAULT_STYLE
+  // Lookup directo (no una función wrapper) — <Icon /> requiere que el
+  // componente salga de un acceso a Record, no del resultado de una llamada,
+  // para que el linter no lo confunda con un componente creado en render.
+  const Icon = CLAIM_STATUS_ICONS[resolveClaimStatusKey(status)] ?? CLAIM_STATUS_DEFAULT_ICON
+  const style = getClaimStatusStyle(status)
   return (
     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border ${style}`}>
       <Icon size={13} />
@@ -285,9 +286,9 @@ export default function ClaimDetailPage() {
     )
   }
 
-  const isActive = effectiveStatus === 'Denunciado' || effectiveStatus === 'En trámite'
-  const isLiquidado = effectiveStatus === 'Liquidado'
-  const isRechazado = effectiveStatus === 'Rechazado'
+  const isActive = claimStatusEquals(effectiveStatus, 'Denunciado') || claimStatusEquals(effectiveStatus, 'En trámite')
+  const isLiquidado = claimStatusEquals(effectiveStatus, 'Liquidado')
+  const isRechazado = claimStatusEquals(effectiveStatus, 'Rechazado')
 
   const recoveryRate =
     claim.claimedAmountArs > 0 && claim.settledAmountArs != null
