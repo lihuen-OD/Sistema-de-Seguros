@@ -1,10 +1,16 @@
-import { FormSelect } from '../../../../shared/components/forms/FormSection'
+import { SearchableSelect } from '../../../../shared/components/forms/SearchableSelect'
+import { buildDocumentSearchKeywords } from '../../../../shared/utils/documentSearch'
 import type { AccountingDocument } from '../../../../shared/types'
 
 interface DocumentRelationSelectorProps {
   documents: AccountingDocument[]
   value: string
   onChange: (id: string) => void
+  // Ya no se pasa a ningún atributo nativo (SearchableSelect no es un
+  // <select>) — se mantiene en la interfaz para no romper los call sites que
+  // lo pasan hoy. La validación real de "documento vinculado requerido" vive
+  // en el validate() de cada formulario (errors.linkedDocumentId), nunca
+  // dependió solo de esto.
   required?: boolean
   helperText?: string
   emptyMessage?: string
@@ -18,7 +24,6 @@ export function DocumentRelationSelector({
   documents,
   value,
   onChange,
-  required,
   helperText,
   emptyMessage,
 }: DocumentRelationSelectorProps) {
@@ -34,15 +39,18 @@ export function DocumentRelationSelector({
 
   return (
     <div>
-      <FormSelect value={value} onChange={(e) => onChange(e.target.value)} required={required}>
-        <option value="">Seleccionar documento…</option>
-        {documents.map((d) => (
-          <option key={d.id} value={d.id}>
-            {d.documentNumber} — {d.issueDate} — {d.currency === 'USD' ? 'US$' : 'AR$'}{' '}
-            {d.totalAmount.toLocaleString('es-AR')}
-          </option>
-        ))}
-      </FormSelect>
+      <SearchableSelect
+        value={value}
+        onChange={onChange}
+        placeholder="Seleccionar documento…"
+        searchPlaceholder="Buscar por número, tipo, aseguradora, fecha, importe…"
+        emptyOptionLabel="Seleccionar documento…"
+        options={documents.map((d) => ({
+          value: d.id,
+          label: `${d.documentNumber} — ${d.issueDate} — ${d.currency === 'USD' ? 'US$' : 'AR$'} ${d.totalAmount.toLocaleString('es-AR')}`,
+          keywords: buildDocumentSearchKeywords(d),
+        }))}
+      />
       {helperText && <p className="text-xs text-slate-400 mt-1">{helperText}</p>}
     </div>
   )

@@ -20,6 +20,7 @@ import {
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
 import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
+import { SearchableSelect } from '../../shared/components/forms/SearchableSelect'
 import { claimsApi, claimKeys } from '../../shared/api/claims.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
@@ -28,6 +29,8 @@ import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { computeEquivalent } from '../../shared/utils/currency'
 import { formatCurrencyFull } from '../../shared/utils/format'
 import { pickActiveCoverageForAsset } from '../../shared/utils/expiration'
+import { buildAssetSearchKeywords } from '../../shared/utils/assetSearch'
+import { buildPolicySearchKeywords } from '../../shared/utils/policySearch'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
 import { CURRENCY_OPTIONS } from '../../shared/constants'
 import type { ClaimOwnershipType, Currency } from '../../shared/types'
@@ -311,12 +314,18 @@ export default function ClaimNewPage() {
                     </button>
                   </div>
                 ) : (
-                  <FormSelect value={assetId} onChange={(e) => handleAssetChange(e.target.value)}>
-                    <option value="">Sin activo asociado</option>
-                    {allAssets.map((a) => (
-                      <option key={a.id} value={a.id}>{a.internalCode} — {a.name}</option>
-                    ))}
-                  </FormSelect>
+                  <SearchableSelect
+                    value={assetId}
+                    onChange={handleAssetChange}
+                    placeholder="Sin activo asociado"
+                    searchPlaceholder="Buscar por código, nombre, tipo, patente…"
+                    emptyOptionLabel="Sin activo asociado"
+                    options={allAssets.map((a) => ({
+                      value: a.id,
+                      label: `${a.internalCode} — ${a.name}`,
+                      keywords: buildAssetSearchKeywords(a),
+                    }))}
+                  />
                 )}
               </FormField>
 
@@ -324,14 +333,18 @@ export default function ClaimNewPage() {
               <FormField label="Póliza asociada">
                 {availablePolicies.length > 0 ? (
                   <>
-                    <FormSelect value={policyId} onChange={(e) => handlePolicyChange(e.target.value)}>
-                      <option value="">Sin póliza asociada</option>
-                      {availablePolicies.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.policyNumber} — {(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}
-                        </option>
-                      ))}
-                    </FormSelect>
+                    <SearchableSelect
+                      value={policyId}
+                      onChange={handlePolicyChange}
+                      placeholder="Sin póliza asociada"
+                      searchPlaceholder="Buscar por número, tipo, aseguradora…"
+                      emptyOptionLabel="Sin póliza asociada"
+                      options={availablePolicies.map((p) => ({
+                        value: p.id,
+                        label: `${p.policyNumber} — ${(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}`,
+                        keywords: buildPolicySearchKeywords(p),
+                      }))}
+                    />
                     {selectedPolicy && (
                       <p className="text-xs text-slate-500 mt-1">
                         {selectedCoverage?.insuranceType ?? 'Sin tipo'} · Vigencia: {selectedPolicy.endDate}

@@ -14,10 +14,14 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
+import { SearchableSelect } from '../../shared/components/forms/SearchableSelect'
 import { producersApi, producerQueries, producerKeys } from '../../shared/api/producers.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
+import { buildAssetSearchKeywords } from '../../shared/utils/assetSearch'
+import { buildPolicySearchKeywords } from '../../shared/utils/policySearch'
+import { buildProducerSearchKeywords } from '../../shared/utils/producerSearch'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { Producer, ProducerTask, Policy, Asset, TaskPriority, TaskStatus } from '../../shared/types'
@@ -168,18 +172,18 @@ function TaskForm({ original, allProducers, allPolicies, allAssets }: TaskFormPr
           <div className="mt-5">
             <FormSection title="Asignación">
               <FormField label="Productor asignado">
-                <FormSelect
+                <SearchableSelect
                   value={producerId}
-                  onChange={(e) => {
-                    setProducerId(e.target.value)
-                    setPolicyId('')
-                  }}
-                >
-                  <option value="">— Sin productor (tarea propia)</option>
-                  {allProducers.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </FormSelect>
+                  onChange={(v) => { setProducerId(v); setPolicyId('') }}
+                  placeholder="— Sin productor (tarea propia)"
+                  searchPlaceholder="Buscar por nombre, matrícula, email…"
+                  emptyOptionLabel="— Sin productor (tarea propia)"
+                  options={allProducers.map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                    keywords: buildProducerSearchKeywords(p),
+                  }))}
+                />
               </FormField>
               <FormField label="Responsable interno">
                 <FormInput
@@ -194,24 +198,32 @@ function TaskForm({ original, allProducers, allPolicies, allAssets }: TaskFormPr
           <div className="mt-5">
             <FormSection title="Vínculos opcionales">
               <FormField label="Póliza asociada">
-                <FormSelect value={policyId} onChange={(e) => setPolicyId(e.target.value)}>
-                  <option value="">— Sin póliza</option>
-                  {filteredPolicies.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.policyNumber} — {(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}
-                    </option>
-                  ))}
-                </FormSelect>
+                <SearchableSelect
+                  value={policyId}
+                  onChange={setPolicyId}
+                  placeholder="— Sin póliza"
+                  searchPlaceholder="Buscar por número, tipo, aseguradora…"
+                  emptyOptionLabel="— Sin póliza"
+                  options={filteredPolicies.map((p) => ({
+                    value: p.id,
+                    label: `${p.policyNumber} — ${(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}`,
+                    keywords: buildPolicySearchKeywords(p),
+                  }))}
+                />
               </FormField>
               <FormField label="Activo asociado">
-                <FormSelect value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-                  <option value="">— Sin activo</option>
-                  {allAssets.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.internalCode} — {a.name}
-                    </option>
-                  ))}
-                </FormSelect>
+                <SearchableSelect
+                  value={assetId}
+                  onChange={setAssetId}
+                  placeholder="— Sin activo"
+                  searchPlaceholder="Buscar por código, nombre, tipo, patente…"
+                  emptyOptionLabel="— Sin activo"
+                  options={allAssets.map((a) => ({
+                    value: a.id,
+                    label: `${a.internalCode} — ${a.name}`,
+                    keywords: buildAssetSearchKeywords(a),
+                  }))}
+                />
               </FormField>
             </FormSection>
           </div>
