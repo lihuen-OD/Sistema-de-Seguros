@@ -208,8 +208,9 @@ export default function AssetDetailPage() {
   // Trae allocations (con allocationPercentage por póliza) embebidas — a
   // diferencia de documentQueries.list(), que solo trae policyIds sin monto.
   // Se usa exclusivamente para prorratear la columna "P/SA".
+  // includeInstallments:false (Fase D4) — esta página nunca lee `.installments`.
   const { data: financialDocs = [] } = useQuery({
-    ...documentQueries.financial(),
+    ...documentQueries.financial({ includeInstallments: false }),
     enabled: !!id && canFinancial,
   })
 

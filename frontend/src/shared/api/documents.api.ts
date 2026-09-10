@@ -204,7 +204,7 @@ export const documentsApi = {
     return res.data.data.map(mapDocument)
   },
 
-  async findAllForFinancial(params?: { from?: string; to?: string }): Promise<DocumentForFinancial[]> {
+  async findAllForFinancial(params?: { from?: string; to?: string; includeInstallments?: boolean }): Promise<DocumentForFinancial[]> {
     const res = await apiClient.get<{ data: (Omit<BackendDocument, 'allocations'> & {
       installments: BackendInstallment[]
       allocations: BackendAllocation[]
@@ -381,7 +381,7 @@ export const documentsApi = {
 // `financial`, `balance` e `installments` son categoría C (financiero/sensible):
 // staleTime corto + refetchOnWindowFocus true. El resto es categoría B.
 
-type FinancialFilters = { from?: string; to?: string }
+type FinancialFilters = { from?: string; to?: string; includeInstallments?: boolean }
 
 export const documentKeys = {
   all: ['documents'] as const,
@@ -393,8 +393,16 @@ export const documentKeys = {
   auditLog: (id: string) => [...documentKeys.all, id, 'audit-log'] as const,
   emailLogs: (id: string) => [...documentKeys.all, id, 'email-logs'] as const,
   attachments: (id: string) => [...documentKeys.all, id, 'attachments'] as const,
+  // includeInstallments:false agrega 'light' a la key a propósito (Fase D4,
+  // Performance & RateLimit) — es una respuesta con distinto shape
+  // (installments: [] siempre) que NUNCA debe compartir cache con la versión
+  // completa que siguen usando FinancialAnalysisPage/useRenewalProjectionData.
   financial: (filters?: FinancialFilters) =>
-    filters ? ([...documentKeys.all, 'financial', filters.from, filters.to] as const) : ([...documentKeys.all, 'financial'] as const),
+    filters
+      ? filters.includeInstallments === false
+        ? ([...documentKeys.all, 'financial', filters.from, filters.to, 'light'] as const)
+        : ([...documentKeys.all, 'financial', filters.from, filters.to] as const)
+      : ([...documentKeys.all, 'financial'] as const),
 }
 
 export const documentQueries = {

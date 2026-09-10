@@ -1297,6 +1297,117 @@ describe('Documents API', () => {
         paidAt: '2026-01-01',
       })
     })
+
+    // ── Fase D4: includeInstallments ──────────────────────────────────────────
+
+    it('includeInstallments=true (explícito) keeps installments in the Prisma include, same as the default', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=true')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.include).toHaveProperty('installments')
+      expect(findManyCall.include).toHaveProperty('allocations')
+    })
+
+    it('includeInstallments=false omits installments from the Prisma include but keeps allocations', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.include).not.toHaveProperty('installments')
+      expect(findManyCall.include).toHaveProperty('allocations')
+    })
+
+    it('includeInstallments=false returns installments: [] in the response — never omits the field', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([{ ...fakeDocument, allocations: [] }])
+
+      const res = await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0]).toHaveProperty('installments')
+      expect(res.body.data[0].installments).toEqual([])
+    })
+
+    it('includeInstallments=false keeps allocations mapped the same way as the full version', async () => {
+      const COVERAGE_ID = '20000000-0000-0000-0000-000000000020'
+      const ASSET_ID = '30000000-0000-0000-0000-000000000030'
+      db.accountingDocument.findMany.mockResolvedValue([{
+        ...fakeDocument,
+        allocations: [{
+          id: '40000000-0000-0000-0000-000000000040',
+          accountingDocumentId: DOC_ID,
+          policyAssetCoverageId: COVERAGE_ID,
+          allocatedAmount: 500,
+          allocationPercentage: 50,
+          policyAssetCoverage: { policyId: POLICY_ID, assetId: ASSET_ID },
+        }],
+      }])
+
+      const res = await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.body.data[0].allocations).toEqual([{
+        id: '40000000-0000-0000-0000-000000000040',
+        accountingDocumentId: DOC_ID,
+        policyAssetCoverageId: COVERAGE_ID,
+        policyId: POLICY_ID,
+        assetId: ASSET_ID,
+        allocatedAmount: 500,
+        allocationPercentage: 50,
+      }])
+    })
+
+    it('includeInstallments=false still excludes CANCELLED documents (where unchanged)', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.where).toMatchObject({ documentStatus: { not: 'CANCELLED' } })
+    })
+
+    it('includeInstallments=false with from/to still filters by installments.dueDate in the where clause, even though installments are not included', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false&from=2026-02&to=2026-03')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.where).toMatchObject({
+        installments: {
+          some: {
+            dueDate: {
+              gte: new Date('2026-02-01T00:00:00.000Z'),
+              lt: new Date('2026-04-01T00:00:00.000Z'),
+            },
+          },
+        },
+      })
+      expect(findManyCall.include).not.toHaveProperty('installments')
+    })
+
+    it('includeInstallments=false keeps take: 2000', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.take).toBe(2000)
+    })
   })
 
   // ── PUT /api/v1/documents/:id/installments ──────────────────────────────────

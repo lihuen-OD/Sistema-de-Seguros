@@ -91,6 +91,12 @@ const DOCUMENT_DETAIL_INCLUDE = {
 }
 
 // Include para análisis financiero: incluye installments y allocations en lista
+const FINANCIAL_ALLOCATIONS_SELECT = {
+  id: true, accountingDocumentId: true, policyAssetCoverageId: true,
+  allocatedAmount: true, allocationPercentage: true,
+  policyAssetCoverage: { select: { policyId: true, assetId: true } },
+} as const
+
 const DOCUMENT_FINANCIAL_INCLUDE = {
   installments: {
     select: {
@@ -100,13 +106,32 @@ const DOCUMENT_FINANCIAL_INCLUDE = {
     },
     orderBy: { installmentNumber: 'asc' as const },
   },
-  allocations: {
-    select: {
-      id: true, accountingDocumentId: true, policyAssetCoverageId: true,
-      allocatedAmount: true, allocationPercentage: true,
-      policyAssetCoverage: { select: { policyId: true, assetId: true } },
-    },
-  },
+  allocations: { select: FINANCIAL_ALLOCATIONS_SELECT },
+}
+
+// Versión liviana (Fase D4, Performance & RateLimit) — para consumidores que
+// nunca leen `installments` (Análisis Económico, Detalle de Póliza, Detalle
+// de Activo): mismo `allocations`, sin el join/select de installments.
+const DOCUMENT_FINANCIAL_INCLUDE_LIGHT = {
+  allocations: { select: FINANCIAL_ALLOCATIONS_SELECT },
+}
+
+// Compartido por ambas ramas de findAllForFinancial — mismo aplanado que ya
+// usa DOCUMENT_LIST_INCLUDE/findAll, evita repetirlo en las dos ramas.
+function mapFinancialAllocations(allocations: {
+  id: string; accountingDocumentId: string; policyAssetCoverageId: string
+  allocatedAmount: number; allocationPercentage: number
+  policyAssetCoverage: { policyId: string; assetId: string | null }
+}[]) {
+  return allocations.map((a) => ({
+    id: a.id,
+    accountingDocumentId: a.accountingDocumentId,
+    policyAssetCoverageId: a.policyAssetCoverageId,
+    policyId: a.policyAssetCoverage.policyId,
+    assetId: a.policyAssetCoverage.assetId,
+    allocatedAmount: a.allocatedAmount,
+    allocationPercentage: a.allocationPercentage,
+  }))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -249,7 +274,7 @@ export const documentsService = {
     )
   },
 
-  async findAllForFinancial(params?: { from?: string; to?: string }) {
+  async findAllForFinancial(params?: { from?: string; to?: string; includeInstallments?: boolean }) {
     // Excluye documentos anulados — este endpoint solo lo consumen Análisis
     // Financiero y Análisis Económico, y un documento CANCELLED nunca debe
     // impactar esos reportes.
@@ -265,9 +290,28 @@ export const documentsService = {
       // Siempre por fecha de vencimiento de la cuota, esté pagada o no — el
       // Análisis Financiero posiciona cada cuota por cuándo correspondía
       // vencer, nunca por cuándo se terminó pagando (ver
-      // getInstallmentEffectiveDate en FinancialAnalysisPage.tsx).
+      // getInstallmentEffectiveDate en FinancialAnalysisPage.tsx). Este
+      // filtro se mantiene idéntico sin importar includeInstallments: sigue
+      // decidiendo QUÉ documentos entran, aunque no se devuelvan sus cuotas.
       where.installments = { some: { dueDate: range } }
     }
+
+    // Default true — sin este parámetro, comportamiento idéntico al de
+    // siempre (ver Fase D4 de Performance & RateLimit).
+    if (params?.includeInstallments === false) {
+      const docs = await prisma.accountingDocument.findMany({
+        where,
+        orderBy: { issueDate: 'asc' },
+        include: DOCUMENT_FINANCIAL_INCLUDE_LIGHT,
+        take: 2000,
+      })
+      return docs.map((doc) => ({
+        ...withTotalAmount(doc),
+        installments: [] as ReturnType<typeof mapInstallment>[],
+        allocations: mapFinancialAllocations(doc.allocations),
+      }))
+    }
+
     const docs = await prisma.accountingDocument.findMany({
       where,
       orderBy: { issueDate: 'asc' },
@@ -277,15 +321,7 @@ export const documentsService = {
     return docs.map((doc) => ({
       ...withTotalAmount(doc),
       installments: doc.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
-      allocations: doc.allocations.map((a) => ({
-        id: a.id,
-        accountingDocumentId: a.accountingDocumentId,
-        policyAssetCoverageId: a.policyAssetCoverageId,
-        policyId: a.policyAssetCoverage.policyId,
-        assetId: a.policyAssetCoverage.assetId,
-        allocatedAmount: a.allocatedAmount,
-        allocationPercentage: a.allocationPercentage,
-      })),
+      allocations: mapFinancialAllocations(doc.allocations),
     }))
   },
 

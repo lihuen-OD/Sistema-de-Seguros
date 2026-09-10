@@ -74,7 +74,9 @@ export default function PolicyDetailPage() {
   // Trae allocations (con allocationPercentage por póliza) embebidas — a
   // diferencia de documentQueries.list(), que solo trae policyIds sin monto.
   // Se usa exclusivamente para prorratear "Total facturado"/P/SA.
-  const { data: financialDocs = [] } = useQuery({ ...documentQueries.financial(), enabled: canFinancial })
+  // includeInstallments:false (Fase D4) — esta página nunca lee `.installments`
+  // de financialDocs (las cuotas visibles vienen de la bulk query de Fase D3).
+  const { data: financialDocs = [] } = useQuery({ ...documentQueries.financial({ includeInstallments: false }), enabled: canFinancial })
 
   const { data: documentTypesData } = useQuery({ ...documentQueries.types(), enabled: canDocuments })
   // Mapa por key para saber, de un NC/ND/Ajuste/Refacturación vinculado,
