@@ -1382,6 +1382,12 @@ export const documentsService = {
     if (applications.length === 0) return
 
     let linkedDocumentId: string | null = null
+    // Mismo trade-off que redistributeAdjustmentAcrossInstallments: cada
+    // cuota vuelve a un monto propio (su amount actual menos su propio
+    // deltaAmount), así que el update no se puede batchear en una sola
+    // sentencia — es un update por cuota aceptado a propósito (el lote
+    // suele ser chico, acotado a las cuotas que tocó el ajuste original),
+    // no un N+1 sin revisar.
     for (const app of applications) {
       const inst = app.installment
       linkedDocumentId = inst.accountingDocumentId

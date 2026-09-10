@@ -169,7 +169,14 @@ async function assertCoverageBelongsToPolicy(policyId: string, coverageId: strin
 // ambas monedas — comparte esta lógica create() y replaceCoverages().
 async function resolveCoverageInput(input: PolicyAssetCoverageInputDTO) {
   const [insuranceType, asset, company, costCenter] = await Promise.all([
-    prisma.insuranceType.findFirst({ where: { id: input.insuranceTypeId, isActive: true }, include: { coverages: true } }),
+    prisma.insuranceType.findFirst({
+      where: { id: input.insuranceTypeId, isActive: true },
+      // Select liviano — acá solo se valida existencia y se necesita
+      // coverages.id (línea `validIds` más abajo), nunca el resto de los
+      // campos de InsuranceType/Coverage. El objeto no se devuelve al
+      // llamador, así que no cambia ningún contrato.
+      select: { id: true, coverages: { select: { id: true } } },
+    }),
     input.assetId
       ? prisma.asset.findFirst({ where: { id: input.assetId, isActive: true }, select: { id: true } })
       : Promise.resolve(null),
