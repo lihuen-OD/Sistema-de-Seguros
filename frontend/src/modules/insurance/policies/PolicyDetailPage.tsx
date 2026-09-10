@@ -1,6 +1,6 @@
 ﻿import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Building2, User, Calendar, Hash, Link2,
@@ -103,8 +103,34 @@ export default function PolicyDetailPage() {
     [allDocuments, id],
   )
 
-  const docInstallmentQueries = useQueries({
-    queries: policyDocIds.map((docId) => documentQueries.installments(docId)),
+  // Bulk en vez de 1 documentQueries.installments(docId) por documento (Fase D3
+  // de Performance & RateLimit) — mismo endpoint que ya usa DocumentsPage.tsx
+  // para su propia bulk query de cuotas, mismo patrón de queryKey ad-hoc.
+  // staleTime/refetchOnWindowFocus iguales a documentQueries.installments
+  // (categoría C: financiero/sensible).
+  const { data: bulkInstallments = [] } = useQuery({
+    queryKey: [...documentKeys.all, 'installments-bulk', policyDocIds],
+    queryFn: async () => {
+      const items = await documentsApi.findInstallmentsBulk(policyDocIds)
+      // Puebla el cache individual de cada documento (documentKeys.installments,
+      // el mismo que usa DocumentDetailPage) con el resultado crudo agrupado —
+      // sin esto, el cache compartido que existía con el useQueries anterior
+      // se perdía y DocumentDetailPage siempre arrancaba en frío al navegar
+      // desde acá.
+      const byDoc = new Map<string, typeof items>()
+      items.forEach((i) => {
+        const list = byDoc.get(i.accountingDocumentId) ?? []
+        list.push(i)
+        byDoc.set(i.accountingDocumentId, list)
+      })
+      policyDocIds.forEach((docId) => {
+        queryClient.setQueryData(documentKeys.installments(docId), byDoc.get(docId) ?? [])
+      })
+      return items
+    },
+    enabled: policyDocIds.length > 0,
+    staleTime: 15 * 1000,
+    refetchOnWindowFocus: true,
   })
 
   const [activeDocTab, setActiveDocTab] = useState<'documentos' | 'tareas' | 'adjuntos'>(canDocuments ? 'documentos' : 'tareas')
@@ -192,11 +218,12 @@ export default function PolicyDetailPage() {
   // una "moneda nativa de la póliza" única para comparar.
   const psaPercentage = computePsaPercentage(policy.totalInsuredAmountUsd ?? 0, invoicedTotal.totalUsd)
 
-  // Build server installments map from useQueries results
+  // Agrupa el resultado plano de la bulk query por accountingDocumentId —
+  // mismo mapeo de campos que antes, solo que ahora arma el Map a partir de
+  // un único array en vez de N resultados de useQueries indexados.
   const serverInstallments = new Map<string, Installment[]>()
-  policyDocIds.forEach((docId, idx) => {
-    const data = docInstallmentQueries[idx]?.data ?? []
-    serverInstallments.set(docId, data.map((i) => ({
+  bulkInstallments.forEach((i) => {
+    const mapped: Installment = {
       id: i.id,
       accountingDocumentId: i.accountingDocumentId,
       installmentNumber: i.installmentNumber,
@@ -208,7 +235,10 @@ export default function PolicyDetailPage() {
       paymentStatus: i.paymentStatus as Installment['paymentStatus'],
       paidAt: i.paidAt,
       paymentMethod: i.paymentMethod,
-    })))
+    }
+    const list = serverInstallments.get(i.accountingDocumentId) ?? []
+    list.push(mapped)
+    serverInstallments.set(i.accountingDocumentId, list)
   })
   // Merge: localInstallments overrides server data for optimistic updates
   const effectiveInstallments = new Map<string, Installment[]>(serverInstallments)
@@ -255,6 +285,12 @@ export default function PolicyDetailPage() {
       queryClient.invalidateQueries({ queryKey: documentKeys.installments(docId) })
       queryClient.invalidateQueries({ queryKey: documentKeys.financial() })
       queryClient.invalidateQueries({ queryKey: documentKeys.all, exact: true })
+      // La query bulk de esta página (cuotas de TODOS los documentos de la
+      // póliza) es una entrada de cache aparte de documentKeys.installments(docId)
+      // — sin esto, cambiar una cuota acá refrescaba el documento puntual pero
+      // esta pantalla seguía mostrando el valor viejo hasta que expirara el
+      // staleTime de 15s.
+      queryClient.invalidateQueries({ queryKey: [...documentKeys.all, 'installments-bulk', policyDocIds] })
     }
     try {
       await documentsApi.updateInstallment(docId, instId, updates)
