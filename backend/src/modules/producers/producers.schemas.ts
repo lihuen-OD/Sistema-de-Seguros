@@ -34,8 +34,20 @@ export const CreateTaskSchema = z.object({
 
 export const UpdateTaskSchema = CreateTaskSchema.partial()
 
+// GET /producers/tasks/overdue — usado por el Dashboard para el KPI y la
+// tarjeta de alertas de "Tareas Vencidas" en una sola request, en vez de un
+// GET /producers/:id/tasks por cada productor. `limit` es opcional a
+// propósito: el Dashboard lo llama sin límite (necesita el total real para
+// poder aplicar su propio filtro de alcance por empresa/centro de costo del
+// lado del cliente sin perder precisión), pero queda disponible para un
+// futuro consumidor que solo necesite una muestra acotada.
+export const ListOverdueTasksQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).optional(),
+})
+
 export type CreateProducerDTO = z.infer<typeof CreateProducerSchema>
 export type UpdateProducerDTO = z.infer<typeof UpdateProducerSchema>
 export type ListProducersQueryDTO = z.infer<typeof ListProducersQuerySchema>
 export type CreateTaskDTO = z.infer<typeof CreateTaskSchema>
 export type UpdateTaskDTO = z.infer<typeof UpdateTaskSchema>
+export type ListOverdueTasksQueryDTO = z.infer<typeof ListOverdueTasksQuerySchema>

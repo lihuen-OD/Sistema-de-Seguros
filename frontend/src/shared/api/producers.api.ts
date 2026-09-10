@@ -16,6 +16,30 @@ interface BackendProducer {
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
 
+interface BackendOverdueTask {
+  id: string; title: string; dueDate: string; priority: string; status: string
+  producerId: string; policyId: string | null; assetId: string | null
+}
+
+// Item liviano de GET /producers/tasks/overdue — a propósito NO es ProducerTask
+// completo: el endpoint no trae description/assignedTo/createdAt/completedAt
+// porque el Dashboard no los usa (ver DashboardPage.tsx).
+export interface OverdueProducerTask {
+  id: string
+  title: string
+  dueDate: string
+  priority: TaskPriority
+  status: string
+  producerId: string
+  policyId: string | null
+  assetId: string | null
+}
+
+export interface OverdueProducerTasksResult {
+  total: number
+  items: OverdueProducerTask[]
+}
+
 const today = () => new Date().toISOString().slice(0, 10)
 
 function mapTaskStatus(s: string, dueDate?: string | null): ProducerTask['status'] {
@@ -110,6 +134,28 @@ export const producersApi = {
   async deleteTask(producerId: string, taskId: string): Promise<void> {
     await apiClient.delete(`/producers/${producerId}/tasks/${taskId}`)
   },
+
+  // Tareas vencidas de TODOS los productores en una sola request — reemplaza
+  // el fan-out de 1 findTasks() por productor que usaba el Dashboard.
+  async findOverdueTasks(limit?: number): Promise<OverdueProducerTasksResult> {
+    const res = await apiClient.get<{ data: { total: number; items: BackendOverdueTask[] } }>(
+      '/producers/tasks/overdue',
+      { params: limit ? { limit } : undefined },
+    )
+    return {
+      total: res.data.data.total,
+      items: res.data.data.items.map((t) => ({
+        id: t.id,
+        title: t.title,
+        dueDate: t.dueDate,
+        priority: (t.priority ?? 'media') as TaskPriority,
+        status: t.status,
+        producerId: t.producerId,
+        policyId: t.policyId,
+        assetId: t.assetId,
+      })),
+    }
+  },
 }
 
 // ── Query keys / query options (categoría B — semi-dinámico) ────────────────────
@@ -118,6 +164,7 @@ export const producerKeys = {
   all: ['producers'] as const,
   detail: (id: string) => [...producerKeys.all, id] as const,
   tasks: (id: string) => [...producerKeys.all, id, 'tasks'] as const,
+  overdueTasks: ['producers', 'tasks', 'overdue'] as const,
 }
 
 export const producerQueries = {
@@ -146,5 +193,14 @@ export const producerQueries = {
       queryFn: () => producersApi.findTasks(id),
       staleTime: 60 * 1000,
       enabled: !!id,
+    }),
+  // Sin `limit` a propósito (ver producersApi.findOverdueTasks) — el
+  // Dashboard necesita el set completo para aplicar su propio filtro de
+  // alcance por empresa/centro de costo sin perder precisión en el conteo.
+  overdueTasks: () =>
+    queryOptions({
+      queryKey: producerKeys.overdueTasks,
+      queryFn: () => producersApi.findOverdueTasks(),
+      staleTime: 60 * 1000,
     }),
 }

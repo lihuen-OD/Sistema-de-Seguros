@@ -1,6 +1,7 @@
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { todayDate, toDateStr } from '../../shared/utils/dates'
 import type {
   CreateProducerDTO,
   UpdateProducerDTO,
@@ -16,6 +17,14 @@ const PRODUCER_INCLUDE = {
 const PRODUCER_DETAIL_INCLUDE = {
   tasks: { orderBy: [{ status: 'asc' as const }, { dueDate: 'asc' as const }] },
   _count: { select: { policies: true } },
+}
+
+// Versión liviana de findById — solo para validar existencia sin traer tasks
+// ni _count (findTasks() los descartaba enteros y volvía a pedir las tasks
+// por separado).
+async function assertProducerExists(id: string) {
+  const exists = await prisma.producer.findUnique({ where: { id }, select: { id: true } })
+  if (!exists) throw new AppError(404, 'Productor no encontrado', 'NOT_FOUND')
 }
 
 export const producersService = {
@@ -99,11 +108,50 @@ export const producersService = {
   // ── Tasks ────────────────────────────────────────────────────────────────────
 
   async findTasks(producerId: string) {
-    await producersService.findById(producerId)
+    await assertProducerExists(producerId)
     return prisma.producerTask.findMany({
       where: { producerId },
       orderBy: [{ status: 'asc' }, { dueDate: 'asc' }],
     })
+  },
+
+  // Tareas vencidas de TODOS los productores en una sola query — reemplaza,
+  // para el Dashboard, el fan-out de 1 GET /producers/:id/tasks por
+  // productor. "Vencida" replica exactamente el criterio que ya usaba el
+  // frontend (producers.api.ts#mapTaskStatus): status 'pendiente' con
+  // dueDate anterior a hoy — no es un valor de `status` real en la base.
+  // No filtra por producer.isActive: el Dashboard tampoco lo hacía hoy (su
+  // producerQueries.list() no filtra isActive), así que agregar ese filtro acá
+  // cambiaría qué tareas se cuentan/muestran respecto al comportamiento actual.
+  // `total` siempre es el conteo real (sin `limit`) para que el Dashboard
+  // pueda aplicar su propio filtro de alcance del lado del cliente sobre el
+  // set completo sin perder precisión — ver ListOverdueTasksQuerySchema.
+  async findOverdueTasksForDashboard(limit?: number) {
+    const where = { status: 'pendiente', dueDate: { lt: todayDate() } }
+
+    const [total, items] = await Promise.all([
+      prisma.producerTask.count({ where }),
+      prisma.producerTask.findMany({
+        where,
+        orderBy: { dueDate: 'asc' },
+        ...(limit !== undefined && { take: limit }),
+        select: {
+          id: true,
+          title: true,
+          dueDate: true,
+          priority: true,
+          status: true,
+          producerId: true,
+          policyId: true,
+          assetId: true,
+        },
+      }),
+    ])
+
+    return {
+      total,
+      items: items.map((t) => ({ ...t, dueDate: toDateStr(t.dueDate) })),
+    }
   },
 
   async createTask(producerId: string, data: CreateTaskDTO) {
