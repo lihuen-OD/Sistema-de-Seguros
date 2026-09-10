@@ -716,42 +716,39 @@ export default function PolicyDetailPage() {
         )}
 
         {/* Adjuntos tab — la documentación cuelga de cada línea de cobertura,
-            no de la póliza entera, así que se muestra un bloque por línea. */}
+            no de la póliza entera, así que se muestra un bloque por línea.
+            Solo líneas operativas (vigentCoverages: vigente hoy o con baja
+            programada a futuro) — una línea con baja efectiva pasada no
+            admite adjuntos nuevos y solo duplicaría visualmente el activo
+            cuando fue reincorporado con una línea nueva. El historial de
+            bajas efectivas sigue disponible en la pestaña "Coberturas". */}
         {activeDocTab === 'adjuntos' && (
-          coverages.length === 0 ? (
+          vigentCoverages.length === 0 ? (
             <div className="rounded-xl border-2 border-dashed border-slate-200 py-12 text-center">
               <Paperclip size={24} className="mx-auto text-slate-300 mb-3" />
-              <p className="text-sm text-slate-400">Esta póliza no tiene líneas de cobertura.</p>
+              <p className="text-sm text-slate-400">
+                {coverages.length === 0
+                  ? 'Esta póliza no tiene líneas de cobertura.'
+                  : 'No hay líneas de cobertura vigentes — todas están dadas de baja.'}
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
-              {coverages.map((coverage) => {
-                const isDeBaja = !!coverage.bajaDate && isCoverageBajaEffective(coverage.bajaDate)
-                return (
+              {vigentCoverages.map((coverage) => (
                 <div key={coverage.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-                  <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-800">
-                        {coverage.asset ? coverage.asset.name : 'Sin activo asociado'}
-                      </p>
-                      <p className="text-xs text-slate-400">{coverage.insuranceType}</p>
-                    </div>
-                    {isDeBaja && (
-                      <span className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
-                        <History size={10} />
-                        Dado de baja
-                      </span>
-                    )}
+                  <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60">
+                    <p className="text-sm font-semibold text-slate-800">
+                      {coverage.asset ? coverage.asset.name : 'Sin activo asociado'}
+                    </p>
+                    <p className="text-xs text-slate-400">{coverage.insuranceType}</p>
                   </div>
                   <PolicyAttachmentsSection
                     policyId={policy.id}
                     coverageId={coverage.id}
                     policyEndDate={policy.endDate}
-                    readOnly={isDeBaja}
                   />
                 </div>
-                )
-              })}
+              ))}
             </div>
           )
         )}

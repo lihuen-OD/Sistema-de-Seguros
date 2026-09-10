@@ -41,6 +41,7 @@ interface BackendAssetCoverageSummary {
   id: string; insuranceTypeId: string; insuranceTypeName: string
   insuredAmount: number; currency: string; exchangeRate: number
   insuredAmountArs: number | null; insuredAmountUsd: number | null
+  effectiveDate: string; bajaDate: string | null
   circulationCardAttachment?: BackendCirculationCard | null
 }
 interface BackendPolicy {
@@ -190,6 +191,8 @@ function mapPolicy(b: BackendPolicy): Policy {
           exchangeRate: b.assetCoverage.exchangeRate,
           insuredAmountArs: b.assetCoverage.insuredAmountArs,
           insuredAmountUsd: b.assetCoverage.insuredAmountUsd,
+          effectiveDate: b.assetCoverage.effectiveDate?.slice(0, 10) ?? '',
+          bajaDate: b.assetCoverage.bajaDate ? b.assetCoverage.bajaDate.slice(0, 10) : null,
           circulationCardAttachment: b.assetCoverage.circulationCardAttachment ?? null,
         }
       : b.assetCoverage === null ? null : undefined,

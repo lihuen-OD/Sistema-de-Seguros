@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
-import { computePolicyStatus, buildPolicyStatusFilter, toDateStr } from '../../shared/utils/dates'
+import { computePolicyStatus, buildPolicyStatusFilter, toDateStr, isCoverageActiveOn, todayDate } from '../../shared/utils/dates'
 import { computeDualAmounts } from '../../shared/utils/currency'
 import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { deleteFromCloudinary } from '../../config/cloudinary'
@@ -162,6 +162,23 @@ async function assertPolicyExists(id: string) {
 async function assertCoverageBelongsToPolicy(policyId: string, coverageId: string) {
   const coverage = await prisma.policyAssetCoverage.findFirst({ where: { id: coverageId, policyId }, select: { id: true } })
   if (!coverage) throw new AppError(404, 'Línea de cobertura no encontrada', 'NOT_FOUND')
+}
+
+// Un activo puede tener más de una PolicyAssetCoverage en la misma póliza
+// (dado de baja + reincorporado más adelante) — al filtrar findAll() por
+// assetId hay que elegir UNA para representarlo, y tiene que ser la vigente
+// hoy (isCoverageActiveOn), no la primera que aparezca en el array. Si
+// ninguna está vigente (activo sin cobertura actual), cae a la más reciente
+// por effectiveDate como antecedente histórico.
+function pickCurrentAssetCoverage<T extends { assetId: string | null; effectiveDate: Date; bajaDate: Date | null }>(
+  coverages: T[],
+  assetId: string,
+): T | undefined {
+  const matching = coverages
+    .filter((c) => c.assetId === assetId)
+    .sort((a, b) => toDateStr(b.effectiveDate).localeCompare(toDateStr(a.effectiveDate)))
+
+  return matching.find((c) => isCoverageActiveOn(c, todayDate())) ?? matching[0]
 }
 
 // Valida referencias (tipo de seguro activo, coberturas pertenecen a ese
@@ -428,7 +445,7 @@ export const policiesService = {
         // Con varios activos (o varios tipos de seguro) por póliza, el
         // listado agrega en vez de mostrar un solo valor — el detalle de
         // cada línea vive en /policies/:id/coverages.
-        const assetCoverage = query.assetId ? p.coverages.find((c) => c.assetId === query.assetId) : undefined
+        const assetCoverage = query.assetId ? pickCurrentAssetCoverage(p.coverages, query.assetId) : undefined
         const { coverages, ...aggregated } = withPolicyAggregates(p)
 
         return withStatus({
@@ -463,6 +480,11 @@ export const policiesService = {
                 exchangeRate: assetCoverage.exchangeRate,
                 insuredAmountArs: assetCoverage.insuredAmountArs,
                 insuredAmountUsd: assetCoverage.insuredAmountUsd,
+                // Para que el consumidor (ej. AssetDetailPage) sepa si esta
+                // línea es la vigente o quedó como antecedente histórico —
+                // ver pickCurrentAssetCoverage.
+                effectiveDate: toDateStr(assetCoverage.effectiveDate),
+                bajaDate: assetCoverage.bajaDate ? toDateStr(assetCoverage.bajaDate) : null,
                 circulationCardAttachment: assetCoverage.attachments[0] ?? null,
               }
             : null,

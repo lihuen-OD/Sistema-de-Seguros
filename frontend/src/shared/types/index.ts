@@ -444,7 +444,9 @@ export interface Policy {
   totalInsuredAmountArs?: number
   totalInsuredAmountUsd?: number
   circulationCardAttachment?: { id: string; fileUrl?: string; name: string } | null
-  // Solo viene cuando se filtra la lista por assetId — la línea de ESE activo.
+  // Solo viene cuando se filtra la lista por assetId — la línea de ESE
+  // activo, priorizando la vigente hoy sobre una vieja dada de baja si el
+  // activo fue reincorporado (ver policiesService.pickCurrentAssetCoverage).
   assetCoverage?: {
     id: string
     insuranceTypeId: string
@@ -454,6 +456,8 @@ export interface Policy {
     exchangeRate: number
     insuredAmountArs: number | null
     insuredAmountUsd: number | null
+    effectiveDate: string
+    bajaDate: string | null
     circulationCardAttachment?: { id: string; fileUrl?: string; name: string } | null
   } | null
   attachmentsCount?: number

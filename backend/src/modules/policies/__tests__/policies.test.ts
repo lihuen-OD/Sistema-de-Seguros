@@ -101,6 +101,114 @@ describe('Policies API', () => {
         deactivatedAt: true,
       })
     })
+
+    // Fechas relativas a "hoy" (no fijas en 2026) — pickCurrentAssetCoverage
+    // usa todayDate(), que es el reloj real, así que el fixture tiene que
+    // moverse con la fecha en la que corre el test, no quedar fijo en el
+    // pasado o el futuro.
+    const daysFromToday = (days: number) => {
+      const d = new Date()
+      d.setUTCDate(d.getUTCDate() + days)
+      d.setUTCHours(0, 0, 0, 0)
+      return d
+    }
+
+    const OLD_COVERAGE_ID = '60000000-0000-0000-0000-000000000010'
+    const NEW_COVERAGE_ID = '60000000-0000-0000-0000-000000000011'
+
+    function fakeCoverage(overrides: Record<string, unknown>) {
+      return {
+        id: COVERAGE_ID,
+        assetId: ASSET_ID,
+        insuranceTypeId: TYPE_ID,
+        coverageIds: [],
+        insuredAmount: 10000,
+        currency: 'USD',
+        exchangeRate: 1000,
+        insuredAmountArs: 10000000,
+        insuredAmountUsd: 10000,
+        companyId: null,
+        costCenterId: null,
+        bajaReason: null,
+        deactivatedAt: null,
+        insuranceType: fakeInsuranceType,
+        asset: { id: ASSET_ID, name: 'Camioneta' },
+        attachments: [],
+        _count: { attachments: 0 },
+        ...overrides,
+      }
+    }
+
+    function fakePolicyWithCoverages(coverages: unknown[]) {
+      return {
+        id: POLICY_ID,
+        policyNumber: 'POL-TEST-002',
+        insuredName: 'La Segunda',
+        producerId: null,
+        startDate: BASE_DATE,
+        endDate: END_DATE,
+        description: null,
+        isActive: true,
+        deactivatedAt: null,
+        createdAt: BASE_DATE,
+        updatedAt: BASE_DATE,
+        producer: null,
+        coverages,
+        _count: { coverages: coverages.length },
+      }
+    }
+
+    it('picks the currently active coverage line as assetCoverage when the asset was given de baja and later re-added (regression: used to return whichever line came first, ignoring bajaDate)', async () => {
+      const oldDeactivated = fakeCoverage({
+        id: OLD_COVERAGE_ID,
+        effectiveDate: daysFromToday(-400),
+        bajaDate: daysFromToday(-30), // baja ya efectiva
+      })
+      const newActive = fakeCoverage({
+        id: NEW_COVERAGE_ID,
+        effectiveDate: daysFromToday(-20), // reincorporado después de la baja
+        bajaDate: null,
+      })
+
+      // Orden deliberado (vieja primero) — antes un .find() ciego se hubiera
+      // quedado con esta por ser la primera en matchear el assetId.
+      db.policy.findMany.mockResolvedValueOnce([fakePolicyWithCoverages([oldDeactivated, newActive])])
+      db.policy.count.mockResolvedValueOnce(1)
+
+      const res = await request(app)
+        .get('/api/v1/policies')
+        .query({ assetId: ASSET_ID })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].assetCoverage.id).toBe(NEW_COVERAGE_ID)
+      expect(res.body.data[0].assetCoverage.bajaDate).toBeNull()
+    })
+
+    it('falls back to the most recent historical line as assetCoverage when the asset has no currently active coverage', async () => {
+      const olderDeactivated = fakeCoverage({
+        id: OLD_COVERAGE_ID,
+        effectiveDate: daysFromToday(-400),
+        bajaDate: daysFromToday(-300),
+      })
+      const mostRecentDeactivated = fakeCoverage({
+        id: NEW_COVERAGE_ID,
+        effectiveDate: daysFromToday(-200),
+        bajaDate: daysFromToday(-30),
+      })
+
+      db.policy.findMany.mockResolvedValueOnce([fakePolicyWithCoverages([olderDeactivated, mostRecentDeactivated])])
+      db.policy.count.mockResolvedValueOnce(1)
+
+      const res = await request(app)
+        .get('/api/v1/policies')
+        .query({ assetId: ASSET_ID })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].assetCoverage.id).toBe(NEW_COVERAGE_ID)
+      expect(res.body.data[0].assetCoverage.bajaDate).not.toBeNull()
+    })
   })
 
   // ── POST /api/v1/policies ────────────────────────────────────────────────────
