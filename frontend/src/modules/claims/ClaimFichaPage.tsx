@@ -10,6 +10,7 @@ import { downloadAsPdf } from '../../shared/utils/downloadAsPdf'
 import { claimQueries } from '../../shared/api/claims.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
+import { pickActiveCoverageForAsset } from '../../shared/utils/expiration'
 
 const EMISSION_DATE = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
@@ -179,10 +180,7 @@ export default function ClaimFichaPage() {
                   <FichaRow label="Compañía" value={policy.insuranceCompany} />
                   <FichaRow
                     label="Tipo"
-                    value={
-                      (policy.coverages?.find((c) => (claim.assetId ? c.assetId === claim.assetId : !c.assetId)) ?? policy.coverages?.[0])?.insuranceType
-                      ?? 'Sin tipo'
-                    }
+                    value={pickActiveCoverageForAsset(policy.coverages, claim.assetId ?? null)?.insuranceType ?? 'Sin tipo'}
                   />
                   <FichaRow label="Vencimiento" value={formatDate(policy.endDate)} />
                 </div>
