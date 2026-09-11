@@ -6,7 +6,7 @@ import { PageHeader } from '../../../../shared/components/page-header/PageHeader
 import { SectionCard } from '../../../../shared/components/cards/SectionCard'
 import { FormSection, FormField, FormInput, FormSelect, FormTextarea } from '../../../../shared/components/forms/FormSection'
 import { PolicySelector, createEmptyPolicyRow, type PolicyAllocationRow } from '../../../../shared/components/forms/PolicySelector'
-import { DocumentRelationSelector } from '../components/DocumentRelationSelector'
+import { DocumentRemoteSelect } from '../../../../shared/components/forms/DocumentRemoteSelect'
 import { DocumentImpactPreview } from '../components/DocumentImpactPreview'
 import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
@@ -89,15 +89,15 @@ function DocumentoAsientoAjusteFormBody({ initialDoc, sourceLinkedDocument }: Do
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
   const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, true, 'ADJUSTMENT_ENTRY', form.insuranceCompany, initialDoc?.id)
 
-  const { data: allDocuments = [] } = useQuery(documentQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: documentTypesData } = useQuery(documentQueries.types())
   const adjustmentReasons = documentTypesData?.adjustmentReasons ?? []
 
-  const linkableDocuments = allDocuments.filter(
-    (d) => ADJUSTABLE_TYPES.includes(d.documentType) && d.documentStatus !== 'CANCELLED' && (!isEdit || d.id !== initialDoc!.id),
-  )
-  const linkedDocument = allDocuments.find((d) => d.id === form.linkedDocumentId) ?? null
+  // Detalle completo del vinculado (no el resultado liviano del selector) —
+  // currency/exchangeRate del Ajuste nunca se guardan en form (siempre se
+  // heredan del documento vinculado, hasta en el payload de create/update),
+  // y useLinkedDocumentPolicies necesita policyIds derivado de allocations.
+  const { data: linkedDocument } = useQuery(documentQueries.detail(form.linkedDocumentId))
   const linkedPolicies = useLinkedDocumentPolicies(linkedDocument)
 
   const { data: existingAllocations = [], isSuccess: allocationsLoaded } = useQuery({
@@ -264,12 +264,14 @@ function DocumentoAsientoAjusteFormBody({ initialDoc, sourceLinkedDocument }: Do
             </FormField>
 
             <FormField label="Documento a Ajustar" required error={errors.linkedDocumentId} fullWidth>
-              <DocumentRelationSelector
-                documents={linkableDocuments}
+              <DocumentRemoteSelect
                 value={form.linkedDocumentId}
                 onChange={(id) => { setForm((p) => ({ ...p, linkedDocumentId: id })); setPolicyRows([createEmptyPolicyRow()]); markUnsaved() }}
-                required
-                emptyMessage="No hay documentos disponibles para ajustar."
+                type={ADJUSTABLE_TYPES}
+                excludeCancelled
+                placeholder="Seleccionar documento…"
+                emptyOptionLabel="Seleccionar documento…"
+                noResultsMessage="No hay documentos disponibles para ajustar"
               />
             </FormField>
 

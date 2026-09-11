@@ -299,6 +299,20 @@ describe('Documents API', () => {
       })
     })
 
+    it('filters by the 4 adjustable types combined with excludeCancelled (Fase 1B.4.e — Asiento de Ajuste)', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/search?type=INVOICE,DEBIT_NOTE,CREDIT_NOTE,ENDORSEMENT&excludeCancelled=true')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const conditions = db.accountingDocument.findMany.mock.calls[0][0].where.AND
+      expect(conditions).toContainEqual({
+        documentType: { in: ['INVOICE', 'DEBIT_NOTE', 'CREDIT_NOTE', 'ENDORSEMENT'] },
+      })
+      expect(conditions).toContainEqual({ documentStatus: { not: 'CANCELLED' } })
+    })
+
     it('rejects an invalid document type', async () => {
       const res = await request(app)
         .get('/api/v1/documents/search?type=NOT_A_TYPE')
