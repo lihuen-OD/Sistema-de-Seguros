@@ -63,6 +63,10 @@ interface BackendPolicy {
   assetCoverage?: BackendAssetCoverageSummary | null
   attachmentsCount?: number
 }
+interface BackendPolicySearchResult {
+  id: string; policyNumber: string; insuranceCompany: string; status: string
+  startDate: string; endDate: string; producerName: string | null; insuranceTypeNames: string[]
+}
 interface BackendTask {
   id: string; producerId: string; title: string; description: string | null
   dueDate: string | null; status: string; createdAt: string; updatedAt: string
@@ -230,6 +234,26 @@ export interface PolicyCreateInput {
 
 export type PolicyUpdateInput = Partial<Omit<PolicyCreateInput, 'policyNumber' | 'coverages'>>
 
+export interface PolicySearchResult {
+  id: string
+  policyNumber: string
+  insuranceCompany: string
+  status: PolicyStatus
+  startDate: string
+  endDate: string
+  producerName: string | null
+  insuranceTypeNames: string[]
+}
+
+export interface PolicySearchParams {
+  q?: string
+  limit?: number
+  selectedId?: string
+  assetId?: string
+  insuranceCompany?: string
+  activeOnly?: boolean
+}
+
 // Alta explícita de una línea nueva (POST /coverages) — a diferencia de
 // PolicyCoverageInput (usado por create()/replaceCoverages(), que todavía
 // completan effectiveDate con policy.startDate), acá la fecha de alta la
@@ -244,6 +268,11 @@ export interface DeactivateCoverageInput {
 }
 
 export const policiesApi = {
+  async search(params: PolicySearchParams): Promise<PolicySearchResult[]> {
+    const res = await apiClient.get<{ data: BackendPolicySearchResult[] }>('/policies/search', { params })
+    return res.data.data.map((policy) => ({ ...policy, status: mapStatus(policy.status) }))
+  },
+
   async findAll(filters?: { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }): Promise<Policy[]> {
     const res = await apiClient.get<Paginated<BackendPolicy>>('/policies', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapPolicy)
@@ -366,6 +395,12 @@ export const policyKeys = {
 }
 
 export const policyQueries = {
+  search: (params: PolicySearchParams) =>
+    queryOptions({
+      queryKey: [...policyKeys.all, 'search', params] as const,
+      queryFn: () => policiesApi.search(params),
+      staleTime: 60 * 1000,
+    }),
   list: (filters?: PolicyFilters) =>
     queryOptions({
       queryKey: policyKeys.list(filters),

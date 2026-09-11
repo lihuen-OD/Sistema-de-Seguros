@@ -6,6 +6,7 @@ import { PageHeader } from '../../../../shared/components/page-header/PageHeader
 import { SectionCard } from '../../../../shared/components/cards/SectionCard'
 import { FormSection, FormField, FormInput, FormSelect, FormTextarea } from '../../../../shared/components/forms/FormSection'
 import { PolicySelector, createEmptyPolicyRow, type PolicyAllocationRow } from '../../../../shared/components/forms/PolicySelector'
+import { PolicyRemoteSelect } from '../../../../shared/components/forms/PolicyRemoteSelect'
 import { DocumentRelationSelector } from '../components/DocumentRelationSelector'
 import { DocumentImpactPreview } from '../components/DocumentImpactPreview'
 import { DocumentFormFooter } from '../components/DocumentFormFooter'
@@ -101,16 +102,11 @@ function DocumentoEndosoFormBody({ initialDoc, sourcePolicy }: DocumentoEndosoFo
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
   const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, true, 'ENDORSEMENT', form.insuranceCompany, initialDoc?.id)
 
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
   const { data: allDocuments = [] } = useQuery(documentQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: documentTypesData } = useQuery(documentQueries.types())
   const endorsementTypes = documentTypesData?.endorsementTypes ?? []
   const economicImpactTypes = documentTypesData?.economicImpactTypes ?? []
-
-  const availablePolicies = isEdit
-    ? allPolicies.filter((p) => p.insuranceCompany === form.insuranceCompany)
-    : allPolicies.filter((p) => p.insuranceCompany === form.insuranceCompany && (p.status === 'vigente' || p.status === 'proximo_vencer'))
 
   const hasEconomicImpact = form.economicImpactType === 'INCREASES_COST' || form.economicImpactType === 'DECREASES_COST'
 
@@ -362,12 +358,16 @@ function DocumentoEndosoFormBody({ initialDoc, sourcePolicy }: DocumentoEndosoFo
             </FormField>
 
             <FormField label="Póliza Asociada" required error={errors.policyId} fullWidth>
-              <PolicySelector
-                mode="single"
-                policies={availablePolicies}
+              <PolicyRemoteSelect
                 value={form.policyId}
                 onChange={(id) => { setForm((p) => ({ ...p, policyId: id, linkedDocumentId: '' })); setPolicyRows([createEmptyPolicyRow()]); markUnsaved() }}
-                emptyMessage={!form.insuranceCompany ? 'Seleccioná primero la compañía aseguradora.' : `No hay pólizas activas para ${form.insuranceCompany}.`}
+                initialOption={policyDetail ?? sourcePolicy ?? undefined}
+                insuranceCompany={form.insuranceCompany}
+                activeOnly={!isEdit}
+                disabled={!form.insuranceCompany}
+                placeholder={!form.insuranceCompany ? 'Seleccioná primero la compañía aseguradora' : 'Seleccionar póliza…'}
+                emptyOptionLabel="Sin póliza asociada"
+                noResultsMessage={`No hay pólizas ${isEdit ? '' : 'activas '}para ${form.insuranceCompany}`}
               />
             </FormField>
 

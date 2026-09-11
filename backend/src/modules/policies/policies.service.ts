@@ -17,6 +17,7 @@ import type {
   DeactivateCoverageDTO,
   ListPoliciesQueryDTO,
   AddPolicyAttachmentDTO,
+  SearchPoliciesQueryDTO,
 } from './policies.schemas'
 
 // Fecha "sin fin" para tratar una línea sin bajaDate como vigente hacia
@@ -411,6 +412,73 @@ async function assertNoOverlappingCoverage(
 }
 
 export const policiesService = {
+  async search(query: SearchPoliciesQueryDTO) {
+    const q = query.q.trim()
+    const contextualWhere: Prisma.PolicyWhereInput = {
+      ...(query.assetId && { coverages: { some: { assetId: query.assetId } } }),
+      ...(query.insuranceCompany && {
+        insuredName: { equals: query.insuranceCompany, mode: 'insensitive' },
+      }),
+      ...(query.activeOnly && {
+        isActive: true,
+        deactivatedAt: null,
+        endDate: { gte: todayDate() },
+      }),
+    }
+    const searchWhere: Prisma.PolicyWhereInput = q
+      ? {
+          OR: [
+            { policyNumber: { contains: q, mode: 'insensitive' } },
+            { insuredName: { contains: q, mode: 'insensitive' } },
+            { producer: { is: { name: { contains: q, mode: 'insensitive' } } } },
+            { coverages: { some: { insuranceType: { name: { contains: q, mode: 'insensitive' } } } } },
+            { coverages: { some: { asset: { is: { name: { contains: q, mode: 'insensitive' } } } } } },
+            { coverages: { some: { asset: { is: { code: { contains: q, mode: 'insensitive' } } } } } },
+          ],
+        }
+      : {}
+    const select = {
+      id: true,
+      policyNumber: true,
+      insuredName: true,
+      startDate: true,
+      endDate: true,
+      deactivatedAt: true,
+      producer: { select: { name: true } },
+      coverages: { select: { insuranceType: { select: { name: true } } } },
+    } satisfies Prisma.PolicySelect
+
+    const results = await prisma.policy.findMany({
+      where: { AND: [contextualWhere, searchWhere] },
+      select,
+      orderBy: [{ endDate: 'desc' }, { policyNumber: 'asc' }],
+      take: query.limit,
+    })
+
+    // La selección histórica se conserva aunque ya no cumpla los filtros
+    // contextuales actuales (por ejemplo, una póliza vencida en un Endoso en
+    // edición). La autorización sigue aplicada por la ruta y no se cargan
+    // relaciones adicionales.
+    if (query.selectedId && !results.some((policy) => policy.id === query.selectedId)) {
+      const selected = await prisma.policy.findFirst({
+        where: { id: query.selectedId },
+        select,
+      })
+      if (selected) results.unshift(selected)
+    }
+
+    return results.slice(0, query.limit).map((policy) => ({
+      id: policy.id,
+      policyNumber: policy.policyNumber,
+      insuranceCompany: policy.insuredName,
+      status: policy.deactivatedAt ? 'de_baja' : computePolicyStatus(policy.endDate),
+      startDate: toDateStr(policy.startDate),
+      endDate: toDateStr(policy.endDate),
+      producerName: policy.producer?.name ?? null,
+      insuranceTypeNames: [...new Set(policy.coverages.map((coverage) => coverage.insuranceType.name))],
+    }))
+  },
+
   async findAll(query: ListPoliciesQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
 

@@ -7,6 +7,7 @@ jest.mock('../../../config/database', () => ({
     user: { findUnique: jest.fn() },
     policy: {
       findMany: jest.fn(),
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
       count: jest.fn(),
       create: jest.fn(),
@@ -247,6 +248,142 @@ describe('Policies API', () => {
 
       expect(res.status).toBe(200)
       expect(res.body.data[0].coverages).toBeUndefined()
+    })
+  })
+
+  // ── GET /api/v1/policies/search ─────────────────────────────────────────────
+
+  describe('GET /api/v1/policies/search', () => {
+    const searchPolicy = {
+      id: POLICY_ID,
+      policyNumber: 'POL-SEARCH-001',
+      insuredName: 'La Segunda',
+      startDate: BASE_DATE,
+      endDate: END_DATE,
+      deactivatedAt: null,
+      producer: { name: 'Productor Demo' },
+      coverages: [
+        { insuranceType: { name: 'Automotor' } },
+        { insuranceType: { name: 'Automotor' } },
+      ],
+    }
+
+    it('uses limit 20 by default and returns only the lightweight contract', async () => {
+      db.policy.findMany.mockResolvedValueOnce([searchPolicy])
+
+      const res = await request(app)
+        .get('/api/v1/policies/search')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.policy.findMany.mock.calls[0][0].take).toBe(20)
+      expect(res.body.data).toEqual([{
+        id: POLICY_ID,
+        policyNumber: 'POL-SEARCH-001',
+        insuranceCompany: 'La Segunda',
+        status: 'vigente',
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+        producerName: 'Productor Demo',
+        insuranceTypeNames: ['Automotor'],
+      }])
+      expect(res.body.data[0]).not.toHaveProperty('coverages')
+      expect(res.body.data[0]).not.toHaveProperty('documents')
+      expect(res.body.data[0]).not.toHaveProperty('installments')
+      expect(res.body.data[0]).not.toHaveProperty('attachments')
+      expect(res.body.data[0]).not.toHaveProperty('allocations')
+    })
+
+    it('accepts limit 50 and rejects values above the maximum', async () => {
+      db.policy.findMany.mockResolvedValueOnce([])
+
+      const accepted = await request(app)
+        .get('/api/v1/policies/search?limit=50')
+        .set('Authorization', `Bearer ${adminToken()}`)
+      const rejected = await request(app)
+        .get('/api/v1/policies/search?limit=51')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(accepted.status).toBe(200)
+      expect(db.policy.findMany.mock.calls[0][0].take).toBe(50)
+      expect(rejected.status).toBe(422)
+    })
+
+    it('rejects search text longer than 100 characters', async () => {
+      const res = await request(app)
+        .get('/api/v1/policies/search')
+        .query({ q: 'a'.repeat(101) })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(422)
+      expect(db.policy.findMany).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['policy number', 'POL-SEARCH'],
+      ['insurance company', 'Segunda'],
+      ['producer', 'Productor Demo'],
+    ])('builds server-side search predicates for %s', async (_field, q) => {
+      db.policy.findMany.mockResolvedValueOnce([])
+
+      const res = await request(app)
+        .get('/api/v1/policies/search')
+        .query({ q })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const searchFilter = db.policy.findMany.mock.calls.at(-1)[0].where.AND[1]
+      expect(searchFilter.OR).toEqual(expect.arrayContaining([
+        { policyNumber: { contains: q, mode: 'insensitive' } },
+        { insuredName: { contains: q, mode: 'insensitive' } },
+        { producer: { is: { name: { contains: q, mode: 'insensitive' } } } },
+      ]))
+    })
+
+    it('applies asset, insurance company, and active-only filters in Prisma', async () => {
+      db.policy.findMany.mockResolvedValueOnce([])
+
+      const res = await request(app)
+        .get('/api/v1/policies/search')
+        .query({ assetId: ASSET_ID, insuranceCompany: 'La Segunda', activeOnly: 'true' })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.policy.findMany.mock.calls[0][0].where.AND[0]).toMatchObject({
+        coverages: { some: { assetId: ASSET_ID } },
+        insuredName: { equals: 'La Segunda', mode: 'insensitive' },
+        isActive: true,
+        deactivatedAt: null,
+        endDate: { gte: expect.any(Date) },
+      })
+    })
+
+    it('prepends selectedId when it is outside the first result batch', async () => {
+      db.policy.findMany.mockResolvedValueOnce([])
+      db.policy.findFirst.mockResolvedValueOnce(searchPolicy)
+
+      const res = await request(app)
+        .get('/api/v1/policies/search')
+        .query({ selectedId: POLICY_ID, activeOnly: 'true' })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.policy.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: POLICY_ID },
+      }))
+      expect(res.body.data[0].id).toBe(POLICY_ID)
+    })
+
+    it('requires authentication and policy read permission', async () => {
+      const unauthenticated = await request(app).get('/api/v1/policies/search')
+
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+      const forbidden = await request(app)
+        .get('/api/v1/policies/search')
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(unauthenticated.status).toBe(401)
+      expect(forbidden.status).toBe(403)
     })
   })
 
