@@ -44,6 +44,17 @@ interface BackendAttachment {
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
 
+export interface AssetSearchResult {
+  id: string
+  name: string
+  code: string | null
+  status: AssetStatus
+  assetType: string
+  plate: string | null
+  fixedAssetCode: string | null
+  fixedAssetName: string | null
+}
+
 function parseCoordinatesFromMapsUrl(url: string | null | undefined): { lat: number; lng: number } | undefined {
   if (!url) return undefined
   const match = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/)
@@ -190,6 +201,11 @@ export interface CreateAssetPledgeInput {
 }
 
 export const assetsApi = {
+  async search(params: { q?: string; limit?: number; selectedId?: string }): Promise<AssetSearchResult[]> {
+    const res = await apiClient.get<{ data: AssetSearchResult[] }>('/assets/search', { params })
+    return res.data.data
+  },
+
   async findAll(filters?: { isActive?: boolean; assetType?: string; limit?: number }): Promise<Asset[]> {
     const res = await apiClient.get<Paginated<BackendAsset>>('/assets', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapAsset)
@@ -308,6 +324,12 @@ export const assetKeys = {
 }
 
 export const assetQueries = {
+  search: (params: { q?: string; limit?: number; selectedId?: string }) =>
+    queryOptions({
+      queryKey: [...assetKeys.all, 'search', params] as const,
+      queryFn: () => assetsApi.search(params),
+      staleTime: 60 * 1000,
+    }),
   list: (filters?: AssetFilters) =>
     queryOptions({
       queryKey: assetKeys.list(filters),

@@ -47,7 +47,7 @@ const COVERAGE_DETAIL_INCLUDE = {
   // otro fetch (ver PolicyDetailPage.tsx).
   asset: {
     select: {
-      id: true, code: true, name: true, assetType: true, fixedAssetCode: true,
+      id: true, code: true, name: true, assetType: true, status: true, fixedAssetCode: true,
       metadata: true, brand: true, model: true,
       fixedAsset: { select: { id: true, code: true, name: true } },
       allocations: { select: { percentage: true, costCenter: { select: { id: true, code: true, name: true } } } },

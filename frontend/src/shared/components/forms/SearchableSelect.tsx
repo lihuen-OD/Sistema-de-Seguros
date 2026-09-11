@@ -22,6 +22,10 @@ interface SearchableSelectProps {
   disabled?: boolean
   /** Opciones todavía en camino (ej. useQuery en curso) — reemplaza la lista por un mensaje de carga. */
   loading?: boolean
+  /** Recibe el texto buscado con debounce. Si no se pasa, el selector conserva su filtrado local actual. */
+  onSearchChange?: (query: string) => void
+  searchDebounceMs?: number
+  onOpenChange?: (open: boolean) => void
 }
 
 // Select de valor único con buscador integrado, para listas largas donde un
@@ -39,6 +43,9 @@ export function SearchableSelect({
   noResultsMessage = 'Ningún resultado coincide con la búsqueda',
   disabled,
   loading,
+  onSearchChange,
+  searchDebounceMs = 300,
+  onOpenChange,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -49,6 +56,29 @@ export function SearchableSelect({
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const optionRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onSearchChangeRef = useRef(onSearchChange)
+  const onOpenChangeRef = useRef(onOpenChange)
+
+  useEffect(() => {
+    onSearchChangeRef.current = onSearchChange
+    onOpenChangeRef.current = onOpenChange
+  }, [onOpenChange, onSearchChange])
+
+  function clearPendingSearch() {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = null
+  }
+
+  function resetSearch() {
+    clearPendingSearch()
+    setQuery('')
+    onSearchChange?.('')
+  }
+
+  useEffect(() => () => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -58,7 +88,11 @@ export function SearchableSelect({
         buttonRef.current && !buttonRef.current.contains(e.target as Node)
       ) {
         setOpen(false)
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+        searchTimerRef.current = null
         setQuery('')
+        onSearchChangeRef.current?.('')
+        onOpenChangeRef.current?.(false)
       }
     }
     document.addEventListener('mousedown', handleClick)
@@ -68,6 +102,10 @@ export function SearchableSelect({
   const selected = useMemo(() => options.find((o) => o.value === value) ?? null, [options, value])
 
   const filteredOptions = useMemo(() => {
+    // En modo remoto el backend ya resolvió la búsqueda, incluso por campos
+    // que no forman parte del label liviano (chasis/motor). No volver a
+    // filtrar acá o esos resultados válidos desaparecerían en el cliente.
+    if (onSearchChange) return options
     const q = query.trim().toLowerCase()
     if (!q) return options
     return options.filter(
@@ -76,7 +114,7 @@ export function SearchableSelect({
         o.sublabel?.toLowerCase().includes(q) ||
         o.keywords?.toLowerCase().includes(q),
     )
-  }, [options, query])
+  }, [onSearchChange, options, query])
 
   // Fila "vacío" siempre primero, igual que se renderiza el panel — permite
   // navegar con flechas por las mismas filas que se ven, incluida esa.
@@ -97,24 +135,33 @@ export function SearchableSelect({
   function handleQueryChange(v: string) {
     setQuery(v)
     setHighlightedIndex(0)
+    if (onSearchChange) {
+      clearPendingSearch()
+      searchTimerRef.current = setTimeout(() => onSearchChange(v), searchDebounceMs)
+    }
   }
 
   function toggleOpen() {
-    setOpen((v) => !v)
+    const nextOpen = !open
+    setOpen(nextOpen)
     setHighlightedIndex(0)
+    if (!nextOpen) resetSearch()
+    onOpenChange?.(nextOpen)
   }
 
   function handleSelect(v: string) {
     onChange(v)
     setOpen(false)
-    setQuery('')
+    resetSearch()
+    onOpenChange?.(false)
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault()
       setOpen(false)
-      setQuery('')
+      resetSearch()
+      onOpenChange?.(false)
       buttonRef.current?.focus()
       return
     }

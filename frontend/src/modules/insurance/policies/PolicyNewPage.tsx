@@ -13,7 +13,7 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
-import { SearchableSelect } from '../../../shared/components/forms/SearchableSelect'
+import { PolicyAssetRemoteSelect } from './PolicyAssetRemoteSelect'
 import {
   AddAttachmentModal,
   FileTypeIcon,
@@ -23,12 +23,10 @@ import { policiesApi, policyKeys, type PolicyCoverageInput } from '../../../shar
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { producerQueries } from '../../../shared/api/producers.api'
-import { assetQueries } from '../../../shared/api/assets.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { formatCurrencyFull } from '../../../shared/utils/format'
-import { buildAssetSearchKeywords } from '../../../shared/utils/assetSearch'
 import { CURRENCY_OPTIONS } from '../../../shared/constants'
 import type { PolicyAttachment } from '../../../shared/types'
 import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
@@ -204,9 +202,9 @@ export default function PolicyNewPage() {
   const [lineErrors, setLineErrors] = useState<Record<string, LineErrors>>({})
   const [attachmentDraftsByLine, setAttachmentDraftsByLine] = useState<Record<string, PolicyAttachmentDraft[]>>({})
   const [attachModalLineId, setAttachModalLineId] = useState<string | null>(null)
+  const [selectedAssetNames, setSelectedAssetNames] = useState<Record<string, string>>({})
 
   const { data: producers = [] } = useQuery(producerQueries.list())
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: companies = [] } = useQuery(companyQueries.list())
   const { data: costCenters = [] } = useQuery(costCenterQueries.list())
   const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
@@ -223,10 +221,6 @@ export default function PolicyNewPage() {
       if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }))
     }
 
-  const associableAssets = useMemo(
-    () => allAssets.filter((a) => a.status === 'activo' || a.status === 'vendido'),
-    [allAssets],
-  )
   const activeCompanies = useMemo(() => companies.filter((c) => c.status === 'activo'), [companies])
   const activeCostCenters = useMemo(() => costCenters.filter((cc) => cc.status === 'activo'), [costCenters])
 
@@ -418,12 +412,12 @@ export default function PolicyNewPage() {
             const isAP = line.coverageTypes.length > 0 && line.insuranceType.toLowerCase().includes('personal')
             const showBeneficiaryField = isAP && line.association === 'sin_activo'
             const drafts = attachmentDraftsByLine[line.id] ?? []
-            const selectedAsset = associableAssets.find((a) => a.id === line.assetId)
+            const selectedAssetName = selectedAssetNames[line.assetId]
 
             return (
               <SectionCard
                 key={line.id}
-                title={`Línea ${idx + 1}${selectedAsset ? ` — ${selectedAsset.name}` : ''}`}
+                title={`Línea ${idx + 1}${selectedAssetName ? ` — ${selectedAssetName}` : ''}`}
                 subtitle={line.association === 'sin_activo' ? 'Sin activo asociado' : undefined}
                 actions={
                   lines.length > 1 ? (
@@ -460,19 +454,18 @@ export default function PolicyNewPage() {
 
                     {line.association === 'activo' ? (
                       <FormField label="Activo Asegurado" required error={err.assetId}>
-                        <SearchableSelect
-                          options={associableAssets
-                            .filter((a) => a.id === line.assetId || !usedAssetIds.has(a.id))
-                            .map((a) => ({
-                              value: a.id,
-                              label: a.name,
-                              sublabel: `${a.internalCode}${a.status === 'vendido' ? ' · Vendido' : ''}`,
-                              keywords: buildAssetSearchKeywords(a),
-                            }))}
+                        <PolicyAssetRemoteSelect
                           value={line.assetId}
-                          onChange={(v) => updateLine(line.id, { assetId: v })}
-                          placeholder="Seleccionar activo…"
-                          searchPlaceholder="Buscar por nombre, código, patente, bien de uso…"
+                          usedAssetIds={usedAssetIds}
+                          initialOption={line.assetId && selectedAssetName
+                            ? { id: line.assetId, name: selectedAssetName, code: null }
+                            : undefined}
+                          onChange={(assetId, assetName) => {
+                            if (assetId && assetName) {
+                              setSelectedAssetNames((current) => ({ ...current, [assetId]: assetName }))
+                            }
+                            updateLine(line.id, { assetId })
+                          }}
                         />
                       </FormField>
                     ) : (

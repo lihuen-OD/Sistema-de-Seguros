@@ -4,7 +4,7 @@ import { assetsService } from './assets.service'
 import { assetPledgesService } from './asset-pledges.service'
 import { AppError } from '../../shared/errors/AppError'
 import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
-import type { CancelAssetPledgeDTO, CreateAssetPledgeDTO, ListAssetsQueryDTO, UpdateAttachmentDTO } from './assets.schemas'
+import type { CancelAssetPledgeDTO, CreateAssetPledgeDTO, ListAssetsQueryDTO, SearchAssetsQueryDTO, UpdateAttachmentDTO } from './assets.schemas'
 
 type IdParam = { id: string }
 type AttachmentParam = { id: string; attachmentId: string }
@@ -14,6 +14,11 @@ export const assetsController = {
   list: asyncHandler(async (req: Request, res: Response) => {
     const result = await assetsService.findAll(req.query as unknown as ListAssetsQueryDTO)
     res.json(result)
+  }),
+
+  search: asyncHandler(async (req: Request, res: Response) => {
+    const data = await assetsService.search(req.query as unknown as SearchAssetsQueryDTO)
+    res.json({ data })
   }),
 
   getById: asyncHandler(async (req: Request<IdParam>, res: Response) => {

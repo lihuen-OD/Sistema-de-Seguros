@@ -11,6 +11,7 @@ interface BackendProducer { id: string; name: string }
 interface BackendCoverage { id: string; name: string; description: string | null }
 interface BackendPolicyAsset {
   id: string; code: string | null; name: string; assetType: string
+  status?: string
   fixedAssetCode: string | null
   metadata?: Record<string, unknown> | null
   brand?: string | null
@@ -105,6 +106,7 @@ function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
     internalCode: a.code ?? '',
     name: a.name,
     assetType: a.assetType,
+    status: a.status as PolicyAsset['status'],
     fixedAssetCode: a.fixedAssetCode,
     fixedAssetName: a.fixedAsset?.name ?? null,
     metadata: a.metadata ?? null,

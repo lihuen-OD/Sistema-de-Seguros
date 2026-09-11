@@ -14,7 +14,7 @@ import {
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
-import { SearchableSelect } from '../../../shared/components/forms/SearchableSelect'
+import { PolicyAssetRemoteSelect } from './PolicyAssetRemoteSelect'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
 import { DeactivateCoverageModal } from './DeactivateCoverageModal'
 import { CoverageSelector } from './components/CoverageSelector'
@@ -22,14 +22,12 @@ import { policiesApi, policyKeys, policyQueries, type PolicyCoverageInput } from
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import { producerQueries } from '../../../shared/api/producers.api'
-import { assetQueries } from '../../../shared/api/assets.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { formatCurrencyFull, formatDate, isExpired } from '../../../shared/utils/format'
-import { buildAssetSearchKeywords } from '../../../shared/utils/assetSearch'
 import { CURRENCY_OPTIONS } from '../../../shared/constants'
-import type { Policy, PolicyCoverage, Producer, Asset, Company, CostCenter } from '../../../shared/types'
+import type { Policy, PolicyCoverage, Producer, Company, CostCenter } from '../../../shared/types'
 import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
 import type { CatalogItem } from '../../../shared/api/catalogs.api'
 
@@ -122,7 +120,6 @@ export default function PolicyEditPage() {
 
   const { data: policy, isLoading: loadingPolicy } = useQuery(policyQueries.detail(id!))
   const { data: producers = [] } = useQuery(producerQueries.list())
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: companies = [] } = useQuery(companyQueries.list())
   const { data: costCenters = [] } = useQuery(costCenterQueries.list())
   const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
@@ -159,7 +156,6 @@ export default function PolicyEditPage() {
         key={id}
         policy={policy}
         producers={producers}
-        allAssets={allAssets}
         companies={companies}
         costCenters={costCenters}
         insuranceTypes={insuranceTypes}
@@ -172,7 +168,6 @@ export default function PolicyEditPage() {
 interface PolicyEditFormProps {
   policy: Policy
   producers: Producer[]
-  allAssets: Asset[]
   companies: Company[]
   costCenters: CostCenter[]
   insuranceTypes: InsuranceTypeConfig[]
@@ -182,7 +177,7 @@ interface PolicyEditFormProps {
 // Recibe key={id} del padre — se remonta entero al cambiar de póliza, así
 // que form/lines pueden inicializarse directo desde `policy` sin useEffect.
 function PolicyEditForm({
-  policy, producers, allAssets, companies, costCenters, insuranceTypes, insuranceCompanies,
+  policy, producers, companies, costCenters, insuranceTypes, insuranceCompanies,
 }: PolicyEditFormProps) {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -199,6 +194,11 @@ function PolicyEditForm({
   const [errors, setErrors] = useState<Partial<Record<keyof PolicyForm, string>>>({})
   const [lines, setLines] = useState<CoverageLineForm[]>(() => (policy.coverages ?? []).map(coverageToLine))
   const [lineErrors, setLineErrors] = useState<Record<string, LineErrors>>({})
+  const [selectedAssetNames, setSelectedAssetNames] = useState<Record<string, string>>(() =>
+    Object.fromEntries((policy.coverages ?? []).flatMap((coverage) =>
+      coverage.asset ? [[coverage.asset.id, coverage.asset.name]] : [],
+    )),
+  )
   // Línea persistida sobre la que se abrió el modal de baja histórica —
   // guarda tanto el PolicyCoverage original (lo que necesita el modal) como
   // el formId local (para sacarla de `lines` cuando la baja se confirma).
@@ -214,10 +214,6 @@ function PolicyEditForm({
   // en un único useMutation porque la cantidad de llamadas varía por submit.
   const [isAddingCoverages, setIsAddingCoverages] = useState(false)
 
-  const associableAssets = useMemo(
-    () => allAssets.filter((a) => a.status === 'activo' || a.status === 'vendido'),
-    [allAssets],
-  )
   const activeCompanies = useMemo(() => companies.filter((c) => c.status === 'activo'), [companies])
   const activeCostCenters = useMemo(() => costCenters.filter((cc) => cc.status === 'activo'), [costCenters])
 
@@ -449,7 +445,10 @@ function PolicyEditForm({
                 : null
             const isAP = line.coverageTypes.length > 0 && line.insuranceType.toLowerCase().includes('personal')
             const showBeneficiaryField = isAP && line.association === 'sin_activo'
-            const selectedAsset = associableAssets.find((a) => a.id === line.assetId)
+            const persistedAsset = line.coverageId
+              ? (policy.coverages ?? []).find((coverage) => coverage.id === line.coverageId)?.asset
+              : undefined
+            const selectedAssetName = selectedAssetNames[line.assetId] ?? persistedAsset?.name
             const isAssetLocked = !!line.coverageId && line.attachmentsCount > 0
             // Baja YA efectiva (no solo programada) — la línea es historial:
             // todos sus campos quedan de solo lectura. Mismo criterio que
@@ -460,7 +459,7 @@ function PolicyEditForm({
             return (
               <SectionCard
                 key={line.formId}
-                title={`Línea ${idx + 1}${selectedAsset ? ` — ${selectedAsset.name}` : ''}`}
+                title={`Línea ${idx + 1}${selectedAssetName ? ` — ${selectedAssetName}` : ''}`}
                 subtitle={line.association === 'sin_activo' ? 'Sin activo asociado' : undefined}
                 actions={
                   !line.coverageId ? (
@@ -538,20 +537,24 @@ function PolicyEditForm({
 
                     {line.association === 'activo' ? (
                       <FormField label="Activo Asegurado" required error={err.assetId}>
-                        <SearchableSelect
-                          options={associableAssets
-                            .filter((a) => a.id === line.assetId || !usedAssetIds.has(a.id))
-                            .map((a) => ({
-                              value: a.id,
-                              label: a.name,
-                              sublabel: `${a.internalCode}${a.status === 'vendido' ? ' · Vendido' : ''}`,
-                              keywords: buildAssetSearchKeywords(a),
-                            }))}
+                        <PolicyAssetRemoteSelect
                           value={line.assetId}
-                          onChange={(v) => updateLine(line.formId, { assetId: v })}
+                          usedAssetIds={usedAssetIds}
+                          initialOption={line.assetId && selectedAssetName
+                            ? {
+                                id: line.assetId,
+                                name: selectedAssetName,
+                                code: persistedAsset?.internalCode ?? null,
+                                status: persistedAsset?.status,
+                              }
+                            : undefined}
+                          onChange={(assetId, assetName) => {
+                            if (assetId && assetName) {
+                              setSelectedAssetNames((current) => ({ ...current, [assetId]: assetName }))
+                            }
+                            updateLine(line.formId, { assetId })
+                          }}
                           disabled={fieldsDisabled}
-                          placeholder="Seleccionar activo…"
-                          searchPlaceholder="Buscar por nombre, código, patente, bien de uso…"
                         />
                         {isAssetLocked && !isEffectivelyDeBaja && (
                           <p className="text-xs text-slate-500 mt-1">

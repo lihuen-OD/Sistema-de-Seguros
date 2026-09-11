@@ -373,6 +373,7 @@ export interface PolicyAsset {
   internalCode: string
   name: string
   assetType: string
+  status?: AssetStatus
   fixedAssetCode?: string | null
   fixedAssetName?: string | null
   // Datos tipo-específicos (patente, dirección, etc.) usados para diferenciar

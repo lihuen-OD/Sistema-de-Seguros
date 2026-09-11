@@ -181,6 +181,99 @@ describe('Assets API', () => {
     })
   })
 
+  describe('GET /api/v1/assets/search', () => {
+    const searchAsset = {
+      id: ASSET_ID,
+      code: 'ACT-001',
+      name: 'Toyota Hilux',
+      assetType: 'camioneta',
+      status: 'vendido',
+      metadata: { plate: 'AB123CD', chassisNumber: 'CH-001', engineNumber: 'MT-001' },
+      fixedAssetCode: 'BU-01',
+      fixedAsset: { code: 'BU-01', name: 'Rodados' },
+    }
+
+    it('returns a lightweight list and applies the associable-status scope', async () => {
+      db.asset.findMany.mockResolvedValue([searchAsset])
+
+      const res = await request(app)
+        .get('/api/v1/assets/search?q=hilux')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toEqual([{
+        id: ASSET_ID,
+        name: 'Toyota Hilux',
+        code: 'ACT-001',
+        status: 'vendido',
+        assetType: 'camioneta',
+        plate: 'AB123CD',
+        fixedAssetCode: 'BU-01',
+        fixedAssetName: 'Rodados',
+      }])
+      expect(db.asset.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        take: 20,
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            { isActive: true, status: { in: ['activo', 'vendido'] } },
+          ]),
+        }),
+      }))
+      const searchScope = db.asset.findMany.mock.calls[0][0].where.AND[1].OR
+      expect(searchScope).toEqual(expect.arrayContaining([
+        { name: { contains: 'hilux', mode: 'insensitive' } },
+        { code: { contains: 'hilux', mode: 'insensitive' } },
+        { brand: { contains: 'hilux', mode: 'insensitive' } },
+        { model: { contains: 'hilux', mode: 'insensitive' } },
+        { serialNumber: { contains: 'hilux', mode: 'insensitive' } },
+        { metadata: { path: ['plate'], string_contains: 'hilux' } },
+        { metadata: { path: ['chassisNumber'], string_contains: 'hilux' } },
+        { metadata: { path: ['engineNumber'], string_contains: 'hilux' } },
+        { fixedAssetCode: { contains: 'hilux', mode: 'insensitive' } },
+        { fixedAsset: { is: { code: { contains: 'hilux', mode: 'insensitive' } } } },
+        { fixedAsset: { is: { name: { contains: 'hilux', mode: 'insensitive' } } } },
+      ]))
+    })
+
+    it('rejects limits greater than 50 through query validation', async () => {
+      const res = await request(app)
+        .get('/api/v1/assets/search?limit=51')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(422)
+      expect(db.asset.findMany).not.toHaveBeenCalled()
+    })
+
+    it('keeps an associable selected asset even when it is outside the search results', async () => {
+      db.asset.findMany.mockResolvedValue([])
+      db.asset.findFirst.mockResolvedValue(searchAsset)
+
+      const res = await request(app)
+        .get(`/api/v1/assets/search?q=inexistente&selectedId=${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].id).toBe(ASSET_ID)
+      expect(db.asset.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { AND: [
+          { isActive: true, status: { in: ['activo', 'vendido'] } },
+          { id: ASSET_ID },
+        ] },
+      }))
+    })
+
+    it('allows a user with the policies module to search policy assets', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['policies'] }))
+      db.asset.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .get('/api/v1/assets/search')
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(200)
+    })
+  })
+
   // ── GET /api/v1/assets/:id ──────────────────────────────────────────────────
 
   describe('GET /api/v1/assets/:id', () => {
