@@ -31,6 +31,8 @@ function isPrismaKnownError(err: unknown, code: string): boolean {
 const COVERAGE_ASSET_CHANGE_WITH_ATTACHMENTS_MESSAGE =
   'No se puede cambiar el activo de esta cobertura porque ya tiene adjuntos cargados. Para cambiar el activo, eliminá primero los adjuntos de esta cobertura o creá una nueva línea de cobertura.'
 
+const POLICY_ASSOCIABLE_ASSET_STATUSES = ['activo', 'vendido'] as const
+
 // La tarjeta de circulación (y cualquier otro adjunto) ahora cuelga de la
 // línea de cobertura, no de la póliza — así una póliza de flota con varios
 // vehículos sabe de qué activo es cada documento (antes quedaban todos
@@ -182,8 +184,9 @@ function pickCurrentAssetCoverage<T extends { assetId: string | null; effectiveD
 }
 
 // Valida referencias (tipo de seguro activo, coberturas pertenecen a ese
-// tipo, activo/empresa/centro de costo activos) y cierra insuredAmount en
-// ambas monedas — comparte esta lógica create() y replaceCoverages().
+// tipo, activo asociable a pólizas y empresa/centro de costo activos) y
+// cierra insuredAmount en ambas monedas — comparte esta lógica create() y
+// replaceCoverages().
 async function resolveCoverageInput(input: PolicyAssetCoverageInputDTO) {
   const [insuranceType, asset, company, costCenter] = await Promise.all([
     prisma.insuranceType.findFirst({
@@ -195,7 +198,10 @@ async function resolveCoverageInput(input: PolicyAssetCoverageInputDTO) {
       select: { id: true, coverages: { select: { id: true } } },
     }),
     input.assetId
-      ? prisma.asset.findFirst({ where: { id: input.assetId, isActive: true }, select: { id: true } })
+      ? prisma.asset.findFirst({
+          where: { id: input.assetId, isActive: true, status: { in: [...POLICY_ASSOCIABLE_ASSET_STATUSES] } },
+          select: { id: true },
+        })
       : Promise.resolve(null),
     input.companyId
       ? prisma.company.findFirst({ where: { id: input.companyId, isActive: true }, select: { id: true } })
@@ -206,7 +212,7 @@ async function resolveCoverageInput(input: PolicyAssetCoverageInputDTO) {
   ])
 
   if (!insuranceType) throw new AppError(400, 'Tipo de seguro no encontrado o inactivo', 'INVALID_REFERENCE')
-  if (input.assetId && !asset) throw new AppError(400, 'Activo no encontrado o inactivo', 'INVALID_REFERENCE')
+  if (input.assetId && !asset) throw new AppError(400, 'Activo no encontrado o no asociable a pólizas', 'INVALID_REFERENCE')
   if (input.companyId && !company) throw new AppError(400, 'Empresa no encontrada o inactiva', 'INVALID_REFERENCE')
   if (input.costCenterId && !costCenter) throw new AppError(400, 'Centro de costo no encontrado o inactivo', 'INVALID_REFERENCE')
 
@@ -259,7 +265,14 @@ async function resolveCoverageInputsBatch(
       select: { id: true, coverages: { select: { id: true } } },
     }),
     assetIds.length > 0
-      ? prisma.asset.findMany({ where: { id: { in: assetIds }, isActive: true }, select: { id: true } })
+      ? prisma.asset.findMany({
+          where: {
+            id: { in: assetIds },
+            isActive: true,
+            status: { in: [...POLICY_ASSOCIABLE_ASSET_STATUSES] },
+          },
+          select: { id: true },
+        })
       : Promise.resolve([]),
     companyIds.length > 0
       ? prisma.company.findMany({ where: { id: { in: companyIds }, isActive: true }, select: { id: true } })
@@ -278,7 +291,7 @@ async function resolveCoverageInputsBatch(
     const insuranceType = insuranceTypeById.get(input.insuranceTypeId)
     if (!insuranceType) throw new AppError(400, 'Tipo de seguro no encontrado o inactivo', 'INVALID_REFERENCE')
     if (input.assetId && !activeAssetIds.has(input.assetId)) {
-      throw new AppError(400, 'Activo no encontrado o inactivo', 'INVALID_REFERENCE')
+      throw new AppError(400, 'Activo no encontrado o no asociable a pólizas', 'INVALID_REFERENCE')
     }
     if (input.companyId && !activeCompanyIds.has(input.companyId)) {
       throw new AppError(400, 'Empresa no encontrada o inactiva', 'INVALID_REFERENCE')

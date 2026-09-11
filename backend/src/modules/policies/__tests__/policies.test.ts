@@ -682,6 +682,14 @@ describe('Policies API', () => {
       // asset.findMany/insuranceType.findMany (no 2, una por línea) — y
       // ningún findFirst individual de por medio.
       expect(db.asset.findMany).toHaveBeenCalledTimes(1)
+      expect(db.asset.findMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: [ASSET_ID, ASSET_ID_2] },
+          isActive: true,
+          status: { in: ['activo', 'vendido'] },
+        },
+        select: { id: true },
+      })
       expect(db.insuranceType.findMany).toHaveBeenCalledTimes(1)
       expect(db.asset.findFirst).not.toHaveBeenCalled()
       expect(db.insuranceType.findFirst).not.toHaveBeenCalled()
@@ -703,11 +711,11 @@ describe('Policies API', () => {
       expect(db.$transaction).not.toHaveBeenCalled()
     })
 
-    it('rejects an invalid or inactive assetId', async () => {
+    it('rejects an invalid or non-associable assetId', async () => {
       db.policy.findUnique.mockResolvedValue({ id: POLICY_ID, startDate: BASE_DATE })
       db.policyAssetCoverage.findMany.mockResolvedValueOnce([])
       db.insuranceType.findMany.mockResolvedValue([fakeInsuranceType])
-      db.asset.findMany.mockResolvedValue([]) // ni existe ni está activo
+      db.asset.findMany.mockResolvedValue([]) // no existe o su estado no es activo/vendido
 
       const res = await request(app)
         .put(`/api/v1/policies/${POLICY_ID}/coverages`)
@@ -716,7 +724,7 @@ describe('Policies API', () => {
 
       expect(res.status).toBe(400)
       expect(res.body.error.code).toBe('INVALID_REFERENCE')
-      expect(res.body.error.message).toBe('Activo no encontrado o inactivo')
+      expect(res.body.error.message).toBe('Activo no encontrado o no asociable a pólizas')
       expect(db.$transaction).not.toHaveBeenCalled()
     })
 
@@ -813,6 +821,14 @@ describe('Policies API', () => {
 
       expect(res.status).toBe(201)
       expect(db.policyAssetCoverage.create).toHaveBeenCalled()
+      expect(db.asset.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: ASSET_ID,
+          isActive: true,
+          status: { in: ['activo', 'vendido'] },
+        },
+        select: { id: true },
+      })
     })
 
     it('returns 409 when the new line overlaps an existing active line for the same asset', async () => {

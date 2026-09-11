@@ -214,7 +214,10 @@ function PolicyEditForm({
   // en un único useMutation porque la cantidad de llamadas varía por submit.
   const [isAddingCoverages, setIsAddingCoverages] = useState(false)
 
-  const activeAssets = useMemo(() => allAssets.filter((a) => a.status === 'activo'), [allAssets])
+  const associableAssets = useMemo(
+    () => allAssets.filter((a) => a.status === 'activo' || a.status === 'vendido'),
+    [allAssets],
+  )
   const activeCompanies = useMemo(() => companies.filter((c) => c.status === 'activo'), [companies])
   const activeCostCenters = useMemo(() => costCenters.filter((cc) => cc.status === 'activo'), [costCenters])
 
@@ -446,7 +449,7 @@ function PolicyEditForm({
                 : null
             const isAP = line.coverageTypes.length > 0 && line.insuranceType.toLowerCase().includes('personal')
             const showBeneficiaryField = isAP && line.association === 'sin_activo'
-            const selectedAsset = activeAssets.find((a) => a.id === line.assetId)
+            const selectedAsset = associableAssets.find((a) => a.id === line.assetId)
             const isAssetLocked = !!line.coverageId && line.attachmentsCount > 0
             // Baja YA efectiva (no solo programada) — la línea es historial:
             // todos sus campos quedan de solo lectura. Mismo criterio que
@@ -536,12 +539,12 @@ function PolicyEditForm({
                     {line.association === 'activo' ? (
                       <FormField label="Activo Asegurado" required error={err.assetId}>
                         <SearchableSelect
-                          options={activeAssets
+                          options={associableAssets
                             .filter((a) => a.id === line.assetId || !usedAssetIds.has(a.id))
                             .map((a) => ({
                               value: a.id,
                               label: a.name,
-                              sublabel: a.internalCode,
+                              sublabel: `${a.internalCode}${a.status === 'vendido' ? ' · Vendido' : ''}`,
                               keywords: buildAssetSearchKeywords(a),
                             }))}
                           value={line.assetId}
