@@ -97,6 +97,12 @@ export const SearchDocumentsQuerySchema = z.object({
   type: DocumentTypeListParam.optional(),
   excludeCancelled: booleanFromString.optional(),
   insuranceCompany: z.string().trim().max(300).optional(),
+  // Fase 1B.4.c (Endoso) — un documento "pertenece" a una póliza vía su
+  // propio policyId (Endoso) o vía policyAssetCoverage.policyId de sus
+  // allocations (Factura/NC/ND/Ajuste). Mismo join que ya valida
+  // documents.service.ts#validateTypeConstraints para Endoso, no una regla
+  // nueva.
+  policyId: z.string().uuid('ID de póliza inválido').optional(),
 })
 
 export const UpdateInstallmentSchema = z.object({

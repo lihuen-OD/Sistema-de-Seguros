@@ -224,27 +224,48 @@ export const documentsService = {
     }
   },
 
+  // Un documento "pertenece" a una póliza vía su propio policyId (Endoso) o
+  // vía policyAssetCoverage.policyId de sus allocations (Factura/NC/ND/
+  // Ajuste) — mismo join que ya resuelve validateTypeConstraints al validar
+  // que la factura vinculada de un Endoso sea de la póliza que modifica, acá
+  // reutilizado para no tener dos criterios de "pertenencia" distintos.
+  belongsToPolicy(policyId: string): Prisma.AccountingDocumentWhereInput {
+    return {
+      OR: [
+        { policyId },
+        { allocations: { some: { policyAssetCoverage: { policyId } } } },
+      ],
+    }
+  },
+
   // Selector liviano de "documento vinculado" (Fase 1B.4) — reemplaza, para
   // los formularios de NC/ND/Endoso/Ajuste, el findAll(limit 200) que traían
   // entero para filtrar en el cliente. Payload sin allocations/installments/
   // attachments: solo lo que el selector necesita para mostrar y filtrar.
   async search(query: SearchDocumentsQueryDTO) {
     const q = query.q.trim()
-    const where: Prisma.AccountingDocumentWhereInput = {
-      ...(query.excludeCancelled && { documentStatus: { not: 'CANCELLED' } }),
-      ...(query.type && query.type.length > 0 && { documentType: { in: query.type } }),
-      // insuranceCompany viene de un catálogo cerrado (combo, no texto libre)
-      // — igualdad exacta, mismo criterio que ya usan los formularios hoy
-      // (d.insuranceCompany === form.insuranceCompany) al filtrar en el cliente.
-      ...(query.insuranceCompany && { insuranceCompany: query.insuranceCompany }),
-      ...(q && {
+    // AND de condiciones independientes, no un solo objeto con spreads — dos
+    // filtros que necesitan su propio OR (policyId y q) colisionarían si
+    // compartieran la misma clave `OR` de un objeto literal (la última
+    // sobrescribe a la anterior).
+    const conditions: Prisma.AccountingDocumentWhereInput[] = []
+    if (query.excludeCancelled) conditions.push({ documentStatus: { not: 'CANCELLED' } })
+    if (query.type && query.type.length > 0) conditions.push({ documentType: { in: query.type } })
+    // insuranceCompany viene de un catálogo cerrado (combo, no texto libre) —
+    // igualdad exacta, mismo criterio que ya usan los formularios hoy
+    // (d.insuranceCompany === form.insuranceCompany) al filtrar en el cliente.
+    if (query.insuranceCompany) conditions.push({ insuranceCompany: query.insuranceCompany })
+    if (query.policyId) conditions.push(this.belongsToPolicy(query.policyId))
+    if (q) {
+      conditions.push({
         OR: [
           { documentNumber: { contains: q, mode: 'insensitive' } },
           { insuranceCompany: { contains: q, mode: 'insensitive' } },
           { description: { contains: q, mode: 'insensitive' } },
         ],
-      }),
+      })
     }
+    const where: Prisma.AccountingDocumentWhereInput = conditions.length > 0 ? { AND: conditions } : {}
     const select = {
       id: true,
       documentNumber: true,
@@ -268,10 +289,17 @@ export const documentsService = {
 
     // Un documento vinculado existente (edición) debe seguir visible aunque
     // ya no cumpla los filtros activos (ej. quedó CANCELLED después) — mismo
-    // patrón que producers/assets/policies.search.
+    // patrón que producers/assets/policies.search. La única excepción es
+    // policyId: para un Endoso, pertenecer a la póliza es una regla de
+    // negocio dura (validateTypeConstraints la exige para poder guardar), no
+    // un filtro blando de UX — si selectedId no pertenece a la póliza pedida,
+    // no debe colarse igual.
     if (query.selectedId && !results.some((doc) => doc.id === query.selectedId)) {
       const selected = await prisma.accountingDocument.findFirst({
-        where: { id: query.selectedId },
+        where: {
+          id: query.selectedId,
+          ...(query.policyId && this.belongsToPolicy(query.policyId)),
+        },
         select,
       })
       if (selected) results.unshift(selected)

@@ -14,6 +14,7 @@ interface DocumentRemoteSelectProps {
   type?: DocumentSearchParams['type']
   excludeCancelled?: boolean
   insuranceCompany?: string
+  policyId?: string
   disabled?: boolean
   placeholder?: string
   emptyOptionLabel?: string
@@ -42,6 +43,7 @@ export function DocumentRemoteSelect({
   type,
   excludeCancelled,
   insuranceCompany,
+  policyId,
   disabled,
   placeholder = 'Seleccionar documento…',
   emptyOptionLabel = 'Seleccionar documento…',
@@ -58,6 +60,7 @@ export function DocumentRemoteSelect({
       type,
       excludeCancelled,
       insuranceCompany,
+      policyId,
     }),
     // Con valor inicial también consulta cerrado, para reconstruir el label
     // de una selección que no pertenezca al primer lote (mismo patrón que

@@ -7,13 +7,13 @@ import { SectionCard } from '../../../../shared/components/cards/SectionCard'
 import { FormSection, FormField, FormInput, FormSelect, FormTextarea } from '../../../../shared/components/forms/FormSection'
 import { PolicySelector, createEmptyPolicyRow, type PolicyAllocationRow } from '../../../../shared/components/forms/PolicySelector'
 import { PolicyRemoteSelect } from '../../../../shared/components/forms/PolicyRemoteSelect'
-import { DocumentRelationSelector } from '../components/DocumentRelationSelector'
+import { DocumentRemoteSelect } from '../../../../shared/components/forms/DocumentRemoteSelect'
 import { DocumentImpactPreview } from '../components/DocumentImpactPreview'
 import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
 import { useSavedDocState } from '../hooks/useSavedDocState'
 import { useDuplicateDocumentNumberCheck } from '../hooks/useDuplicateDocumentNumberCheck'
-import { documentsApi, documentKeys, documentQueries } from '../../../../shared/api/documents.api'
+import { documentsApi, documentKeys, documentQueries, type DocumentSearchResult } from '../../../../shared/api/documents.api'
 import { policyQueries } from '../../../../shared/api/policies.api'
 import { catalogQueries } from '../../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../../shared/utils/formValidation'
@@ -102,7 +102,6 @@ function DocumentoEndosoFormBody({ initialDoc, sourcePolicy }: DocumentoEndosoFo
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
   const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, true, 'ENDORSEMENT', form.insuranceCompany, initialDoc?.id)
 
-  const { data: allDocuments = [] } = useQuery(documentQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: documentTypesData } = useQuery(documentQueries.types())
   const endorsementTypes = documentTypesData?.endorsementTypes ?? []
@@ -110,15 +109,11 @@ function DocumentoEndosoFormBody({ initialDoc, sourcePolicy }: DocumentoEndosoFo
 
   const hasEconomicImpact = form.economicImpactType === 'INCREASES_COST' || form.economicImpactType === 'DECREASES_COST'
 
-  // La factura a vincular tiene que ser de la MISMA póliza que este Endoso
-  // modifica — el backend ya lo exige (ver documents.service.ts), esto solo
-  // evita ofrecer en el selector opciones que de todos modos van a rechazarse.
-  const linkableDocuments = form.policyId
-    ? allDocuments.filter(
-        (d) => d.documentType === 'INVOICE' && d.documentStatus !== 'CANCELLED' && d.policyIds.includes(form.policyId),
-      )
-    : []
-  const linkedDocument = allDocuments.find((d) => d.id === form.linkedDocumentId) ?? null
+  // Detalle completo del vinculado (no el resultado liviano del selector) —
+  // hace falta para DocumentImpactPreview y para heredar el exchangeRate,
+  // que no viaja en el payload liviano de /documents/search. Un solo fetch
+  // por documento vinculado, no los ~200 que traía documentQueries.list().
+  const { data: linkedDocument } = useQuery(documentQueries.detail(form.linkedDocumentId))
 
   // El detalle completo (con `coverages`) de la única póliza que este Endoso
   // modifica — a diferencia de Factura, acá no hace falta el hook multi-póliza
@@ -145,7 +140,12 @@ function DocumentoEndosoFormBody({ initialDoc, sourcePolicy }: DocumentoEndosoFo
   const parsedVat = parseFloat(form.vatAmount) || 0
   const parsedOther = parseFloat(form.otherTaxesAmount) || 0
   const computedTotal = hasEconomicImpact ? parsedNet + parsedVat + parsedOther : 0
-  const tc = parseFloat(form.exchangeRate) || 0
+  // exchangeRate no viaja en el resultado liviano del selector (a diferencia
+  // de currency) — mientras haya factura vinculada, se toma del detalle
+  // completo en cuanto llega, en vez de escribirlo a mano en el submit de la
+  // selección (evitaría desincronizarse si el detalle tarda en resolver).
+  const effectiveExchangeRate = linkedDocument ? String(linkedDocument.exchangeRate) : form.exchangeRate
+  const tc = parseFloat(effectiveExchangeRate) || 0
   const equivalentCurrency: Currency = form.currency === 'ARS' ? 'USD' : 'ARS'
   const equivalentAmount =
     form.currency === 'ARS' && tc > 0 ? computedTotal / tc : form.currency === 'USD' && tc > 0 ? computedTotal * tc : 0
@@ -188,13 +188,14 @@ function DocumentoEndosoFormBody({ initialDoc, sourcePolicy }: DocumentoEndosoFo
     markUnsaved()
   }
 
-  const handleLinkedDocumentChange = (id: string) => {
-    const linked = allDocuments.find((d) => d.id === id)
+  const handleLinkedDocumentChange = (id: string, document?: DocumentSearchResult) => {
+    // currency sí viaja en el resultado liviano del selector — se puede
+    // asignar al toque, sin esperar el detalle completo (ver
+    // effectiveExchangeRate más arriba para lo que sí lo necesita).
     setForm((prev) => ({
       ...prev,
       linkedDocumentId: id,
-      currency: linked?.currency ?? prev.currency,
-      exchangeRate: linked ? String(linked.exchangeRate) : prev.exchangeRate,
+      currency: document?.currency ?? prev.currency,
     }))
     markUnsaved()
   }
@@ -395,14 +396,20 @@ function DocumentoEndosoFormBody({ initialDoc, sourcePolicy }: DocumentoEndosoFo
 
             {hasEconomicImpact && (
               <FormField label="Factura Asociada" required error={errors.linkedDocumentId} fullWidth>
-                <DocumentRelationSelector
-                  documents={linkableDocuments}
+                <DocumentRemoteSelect
                   value={form.linkedDocumentId}
                   onChange={handleLinkedDocumentChange}
-                  required
-                  emptyMessage={!form.policyId ? 'Seleccioná primero la póliza asociada.' : 'No hay facturas de esta póliza disponibles para vincular.'}
-                  helperText="Solo se listan facturas de la póliza elegida arriba."
+                  type="INVOICE"
+                  excludeCancelled
+                  policyId={form.policyId || undefined}
+                  disabled={!form.policyId}
+                  placeholder={!form.policyId ? 'Seleccioná primero la póliza asociada' : 'Seleccionar factura…'}
+                  emptyOptionLabel="Seleccionar factura…"
+                  noResultsMessage="No hay facturas de esta póliza disponibles para vincular"
                 />
+                <p className="text-xs text-slate-400 mt-1">
+                  Solo se listan facturas de la póliza elegida arriba.
+                </p>
               </FormField>
             )}
 
@@ -451,7 +458,7 @@ function DocumentoEndosoFormBody({ initialDoc, sourcePolicy }: DocumentoEndosoFo
                   <FormInput
                     type="number"
                     placeholder="Ej: 1150"
-                    value={form.exchangeRate}
+                    value={effectiveExchangeRate}
                     onChange={set('exchangeRate')}
                     min="0.01"
                     step="0.01"

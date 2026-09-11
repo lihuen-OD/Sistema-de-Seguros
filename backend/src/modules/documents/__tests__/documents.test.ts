@@ -223,11 +223,13 @@ describe('Documents API', () => {
         .get('/api/v1/documents/search?q=mapfre')
         .set('Authorization', `Bearer ${adminToken()}`)
 
-      expect(db.accountingDocument.findMany.mock.calls[0][0].where.OR).toEqual([
-        { documentNumber: { contains: 'mapfre', mode: 'insensitive' } },
-        { insuranceCompany: { contains: 'mapfre', mode: 'insensitive' } },
-        { description: { contains: 'mapfre', mode: 'insensitive' } },
-      ])
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.AND).toContainEqual({
+        OR: [
+          { documentNumber: { contains: 'mapfre', mode: 'insensitive' } },
+          { insuranceCompany: { contains: 'mapfre', mode: 'insensitive' } },
+          { description: { contains: 'mapfre', mode: 'insensitive' } },
+        ],
+      })
     })
 
     it('applies the default limit of 20 when none is given', async () => {
@@ -279,7 +281,9 @@ describe('Documents API', () => {
         .get('/api/v1/documents/search?type=INVOICE')
         .set('Authorization', `Bearer ${adminToken()}`)
 
-      expect(db.accountingDocument.findMany.mock.calls[0][0].where.documentType).toEqual({ in: ['INVOICE'] })
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.AND).toContainEqual({
+        documentType: { in: ['INVOICE'] },
+      })
     })
 
     it('filters by multiple comma-separated types', async () => {
@@ -289,8 +293,8 @@ describe('Documents API', () => {
         .get('/api/v1/documents/search?type=INVOICE,DEBIT_NOTE')
         .set('Authorization', `Bearer ${adminToken()}`)
 
-      expect(db.accountingDocument.findMany.mock.calls[0][0].where.documentType).toEqual({
-        in: ['INVOICE', 'DEBIT_NOTE'],
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.AND).toContainEqual({
+        documentType: { in: ['INVOICE', 'DEBIT_NOTE'] },
       })
     })
 
@@ -309,7 +313,9 @@ describe('Documents API', () => {
       await request(app)
         .get('/api/v1/documents/search?excludeCancelled=true')
         .set('Authorization', `Bearer ${adminToken()}`)
-      expect(db.accountingDocument.findMany.mock.calls[0][0].where.documentStatus).toEqual({ not: 'CANCELLED' })
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.AND).toContainEqual({
+        documentStatus: { not: 'CANCELLED' },
+      })
 
       await request(app)
         .get('/api/v1/documents/search')
@@ -324,7 +330,132 @@ describe('Documents API', () => {
         .get('/api/v1/documents/search?insuranceCompany=MAPFRE')
         .set('Authorization', `Bearer ${adminToken()}`)
 
-      expect(db.accountingDocument.findMany.mock.calls[0][0].where.insuranceCompany).toBe('MAPFRE')
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.AND).toContainEqual({
+        insuranceCompany: 'MAPFRE',
+      })
+    })
+
+    // ── policyId (Fase 1B.4.c — Endoso) ───────────────────────────────────────
+    // Un documento "pertenece" a una póliza vía su propio policyId (Endoso) o
+    // vía policyAssetCoverage.policyId de sus allocations (Factura/NC/ND/
+    // Ajuste) — mismo join que validateTypeConstraints ya usa para validar
+    // el Endoso al crear/editar, no una regla nueva.
+
+    it('filters by policyId, matching either the document\'s own policyId or its allocations\' policy', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get(`/api/v1/documents/search?policyId=${POLICY_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.AND).toContainEqual({
+        OR: [
+          { policyId: POLICY_ID },
+          { allocations: { some: { policyAssetCoverage: { policyId: POLICY_ID } } } },
+        ],
+      })
+    })
+
+    it('rejects a policyId that is not a valid UUID', async () => {
+      const res = await request(app)
+        .get('/api/v1/documents/search?policyId=not-a-uuid')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(422)
+      expect(db.accountingDocument.findMany).not.toHaveBeenCalled()
+    })
+
+    it('combines policyId with type=INVOICE and excludeCancelled in the same query', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get(`/api/v1/documents/search?policyId=${POLICY_ID}&type=INVOICE&excludeCancelled=true`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const conditions = db.accountingDocument.findMany.mock.calls[0][0].where.AND
+      expect(conditions).toContainEqual({ documentType: { in: ['INVOICE'] } })
+      expect(conditions).toContainEqual({ documentStatus: { not: 'CANCELLED' } })
+      expect(conditions).toContainEqual({
+        OR: [
+          { policyId: POLICY_ID },
+          { allocations: { some: { policyAssetCoverage: { policyId: POLICY_ID } } } },
+        ],
+      })
+    })
+
+    it('does not bloat the payload when combined with policyId — same lightweight shape', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([searchDoc])
+
+      const res = await request(app)
+        .get(`/api/v1/documents/search?policyId=${POLICY_ID}&type=INVOICE`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(Object.keys(res.body.data[0]).sort()).toEqual(
+        ['currency', 'documentNumber', 'id', 'insuranceCompany', 'issueDate', 'paymentMethod', 'paymentStatus', 'totalAmount', 'type'].sort(),
+      )
+    })
+
+    it('keeps a selected document outside the results when it still belongs to the requested policy', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+      db.accountingDocument.findFirst.mockResolvedValueOnce(searchDoc)
+
+      const res = await request(app)
+        .get(`/api/v1/documents/search?policyId=${POLICY_ID}&selectedId=${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].id).toBe(DOC_ID)
+      expect(db.accountingDocument.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: DOC_ID,
+          OR: [
+            { policyId: POLICY_ID },
+            { allocations: { some: { policyAssetCoverage: { policyId: POLICY_ID } } } },
+          ],
+        },
+        select: {
+          id: true, documentNumber: true, documentType: true, issueDate: true,
+          insuranceCompany: true, currency: true, netAmount: true, vatAmount: true,
+          otherTaxesAmount: true, paymentStatus: true, paymentMethod: true,
+        },
+      })
+    })
+
+    it('does NOT let a selectedId from a different policy sneak in — pertenencia a la póliza es una regla dura, no un filtro blando', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+      // El documento seleccionado no pertenece a la póliza pedida — el mock
+      // de findFirst devuelve null, como haría Prisma real con ese `where`.
+      db.accountingDocument.findFirst.mockResolvedValueOnce(null)
+
+      const res = await request(app)
+        .get(`/api/v1/documents/search?policyId=${POLICY_ID}&selectedId=${OTHER_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(0)
+    })
+
+    it('keeps a selected document outside the results ignoring excludeCancelled (soft filter), when no policyId is requested', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+      db.accountingDocument.findFirst.mockResolvedValueOnce(searchDoc)
+
+      const res = await request(app)
+        .get(`/api/v1/documents/search?excludeCancelled=true&selectedId=${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].id).toBe(DOC_ID)
+      // Sin policyId, el fallback de selectedId no agrega ninguna condición
+      // extra — mismo comportamiento ya validado en Fase 1B.4.a/b.
+      expect(db.accountingDocument.findFirst).toHaveBeenCalledWith({
+        where: { id: DOC_ID },
+        select: {
+          id: true, documentNumber: true, documentType: true, issueDate: true,
+          insuranceCompany: true, currency: true, netAmount: true, vatAmount: true,
+          otherTaxesAmount: true, paymentStatus: true, paymentMethod: true,
+        },
+      })
     })
 
     it('keeps a selected document even when it is outside the search results', async () => {

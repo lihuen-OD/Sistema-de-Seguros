@@ -213,6 +213,10 @@ export interface DocumentSearchParams {
   type?: DocumentType | DocumentType[]
   excludeCancelled?: boolean
   insuranceCompany?: string
+  // Fase 1B.4.c (Endoso) — documentos de una póliza puntual, por
+  // document.policyId (Endoso) o por policyAssetCoverage.policyId de sus
+  // allocations (Factura/NC/ND/Ajuste). Ver documents.service.ts#search.
+  policyId?: string
 }
 
 export const documentsApi = {
