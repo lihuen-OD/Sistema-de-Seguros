@@ -13,3 +13,4 @@ tasksRouter.use(authMiddleware)
 // GET /producers/tasks/overdue (producers.router.ts) — un listado global no
 // debería ser ni más restrictivo ni más permisivo que las rutas que reemplaza.
 tasksRouter.get('/', requireModule('producers', 'tasks', 'dashboard'), validateQuery(ListTasksQuerySchema), tasksController.list)
+tasksRouter.get('/:id', requireModule('producers', 'tasks', 'dashboard'), tasksController.getById)

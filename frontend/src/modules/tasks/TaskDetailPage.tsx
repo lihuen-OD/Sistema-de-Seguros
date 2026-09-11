@@ -10,19 +10,18 @@ import {
   CheckCircle2,
   Clock,
 } from 'lucide-react'
-import { useQuery, useQueries } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
+import { LoadingState } from '../../shared/components/empty-states/LoadingState'
 import { useCurrentUser } from '../../app/auth/AuthContext'
 import { hasModule } from '../../app/auth/roleScope'
 import { formatDate, daysUntil } from '../../shared/utils/format'
-import { producerQueries } from '../../shared/api/producers.api'
-import { policyQueries } from '../../shared/api/policies.api'
-import { assetQueries } from '../../shared/api/assets.api'
+import { taskQueries } from '../../shared/api/tasks.api'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 
@@ -54,40 +53,21 @@ export default function TaskDetailPage() {
   const { user } = useCurrentUser()
 
   // La póliza/activo vinculado a la tarea es de OTRO módulo — sin el
-  // correspondiente, ni se pide ni se muestra ese vínculo.
+  // correspondiente, ni se pide ni se muestra ese vínculo (mismo criterio que
+  // antes de esta migración, aunque el dato ya venga en el detalle liviano).
   const canPolicies = hasModule(user, 'policies')
   const canAssets = hasModule(user, 'assets')
 
-  // All hooks must be called unconditionally at the top
-  const { data: allProducers = [], isError: isErrorProducers } = useQuery(producerQueries.list())
-  const { data: allPolicies = [], isError: isErrorPolicies } = useQuery({ ...policyQueries.list(), enabled: canPolicies })
-  const { data: allAssets = [], isError: isErrorAssets } = useQuery({ ...assetQueries.list(), enabled: canAssets })
+  const { data: task, isLoading, isError } = useQuery(taskQueries.detail(id!))
 
-  const taskQueries = useQueries({
-    queries: allProducers.map((p) => ({ ...producerQueries.tasks(p.id), enabled: allProducers.length > 0 })),
-  })
-
-  const allTasks = taskQueries.flatMap((q, i) =>
-    (q.data ?? []).map((t) => ({ ...t, producerId: allProducers[i]?.id ?? null }))
-  )
-
-  const tasksLoading = allProducers.length > 0 && taskQueries.some((q) => q.isLoading)
-  const isError = isErrorProducers || (canPolicies && isErrorPolicies) || (canAssets && isErrorAssets) || taskQueries.some((q) => q.isError)
-  const task = allTasks.find((t) => t.id === id)
-
-  if (tasksLoading) {
+  if (isLoading) {
     return (
       <PageContent>
-        <div className="flex items-center justify-center py-20 text-sm text-slate-400">
-          Cargando tarea…
-        </div>
+        <LoadingState />
       </PageContent>
     )
   }
 
-  // Antes de esto: si allProducers fallaba, quedaba [] por el default y la
-  // página caía derecho en "Tarea no encontrada" — un error de red se veía
-  // igual que una tarea genuinamente inexistente.
   if (isError) {
     return (
       <PageContent>
@@ -106,10 +86,6 @@ export default function TaskDetailPage() {
       </PageContent>
     )
   }
-
-  const producer = allProducers.find((p) => p.id === task.producerId)
-  const policy = task.policyId && canPolicies ? allPolicies.find((p) => p.id === task.policyId) : undefined
-  const asset = task.assetId && canAssets ? allAssets.find((a) => a.id === task.assetId) : undefined
 
   const days = daysUntil(task.dueDate)
   const isOverdue = days < 0 && task.status !== 'finalizada'
@@ -155,44 +131,39 @@ export default function TaskDetailPage() {
             )}
           </SectionCard>
 
-          {/* Associations */}
-          {(producer || policy || asset) && (
-            <SectionCard title="Vínculos">
-              {producer && (
-                <DetailRow icon={User} label="Productor asignado">
-                  <button
-                    onClick={() => navigate(ROUTES.PRODUCERS_DETAIL(producer.id))}
-                    className="text-brand-600 hover:underline font-medium"
-                  >
-                    {producer.name}
-                  </button>
-                  <span className="text-xs text-slate-400 ml-2">Reg. {producer.registrationNumber}</span>
-                </DetailRow>
-              )}
-              {policy && (
-                <DetailRow icon={FileText} label="Póliza asociada">
-                  <button
-                    onClick={() => navigate(ROUTES.POLICIES_DETAIL(policy.id))}
-                    className="text-brand-600 hover:underline font-medium"
-                  >
-                    {policy.policyNumber}
-                  </button>
-                  <span className="text-xs text-slate-400 ml-2">· {(policy.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}</span>
-                </DetailRow>
-              )}
-              {asset && (
-                <DetailRow icon={Package} label="Activo asociado">
-                  <button
-                    onClick={() => navigate(ROUTES.ASSETS_DETAIL(asset.id))}
-                    className="text-brand-600 hover:underline font-medium"
-                  >
-                    {asset.internalCode}
-                  </button>
-                  <span className="text-xs text-slate-400 ml-2">— {asset.name}</span>
-                </DetailRow>
-              )}
-            </SectionCard>
-          )}
+          {/* Associations — el productor siempre existe (una tarea siempre
+              pertenece a un productor), póliza/activo son opcionales y
+              respetan el módulo del usuario. */}
+          <SectionCard title="Vínculos">
+            <DetailRow icon={User} label="Productor asignado">
+              <button
+                onClick={() => navigate(ROUTES.PRODUCERS_DETAIL(task.producerId))}
+                className="text-brand-600 hover:underline font-medium"
+              >
+                {task.producerName}
+              </button>
+            </DetailRow>
+            {task.policyId && canPolicies && (
+              <DetailRow icon={FileText} label="Póliza asociada">
+                <button
+                  onClick={() => navigate(ROUTES.POLICIES_DETAIL(task.policyId!))}
+                  className="text-brand-600 hover:underline font-medium"
+                >
+                  {task.policyNumber ?? task.policyId}
+                </button>
+              </DetailRow>
+            )}
+            {task.assetId && canAssets && (
+              <DetailRow icon={Package} label="Activo asociado">
+                <button
+                  onClick={() => navigate(ROUTES.ASSETS_DETAIL(task.assetId!))}
+                  className="text-brand-600 hover:underline font-medium"
+                >
+                  {task.assetName ?? task.assetId}
+                </button>
+              </DetailRow>
+            )}
+          </SectionCard>
 
           {/* Assigned to */}
           {task.assignedTo && (
@@ -272,15 +243,6 @@ export default function TaskDetailPage() {
                 </span>
                 <span className="text-xs text-slate-600">{formatDate(task.createdAt)}</span>
               </div>
-              {task.completedAt && (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                    <CheckCircle2 size={12} className="text-emerald-500" />
-                    Completada
-                  </span>
-                  <span className="text-xs text-slate-600">{formatDate(task.completedAt)}</span>
-                </div>
-              )}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500 flex items-center gap-1.5">
                   <ClipboardList size={12} />

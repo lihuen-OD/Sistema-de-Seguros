@@ -1,8 +1,36 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
+import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { todayDate, toDateStr } from '../../shared/utils/dates'
 import type { ListTasksQueryDTO } from './tasks.schemas'
+
+const TASK_WITH_PRODUCER_INCLUDE = { producer: { select: { name: true } } }
+
+type TaskWithProducer = Prisma.ProducerTaskGetPayload<{ include: typeof TASK_WITH_PRODUCER_INCLUDE }>
+
+// Mismo shape liviano en el listado y en el detalle (Fase 2A/2B) — una sola
+// definición de qué campos expone un "documento vinculado" de tarea, para no
+// tener el payload de /tasks y el de /tasks/:id divergiendo con el tiempo.
+function mapTaskRow(t: TaskWithProducer, policyNumber: string | null, assetName: string | null) {
+  return {
+    id: t.id,
+    producerId: t.producerId,
+    producerName: t.producer.name,
+    title: t.title,
+    description: t.description,
+    dueDate: toDateStr(t.dueDate),
+    status: t.status,
+    priority: t.priority,
+    assignedTo: t.assignedTo,
+    policyId: t.policyId,
+    policyNumber,
+    assetId: t.assetId,
+    assetName,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+  }
+}
 
 export const tasksService = {
   // Listado global paginado (Fase 2A) — reemplaza, en ProducerTasksPage, el
@@ -49,7 +77,7 @@ export const tasksService = {
         skip,
         take: limit,
         orderBy: [{ status: 'asc' }, { dueDate: 'asc' }],
-        include: { producer: { select: { name: true } } },
+        include: TASK_WITH_PRODUCER_INCLUDE,
       }),
       prisma.producerTask.count({ where }),
     ])
@@ -68,24 +96,36 @@ export const tasksService = {
     const policyNumberById = new Map(policies.map((p) => [p.id, p.policyNumber]))
     const assetNameById = new Map(assets.map((a) => [a.id, a.name]))
 
-    const data = rows.map((t) => ({
-      id: t.id,
-      producerId: t.producerId,
-      producerName: t.producer.name,
-      title: t.title,
-      description: t.description,
-      dueDate: toDateStr(t.dueDate),
-      status: t.status,
-      priority: t.priority,
-      assignedTo: t.assignedTo,
-      policyId: t.policyId,
-      policyNumber: t.policyId ? policyNumberById.get(t.policyId) ?? null : null,
-      assetId: t.assetId,
-      assetName: t.assetId ? assetNameById.get(t.assetId) ?? null : null,
-      createdAt: t.createdAt,
-      updatedAt: t.updatedAt,
-    }))
+    const data = rows.map((t) => mapTaskRow(
+      t,
+      t.policyId ? policyNumberById.get(t.policyId) ?? null : null,
+      t.assetId ? assetNameById.get(t.assetId) ?? null : null,
+    ))
 
     return buildPaginatedResponse(data, total, { page, limit })
+  },
+
+  // Detalle liviano por id (Fase 2B) — reemplaza, en TaskDetailPage, el
+  // fan-out de productores + tareas por productor + listados completos de
+  // pólizas/activos solo para resolver 2 nombres. policyId/assetId se
+  // resuelven con 1 findUnique cada uno (solo si la tarea los tiene) — nunca
+  // un listado completo.
+  async findById(id: string) {
+    const task = await prisma.producerTask.findUnique({
+      where: { id },
+      include: TASK_WITH_PRODUCER_INCLUDE,
+    })
+    if (!task) throw new AppError(404, 'Tarea no encontrada', 'NOT_FOUND')
+
+    const [policy, asset] = await Promise.all([
+      task.policyId
+        ? prisma.policy.findUnique({ where: { id: task.policyId }, select: { policyNumber: true } })
+        : Promise.resolve(null),
+      task.assetId
+        ? prisma.asset.findUnique({ where: { id: task.assetId }, select: { name: true } })
+        : Promise.resolve(null),
+    ])
+
+    return mapTaskRow(task, policy?.policyNumber ?? null, asset?.name ?? null)
   },
 }

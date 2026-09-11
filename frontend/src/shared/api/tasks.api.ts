@@ -74,10 +74,18 @@ export const tasksApi = {
     const res = await apiClient.get<Paginated<BackendTaskListItem>>('/tasks', { params: filters })
     return { data: res.data.data.map(mapTaskListItem), pagination: res.data.pagination }
   },
+
+  // Detalle liviano por id (Fase 2B) — mismo shape que un item del listado,
+  // se reusa el mismo mapeo en vez de duplicarlo.
+  async findById(id: string): Promise<TaskListItem> {
+    const res = await apiClient.get<{ data: BackendTaskListItem }>(`/tasks/${id}`)
+    return mapTaskListItem(res.data.data)
+  },
 }
 
 export const taskKeys = {
   all: ['tasks'] as const,
+  detail: (id: string) => [...taskKeys.all, id] as const,
 }
 
 export const taskQueries = {
@@ -86,5 +94,12 @@ export const taskQueries = {
       queryKey: [...taskKeys.all, 'list', filters] as const,
       queryFn: () => tasksApi.listPaginated(filters),
       staleTime: 60 * 1000,
+    }),
+  detail: (id: string) =>
+    queryOptions({
+      queryKey: taskKeys.detail(id),
+      queryFn: () => tasksApi.findById(id),
+      staleTime: 60 * 1000,
+      enabled: !!id,
     }),
 }

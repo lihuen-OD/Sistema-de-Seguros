@@ -8,9 +8,10 @@ jest.mock('../../../config/database', () => ({
     producerTask: {
       findMany: jest.fn(),
       count: jest.fn(),
+      findUnique: jest.fn(),
     },
-    policy: { findMany: jest.fn() },
-    asset: { findMany: jest.fn() },
+    policy: { findMany: jest.fn(), findUnique: jest.fn() },
+    asset: { findMany: jest.fn(), findUnique: jest.fn() },
   },
 }))
 
@@ -322,5 +323,164 @@ describe('GET /api/v1/tasks', () => {
       .set('Authorization', `Bearer ${userToken()}`)
 
     expect(res.status).toBe(200)
+  })
+})
+
+// ── GET /api/v1/tasks/:id (Fase 2B) ─────────────────────────────────────────
+// Reemplaza, en TaskDetailPage, el fan-out de productores + tareas por
+// productor + listados completos de pólizas/activos solo para resolver 2
+// nombres y encontrar 1 tarea por id en memoria.
+
+describe('GET /api/v1/tasks/:id', () => {
+  it('returns 200 with the task detail, including producerName', async () => {
+    db.producerTask.findUnique.mockResolvedValue(fakeTaskRow())
+
+    const res = await request(app)
+      .get(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data).toEqual({
+      id: TASK_ID,
+      producerId: PRODUCER_ID,
+      producerName: 'Juan Pérez',
+      title: 'Renovar póliza',
+      description: 'Contactar al cliente',
+      dueDate: '2026-01-15',
+      status: 'pendiente',
+      priority: 'alta',
+      assignedTo: 'Responsable de Seguros',
+      policyId: null,
+      policyNumber: null,
+      assetId: null,
+      assetName: null,
+      createdAt: BASE_DATE.toISOString(),
+      updatedAt: BASE_DATE.toISOString(),
+    })
+  })
+
+  it('returns 404 when the task does not exist', async () => {
+    db.producerTask.findUnique.mockResolvedValue(null)
+
+    const res = await request(app)
+      .get(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(404)
+  })
+
+  it('includes policyNumber when the task has a policyId (single findUnique, not a full list)', async () => {
+    db.producerTask.findUnique.mockResolvedValue(fakeTaskRow({ policyId: POLICY_ID }))
+    db.policy.findUnique.mockResolvedValue({ policyNumber: 'POL-0001' })
+
+    const res = await request(app)
+      .get(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.policyNumber).toBe('POL-0001')
+    expect(db.policy.findUnique).toHaveBeenCalledWith({ where: { id: POLICY_ID }, select: { policyNumber: true } })
+    expect(db.policy.findMany).not.toHaveBeenCalled()
+  })
+
+  it('includes assetName when the task has an assetId (single findUnique, not a full list)', async () => {
+    db.producerTask.findUnique.mockResolvedValue(fakeTaskRow({ assetId: ASSET_ID }))
+    db.asset.findUnique.mockResolvedValue({ name: 'Toyota Hilux' })
+
+    const res = await request(app)
+      .get(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.assetName).toBe('Toyota Hilux')
+    expect(db.asset.findUnique).toHaveBeenCalledWith({ where: { id: ASSET_ID }, select: { name: true } })
+    expect(db.asset.findMany).not.toHaveBeenCalled()
+  })
+
+  it('does not query policy/asset when the task has neither', async () => {
+    db.producerTask.findUnique.mockResolvedValue(fakeTaskRow({ policyId: null, assetId: null }))
+
+    await request(app)
+      .get(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(db.policy.findUnique).not.toHaveBeenCalled()
+    expect(db.asset.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('does not return heavy relations (allocations/installments/history) — only the flat fields', async () => {
+    db.producerTask.findUnique.mockResolvedValue(fakeTaskRow())
+
+    const res = await request(app)
+      .get(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(Object.keys(res.body.data).sort()).toEqual([
+      'assetId', 'assetName', 'assignedTo', 'createdAt', 'description', 'dueDate',
+      'id', 'policyId', 'policyNumber', 'priority', 'producerId', 'producerName',
+      'status', 'title', 'updatedAt',
+    ].sort())
+  })
+
+  it('returns 401 without token', async () => {
+    const res = await request(app).get(`/api/v1/tasks/${TASK_ID}`)
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 403 for a USER without producers/tasks/dashboard modules', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+    const res = await request(app)
+      .get(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(403)
+    expect(db.producerTask.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('allows a USER with only the producers module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['producers'] }))
+    db.producerTask.findUnique.mockResolvedValue(fakeTaskRow())
+
+    const res = await request(app)
+      .get(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(200)
+  })
+
+  it('allows a USER with only the tasks module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['tasks'] }))
+    db.producerTask.findUnique.mockResolvedValue(fakeTaskRow())
+
+    const res = await request(app)
+      .get(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(200)
+  })
+
+  it('allows a USER with only the dashboard module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['dashboard'] }))
+    db.producerTask.findUnique.mockResolvedValue(fakeTaskRow())
+
+    const res = await request(app)
+      .get(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(200)
+  })
+
+  it('does not break GET /tasks (paginated list) — /:id is registered after /', async () => {
+    db.producerTask.findMany.mockResolvedValue([fakeTaskRow()])
+    db.producerTask.count.mockResolvedValue(1)
+
+    const res = await request(app)
+      .get('/api/v1/tasks')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.pagination).toBeDefined()
+    expect(db.producerTask.findUnique).not.toHaveBeenCalled()
   })
 })
