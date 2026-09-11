@@ -5,10 +5,14 @@ import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/au
 jest.mock('../../../config/database', () => ({
   prisma: {
     user: { findUnique: jest.fn() },
+    producer: { findUnique: jest.fn() },
     producerTask: {
       findMany: jest.fn(),
       count: jest.fn(),
       findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
     },
     policy: { findMany: jest.fn(), findUnique: jest.fn() },
     asset: { findMany: jest.fn(), findUnique: jest.fn() },
@@ -21,12 +25,14 @@ const db = prisma as any
 beforeEach(() => {
   jest.clearAllMocks()
   db.user.findUnique.mockResolvedValue(mockDbUser())
+  db.producer.findUnique.mockResolvedValue({ id: PRODUCER_ID })
   db.producerTask.count.mockResolvedValue(0)
   db.policy.findMany.mockResolvedValue([])
   db.asset.findMany.mockResolvedValue([])
 })
 
 const PRODUCER_ID = '80000000-0000-0000-0000-000000000001'
+const OTHER_PRODUCER_ID = '80000000-0000-0000-0000-000000000002'
 const TASK_ID = '81000000-0000-0000-0000-000000000001'
 const POLICY_ID = '82000000-0000-0000-0000-000000000001'
 const ASSET_ID = '83000000-0000-0000-0000-000000000001'
@@ -482,5 +488,318 @@ describe('GET /api/v1/tasks/:id', () => {
     expect(res.status).toBe(200)
     expect(res.body.pagination).toBeDefined()
     expect(db.producerTask.findUnique).not.toHaveBeenCalled()
+  })
+})
+
+// ── POST /api/v1/tasks (Fase 2C) ────────────────────────────────────────────
+
+describe('POST /api/v1/tasks', () => {
+  const validBody = {
+    producerId: PRODUCER_ID,
+    title: 'Renovar póliza',
+    priority: 'alta',
+  }
+
+  it('creates a task with the given producerId and returns 201 with the mapTaskRow shape', async () => {
+    db.producerTask.create.mockResolvedValue(fakeTaskRow())
+
+    const res = await request(app)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send(validBody)
+
+    expect(res.status).toBe(201)
+    expect(res.body.data).toEqual({
+      id: TASK_ID,
+      producerId: PRODUCER_ID,
+      producerName: 'Juan Pérez',
+      title: 'Renovar póliza',
+      description: 'Contactar al cliente',
+      dueDate: '2026-01-15',
+      status: 'pendiente',
+      priority: 'alta',
+      assignedTo: 'Responsable de Seguros',
+      policyId: null,
+      policyNumber: null,
+      assetId: null,
+      assetName: null,
+      createdAt: BASE_DATE.toISOString(),
+      updatedAt: BASE_DATE.toISOString(),
+    })
+    expect(db.producer.findUnique).toHaveBeenCalledWith({ where: { id: PRODUCER_ID }, select: { id: true } })
+  })
+
+  it('rejects a producerId that does not exist', async () => {
+    db.producer.findUnique.mockResolvedValue(null)
+
+    const res = await request(app)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send(validBody)
+
+    expect(res.status).toBe(400)
+    expect(db.producerTask.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects a producerId that is not a valid UUID', async () => {
+    const res = await request(app)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ ...validBody, producerId: 'not-a-uuid' })
+
+    expect(res.status).toBe(422)
+    expect(db.producerTask.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects a request without producerId', async () => {
+    const { producerId, ...bodyWithoutProducer } = validBody
+
+    const res = await request(app)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send(bodyWithoutProducer)
+
+    expect(res.status).toBe(422)
+    expect(db.producerTask.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects a request without title', async () => {
+    const res = await request(app)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ producerId: PRODUCER_ID })
+
+    expect(res.status).toBe(422)
+    expect(db.producerTask.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects an invalid priority — enum cerrado en el endpoint global', async () => {
+    const res = await request(app)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ ...validBody, priority: 'urgente' })
+
+    expect(res.status).toBe(422)
+    expect(db.producerTask.create).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 without token', async () => {
+    const res = await request(app).post('/api/v1/tasks').send(validBody)
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 403 for a USER without the tasks module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+    const res = await request(app)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send(validBody)
+
+    expect(res.status).toBe(403)
+    expect(db.producerTask.create).not.toHaveBeenCalled()
+  })
+
+  it('returns 201 for a USER with the tasks module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['tasks'] }))
+    db.producerTask.create.mockResolvedValue(fakeTaskRow())
+
+    const res = await request(app)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send(validBody)
+
+    expect(res.status).toBe(201)
+  })
+})
+
+// ── PUT /api/v1/tasks/:id (Fase 2C) ─────────────────────────────────────────
+
+describe('PUT /api/v1/tasks/:id', () => {
+  it('updates normal fields (title/status/priority) keeping the same producer', async () => {
+    db.producerTask.findUnique.mockResolvedValue({ id: TASK_ID })
+    db.producerTask.update.mockResolvedValue(fakeTaskRow({ title: 'Renovar póliza (actualizado)', status: 'en_progreso' }))
+
+    const res = await request(app)
+      .put(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ title: 'Renovar póliza (actualizado)', status: 'en_progreso' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.title).toBe('Renovar póliza (actualizado)')
+    expect(res.body.data.status).toBe('en_progreso')
+    // Busca la tarea por id — no por {id, producerId} como el endpoint legacy.
+    expect(db.producerTask.findUnique).toHaveBeenCalledWith({ where: { id: TASK_ID }, select: { id: true } })
+    expect(db.producer.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('allows reassigning producerId to a different, existing producer', async () => {
+    db.producerTask.findUnique.mockResolvedValue({ id: TASK_ID })
+    db.producerTask.update.mockResolvedValue(fakeTaskRow({ producerId: OTHER_PRODUCER_ID, producer: { name: 'María López' } }))
+
+    const res = await request(app)
+      .put(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ producerId: OTHER_PRODUCER_ID })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.producerId).toBe(OTHER_PRODUCER_ID)
+    expect(res.body.data.producerName).toBe('María López')
+    expect(db.producer.findUnique).toHaveBeenCalledWith({ where: { id: OTHER_PRODUCER_ID }, select: { id: true } })
+    expect(db.producerTask.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: TASK_ID },
+      data: { producerId: OTHER_PRODUCER_ID },
+    }))
+  })
+
+  it('rejects reassigning to a producerId that does not exist', async () => {
+    db.producerTask.findUnique.mockResolvedValue({ id: TASK_ID })
+    db.producer.findUnique.mockResolvedValue(null)
+
+    const res = await request(app)
+      .put(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ producerId: OTHER_PRODUCER_ID })
+
+    expect(res.status).toBe(400)
+    expect(db.producerTask.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects an empty-string producerId — no permite "sin productor"', async () => {
+    db.producerTask.findUnique.mockResolvedValue({ id: TASK_ID })
+
+    const res = await request(app)
+      .put(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ producerId: '' })
+
+    expect(res.status).toBe(422)
+    expect(db.producerTask.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects a null producerId — no permite "sin productor"', async () => {
+    db.producerTask.findUnique.mockResolvedValue({ id: TASK_ID })
+
+    const res = await request(app)
+      .put(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ producerId: null })
+
+    expect(res.status).toBe(422)
+    expect(db.producerTask.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when the task does not exist', async () => {
+    db.producerTask.findUnique.mockResolvedValue(null)
+
+    const res = await request(app)
+      .put(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ title: 'Nuevo título' })
+
+    expect(res.status).toBe(404)
+    expect(db.producerTask.update).not.toHaveBeenCalled()
+  })
+
+  it('returns the same mapTaskRow shape as GET /tasks/:id', async () => {
+    db.producerTask.findUnique.mockResolvedValue({ id: TASK_ID })
+    db.producerTask.update.mockResolvedValue(fakeTaskRow({ policyId: POLICY_ID }))
+    db.policy.findUnique.mockResolvedValue({ policyNumber: 'POL-0001' })
+
+    const res = await request(app)
+      .put(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ title: 'Renovar póliza' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.policyNumber).toBe('POL-0001')
+    expect(Object.keys(res.body.data).sort()).toEqual([
+      'assetId', 'assetName', 'assignedTo', 'createdAt', 'description', 'dueDate',
+      'id', 'policyId', 'policyNumber', 'priority', 'producerId', 'producerName',
+      'status', 'title', 'updatedAt',
+    ].sort())
+  })
+
+  it('returns 401 without token', async () => {
+    const res = await request(app).put(`/api/v1/tasks/${TASK_ID}`).send({ title: 'x' })
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 403 for a USER without the tasks module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+    const res = await request(app)
+      .put(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({ title: 'x' })
+
+    expect(res.status).toBe(403)
+    expect(db.producerTask.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('returns 200 for a USER with the tasks module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['tasks'] }))
+    db.producerTask.findUnique.mockResolvedValue({ id: TASK_ID })
+    db.producerTask.update.mockResolvedValue(fakeTaskRow())
+
+    const res = await request(app)
+      .put(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({ title: 'x' })
+
+    expect(res.status).toBe(200)
+  })
+})
+
+// ── DELETE /api/v1/tasks/:id (Fase 2C) ──────────────────────────────────────
+
+describe('DELETE /api/v1/tasks/:id', () => {
+  it('deletes the task (hard delete) and returns 200', async () => {
+    db.producerTask.findUnique.mockResolvedValue({ id: TASK_ID })
+
+    const res = await request(app)
+      .delete(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(db.producerTask.delete).toHaveBeenCalledWith({ where: { id: TASK_ID } })
+  })
+
+  it('returns 404 when the task does not exist', async () => {
+    db.producerTask.findUnique.mockResolvedValue(null)
+
+    const res = await request(app)
+      .delete(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(404)
+    expect(db.producerTask.delete).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 without token', async () => {
+    const res = await request(app).delete(`/api/v1/tasks/${TASK_ID}`)
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 403 for a USER without the tasks module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+    const res = await request(app)
+      .delete(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(403)
+    expect(db.producerTask.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('returns 200 for a USER with the tasks module', async () => {
+    db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['tasks'] }))
+    db.producerTask.findUnique.mockResolvedValue({ id: TASK_ID })
+
+    const res = await request(app)
+      .delete(`/api/v1/tasks/${TASK_ID}`)
+      .set('Authorization', `Bearer ${userToken()}`)
+
+    expect(res.status).toBe(200)
   })
 })

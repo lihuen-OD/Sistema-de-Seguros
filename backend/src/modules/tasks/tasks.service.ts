@@ -3,7 +3,7 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { todayDate, toDateStr } from '../../shared/utils/dates'
-import type { ListTasksQueryDTO } from './tasks.schemas'
+import type { ListTasksQueryDTO, CreateGlobalTaskDTO, UpdateGlobalTaskDTO } from './tasks.schemas'
 
 const TASK_WITH_PRODUCER_INCLUDE = { producer: { select: { name: true } } }
 
@@ -30,6 +30,30 @@ function mapTaskRow(t: TaskWithProducer, policyNumber: string | null, assetName:
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
   }
+}
+
+// Un solo findUnique por entidad (no un findMany) — se usa para 1 tarea a la
+// vez (findById/create/update), a diferencia de findAll que resuelve toda
+// una página junta.
+async function resolveTaskRow(task: TaskWithProducer) {
+  const [policy, asset] = await Promise.all([
+    task.policyId
+      ? prisma.policy.findUnique({ where: { id: task.policyId }, select: { policyNumber: true } })
+      : Promise.resolve(null),
+    task.assetId
+      ? prisma.asset.findUnique({ where: { id: task.assetId }, select: { name: true } })
+      : Promise.resolve(null),
+  ])
+  return mapTaskRow(task, policy?.policyNumber ?? null, asset?.name ?? null)
+}
+
+// Chequeo liviano de existencia (select: {id: true}, no el findById completo
+// de producers.service.ts, que trae tasks/_count) — mismo patrón que ya usa
+// ese propio service (ver assertProducerExists) para no pagar un include
+// pesado solo para confirmar que el productor existe.
+async function assertProducerExists(producerId: string) {
+  const exists = await prisma.producer.findUnique({ where: { id: producerId }, select: { id: true } })
+  if (!exists) throw new AppError(400, 'El productor seleccionado no existe', 'BAD_REQUEST')
 }
 
 export const tasksService = {
@@ -116,16 +140,48 @@ export const tasksService = {
       include: TASK_WITH_PRODUCER_INCLUDE,
     })
     if (!task) throw new AppError(404, 'Tarea no encontrada', 'NOT_FOUND')
+    return resolveTaskRow(task)
+  },
 
-    const [policy, asset] = await Promise.all([
-      task.policyId
-        ? prisma.policy.findUnique({ where: { id: task.policyId }, select: { policyNumber: true } })
-        : Promise.resolve(null),
-      task.assetId
-        ? prisma.asset.findUnique({ where: { id: task.assetId }, select: { name: true } })
-        : Promise.resolve(null),
-    ])
+  // Escritura global (Fase 2C) — a diferencia de POST /producers/:id/tasks
+  // (que no valida producerId por venir fijo del path), acá producerId viaja
+  // en el body y sí se valida, porque el cliente puede mandar cualquier UUID.
+  // policyId/assetId se preservan sin validar su existencia/pertenencia —
+  // mismo comportamiento que ya tenía el endpoint legacy (createTask en
+  // producers.service.ts nunca los validó), no se inventa una regla nueva.
+  async create(data: CreateGlobalTaskDTO) {
+    await assertProducerExists(data.producerId)
+    const task = await prisma.producerTask.create({
+      data,
+      include: TASK_WITH_PRODUCER_INCLUDE,
+    })
+    return resolveTaskRow(task)
+  },
 
-    return mapTaskRow(task, policy?.policyNumber ?? null, asset?.name ?? null)
+  // A diferencia de PUT /producers/:id/tasks/:taskId (que busca la tarea por
+  // {id, producerId} y por eso nunca puede reasignarla — ver auditoría Fase
+  // 2), acá se busca solo por id: reasignar productor es precisamente lo que
+  // esta fase habilita. Si no viene producerId en el body, se conserva el
+  // actual (Prisma simplemente no toca ese campo).
+  async update(id: string, data: UpdateGlobalTaskDTO) {
+    const existing = await prisma.producerTask.findUnique({ where: { id }, select: { id: true } })
+    if (!existing) throw new AppError(404, 'Tarea no encontrada', 'NOT_FOUND')
+
+    if (data.producerId) await assertProducerExists(data.producerId)
+
+    const task = await prisma.producerTask.update({
+      where: { id },
+      data,
+      include: TASK_WITH_PRODUCER_INCLUDE,
+    })
+    return resolveTaskRow(task)
+  },
+
+  // Hard delete, igual comportamiento que DELETE /producers/:id/tasks/:taskId
+  // — no se introduce soft-delete en esta fase.
+  async remove(id: string) {
+    const existing = await prisma.producerTask.findUnique({ where: { id }, select: { id: true } })
+    if (!existing) throw new AppError(404, 'Tarea no encontrada', 'NOT_FOUND')
+    await prisma.producerTask.delete({ where: { id } })
   },
 }

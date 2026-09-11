@@ -15,4 +15,19 @@ export const tasksController = {
     const task = await tasksService.findById(req.params.id)
     res.json({ data: task })
   }),
+
+  create: asyncHandler(async (req: Request, res: Response) => {
+    const task = await tasksService.create(req.body)
+    res.status(201).json({ data: task })
+  }),
+
+  update: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const task = await tasksService.update(req.params.id, req.body)
+    res.json({ data: task })
+  }),
+
+  remove: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    await tasksService.remove(req.params.id)
+    res.json({ data: { message: 'Tarea eliminada correctamente' } })
+  }),
 }

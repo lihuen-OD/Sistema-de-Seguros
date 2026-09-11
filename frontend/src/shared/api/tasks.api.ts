@@ -15,6 +15,8 @@ interface BackendTaskListItem {
 
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
 
+export type BackendTaskStatus = 'pendiente' | 'en_progreso' | 'completada' | 'cancelada'
+
 export interface TaskListItem {
   id: string
   producerId: string
@@ -25,6 +27,10 @@ export interface TaskListItem {
   // Estado derivado para mostrar (pendiente/en_curso/finalizada/vencida) —
   // mismo mapeo que ya usa producers.api.ts para tareas de un productor.
   status: TaskStatus
+  // Estado real de backend, sin mapear — "finalizada" (derivado) puede venir
+  // de completada O cancelada, así que no alcanza para preseleccionar el
+  // valor correcto en un formulario de edición. Ver TaskEditPage.
+  rawStatus: BackendTaskStatus
   priority: TaskPriority
   assignedTo: string | null
   policyId: string | null
@@ -35,13 +41,29 @@ export interface TaskListItem {
   updatedAt: string
 }
 
+export interface CreateTaskInput {
+  producerId: string
+  title: string
+  description?: string
+  dueDate?: string
+  status?: BackendTaskStatus
+  priority?: TaskPriority
+  assignedTo?: string
+  policyId?: string | null
+  assetId?: string | null
+}
+
+// producerId opcional acá, pero si se manda tiene que ser un UUID real — el
+// backend rechaza vacío/null (una tarea siempre pertenece a un productor).
+export type UpdateTaskInput = Partial<CreateTaskInput>
+
 export interface TaskListFilters {
   page?: number
   limit?: number
   search?: string
   // Vocabulario real de backend — "vencida" no es un status posible acá,
   // usar overdueOnly para eso (ver tasks.schemas.ts en el backend).
-  status?: 'pendiente' | 'en_progreso' | 'completada' | 'cancelada'
+  status?: BackendTaskStatus
   priority?: TaskPriority
   producerId?: string
   dueFrom?: string
@@ -58,6 +80,7 @@ function mapTaskListItem(t: BackendTaskListItem): TaskListItem {
     description: t.description ?? '',
     dueDate: t.dueDate,
     status: mapTaskStatus(t.status, t.dueDate),
+    rawStatus: t.status as BackendTaskStatus,
     priority: (t.priority ?? 'media') as TaskPriority,
     assignedTo: t.assignedTo,
     policyId: t.policyId,
@@ -80,6 +103,23 @@ export const tasksApi = {
   async findById(id: string): Promise<TaskListItem> {
     const res = await apiClient.get<{ data: BackendTaskListItem }>(`/tasks/${id}`)
     return mapTaskListItem(res.data.data)
+  },
+
+  // Escritura global (Fase 2C) — reemplaza, en TaskNewPage/TaskEditPage,
+  // producersApi.createTask/updateTask (que tomaban producerId del path y
+  // nunca permitían reasignar). Acá producerId viaja en el body.
+  async create(input: CreateTaskInput): Promise<TaskListItem> {
+    const res = await apiClient.post<{ data: BackendTaskListItem }>('/tasks', input)
+    return mapTaskListItem(res.data.data)
+  },
+
+  async update(id: string, input: UpdateTaskInput): Promise<TaskListItem> {
+    const res = await apiClient.put<{ data: BackendTaskListItem }>(`/tasks/${id}`, input)
+    return mapTaskListItem(res.data.data)
+  },
+
+  async delete(id: string): Promise<void> {
+    await apiClient.delete(`/tasks/${id}`)
   },
 }
 
