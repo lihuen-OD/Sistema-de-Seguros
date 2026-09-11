@@ -194,9 +194,38 @@ export interface DocumentTypesResponse {
   economicImpactTypes: EconomicImpactTypeOption[]
 }
 
+export interface DocumentSearchResult {
+  id: string
+  documentNumber: string
+  type: DocumentType
+  issueDate: string
+  insuranceCompany: string | null
+  currency: Currency
+  totalAmount: number
+  paymentStatus: PaymentStatus
+  paymentMethod: string | null
+}
+
+export interface DocumentSearchParams {
+  q?: string
+  limit?: number
+  selectedId?: string
+  type?: DocumentType | DocumentType[]
+  excludeCancelled?: boolean
+  insuranceCompany?: string
+}
+
 export const documentsApi = {
   async getTypes(): Promise<DocumentTypesResponse> {
     const res = await apiClient.get<{ data: DocumentTypesResponse }>('/documents/types')
+    return res.data.data
+  },
+
+  async search(params: DocumentSearchParams): Promise<DocumentSearchResult[]> {
+    const { type, ...rest } = params
+    const res = await apiClient.get<{ data: DocumentSearchResult[] }>('/documents/search', {
+      params: { ...rest, type: Array.isArray(type) ? type.join(',') : type },
+    })
     return res.data.data
   },
 
@@ -420,6 +449,12 @@ export const documentQueries = {
     queryOptions({
       queryKey: documentKeys.all,
       queryFn: () => documentsApi.findAll(),
+      staleTime: 60 * 1000,
+    }),
+  search: (params: DocumentSearchParams) =>
+    queryOptions({
+      queryKey: [...documentKeys.all, 'search', params] as const,
+      queryFn: () => documentsApi.search(params),
       staleTime: 60 * 1000,
     }),
   listPaginated: (filters: DocumentListFilters) =>

@@ -4,6 +4,17 @@ import { EmailRecipientsSchema } from '../email/email.schemas'
 import { isValidDocumentType } from './document-types'
 import { isReasonableDate } from '../../shared/utils/dates'
 
+// Lista de tipos separada por comas (ej. "INVOICE,DEBIT_NOTE") — mismo
+// criterio que BulkIdsQuerySchema.ids para un array simple en query string.
+const DocumentTypeListParam = z
+  .string()
+  .max(300)
+  .refine(
+    (s) => s.split(',').map((t) => t.trim()).filter(Boolean).every(isValidDocumentType),
+    { message: 'Tipo de documento inválido' },
+  )
+  .transform((s) => s.split(',').map((t) => t.trim()).filter(Boolean))
+
 const ISODate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido. Usar YYYY-MM-DD')
@@ -75,6 +86,19 @@ export const ListDocumentsQuerySchema = PaginationSchema.extend({
   year: z.coerce.number().int().min(2000).max(2100).optional(),
 })
 
+// Selector liviano de "documento vinculado" (NC/ND/Endoso/Ajuste) — Fase 1B.4.
+// Mismo contrato que producers/assets/policies.search: q + limit + selectedId,
+// más los filtros propios de negocio que hoy resolvía cada formulario en el
+// cliente sobre el findAll(limit 200) (ver auditoría Fase 1B.4).
+export const SearchDocumentsQuerySchema = z.object({
+  q: z.string().trim().max(100).optional().default(''),
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  selectedId: z.string().uuid('ID de documento inválido').optional(),
+  type: DocumentTypeListParam.optional(),
+  excludeCancelled: booleanFromString.optional(),
+  insuranceCompany: z.string().trim().max(300).optional(),
+})
+
 export const UpdateInstallmentSchema = z.object({
   amount: z.number().positive().optional(),
   dueDate: ISODate.optional(),
@@ -138,6 +162,7 @@ export const FinancialQuerySchema = z.object({
 export type CreateDocumentDTO = z.infer<typeof CreateDocumentSchema>
 export type UpdateDocumentDTO = z.infer<typeof UpdateDocumentSchema>
 export type ListDocumentsQueryDTO = z.infer<typeof ListDocumentsQuerySchema>
+export type SearchDocumentsQueryDTO = z.infer<typeof SearchDocumentsQuerySchema>
 export type UpdateInstallmentDTO = z.infer<typeof UpdateInstallmentSchema>
 export type ReplaceInstallmentsDTO = z.infer<typeof ReplaceInstallmentsSchema>
 export type ReplaceAllocationsDTO = z.infer<typeof ReplaceAllocationsSchema>

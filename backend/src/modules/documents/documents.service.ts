@@ -29,6 +29,7 @@ import type {
   CreateDocumentDTO,
   UpdateDocumentDTO,
   ListDocumentsQueryDTO,
+  SearchDocumentsQueryDTO,
   UpdateInstallmentDTO,
   ReplaceInstallmentsDTO,
   ReplaceAllocationsDTO,
@@ -221,6 +222,72 @@ export const documentsService = {
       endorsementTypes: Object.entries(ENDORSEMENT_TYPES).map(([key, label]) => ({ key, label })),
       economicImpactTypes: Object.entries(ECONOMIC_IMPACT_TYPES).map(([key, label]) => ({ key, label })),
     }
+  },
+
+  // Selector liviano de "documento vinculado" (Fase 1B.4) — reemplaza, para
+  // los formularios de NC/ND/Endoso/Ajuste, el findAll(limit 200) que traían
+  // entero para filtrar en el cliente. Payload sin allocations/installments/
+  // attachments: solo lo que el selector necesita para mostrar y filtrar.
+  async search(query: SearchDocumentsQueryDTO) {
+    const q = query.q.trim()
+    const where: Prisma.AccountingDocumentWhereInput = {
+      ...(query.excludeCancelled && { documentStatus: { not: 'CANCELLED' } }),
+      ...(query.type && query.type.length > 0 && { documentType: { in: query.type } }),
+      // insuranceCompany viene de un catálogo cerrado (combo, no texto libre)
+      // — igualdad exacta, mismo criterio que ya usan los formularios hoy
+      // (d.insuranceCompany === form.insuranceCompany) al filtrar en el cliente.
+      ...(query.insuranceCompany && { insuranceCompany: query.insuranceCompany }),
+      ...(q && {
+        OR: [
+          { documentNumber: { contains: q, mode: 'insensitive' } },
+          { insuranceCompany: { contains: q, mode: 'insensitive' } },
+          { description: { contains: q, mode: 'insensitive' } },
+        ],
+      }),
+    }
+    const select = {
+      id: true,
+      documentNumber: true,
+      documentType: true,
+      issueDate: true,
+      insuranceCompany: true,
+      currency: true,
+      netAmount: true,
+      vatAmount: true,
+      otherTaxesAmount: true,
+      paymentStatus: true,
+      paymentMethod: true,
+    } satisfies Prisma.AccountingDocumentSelect
+
+    const results = await prisma.accountingDocument.findMany({
+      where,
+      select,
+      orderBy: { createdAt: 'desc' },
+      take: query.limit,
+    })
+
+    // Un documento vinculado existente (edición) debe seguir visible aunque
+    // ya no cumpla los filtros activos (ej. quedó CANCELLED después) — mismo
+    // patrón que producers/assets/policies.search.
+    if (query.selectedId && !results.some((doc) => doc.id === query.selectedId)) {
+      const selected = await prisma.accountingDocument.findFirst({
+        where: { id: query.selectedId },
+        select,
+      })
+      if (selected) results.unshift(selected)
+    }
+
+    return results.slice(0, query.limit).map((doc) => ({
+      id: doc.id,
+      documentNumber: doc.documentNumber,
+      type: doc.documentType,
+      issueDate: toDateStr(doc.issueDate),
+      insuranceCompany: doc.insuranceCompany,
+      currency: doc.currency,
+      totalAmount: computeTotalAmount(doc),
+      paymentStatus: doc.paymentStatus,
+      paymentMethod: doc.paymentMethod,
+    }))
   },
 
   async findAll(query: ListDocumentsQueryDTO) {

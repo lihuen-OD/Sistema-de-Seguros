@@ -173,6 +173,224 @@ describe('Documents API', () => {
     })
   })
 
+  // ── GET /api/v1/documents/search ────────────────────────────────────────────
+  // Selector liviano de "documento vinculado" (Fase 1B.4) — reemplaza, para
+  // Nota de Débito, el findAll(limit 200) que traía el formulario entero.
+
+  describe('GET /api/v1/documents/search', () => {
+    const searchDoc = {
+      id: DOC_ID,
+      documentNumber: 'FAC-2026-001',
+      documentType: 'INVOICE',
+      issueDate: BASE_DATE,
+      insuranceCompany: 'MAPFRE',
+      currency: 'ARS',
+      netAmount: 1000,
+      vatAmount: 210,
+      otherTaxesAmount: 50,
+      paymentStatus: 'PENDING',
+      paymentMethod: 'Transferencia bancaria',
+    }
+
+    it('returns a lightweight list matching q, with only the fields the selector needs', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([searchDoc])
+
+      const res = await request(app)
+        .get('/api/v1/documents/search?q=FAC-2026')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toEqual([{
+        id: DOC_ID,
+        documentNumber: 'FAC-2026-001',
+        type: 'INVOICE',
+        issueDate: '2026-01-01',
+        insuranceCompany: 'MAPFRE',
+        currency: 'ARS',
+        totalAmount: 1260,
+        paymentStatus: 'PENDING',
+        paymentMethod: 'Transferencia bancaria',
+      }])
+      // No debe tocar la ruta de detalle — prueba que /search se resuelve
+      // antes que /:id en el router, no como un id inválido.
+      expect(db.accountingDocument.findUnique).not.toHaveBeenCalled()
+    })
+
+    it('searches by documentNumber, insuranceCompany and description (same OR that the paginated list already uses)', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/search?q=mapfre')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.OR).toEqual([
+        { documentNumber: { contains: 'mapfre', mode: 'insensitive' } },
+        { insuranceCompany: { contains: 'mapfre', mode: 'insensitive' } },
+        { description: { contains: 'mapfre', mode: 'insensitive' } },
+      ])
+    })
+
+    it('applies the default limit of 20 when none is given', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/search')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      const call = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(call.take).toBe(20)
+      expect(call.orderBy).toEqual({ createdAt: 'desc' })
+      expect(call.where).toEqual({})
+    })
+
+    it('accepts a limit up to 50', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .get('/api/v1/documents/search?limit=50')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.accountingDocument.findMany.mock.calls[0][0].take).toBe(50)
+    })
+
+    it('rejects a limit greater than 50 through query validation', async () => {
+      const res = await request(app)
+        .get('/api/v1/documents/search?limit=51')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(422)
+      expect(db.accountingDocument.findMany).not.toHaveBeenCalled()
+    })
+
+    it('rejects a q longer than 100 characters', async () => {
+      const res = await request(app)
+        .get(`/api/v1/documents/search?q=${'a'.repeat(101)}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(422)
+      expect(db.accountingDocument.findMany).not.toHaveBeenCalled()
+    })
+
+    it('filters by a single type', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/search?type=INVOICE')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.documentType).toEqual({ in: ['INVOICE'] })
+    })
+
+    it('filters by multiple comma-separated types', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/search?type=INVOICE,DEBIT_NOTE')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.documentType).toEqual({
+        in: ['INVOICE', 'DEBIT_NOTE'],
+      })
+    })
+
+    it('rejects an invalid document type', async () => {
+      const res = await request(app)
+        .get('/api/v1/documents/search?type=NOT_A_TYPE')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(422)
+      expect(db.accountingDocument.findMany).not.toHaveBeenCalled()
+    })
+
+    it('applies documentStatus != CANCELLED only when excludeCancelled=true', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/search?excludeCancelled=true')
+        .set('Authorization', `Bearer ${adminToken()}`)
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.documentStatus).toEqual({ not: 'CANCELLED' })
+
+      await request(app)
+        .get('/api/v1/documents/search')
+        .set('Authorization', `Bearer ${adminToken()}`)
+      expect(db.accountingDocument.findMany.mock.calls[1][0].where.documentStatus).toBeUndefined()
+    })
+
+    it('filters by insuranceCompany with an exact match (catalog-driven field, not free text)', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      await request(app)
+        .get('/api/v1/documents/search?insuranceCompany=MAPFRE')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(db.accountingDocument.findMany.mock.calls[0][0].where.insuranceCompany).toBe('MAPFRE')
+    })
+
+    it('keeps a selected document even when it is outside the search results', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([])
+      // Once, no mockResolvedValue: este mock es compartido con el chequeo de
+      // duplicados de POST /documents más abajo en el archivo — dejarlo en
+      // "truthy" de forma persistente rompería esos tests (ver ese describe,
+      // que resetea explícitamente a null antes de cada caso de éxito).
+      db.accountingDocument.findFirst.mockResolvedValueOnce(searchDoc)
+
+      const res = await request(app)
+        .get(`/api/v1/documents/search?q=inexistente&selectedId=${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data[0].id).toBe(DOC_ID)
+      expect(db.accountingDocument.findFirst).toHaveBeenCalledWith({
+        where: { id: DOC_ID },
+        select: {
+          id: true, documentNumber: true, documentType: true, issueDate: true,
+          insuranceCompany: true, currency: true, netAmount: true, vatAmount: true,
+          otherTaxesAmount: true, paymentStatus: true, paymentMethod: true,
+        },
+      })
+    })
+
+    it('does not re-fetch the selected document when it is already within the results', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([searchDoc])
+
+      const res = await request(app)
+        .get(`/api/v1/documents/search?selectedId=${DOC_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(db.accountingDocument.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('returns 401 without token', async () => {
+      const res = await request(app).get('/api/v1/documents/search')
+      expect(res.status).toBe(401)
+    })
+
+    it('returns 403 for a USER without the documents module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
+
+      const res = await request(app)
+        .get('/api/v1/documents/search')
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(403)
+      expect(db.accountingDocument.findMany).not.toHaveBeenCalled()
+    })
+
+    it('returns 200 for a USER with the documents module', async () => {
+      db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: ['documents'] }))
+      db.accountingDocument.findMany.mockResolvedValue([])
+
+      const res = await request(app)
+        .get('/api/v1/documents/search')
+        .set('Authorization', `Bearer ${userToken()}`)
+
+      expect(res.status).toBe(200)
+    })
+  })
+
   // ── GET /api/v1/documents/:id ───────────────────────────────────────────────
 
   describe('GET /api/v1/documents/:id', () => {

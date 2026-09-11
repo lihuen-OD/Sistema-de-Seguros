@@ -6,6 +6,7 @@ import { AppError } from '../../shared/errors/AppError'
 import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
 import type {
   ListDocumentsQueryDTO,
+  SearchDocumentsQueryDTO,
   UpdateInstallmentDTO,
   ReplaceInstallmentsDTO,
   ReplaceAllocationsDTO,
@@ -29,6 +30,11 @@ export const documentsController = {
   list: asyncHandler(async (req: Request, res: Response) => {
     const result = await documentsService.findAll(req.query as unknown as ListDocumentsQueryDTO)
     res.json(result)
+  }),
+
+  search: asyncHandler(async (req: Request, res: Response) => {
+    const data = await documentsService.search(req.query as unknown as SearchDocumentsQueryDTO)
+    res.json({ data })
   }),
 
   checkNumber: asyncHandler(async (req: Request, res: Response) => {

@@ -6,7 +6,7 @@ import { PageHeader } from '../../../../shared/components/page-header/PageHeader
 import { SectionCard } from '../../../../shared/components/cards/SectionCard'
 import { FormSection, FormField, FormInput, FormSelect, FormTextarea } from '../../../../shared/components/forms/FormSection'
 import { PolicySelector, createEmptyPolicyRow, type PolicyAllocationRow } from '../../../../shared/components/forms/PolicySelector'
-import { DocumentRelationSelector } from '../components/DocumentRelationSelector'
+import { DocumentRemoteSelect } from '../../../../shared/components/forms/DocumentRemoteSelect'
 import { DocumentImpactPreview } from '../components/DocumentImpactPreview'
 import { DocumentFormFooter } from '../components/DocumentFormFooter'
 import { DocumentAttachmentsCard } from '../components/DocumentAttachmentsCard'
@@ -94,7 +94,6 @@ function DocumentoNotaDebitoFormBody({ initialDoc, sourceLinkedDocument }: Docum
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
   const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, true, 'DEBIT_NOTE', form.insuranceCompany, initialDoc?.id)
 
-  const { data: allDocuments = [] } = useQuery(documentQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: paymentMethods = [] } = useQuery(catalogQueries.byCategory('document_payment_method'))
 
@@ -113,14 +112,11 @@ function DocumentoNotaDebitoFormBody({ initialDoc, sourceLinkedDocument }: Docum
     }
   }
 
-  const linkableInvoices = allDocuments.filter(
-    (d) =>
-      d.documentType === 'INVOICE' &&
-      d.documentStatus !== 'CANCELLED' &&
-      (!isEdit || d.id !== initialDoc!.id) &&
-      (!form.insuranceCompany || d.insuranceCompany === form.insuranceCompany),
-  )
-  const linkedInvoice = allDocuments.find((d) => d.id === form.linkedDocumentId) ?? null
+  // Detalle completo del vinculado (no el resultado liviano del selector) —
+  // hace falta para useLinkedDocumentPolicies (necesita policyIds, derivado
+  // de las allocations) y para DocumentImpactPreview. Un solo fetch por
+  // documento vinculado, no los ~200 que traía documentQueries.list().
+  const { data: linkedInvoice } = useQuery(documentQueries.detail(form.linkedDocumentId))
   const effectivePaymentMethod = linkedInvoice?.paymentMethod ?? form.paymentMethod
   const linkedPolicies = useLinkedDocumentPolicies(linkedInvoice)
 
@@ -268,27 +264,32 @@ function DocumentoNotaDebitoFormBody({ initialDoc, sourceLinkedDocument }: Docum
             </FormField>
 
             <FormField label="Factura asociada (opcional)" fullWidth>
-              <DocumentRelationSelector
-                documents={linkableInvoices}
+              <DocumentRemoteSelect
                 value={form.linkedDocumentId}
-                onChange={(id) => {
+                onChange={(id, document) => {
                   // Si se vincula a una factura, la moneda tiene que coincidir
                   // con la de esa factura — si queda sin vincular, la Nota de
                   // Débito es un documento propio y la moneda vuelve a quedar
                   // libre para elegir.
-                  const linked = allDocuments.find((d) => d.id === id)
                   setForm((p) => ({
                     ...p,
                     linkedDocumentId: id,
-                    currency: linked?.currency ?? p.currency,
-                    paymentMethod: linked?.paymentMethod ?? '',
+                    currency: document?.currency ?? p.currency,
+                    paymentMethod: document?.paymentMethod ?? '',
                   }))
                   setPolicyRows([createEmptyPolicyRow()])
                   markUnsaved()
                 }}
-                emptyMessage="No hay facturas disponibles para vincular."
-                helperText="Si no se asocia a ninguna factura, esta Nota de Débito funciona como documento propio pagable."
+                type="INVOICE"
+                excludeCancelled
+                insuranceCompany={form.insuranceCompany || undefined}
+                placeholder="Sin factura asociada"
+                emptyOptionLabel="Sin factura asociada"
+                noResultsMessage="No se encontraron facturas para vincular"
               />
+              <p className="text-xs text-slate-400 mt-1">
+                Si no se asocia a ninguna factura, esta Nota de Débito funciona como documento propio pagable.
+              </p>
             </FormField>
 
             <FormField label="Observaciones" fullWidth>
