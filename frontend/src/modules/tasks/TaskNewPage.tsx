@@ -14,14 +14,14 @@ import {
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
 import { SearchableSelect } from '../../shared/components/forms/SearchableSelect'
-import { producersApi, producerQueries, producerKeys } from '../../shared/api/producers.api'
+import { ProducerRemoteSelect } from '../../shared/components/forms/ProducerRemoteSelect'
+import { producersApi, producerKeys } from '../../shared/api/producers.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { buildAssetSearchKeywords } from '../../shared/utils/assetSearch'
 import { buildPolicySearchKeywords } from '../../shared/utils/policySearch'
-import { buildProducerSearchKeywords } from '../../shared/utils/producerSearch'
 import { TASK_PRIORITY_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { TaskPriority } from '../../shared/types'
@@ -37,7 +37,6 @@ export default function TaskNewPage() {
   const [searchParams] = useSearchParams()
   const prefilledProducerId = searchParams.get('producerId') ?? ''
 
-  const { data: allProducers = [] } = useQuery(producerQueries.list())
   const { data: allPolicies = [] } = useQuery(policyQueries.list())
   const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: taskTypes = [] } = useQuery(catalogQueries.byCategory('task_type'))
@@ -146,17 +145,11 @@ export default function TaskNewPage() {
           <div className="mt-5">
             <FormSection title="Asignación">
               <FormField label="Productor asignado">
-                <SearchableSelect
+                <ProducerRemoteSelect
                   value={producerId}
                   onChange={(v) => { setProducerId(v); setPolicyId('') }}
                   placeholder="— Sin productor (tarea propia)"
-                  searchPlaceholder="Buscar por nombre, matrícula, email…"
                   emptyOptionLabel="— Sin productor (tarea propia)"
-                  options={allProducers.map((p) => ({
-                    value: p.id,
-                    label: p.name,
-                    keywords: buildProducerSearchKeywords(p),
-                  }))}
                 />
               </FormField>
               <FormField label="Responsable interno">

@@ -77,7 +77,28 @@ export interface ProducerInput {
   address?: string; isActive?: boolean
 }
 
+export interface ProducerSearchResult {
+  id: string
+  name: string
+  registrationNumber: string | null
+  email: string | null
+  phone: string | null
+  isActive: boolean
+}
+
+export interface ProducerSearchParams {
+  q?: string
+  limit?: number
+  selectedId?: string
+  activeOnly?: boolean
+}
+
 export const producersApi = {
+  async search(params: ProducerSearchParams): Promise<ProducerSearchResult[]> {
+    const res = await apiClient.get<{ data: ProducerSearchResult[] }>('/producers/search', { params })
+    return res.data.data
+  },
+
   async findAll(): Promise<Producer[]> {
     const res = await apiClient.get<Paginated<BackendProducer>>('/producers', { params: { limit: 200 } })
     return res.data.data.map(mapProducer)
@@ -168,6 +189,12 @@ export const producerKeys = {
 }
 
 export const producerQueries = {
+  search: (params: ProducerSearchParams) =>
+    queryOptions({
+      queryKey: [...producerKeys.all, 'search', params] as const,
+      queryFn: () => producersApi.search(params),
+      staleTime: 60 * 1000,
+    }),
   list: () =>
     queryOptions({
       queryKey: producerKeys.all,

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { producersService } from './producers.service'
-import type { ListProducersQueryDTO, ListOverdueTasksQueryDTO } from './producers.schemas'
+import type { ListProducersQueryDTO, ListOverdueTasksQueryDTO, SearchProducersQueryDTO } from './producers.schemas'
 
 type IdParam = { id: string }
 type TaskParam = { id: string; taskId: string }
@@ -10,6 +10,11 @@ export const producersController = {
   list: asyncHandler(async (req: Request, res: Response) => {
     const result = await producersService.findAll(req.query as unknown as ListProducersQueryDTO)
     res.json(result)
+  }),
+
+  search: asyncHandler(async (req: Request, res: Response) => {
+    const data = await producersService.search(req.query as unknown as SearchProducersQueryDTO)
+    res.json({ data })
   }),
 
   getById: asyncHandler(async (req: Request<IdParam>, res: Response) => {

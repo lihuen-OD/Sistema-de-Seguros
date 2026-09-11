@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
@@ -8,6 +9,7 @@ import type {
   ListProducersQueryDTO,
   CreateTaskDTO,
   UpdateTaskDTO,
+  SearchProducersQueryDTO,
 } from './producers.schemas'
 
 const PRODUCER_INCLUDE = {
@@ -28,6 +30,56 @@ async function assertProducerExists(id: string) {
 }
 
 export const producersService = {
+  async search(query: SearchProducersQueryDTO) {
+    const q = query.q.trim()
+    const where: Prisma.ProducerWhereInput = {
+      ...(query.activeOnly && { isActive: true }),
+      ...(q && {
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { matricula: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+          { phone: { contains: q, mode: 'insensitive' } },
+        ],
+      }),
+    }
+    const select = {
+      id: true,
+      name: true,
+      matricula: true,
+      email: true,
+      phone: true,
+      isActive: true,
+    } satisfies Prisma.ProducerSelect
+
+    const results = await prisma.producer.findMany({
+      where,
+      select,
+      orderBy: { name: 'asc' },
+      take: query.limit,
+    })
+
+    // Una asociación histórica debe seguir visible en edición aunque el
+    // productor ya no cumpla activeOnly. La ruta conserva los mismos permisos
+    // del listado y esta consulta continúa usando el select liviano.
+    if (query.selectedId && !results.some((producer) => producer.id === query.selectedId)) {
+      const selected = await prisma.producer.findFirst({
+        where: { id: query.selectedId },
+        select,
+      })
+      if (selected) results.unshift(selected)
+    }
+
+    return results.slice(0, query.limit).map((producer) => ({
+      id: producer.id,
+      name: producer.name,
+      registrationNumber: producer.matricula,
+      email: producer.email,
+      phone: producer.phone,
+      isActive: producer.isActive,
+    }))
+  },
+
   async findAll(query: ListProducersQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
 

@@ -14,6 +14,7 @@ import {
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
 import { PolicyAssetRemoteSelect } from './PolicyAssetRemoteSelect'
+import { ProducerRemoteSelect } from '../../../shared/components/forms/ProducerRemoteSelect'
 import {
   AddAttachmentModal,
   FileTypeIcon,
@@ -22,7 +23,6 @@ import {
 import { policiesApi, policyKeys, type PolicyCoverageInput } from '../../../shared/api/policies.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
-import { producerQueries } from '../../../shared/api/producers.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
@@ -204,7 +204,6 @@ export default function PolicyNewPage() {
   const [attachModalLineId, setAttachModalLineId] = useState<string | null>(null)
   const [selectedAssetNames, setSelectedAssetNames] = useState<Record<string, string>>({})
 
-  const { data: producers = [] } = useQuery(producerQueries.list())
   const { data: companies = [] } = useQuery(companyQueries.list())
   const { data: costCenters = [] } = useQuery(costCenterQueries.list())
   const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
@@ -357,12 +356,12 @@ export default function PolicyNewPage() {
               </FormSelect>
             </FormField>
             <FormField label="Productor Asesor">
-              <FormSelect value={form.producerId} onChange={set('producerId')}>
-                <option value="">Seleccionar productor…</option>
-                {producers.filter((p) => p.status === 'activo').map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </FormSelect>
+              <ProducerRemoteSelect
+                value={form.producerId}
+                onChange={(producerId) => setForm((prev) => ({ ...prev, producerId }))}
+                activeOnly
+                emptyOptionLabel="Sin productor"
+              />
             </FormField>
           </FormSection>
         </SectionCard>

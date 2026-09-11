@@ -15,19 +15,19 @@ import {
 } from '../../../shared/components/forms/FormSection'
 import { EmptyState } from '../../../shared/components/empty-states/EmptyState'
 import { PolicyAssetRemoteSelect } from './PolicyAssetRemoteSelect'
+import { ProducerRemoteSelect } from '../../../shared/components/forms/ProducerRemoteSelect'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
 import { DeactivateCoverageModal } from './DeactivateCoverageModal'
 import { CoverageSelector } from './components/CoverageSelector'
 import { policiesApi, policyKeys, policyQueries, type PolicyCoverageInput } from '../../../shared/api/policies.api'
 import { companyQueries } from '../../../shared/api/companies.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
-import { producerQueries } from '../../../shared/api/producers.api'
 import { insuranceTypeQueries } from '../../../shared/api/insurance-types.api'
 import { catalogQueries } from '../../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
 import { formatCurrencyFull, formatDate, isExpired } from '../../../shared/utils/format'
 import { CURRENCY_OPTIONS } from '../../../shared/constants'
-import type { Policy, PolicyCoverage, Producer, Company, CostCenter } from '../../../shared/types'
+import type { Policy, PolicyCoverage, Company, CostCenter } from '../../../shared/types'
 import type { InsuranceTypeConfig } from '../../../shared/api/insurance-types.api'
 import type { CatalogItem } from '../../../shared/api/catalogs.api'
 
@@ -119,7 +119,6 @@ export default function PolicyEditPage() {
   const { id } = useParams<{ id: string }>()
 
   const { data: policy, isLoading: loadingPolicy } = useQuery(policyQueries.detail(id!))
-  const { data: producers = [] } = useQuery(producerQueries.list())
   const { data: companies = [] } = useQuery(companyQueries.list())
   const { data: costCenters = [] } = useQuery(costCenterQueries.list())
   const { data: insuranceTypes = [] } = useQuery(insuranceTypeQueries.list())
@@ -155,7 +154,6 @@ export default function PolicyEditPage() {
       <PolicyEditForm
         key={id}
         policy={policy}
-        producers={producers}
         companies={companies}
         costCenters={costCenters}
         insuranceTypes={insuranceTypes}
@@ -167,7 +165,6 @@ export default function PolicyEditPage() {
 
 interface PolicyEditFormProps {
   policy: Policy
-  producers: Producer[]
   companies: Company[]
   costCenters: CostCenter[]
   insuranceTypes: InsuranceTypeConfig[]
@@ -177,7 +174,7 @@ interface PolicyEditFormProps {
 // Recibe key={id} del padre — se remonta entero al cambiar de póliza, así
 // que form/lines pueden inicializarse directo desde `policy` sin useEffect.
 function PolicyEditForm({
-  policy, producers, companies, costCenters, insuranceTypes, insuranceCompanies,
+  policy, companies, costCenters, insuranceTypes, insuranceCompanies,
 }: PolicyEditFormProps) {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -395,12 +392,12 @@ function PolicyEditForm({
               </FormSelect>
             </FormField>
             <FormField label="Productor Asesor">
-              <FormSelect value={form.producerId} onChange={set('producerId')}>
-                <option value="">Seleccionar productor…</option>
-                {producers.filter((p) => p.status === 'activo').map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </FormSelect>
+              <ProducerRemoteSelect
+                value={form.producerId}
+                onChange={(producerId) => setForm((prev) => ({ ...prev, producerId }))}
+                activeOnly
+                emptyOptionLabel="Sin productor"
+              />
             </FormField>
           </FormSection>
         </SectionCard>
