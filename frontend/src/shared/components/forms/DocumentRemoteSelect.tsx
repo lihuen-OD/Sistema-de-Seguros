@@ -15,6 +15,8 @@ interface DocumentRemoteSelectProps {
   excludeCancelled?: boolean
   insuranceCompany?: string
   policyId?: string
+  withAvailableBalance?: boolean
+  minAvailableBalance?: number
   disabled?: boolean
   placeholder?: string
   emptyOptionLabel?: string
@@ -22,11 +24,13 @@ interface DocumentRemoteSelectProps {
 }
 
 function toSelectOption(doc: DocumentSearchResult): SearchableSelectOption {
-  const sublabel = [
-    doc.insuranceCompany,
-    formatDate(doc.issueDate),
-    formatCurrencyFull(doc.totalAmount, doc.currency),
-  ].filter(Boolean).join(' · ')
+  // Con availableBalance (Nota de Crédito) el dato accionable es el saldo
+  // disponible, no el importe original de la factura — se muestra ese en su
+  // lugar en vez de sumar un cuarto dato al sublabel.
+  const amountLabel = doc.availableBalance !== undefined
+    ? `Saldo disponible: ${formatCurrencyFull(doc.availableBalance, doc.currency)}`
+    : formatCurrencyFull(doc.totalAmount, doc.currency)
+  const sublabel = [doc.insuranceCompany, formatDate(doc.issueDate), amountLabel].filter(Boolean).join(' · ')
   return { value: doc.id, label: doc.documentNumber, sublabel }
 }
 
@@ -44,6 +48,8 @@ export function DocumentRemoteSelect({
   excludeCancelled,
   insuranceCompany,
   policyId,
+  withAvailableBalance,
+  minAvailableBalance,
   disabled,
   placeholder = 'Seleccionar documento…',
   emptyOptionLabel = 'Seleccionar documento…',
@@ -61,6 +67,8 @@ export function DocumentRemoteSelect({
       excludeCancelled,
       insuranceCompany,
       policyId,
+      withAvailableBalance,
+      minAvailableBalance,
     }),
     // Con valor inicial también consulta cerrado, para reconstruir el label
     // de una selección que no pertenezca al primer lote (mismo patrón que

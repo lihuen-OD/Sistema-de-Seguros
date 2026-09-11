@@ -204,6 +204,8 @@ export interface DocumentSearchResult {
   totalAmount: number
   paymentStatus: PaymentStatus
   paymentMethod: string | null
+  // Solo presente cuando se pide withAvailableBalance=true (Nota de Crédito).
+  availableBalance?: number
 }
 
 export interface DocumentSearchParams {
@@ -217,6 +219,11 @@ export interface DocumentSearchParams {
   // document.policyId (Endoso) o por policyAssetCoverage.policyId de sus
   // allocations (Factura/NC/ND/Ajuste). Ver documents.service.ts#search.
   policyId?: string
+  // Fase 1B.4.d (Nota de Crédito) — calcula availableBalance por resultado
+  // (acotado a los ya limitados por `limit`, no a los ~200 de antes) y,
+  // opcionalmente, filtra por un mínimo. Ver documents.service.ts#search.
+  withAvailableBalance?: boolean
+  minAvailableBalance?: number
 }
 
 export const documentsApi = {

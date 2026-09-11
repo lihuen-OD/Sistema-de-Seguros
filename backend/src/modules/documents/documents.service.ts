@@ -305,7 +305,7 @@ export const documentsService = {
       if (selected) results.unshift(selected)
     }
 
-    return results.slice(0, query.limit).map((doc) => ({
+    const mapped = results.slice(0, query.limit).map((doc) => ({
       id: doc.id,
       documentNumber: doc.documentNumber,
       type: doc.documentType,
@@ -316,6 +316,31 @@ export const documentsService = {
       paymentStatus: doc.paymentStatus,
       paymentMethod: doc.paymentMethod,
     }))
+
+    if (!query.withAvailableBalance) return mapped
+
+    // Acotado a los resultados ya limitados por `take` (≤ query.limit, o sea
+    // ≤50) — no a los ~200 que traía antes el findAll(limit 200) + 1 consulta
+    // de saldo por candidato del lado del cliente (Fase 1B.4, auditoría NC).
+    // Reutiliza documentsBalanceService.getBalance, la misma fuente de saldo
+    // que ya usan GET /:id/balance y apply()/cancel() — no duplica el
+    // cálculo de créditos/débitos/ajustes/impacto económico en otro lugar.
+    const withBalance = await Promise.all(
+      mapped.map(async (doc) => ({
+        ...doc,
+        availableBalance: (await documentsBalanceService.getBalance(doc.id)).effectiveAmount,
+      })),
+    )
+
+    if (query.minAvailableBalance === undefined) return withBalance
+
+    // El documento vinculado ya existente (edición) no se oculta aunque su
+    // saldo haya quedado en 0 por la propia NC que lo está editando — mismo
+    // criterio que ya usaba el filtrado client-side de DocumentoNotaCreditoForm
+    // antes de esta migración.
+    return withBalance.filter(
+      (doc) => doc.id === query.selectedId || doc.availableBalance >= query.minAvailableBalance!,
+    )
   },
 
   async findAll(query: ListDocumentsQueryDTO) {

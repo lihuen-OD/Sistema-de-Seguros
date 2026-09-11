@@ -2,6 +2,7 @@ import request from 'supertest'
 import { Prisma } from '@prisma/client'
 import { app } from '../../../app'
 import { adminToken, userToken, mockDbUser } from '../../../__tests__/helpers/auth'
+import { documentsBalanceService } from '../documents-balance.service'
 
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 
@@ -519,6 +520,160 @@ describe('Documents API', () => {
         .set('Authorization', `Bearer ${userToken()}`)
 
       expect(res.status).toBe(200)
+    })
+
+    // ── availableBalance (Fase 1B.4.d — Nota de Crédito) ────────────────────
+    // Reemplaza, para NC, el 1-balance-query-por-candidato que hacía el
+    // cliente sobre hasta ~200 facturas (documentQueries.list() +
+    // useQueries(candidateInvoices.map(balance))). Acá se resuelve
+    // reutilizando documentsBalanceService.getBalance (mismo helper que
+    // GET /:id/balance y apply()/cancel()), acotado a los resultados ya
+    // limitados por `take` — se mockea a nivel de ese servicio, no
+    // reconstruyendo toda su cadena de Prisma, porque su cálculo interno ya
+    // está probado exhaustivamente en 'GET /api/v1/documents/:id/balance'.
+    describe('availableBalance', () => {
+      const OTHER_DOC_ID = '10000000-0000-0000-0000-000000000098'
+      const otherSearchDoc = { ...searchDoc, id: OTHER_DOC_ID, documentNumber: 'FAC-2026-002' }
+
+      afterEach(() => {
+        jest.restoreAllMocks()
+      })
+
+      it('withAvailableBalance absent (ND/Endoso) keeps the current lightweight payload and never computes balance', async () => {
+        const getBalanceSpy = jest.spyOn(documentsBalanceService, 'getBalance')
+        db.accountingDocument.findMany.mockResolvedValue([searchDoc])
+
+        const res = await request(app)
+          .get('/api/v1/documents/search?type=INVOICE&excludeCancelled=true')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(getBalanceSpy).not.toHaveBeenCalled()
+        expect(res.body.data[0]).not.toHaveProperty('availableBalance')
+      })
+
+      it('withAvailableBalance=false behaves exactly like absent', async () => {
+        const getBalanceSpy = jest.spyOn(documentsBalanceService, 'getBalance')
+        db.accountingDocument.findMany.mockResolvedValue([searchDoc])
+
+        const res = await request(app)
+          .get('/api/v1/documents/search?withAvailableBalance=false')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(getBalanceSpy).not.toHaveBeenCalled()
+        expect(res.body.data[0]).not.toHaveProperty('availableBalance')
+      })
+
+      it('withAvailableBalance=true adds availableBalance, bounded to the already-limited results', async () => {
+        db.accountingDocument.findMany.mockResolvedValue([searchDoc, otherSearchDoc])
+        const getBalanceSpy = jest.spyOn(documentsBalanceService, 'getBalance').mockImplementation(async (id: string) => ({
+          effectiveAmount: id === searchDoc.id ? 760 : 0,
+        }) as Awaited<ReturnType<typeof documentsBalanceService.getBalance>>)
+
+        const res = await request(app)
+          .get('/api/v1/documents/search?withAvailableBalance=true')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        // Una llamada por resultado ya devuelto por findMany (2), no una por
+        // cada uno de los ~200 documentos del sistema.
+        expect(getBalanceSpy).toHaveBeenCalledTimes(2)
+        expect(res.body.data.find((d: any) => d.id === searchDoc.id).availableBalance).toBe(760)
+        expect(res.body.data.find((d: any) => d.id === OTHER_DOC_ID).availableBalance).toBe(0)
+      })
+
+      it('minAvailableBalance filters out documents without balance', async () => {
+        db.accountingDocument.findMany.mockResolvedValue([searchDoc, otherSearchDoc])
+        jest.spyOn(documentsBalanceService, 'getBalance').mockImplementation(async (id: string) => ({
+          effectiveAmount: id === searchDoc.id ? 760 : 0,
+        }) as Awaited<ReturnType<typeof documentsBalanceService.getBalance>>)
+
+        const res = await request(app)
+          .get('/api/v1/documents/search?withAvailableBalance=true&minAvailableBalance=0.01')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.data).toHaveLength(1)
+        expect(res.body.data[0].id).toBe(searchDoc.id)
+      })
+
+      it('minAvailableBalance without withAvailableBalance does not filter (no balance was computed to compare against)', async () => {
+        const getBalanceSpy = jest.spyOn(documentsBalanceService, 'getBalance')
+        db.accountingDocument.findMany.mockResolvedValue([searchDoc, otherSearchDoc])
+
+        const res = await request(app)
+          .get('/api/v1/documents/search?minAvailableBalance=0.01')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(getBalanceSpy).not.toHaveBeenCalled()
+        expect(res.body.data).toHaveLength(2)
+      })
+
+      it('combines with type=INVOICE, excludeCancelled and insuranceCompany', async () => {
+        db.accountingDocument.findMany.mockResolvedValue([])
+        const getBalanceSpy = jest.spyOn(documentsBalanceService, 'getBalance')
+
+        await request(app)
+          .get('/api/v1/documents/search?type=INVOICE&excludeCancelled=true&insuranceCompany=MAPFRE&withAvailableBalance=true&minAvailableBalance=0.01')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        const conditions = db.accountingDocument.findMany.mock.calls[0][0].where.AND
+        expect(conditions).toContainEqual({ documentType: { in: ['INVOICE'] } })
+        expect(conditions).toContainEqual({ documentStatus: { not: 'CANCELLED' } })
+        expect(conditions).toContainEqual({ insuranceCompany: 'MAPFRE' })
+        expect(getBalanceSpy).not.toHaveBeenCalled() // sin candidatos, no hay nada para lo que calcular saldo
+      })
+
+      it('keeps a selected document already in the results even with availableBalance 0 (edited by this same NC)', async () => {
+        db.accountingDocument.findMany.mockResolvedValue([searchDoc])
+        jest.spyOn(documentsBalanceService, 'getBalance').mockResolvedValue({
+          effectiveAmount: 0,
+        } as Awaited<ReturnType<typeof documentsBalanceService.getBalance>>)
+
+        const res = await request(app)
+          .get(`/api/v1/documents/search?withAvailableBalance=true&minAvailableBalance=0.01&selectedId=${searchDoc.id}`)
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.data).toHaveLength(1)
+        expect(res.body.data[0].availableBalance).toBe(0)
+      })
+
+      it('keeps a selected document outside the results (fallback) even with availableBalance 0', async () => {
+        db.accountingDocument.findMany.mockResolvedValue([])
+        db.accountingDocument.findFirst.mockResolvedValueOnce(searchDoc)
+        jest.spyOn(documentsBalanceService, 'getBalance').mockResolvedValue({
+          effectiveAmount: 0,
+        } as Awaited<ReturnType<typeof documentsBalanceService.getBalance>>)
+
+        const res = await request(app)
+          .get(`/api/v1/documents/search?q=inexistente&withAvailableBalance=true&minAvailableBalance=0.01&selectedId=${searchDoc.id}`)
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.data).toHaveLength(1)
+        expect(res.body.data[0].id).toBe(searchDoc.id)
+        expect(res.body.data[0].availableBalance).toBe(0)
+      })
+
+      it('does not return a heavy payload when combined with availableBalance — same lightweight shape plus one field', async () => {
+        db.accountingDocument.findMany.mockResolvedValue([searchDoc])
+        jest.spyOn(documentsBalanceService, 'getBalance').mockResolvedValue({
+          effectiveAmount: 760,
+        } as Awaited<ReturnType<typeof documentsBalanceService.getBalance>>)
+
+        const res = await request(app)
+          .get('/api/v1/documents/search?withAvailableBalance=true')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(Object.keys(res.body.data[0]).sort()).toEqual([
+          'availableBalance', 'currency', 'documentNumber', 'id', 'insuranceCompany',
+          'issueDate', 'paymentMethod', 'paymentStatus', 'totalAmount', 'type',
+        ].sort())
+      })
     })
   })
 

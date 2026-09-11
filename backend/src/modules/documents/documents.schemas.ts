@@ -103,6 +103,13 @@ export const SearchDocumentsQuerySchema = z.object({
   // documents.service.ts#validateTypeConstraints para Endoso, no una regla
   // nueva.
   policyId: z.string().uuid('ID de póliza inválido').optional(),
+  // Fase 1B.4.d (Nota de Crédito) — availableBalance solo se calcula (y solo
+  // viaja en el payload) cuando se pide explícitamente, para no pagar ese
+  // costo en ND/Endoso/Ajuste, que no lo necesitan. minAvailableBalance sin
+  // withAvailableBalance no filtra nada (no hay balance calculado con qué
+  // comparar) — ver documents.service.ts#search.
+  withAvailableBalance: booleanFromString.optional(),
+  minAvailableBalance: z.coerce.number().min(0).optional(),
 })
 
 export const UpdateInstallmentSchema = z.object({
