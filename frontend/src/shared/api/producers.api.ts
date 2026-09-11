@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import { mapTaskStatus } from '../utils/taskStatus'
 import type { Producer, ProducerTask, TaskPriority } from '../types'
 
 interface BackendTask {
@@ -38,15 +39,6 @@ export interface OverdueProducerTask {
 export interface OverdueProducerTasksResult {
   total: number
   items: OverdueProducerTask[]
-}
-
-const today = () => new Date().toISOString().slice(0, 10)
-
-function mapTaskStatus(s: string, dueDate?: string | null): ProducerTask['status'] {
-  if (s === 'completada' || s === 'cancelada') return 'finalizada'
-  if (s === 'en_progreso') return 'en_curso'
-  if (s === 'pendiente' && dueDate && dueDate < today()) return 'vencida'
-  return 'pendiente'
 }
 
 function mapTask(t: BackendTask): ProducerTask {
