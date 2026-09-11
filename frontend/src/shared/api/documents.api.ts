@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import type { PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type {
   AccountingDocument,
@@ -204,6 +205,11 @@ export const documentsApi = {
     return res.data.data.map(mapDocument)
   },
 
+  async findAllPaginated(filters: DocumentListFilters): Promise<PaginatedResult<AccountingDocument>> {
+    const res = await apiClient.get<Paginated<BackendDocument>>('/documents', { params: filters })
+    return { data: res.data.data.map(mapDocument), pagination: res.data.pagination }
+  },
+
   async findAllForFinancial(params?: { from?: string; to?: string; includeInstallments?: boolean }): Promise<DocumentForFinancial[]> {
     const res = await apiClient.get<{ data: (Omit<BackendDocument, 'allocations'> & {
       installments: BackendInstallment[]
@@ -382,6 +388,10 @@ export const documentsApi = {
 // staleTime corto + refetchOnWindowFocus true. El resto es categoría B.
 
 type FinancialFilters = { from?: string; to?: string; includeInstallments?: boolean }
+export type DocumentListFilters = {
+  page?: number; limit?: number; search?: string; paymentStatus?: string
+  documentType?: string; currency?: string; year?: number
+}
 
 export const documentKeys = {
   all: ['documents'] as const,
@@ -410,6 +420,12 @@ export const documentQueries = {
     queryOptions({
       queryKey: documentKeys.all,
       queryFn: () => documentsApi.findAll(),
+      staleTime: 60 * 1000,
+    }),
+  listPaginated: (filters: DocumentListFilters) =>
+    queryOptions({
+      queryKey: [...documentKeys.all, 'paginated', filters] as const,
+      queryFn: () => documentsApi.findAllPaginated(filters),
       staleTime: 60 * 1000,
     }),
   types: () =>

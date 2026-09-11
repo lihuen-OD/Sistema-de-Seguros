@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Plus, ShieldAlert, ClipboardList, CheckCircle2, Eye, Edit2, Trash2, X,
+  Plus, ShieldAlert, ClipboardList, CheckCircle2, Eye, Edit2, Trash2,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
@@ -11,10 +11,10 @@ import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { ChartCard } from '../../shared/components/cards/ChartCard'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
+import { PaginationControls } from '../../shared/components/data-table/PaginationControls'
 import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
 import { ExportPresetsButton } from '../../shared/components/data-table/ExportPresetsButton'
-import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
-import { DateRangeMonthPicker } from '../../shared/components/filters/DateRangeMonthPicker'
+import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
@@ -27,25 +27,35 @@ import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import {
-  normalizeClaimStatusText, claimStatusEquals, resolveClaimStatusKey,
+  normalizeClaimStatusText, resolveClaimStatusKey,
   getClaimStatusIcon, getClaimStatusChartColor,
 } from '../../shared/utils/claimStatus'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { Claim, TableColumn } from '../../shared/types'
+
+const DEFAULT_PAGE_SIZE = 20
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ClaimsPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<string[]>([])
-  const [filterType, setFilterType] = useState<string[]>([])
-  const [filterDateFrom, setFilterDateFrom] = useState('')
-  const [filterDateTo, setFilterDateTo] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [filterType, setFilterType] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
   const queryClient = useQueryClient()
 
-  const { data: all = [], isLoading, isError } = useQuery(claimQueries.list())
+  const { data: result, isLoading, isFetching, isError } = useQuery(claimQueries.listPaginated({
+    page,
+    limit,
+    search: search.trim() || undefined,
+    status: filterStatus ? normalizeClaimStatusText(filterStatus) : undefined,
+    claimType: filterType || undefined,
+  }))
+  const all = useMemo(() => result?.data ?? [], [result?.data])
+  const pagination = result?.pagination
   const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: allPolicies = [] } = useQuery(policyQueries.list())
   const { data: claimStatusCatalog = [] } = useQuery(catalogQueries.byCategory('claim_status'))
@@ -116,24 +126,7 @@ export default function ClaimsPage() {
   const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
   const policyById = useMemo(() => new Map(allPolicies.map((p) => [p.id, p])), [allPolicies])
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase()
-    return all.filter((c) => {
-      const asset = c.assetId ? assetById.get(c.assetId) : null
-      const matchSearch =
-        !search ||
-        c.claimNumber.toLowerCase().includes(q) ||
-        c.insuranceCompany.toLowerCase().includes(q) ||
-        (asset?.name.toLowerCase().includes(q) ?? false) ||
-        c.claimType.toLowerCase().includes(q)
-      const matchStatus = filterStatus.length === 0 || filterStatus.some((fs) => claimStatusEquals(fs, c.status))
-      const matchType   = filterType.length === 0   || filterType.includes(c.claimType)
-      const date = c.occurrenceDate ?? ''
-      const matchDateFrom = !filterDateFrom || date.slice(0, 7) >= filterDateFrom
-      const matchDateTo   = !filterDateTo   || date.slice(0, 7) <= filterDateTo
-      return matchSearch && matchStatus && matchType && matchDateFrom && matchDateTo
-    })
-  }, [all, assetById, search, filterStatus, filterType, filterDateFrom, filterDateTo])
+  const filtered = all
 
   const ALL_COLUMNS: TableColumn<Claim>[] = useMemo(() => [
     {
@@ -413,17 +406,17 @@ export default function ClaimsPage() {
       />
 
       <MetricGrid cols={3} className="mb-5">
-        <KpiCard label="Total de Siniestros" value={all.length} description="Siniestros registrados" icon={ClipboardList} variant="info" />
-        <KpiCard label="Monto Reclamado" value={formatCurrencyCompact(totals.totalClaimed, 'ARS')} description="Total histórico reclamado" icon={ShieldAlert} variant="info" />
-        <KpiCard label="Monto Liquidado" value={formatCurrencyCompact(totals.totalSettled, 'ARS')} description="Total indemnizado efectivo" icon={CheckCircle2} variant={totals.totalSettled > 0 ? 'success' : 'default'} />
+        <KpiCard label="Total de Siniestros" value={pagination?.total ?? 0} description="Resultados del listado" icon={ClipboardList} variant="info" />
+        <KpiCard label="Monto Reclamado" value={formatCurrencyCompact(totals.totalClaimed, 'ARS')} description="Total de esta página" icon={ShieldAlert} variant="info" />
+        <KpiCard label="Monto Liquidado" value={formatCurrencyCompact(totals.totalSettled, 'ARS')} description="Total de esta página" icon={CheckCircle2} variant={totals.totalSettled > 0 ? 'success' : 'default'} />
       </MetricGrid>
 
       <ChartCard
-        title="Siniestros por estado"
+        title="Siniestros por estado en esta página"
         subtitle={
           topStatus
             ? `Estado más frecuente: "${topStatus.status}" — ${topStatus.count} (${topStatus.pct.toFixed(0)}%)`
-            : 'Distribución de siniestros por su estado real'
+            : 'Distribución de los siniestros de la página actual'
         }
         className="mb-5"
         height={statusDistribution.length > 0 ? Math.max(220, statusDistribution.length * 52 + 24) : 200}
@@ -474,30 +467,23 @@ export default function ClaimsPage() {
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
             value={search}
-            onChange={setSearch}
+            onChange={(value) => { setPage(1); setSearch(value) }}
             placeholder="Buscar por N° siniestro, activo, aseguradora…"
             className="w-full sm:w-80"
           />
-          <MultiSelectFilter label="Estado" options={STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
-          <MultiSelectFilter label="Tipo" options={TYPE_OPTIONS} value={filterType} onChange={setFilterType} />
-          <DateRangeMonthPicker
-            from={filterDateFrom}
-            to={filterDateTo}
-            onChange={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
-          />
-          {(filterDateFrom || filterDateTo) && (
-            <button
-              type="button"
-              onClick={() => { setFilterDateFrom(''); setFilterDateTo('') }}
-              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
-            >
-              <X size={12} />
-              Limpiar fechas
-            </button>
-          )}
+          <FilterBar filters={[
+            {
+              key: 'status', label: 'Estado', options: STATUS_OPTIONS, value: filterStatus,
+              onChange: (value) => { setPage(1); setFilterStatus(value) },
+            },
+            {
+              key: 'type', label: 'Tipo', options: TYPE_OPTIONS, value: filterType,
+              onChange: (value) => { setPage(1); setFilterType(value) },
+            },
+          ]} />
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
-              {filtered.length} de {all.length} siniestros
+              {filtered.length} visibles en esta página · {pagination?.total ?? 0} resultados
             </span>
             <ExportPresetsButton
               tableKey="claims"
@@ -507,6 +493,7 @@ export default function ClaimsPage() {
               filenamePrefix="siniestros"
               onApplyPreset={applyPreset}
             />
+            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -526,6 +513,17 @@ export default function ClaimsPage() {
           emptyDescription="No se encontraron siniestros con los filtros aplicados."
           minWidth={900}
         />
+        {pagination && (
+          <PaginationControls
+            {...pagination}
+            isLoading={isFetching}
+            onPageChange={setPage}
+            onLimitChange={(nextLimit) => {
+              setPage(1)
+              setLimit(nextLimit)
+            }}
+          />
+        )}
       </SectionCard>
       <ConfirmDialog
         open={deleteId !== null}

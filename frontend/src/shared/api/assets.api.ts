@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Asset, AssetAttachment, AssetPledge, AssetStatus, AssetStatusHistory, Building, Currency } from '../types'
+import type { PaginatedResult } from './pagination'
 
 interface BackendCompany { id: string; name: string; cuit: string }
 interface BackendCostCenter { id: string; name: string; code: string | null }
@@ -295,6 +296,7 @@ export const assetsApi = {
 // migran los call sites — no se inventa un esquema nuevo de sub-namespacing.
 
 type AssetFilters = { isActive?: boolean; assetType?: string; limit?: number }
+export type AssetListFilters = AssetFilters & { page?: number; search?: string }
 
 export const assetKeys = {
   all: ['assets'] as const,
@@ -310,6 +312,15 @@ export const assetQueries = {
     queryOptions({
       queryKey: assetKeys.list(filters),
       queryFn: () => assetsApi.findAll(filters),
+      staleTime: 60 * 1000,
+    }),
+  listPaginated: (filters: AssetListFilters) =>
+    queryOptions({
+      queryKey: [...assetKeys.all, 'paginated', filters] as const,
+      queryFn: async (): Promise<PaginatedResult<Asset>> => {
+        const res = await apiClient.get<Paginated<BackendAsset>>('/assets', { params: filters })
+        return { data: res.data.data.map(mapAsset), pagination: res.data.pagination }
+      },
       staleTime: 60 * 1000,
     }),
   detail: (id: string) =>

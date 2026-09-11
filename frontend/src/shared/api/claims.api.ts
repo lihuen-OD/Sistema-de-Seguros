@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import type { PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment, ClaimExpense, ClaimExpenseAttachment, Currency } from '../types'
 
@@ -222,6 +223,7 @@ export const claimsApi = {
 // ── Query keys / query options (categoría B — semi-dinámico) ────────────────────
 
 type ClaimFilters = { assetId?: string; policyId?: string; status?: string; limit?: number }
+export type ClaimListFilters = ClaimFilters & { page?: number; search?: string; claimType?: string; year?: number }
 
 export const claimKeys = {
   all: ['claims'] as const,
@@ -237,6 +239,15 @@ export const claimQueries = {
     queryOptions({
       queryKey: claimKeys.list(filters),
       queryFn: () => claimsApi.findAll(filters),
+      staleTime: 60 * 1000,
+    }),
+  listPaginated: (filters: ClaimListFilters) =>
+    queryOptions({
+      queryKey: [...claimKeys.all, 'paginated', filters] as const,
+      queryFn: async (): Promise<PaginatedResult<Claim>> => {
+        const res = await apiClient.get<Paginated<BackendClaim>>('/claims', { params: filters })
+        return { data: res.data.data.map(mapClaim), pagination: res.data.pagination }
+      },
       staleTime: 60 * 1000,
     }),
   detail: (id: string) =>
