@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  ShieldAlert, TriangleAlert,
+  ShieldAlert,
   Car, Lock, Package, Flame, CloudRain, Wheat, Waves, Wrench,
   Zap, Settings, Scale, Heart, Activity, HelpCircle,
   CheckCircle2, type LucideIcon,
@@ -20,14 +20,17 @@ import {
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
 import { FileDropzone } from '../../shared/components/file-upload/FileDropzone'
+import { SearchableSelect } from '../../shared/components/forms/SearchableSelect'
+import { PolicyRemoteSelect } from '../../shared/components/forms/PolicyRemoteSelect'
 import { claimsApi, claimKeys } from '../../shared/api/claims.api'
 import { assetQueries } from '../../shared/api/assets.api'
-import { policyQueries } from '../../shared/api/policies.api'
+import { policyQueries, type PolicySearchResult } from '../../shared/api/policies.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { computeEquivalent } from '../../shared/utils/currency'
 import { formatCurrencyFull } from '../../shared/utils/format'
 import { pickActiveCoverageForAsset } from '../../shared/utils/expiration'
+import { buildAssetSearchKeywords } from '../../shared/utils/assetSearch'
 import { OwnershipTypeFields } from './OwnershipTypeFields'
 import { CURRENCY_OPTIONS } from '../../shared/constants'
 import type { ClaimOwnershipType, Currency } from '../../shared/types'
@@ -79,7 +82,6 @@ export default function ClaimNewPage() {
   const preselectedPolicyId = searchParams.get('policyId') ?? ''
 
   const { data: allAssets = [] } = useQuery(assetQueries.list())
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
   const { data: claimTypes = [] } = useQuery(catalogQueries.byCategory('claim_type'))
   const { data: claimStatuses = [] } = useQuery(catalogQueries.byCategory('claim_status'))
@@ -124,14 +126,6 @@ export default function ClaimNewPage() {
 
   // Derived
   const selectedAsset = assetId ? (allAssets.find((a) => a.id === assetId) ?? null) : null
-  // "Pólizas del activo" ahora requiere el filtro server-side (assetId ya no
-  // es un array plano en Policy — se resuelve vía sus líneas de cobertura).
-  const { data: policiesForAsset = [] } = useQuery({
-    ...policyQueries.list({ assetId: assetId || undefined }),
-    enabled: !!assetId,
-  })
-  const availablePolicies = assetId ? policiesForAsset : allPolicies
-  const selectedPolicy = policyId ? availablePolicies.find((p) => p.id === policyId) ?? null : null
   // Tipo de seguro/coberturas ya no viven en la póliza sino por línea — se
   // busca el detalle completo de la póliza elegida y se toma la línea de
   // este activo (o la primera "sin activo" si el siniestro no tiene uno).
@@ -170,11 +164,9 @@ export default function ClaimNewPage() {
     setInsuranceCompany('')
   }
 
-  const handlePolicyChange = (id: string) => {
+  const handlePolicyChange = (id: string, policy?: PolicySearchResult) => {
     setPolicyId(id)
-    const pol = availablePolicies.find((p) => p.id === id)
-    if (pol) setInsuranceCompany(pol.insuranceCompany)
-    else setInsuranceCompany('')
+    setInsuranceCompany(policy?.insuranceCompany ?? '')
   }
 
   const validate = (): boolean => {
@@ -311,40 +303,34 @@ export default function ClaimNewPage() {
                     </button>
                   </div>
                 ) : (
-                  <FormSelect value={assetId} onChange={(e) => handleAssetChange(e.target.value)}>
-                    <option value="">Sin activo asociado</option>
-                    {allAssets.map((a) => (
-                      <option key={a.id} value={a.id}>{a.internalCode} — {a.name}</option>
-                    ))}
-                  </FormSelect>
+                  <SearchableSelect
+                    value={assetId}
+                    onChange={handleAssetChange}
+                    placeholder="Sin activo asociado"
+                    searchPlaceholder="Buscar por código, nombre, tipo, patente…"
+                    emptyOptionLabel="Sin activo asociado"
+                    options={allAssets.map((a) => ({
+                      value: a.id,
+                      label: `${a.internalCode} — ${a.name}`,
+                      keywords: buildAssetSearchKeywords(a),
+                    }))}
+                  />
                 )}
               </FormField>
 
               {/* Póliza */}
               <FormField label="Póliza asociada">
-                {availablePolicies.length > 0 ? (
-                  <>
-                    <FormSelect value={policyId} onChange={(e) => handlePolicyChange(e.target.value)}>
-                      <option value="">Sin póliza asociada</option>
-                      {availablePolicies.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.policyNumber} — {(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}
-                        </option>
-                      ))}
-                    </FormSelect>
-                    {selectedPolicy && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        {selectedCoverage?.insuranceType ?? 'Sin tipo'} · Vigencia: {selectedPolicy.endDate}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg">
-                    <TriangleAlert size={13} className="text-slate-400 flex-shrink-0" />
-                    <p className="text-xs text-slate-500">
-                      {assetId ? 'Sin pólizas asociadas al activo.' : 'Seleccioná un activo primero.'}
-                    </p>
-                  </div>
+                <PolicyRemoteSelect
+                  value={policyId}
+                  assetId={assetId || undefined}
+                  onChange={handlePolicyChange}
+                  initialOption={selectedPolicyDetail}
+                  noResultsMessage={assetId ? 'No se encontraron pólizas asociadas al activo' : 'No se encontraron pólizas'}
+                />
+                {selectedPolicyDetail && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    {selectedCoverage?.insuranceType ?? 'Sin tipo'} · Vigencia: {selectedPolicyDetail.endDate}
+                  </p>
                 )}
               </FormField>
             </FormSection>
@@ -615,7 +601,7 @@ export default function ClaimNewPage() {
               <SummaryRow label="Tipo" value={claimType || '—'} />
               <SummaryRow label="Estado" value={status || claimStatuses[0]?.label || '—'} />
               <SummaryRow label="Activo" value={selectedAsset?.internalCode ?? '—'} />
-              <SummaryRow label="Póliza" value={selectedPolicy?.policyNumber ?? '—'} />
+              <SummaryRow label="Póliza" value={selectedPolicyDetail?.policyNumber ?? '—'} />
               <SummaryRow label="Aseguradora" value={insuranceCompany || '—'} />
               <SummaryRow
                 label={`Reclamado (${mainPrefix})`}

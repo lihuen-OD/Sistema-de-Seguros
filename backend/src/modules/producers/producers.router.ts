@@ -8,6 +8,7 @@ import {
   CreateTaskSchema,
   UpdateTaskSchema,
   ListProducersQuerySchema,
+  SearchProducersQuerySchema,
   ListOverdueTasksQuerySchema,
 } from './producers.schemas'
 import { producersController } from './producers.controller'
@@ -21,6 +22,8 @@ producersRouter.use(authMiddleware)
 const PRODUCERS_LIST_MODULES = ['producers', 'tasks', 'dashboard', 'policies'] as const
 
 producersRouter.get('/', requireModule(...PRODUCERS_LIST_MODULES), validateQuery(ListProducersQuerySchema), producersController.list)
+// Debe declararse antes de /:id para que Express no interprete "search" como un ID de productor.
+producersRouter.get('/search', requireModule(...PRODUCERS_LIST_MODULES), validateQuery(SearchProducersQuerySchema), producersController.search)
 producersRouter.post(
   '/',
   requireModule('producers'),

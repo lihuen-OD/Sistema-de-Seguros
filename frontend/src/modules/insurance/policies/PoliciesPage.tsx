@@ -1,18 +1,18 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2, Archive, X } from 'lucide-react'
+import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2, Archive } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
+import { PaginationControls } from '../../../shared/components/data-table/PaginationControls'
 import { OverflowCell } from '../../../shared/components/data-table/OverflowCell'
 import { ColumnConfigButton } from '../../../shared/components/data-table/ColumnConfigButton'
 import { ExportPresetsButton } from '../../../shared/components/data-table/ExportPresetsButton'
-import { MultiSelectFilter } from '../../../shared/components/filters/MultiSelectFilter'
-import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
+import { FilterBar } from '../../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import {
@@ -43,15 +43,15 @@ const POLICY_STATUS_SORT_ORDER: Record<string, number> = {
   vencida: 2,
   de_baja: 3,
 }
+const DEFAULT_PAGE_SIZE = 20
 
 export default function PoliciesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<string[]>([])
-  const [filterType, setFilterType] = useState<string[]>([])
-  const [filterDateFrom, setFilterDateFrom] = useState('')
-  const [filterDateTo, setFilterDateTo] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deBajaId, setDeBajaId] = useState<string | null>(null)
   // En vuelo (no "cuál fila tiene el diálogo abierto", eso ya es deleteId/
@@ -62,7 +62,14 @@ export default function PoliciesPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [isDeactivating, setIsDeactivating] = useState(false)
 
-  const { data: allPolicies = [], isLoading, isError } = useQuery(policyQueries.list())
+  const { data: result, isLoading, isFetching, isError } = useQuery(policyQueries.listPaginated({
+    page,
+    limit,
+    search: search.trim() || undefined,
+    status: filterStatus ? filterStatus as Policy['status'] : undefined,
+  }))
+  const allPolicies = useMemo(() => result?.data ?? [], [result?.data])
+  const pagination = result?.pagination
   const { data: allProducers = [] } = useQuery(producerQueries.list())
 
   async function handleDelete(id: string) {
@@ -95,30 +102,7 @@ export default function PoliciesPage() {
     }
   }
 
-  const filtered = useMemo(() => {
-    return allPolicies.filter((p) => {
-      const q = search.toLowerCase()
-      const typeNames = p.insuranceTypeNames ?? []
-      const assetNames = p.assetNames ?? []
-      const matchSearch =
-        !search ||
-        p.policyNumber.toLowerCase().includes(q) ||
-        p.insuranceCompany.toLowerCase().includes(q) ||
-        typeNames.some((t) => t.toLowerCase().includes(q)) ||
-        assetNames.some((a) => a.toLowerCase().includes(q))
-      const matchStatus = filterStatus.length === 0 || filterStatus.includes(p.status)
-      const matchType = filterType.length === 0 || typeNames.some((t) => filterType.includes(t))
-      const date = p.startDate ?? ''
-      const matchDateFrom = !filterDateFrom || date.slice(0, 7) >= filterDateFrom
-      const matchDateTo   = !filterDateTo   || date.slice(0, 7) <= filterDateTo
-      return matchSearch && matchStatus && matchType && matchDateFrom && matchDateTo
-    })
-  }, [allPolicies, search, filterStatus, filterType, filterDateFrom, filterDateTo])
-
-  const typeOptions = useMemo(
-    () => [...new Set(allPolicies.flatMap((p) => p.insuranceTypeNames ?? []))].map((t) => ({ value: t, label: t })),
-    [allPolicies],
-  )
+  const filtered = allPolicies
 
   const counts = useMemo(() => ({
     vigente: allPolicies.filter((p) => p.status === 'vigente').length,
@@ -380,50 +364,27 @@ export default function PoliciesPage() {
       />
 
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard label="Vigentes" value={counts.vigente} description="Pólizas con cobertura activa" icon={ShieldCheck} variant="success" />
-        <KpiCard label="Vencidas" value={counts.vencida} description="Requieren renovación" icon={ShieldOff} variant="danger" />
-        <KpiCard label="Próximas a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
-        <KpiCard label="Suma Asegurada" value={formatCurrencyCompact(totalInsuredUsd, 'USD')} description={`${formatCurrencyCompact(totalInsuredArs, 'ARS')} · vigentes y próx. a vencer`} icon={DollarSign} variant="info" />
+        <KpiCard label="Vigentes" value={counts.vigente} description="En esta página" icon={ShieldCheck} variant="success" />
+        <KpiCard label="Vencidas" value={counts.vencida} description="En esta página" icon={ShieldOff} variant="danger" />
+        <KpiCard label="Próximas a Vencer" value={counts.proximo_vencer} description="En esta página" icon={AlertTriangle} variant="warning" />
+        <KpiCard label="Suma Asegurada" value={formatCurrencyCompact(totalInsuredUsd, 'USD')} description={`${formatCurrencyCompact(totalInsuredArs, 'ARS')} · esta página`} icon={DollarSign} variant="info" />
       </MetricGrid>
 
       <SectionCard noPadding>
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
             value={search}
-            onChange={setSearch}
+            onChange={(value) => { setPage(1); setSearch(value) }}
             placeholder="Buscar por N° póliza, aseguradora, tipo o activo…"
             className="w-full sm:w-72"
           />
-          <MultiSelectFilter
-            label="Estado"
-            options={STATUS_OPTIONS}
-            value={filterStatus}
-            onChange={setFilterStatus}
-          />
-          <MultiSelectFilter
-            label="Tipo"
-            options={typeOptions}
-            value={filterType}
-            onChange={setFilterType}
-          />
-          <DateRangeMonthPicker
-            from={filterDateFrom}
-            to={filterDateTo}
-            onChange={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
-          />
-          {(filterDateFrom || filterDateTo) && (
-            <button
-              type="button"
-              onClick={() => { setFilterDateFrom(''); setFilterDateTo('') }}
-              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
-            >
-              <X size={12} />
-              Limpiar fechas
-            </button>
-          )}
+          <FilterBar filters={[{
+            key: 'status', label: 'Estado', options: STATUS_OPTIONS, value: filterStatus,
+            onChange: (value) => { setPage(1); setFilterStatus(value) },
+          }]} />
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
-              {filtered.length} de {allPolicies.length} pólizas
+              {filtered.length} visibles en esta página · {pagination?.total ?? 0} resultados
             </span>
             <ExportPresetsButton
               tableKey="policies"
@@ -433,6 +394,7 @@ export default function PoliciesPage() {
               filenamePrefix="polizas"
               onApplyPreset={applyPreset}
             />
+            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -452,6 +414,17 @@ export default function PoliciesPage() {
           emptyDescription="No se encontraron pólizas con los filtros aplicados."
           minWidth={900}
         />
+        {pagination && (
+          <PaginationControls
+            {...pagination}
+            isLoading={isFetching}
+            onPageChange={setPage}
+            onLimitChange={(nextLimit) => {
+              setPage(1)
+              setLimit(nextLimit)
+            }}
+          />
+        )}
       </SectionCard>
       <ConfirmDialog
         open={deleteId !== null}

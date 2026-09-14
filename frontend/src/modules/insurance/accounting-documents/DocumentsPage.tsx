@@ -1,17 +1,17 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, FileText, CheckCircle2, Clock, AlertCircle, Eye, Edit2, Trash2, X } from 'lucide-react'
+import { Plus, FileText, CheckCircle2, Clock, AlertCircle, Eye, Edit2, Trash2 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DataTable } from '../../../shared/components/data-table/DataTable'
+import { PaginationControls } from '../../../shared/components/data-table/PaginationControls'
 import { ColumnConfigButton } from '../../../shared/components/data-table/ColumnConfigButton'
 import { ExportPresetsButton } from '../../../shared/components/data-table/ExportPresetsButton'
-import { MultiSelectFilter } from '../../../shared/components/filters/MultiSelectFilter'
-import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
+import { FilterBar } from '../../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import {
@@ -40,18 +40,27 @@ const PAYMENT_STATUS_SORT_ORDER: Record<string, number> = {
   OVERDUE: 3,
   NOT_APPLICABLE: 4,
 }
+const DEFAULT_PAGE_SIZE = 20
 
 export default function DocumentsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [filterType, setFilterType] = useState<string[]>([])
-  const [filterStatus, setFilterStatus] = useState<string[]>([])
-  const [filterDateFrom, setFilterDateFrom] = useState('')
-  const [filterDateTo, setFilterDateTo] = useState('')
+  const [filterType, setFilterType] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
 
-  const { data: allDocuments = [], isLoading, isError } = useQuery(documentQueries.list())
+  const { data: result, isLoading, isFetching, isError } = useQuery(documentQueries.listPaginated({
+    page,
+    limit,
+    search: search.trim() || undefined,
+    documentType: filterType || undefined,
+    paymentStatus: filterStatus || undefined,
+  }))
+  const allDocuments = useMemo(() => result?.data ?? [], [result?.data])
+  const pagination = result?.pagination
   const { data: documentTypesData } = useQuery(documentQueries.types())
   const documentTypes = documentTypesData?.types ?? []
   const documentTypeLabels = useMemo(
@@ -119,18 +128,7 @@ export default function DocumentsPage() {
 
   const partialCount = allDocuments.filter((d) => d.paymentStatus === 'PARTIALLY_PAID').length
 
-  const filtered = useMemo(() => {
-    return allDocuments.filter((doc) => {
-      const q = search.toLowerCase()
-      const matchSearch = !search || doc.documentNumber.toLowerCase().includes(q)
-      const matchType = filterType.length === 0 || filterType.includes(doc.documentType)
-      const matchStatus = filterStatus.length === 0 || filterStatus.includes(doc.paymentStatus)
-      const date = doc.issueDate ?? ''
-      const matchDateFrom = !filterDateFrom || date.slice(0, 7) >= filterDateFrom
-      const matchDateTo   = !filterDateTo   || date.slice(0, 7) <= filterDateTo
-      return matchSearch && matchType && matchStatus && matchDateFrom && matchDateTo
-    })
-  }, [allDocuments, search, filterType, filterStatus, filterDateFrom, filterDateTo])
+  const filtered = allDocuments
 
   // useMutation (en vez de un async function suelto) para tener isPending y
   // poder bloquear los botones de "Eliminar" mientras hay un borrado en
@@ -142,6 +140,7 @@ export default function DocumentsPage() {
       // exact:true: solo la query del listado (este doc desaparece de acá),
       // no el detail/balance/installments/attachments de otros documentos.
       queryClient.invalidateQueries({ queryKey: documentKeys.all, exact: true })
+      queryClient.invalidateQueries({ queryKey: [...documentKeys.all, 'paginated'] })
       setConfirmDeleteId(null)
     },
   })
@@ -393,40 +392,33 @@ export default function DocumentsPage() {
       />
 
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard label="Total Documentos" value={allDocuments.length} description="Todos los tipos de documentos" icon={FileText} variant="default" />
-        <KpiCard label="Total Pendiente" value={totalsReady ? formatCurrencyCompact(totals.pendingArs, 'ARS') : '—'} description={totalsReady ? formatCurrencyCompact(totals.pendingUsd, 'USD') : 'Calculando…'} icon={Clock} variant="warning" />
-        <KpiCard label="Total Pagado" value={totalsReady ? formatCurrencyCompact(totals.paidArs, 'ARS') : '—'} description={totalsReady ? formatCurrencyCompact(totals.paidUsd, 'USD') : 'Calculando…'} icon={CheckCircle2} variant="success" />
-        <KpiCard label="Pago Parcial" value={partialCount} description="Documentos con pago parcial" icon={AlertCircle} variant="warning" />
+        <KpiCard label="Total Documentos" value={pagination?.total ?? 0} description="Resultados del listado" icon={FileText} variant="default" />
+        <KpiCard label="Total Pendiente" value={totalsReady ? formatCurrencyCompact(totals.pendingArs, 'ARS') : '—'} description={totalsReady ? `${formatCurrencyCompact(totals.pendingUsd, 'USD')} · esta página` : 'Calculando…'} icon={Clock} variant="warning" />
+        <KpiCard label="Total Pagado" value={totalsReady ? formatCurrencyCompact(totals.paidArs, 'ARS') : '—'} description={totalsReady ? `${formatCurrencyCompact(totals.paidUsd, 'USD')} · esta página` : 'Calculando…'} icon={CheckCircle2} variant="success" />
+        <KpiCard label="Pago Parcial" value={partialCount} description="En esta página" icon={AlertCircle} variant="warning" />
       </MetricGrid>
 
       <SectionCard noPadding>
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
             value={search}
-            onChange={setSearch}
+            onChange={(value) => { setPage(1); setSearch(value) }}
             placeholder="Buscar por N° de documento…"
             className="w-full sm:w-72"
           />
-          <MultiSelectFilter label="Tipo" options={DOCUMENT_TYPE_OPTIONS} value={filterType} onChange={setFilterType} />
-          <MultiSelectFilter label="Estado de Pago" options={PAYMENT_STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
-          <DateRangeMonthPicker
-            from={filterDateFrom}
-            to={filterDateTo}
-            onChange={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
-          />
-          {(filterDateFrom || filterDateTo) && (
-            <button
-              type="button"
-              onClick={() => { setFilterDateFrom(''); setFilterDateTo('') }}
-              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors"
-            >
-              <X size={12} />
-              Limpiar fechas
-            </button>
-          )}
+          <FilterBar filters={[
+            {
+              key: 'type', label: 'Tipo', options: DOCUMENT_TYPE_OPTIONS, value: filterType,
+              onChange: (value) => { setPage(1); setFilterType(value) },
+            },
+            {
+              key: 'payment-status', label: 'Estado de Pago', options: PAYMENT_STATUS_OPTIONS, value: filterStatus,
+              onChange: (value) => { setPage(1); setFilterStatus(value) },
+            },
+          ]} />
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
-              {filtered.length} de {allDocuments.length} documentos
+              {filtered.length} visibles en esta página · {pagination?.total ?? 0} resultados
             </span>
             <ExportPresetsButton
               tableKey="documents"
@@ -436,6 +428,7 @@ export default function DocumentsPage() {
               filenamePrefix="documentos"
               onApplyPreset={applyPreset}
             />
+            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -454,6 +447,17 @@ export default function DocumentsPage() {
           emptyTitle="Sin documentos"
           emptyDescription="No se encontraron documentos con los filtros aplicados."
         />
+        {pagination && (
+          <PaginationControls
+            {...pagination}
+            isLoading={isFetching}
+            onPageChange={setPage}
+            onLimitChange={(nextLimit) => {
+              setPage(1)
+              setLimit(nextLimit)
+            }}
+          />
+        )}
       </SectionCard>
     </PageContent>
   )

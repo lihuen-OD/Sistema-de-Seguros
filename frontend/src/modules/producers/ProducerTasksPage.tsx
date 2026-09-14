@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { Plus, ClipboardList, Clock, CheckCircle2, AlertTriangle, Edit2 } from 'lucide-react'
-import { useQuery, useQueries } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../shared/components/cards/MetricGrid'
@@ -13,74 +13,75 @@ import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
+import { LoadingState } from '../../shared/components/empty-states/LoadingState'
 import { TableShell } from '../../shared/components/data-table/TableShell'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
+import { PaginationControls } from '../../shared/components/data-table/PaginationControls'
+import { ProducerRemoteSelect } from '../../shared/components/forms/ProducerRemoteSelect'
 import { useCurrentUser } from '../../app/auth/AuthContext'
 import { hasModule } from '../../app/auth/roleScope'
 import { formatDate, daysUntil } from '../../shared/utils/format'
-import { producerQueries } from '../../shared/api/producers.api'
-import { policyQueries } from '../../shared/api/policies.api'
-import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '../../shared/constants'
+import { taskQueries, type TaskListItem, type TaskListFilters } from '../../shared/api/tasks.api'
+import { TASK_PRIORITY_LABELS } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
-import type { ProducerTask, TableColumn } from '../../shared/types'
+import type { TableColumn, TaskPriority } from '../../shared/types'
 
-const STATUS_OPTIONS = Object.entries(TASK_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 const PRIORITY_OPTIONS = Object.entries(TASK_PRIORITY_LABELS).map(([value, label]) => ({ value, label }))
+
+// Vocabulario real de backend + "Vencida" — "Vencida" no es un status posible
+// en GET /tasks (ver tasks.schemas.ts), se traduce a overdueOnly=true al
+// construir la query, mismo criterio que ya usa GET /producers/tasks/overdue
+// para el Dashboard. La antigua "Finalizada" agrupaba completada+cancelada;
+// como el backend las distingue, quedan como 2 opciones separadas.
+const STATUS_FILTER_OPTIONS = [
+  { value: 'pendiente', label: 'Pendiente' },
+  { value: 'en_progreso', label: 'En Progreso' },
+  { value: 'completada', label: 'Completada' },
+  { value: 'cancelada', label: 'Cancelada' },
+  { value: 'vencida', label: 'Vencida' },
+]
+
+const DEFAULT_PAGE_SIZE = 20
 
 export default function ProducerTasksPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
-  const [filterProducer, setFilterProducer] = useState('')
+  const [filterProducerId, setFilterProducerId] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
 
   const { user } = useCurrentUser()
   const canPolicies = hasModule(user, 'policies')
 
-  const { data: allProducers = [], isError } = useQuery(producerQueries.list())
-  // Solo se usa para resolver el número de póliza de la columna "Póliza" —
-  // sin el módulo, esa columna se omite en vez de mostrar el policyId crudo.
-  const { data: allPolicies = [] } = useQuery({ ...policyQueries.list(), enabled: canPolicies })
+  const isOverdueFilter = filterStatus === 'vencida'
 
-  const taskQueries = useQueries({
-    queries: allProducers.map((p) => ({ ...producerQueries.tasks(p.id), enabled: allProducers.length > 0 })),
-  })
+  const { data: result, isLoading, isFetching, isError } = useQuery(taskQueries.listPaginated({
+    page,
+    limit,
+    search: search.trim() || undefined,
+    status: isOverdueFilter ? undefined : (filterStatus || undefined) as TaskListFilters['status'],
+    overdueOnly: isOverdueFilter || undefined,
+    priority: (filterPriority || undefined) as TaskPriority | undefined,
+    producerId: filterProducerId || undefined,
+  }))
+  const tasks = result?.data ?? []
+  const pagination = result?.pagination
 
-  const allTasks = taskQueries.flatMap((q, i) =>
-    (q.data ?? []).map((t) => ({ ...t, producerId: allProducers[i]?.id ?? null }))
-  )
+  // KPIs de esta página, no del sistema completo — un listado paginado no
+  // puede calcular totales globales sin traer todo, que es justo lo que esta
+  // migración elimina (ver auditoría Fase 2).
+  const pendingCount = tasks.filter((t) => t.status === 'pendiente').length
+  const inProgressCount = tasks.filter((t) => t.status === 'en_curso').length
+  const overdueCount = tasks.filter((t) => t.status === 'vencida').length
+  const completedCount = tasks.filter((t) => t.status === 'finalizada').length
 
-  const producerOptions = [
-    { value: '__none__', label: '— Tareas propias' },
-    ...allProducers.map((p) => ({ value: p.id, label: p.name })),
-  ]
+  function withPageReset(setter: (value: string) => void) {
+    return (value: string) => { setPage(1); setter(value) }
+  }
 
-  const filtered = useMemo(() => {
-    return allTasks.filter((task) => {
-      const producer = allProducers.find((p) => p.id === task.producerId)
-      const matchSearch =
-        !search ||
-        task.title.toLowerCase().includes(search.toLowerCase()) ||
-        task.description.toLowerCase().includes(search.toLowerCase()) ||
-        (producer?.name ?? '').toLowerCase().includes(search.toLowerCase())
-      const matchProducer =
-        !filterProducer ||
-        (filterProducer === '__none__' ? task.producerId === null : task.producerId === filterProducer)
-      const matchStatus = !filterStatus || task.status === filterStatus
-      const matchPriority = !filterPriority || task.priority === filterPriority
-      return matchSearch && matchProducer && matchStatus && matchPriority
-    })
-  }, [allTasks, allProducers, search, filterProducer, filterStatus, filterPriority])
-
-  const { pendingCount, inProgressCount, overdueCount, completedCount } = useMemo(() => ({
-    pendingCount: allTasks.filter((t) => t.status === 'pendiente').length,
-    inProgressCount: allTasks.filter((t) => t.status === 'en_curso').length,
-    overdueCount: allTasks.filter((t) => t.status === 'vencida').length,
-    completedCount: allTasks.filter((t) => t.status === 'finalizada').length,
-  }), [allTasks])
-
-  // Table columns
-  const columns: TableColumn<ProducerTask>[] = [
+  const columns: TableColumn<TaskListItem>[] = [
     {
       key: 'title',
       label: 'Título',
@@ -100,39 +101,34 @@ export default function ProducerTasksPage() {
       ),
     },
     {
-      key: 'producerId',
+      key: 'producerName',
       label: 'Productor',
-      render: (v) => {
-        if (!v) return <span className="text-xs text-slate-400 italic">— Tarea propia</span>
-        const producer = allProducers.find((p) => p.id === v)
-        return (
-          <button
-            onClick={(e) => { e.stopPropagation(); navigate(`/producers/${v}`) }}
-            className="text-left min-w-0 max-w-[160px] block group"
-          >
-            <OverflowCell value={producer?.name ?? String(v)} lines={1} className="text-xs text-brand-600 group-hover:underline" />
-          </button>
-        )
-      },
+      render: (v, row) => (
+        <button
+          onClick={(e) => { e.stopPropagation(); navigate(`/producers/${row.producerId}`) }}
+          className="text-left min-w-0 max-w-[160px] block group"
+        >
+          <OverflowCell value={String(v)} lines={1} className="text-xs text-brand-600 group-hover:underline" />
+        </button>
+      ),
     },
-    // Sin el módulo Pólizas se omite del todo — mostrar el policyId crudo
-    // (un UUID) en su lugar quedaría roto/poco profesional.
+    // Sin el módulo Pólizas se omite del todo — mismo criterio que ya tenía
+    // esta pantalla antes de la migración.
     ...(canPolicies ? [{
-      key: 'policyId',
+      key: 'policyNumber',
       label: 'Póliza',
-      render: (v: unknown) => {
+      render: (v: unknown, row: TaskListItem) => {
         if (!v) return <span className="text-xs text-slate-400">—</span>
-        const policy = allPolicies.find((p) => p.id === v)
         return (
           <button
-            onClick={(e) => { e.stopPropagation(); navigate(`/insurance/policies/${v}`) }}
+            onClick={(e) => { e.stopPropagation(); navigate(`/insurance/policies/${row.policyId}`) }}
             className="text-xs font-mono text-brand-600 hover:underline"
           >
-            {policy?.policyNumber ?? String(v)}
+            {String(v)}
           </button>
         )
       },
-    } satisfies TableColumn<ProducerTask>] : []),
+    } satisfies TableColumn<TaskListItem>] : []),
     {
       key: 'dueDate',
       label: 'Vence',
@@ -195,33 +191,33 @@ export default function ProducerTasksPage() {
         }
       />
 
-      {/* KPIs */}
+      {/* KPIs — de esta página, no del sistema completo (ver auditoría Fase 2) */}
       <MetricGrid cols={4} className="mb-6">
         <KpiCard
           label="Pendientes"
           value={pendingCount}
-          description="sin iniciar"
+          description="sin iniciar · esta página"
           icon={ClipboardList}
           variant={pendingCount > 0 ? 'warning' : 'default'}
         />
         <KpiCard
           label="En Curso"
           value={inProgressCount}
-          description="en ejecución activa"
+          description="en ejecución activa · esta página"
           icon={Clock}
           variant={inProgressCount > 0 ? 'info' : 'default'}
         />
         <KpiCard
           label="Vencidas"
           value={overdueCount}
-          description="superaron fecha límite"
+          description="superaron fecha límite · esta página"
           icon={AlertTriangle}
           variant={overdueCount > 0 ? 'danger' : 'default'}
         />
         <KpiCard
           label="Finalizadas"
           value={completedCount}
-          description="completadas exitosamente"
+          description="completadas o canceladas · esta página"
           icon={CheckCircle2}
           variant="success"
         />
@@ -232,42 +228,62 @@ export default function ProducerTasksPage() {
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
             value={search}
-            onChange={setSearch}
-            placeholder="Buscar por título, descripción o productor…"
+            onChange={withPageReset(setSearch)}
+            placeholder="Buscar por título, descripción, responsable o productor…"
             className="w-full sm:w-72"
           />
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-500 whitespace-nowrap hidden sm:block">
+              Productor
+            </label>
+            <div className="w-48">
+              <ProducerRemoteSelect
+                value={filterProducerId}
+                onChange={withPageReset(setFilterProducerId)}
+                placeholder="Todos"
+                emptyOptionLabel="Todos los productores"
+              />
+            </div>
+          </div>
           <FilterBar
             filters={[
               {
-                key: 'producer',
-                label: 'Productor',
-                options: producerOptions,
-                value: filterProducer,
-                onChange: setFilterProducer,
-              },
-              {
                 key: 'status',
                 label: 'Estado',
-                options: STATUS_OPTIONS,
+                options: STATUS_FILTER_OPTIONS,
                 value: filterStatus,
-                onChange: setFilterStatus,
+                onChange: withPageReset(setFilterStatus),
               },
               {
                 key: 'priority',
                 label: 'Prioridad',
                 options: PRIORITY_OPTIONS,
                 value: filterPriority,
-                onChange: setFilterPriority,
+                onChange: withPageReset(setFilterPriority),
               },
             ]}
           />
           <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-            {filtered.length} de {allTasks.length} tareas
+            {tasks.length} en esta página · {pagination?.total ?? 0} resultados
           </span>
         </div>
 
         {/* Custom table with overdue row highlight */}
-        <TasksTable tasks={filtered} columns={columns} onRowClick={(t) => navigate(ROUTES.TASKS_DETAIL(t.id))} />
+        <TasksTable
+          tasks={tasks}
+          columns={columns}
+          loading={isLoading}
+          onRowClick={(t) => navigate(ROUTES.TASKS_DETAIL(t.id))}
+        />
+
+        {pagination && (
+          <PaginationControls
+            {...pagination}
+            isLoading={isFetching}
+            onPageChange={setPage}
+            onLimitChange={(nextLimit) => { setPage(1); setLimit(nextLimit) }}
+          />
+        )}
       </SectionCard>
     </PageContent>
   )
@@ -278,12 +294,18 @@ export default function ProducerTasksPage() {
 function TasksTable({
   tasks,
   columns,
+  loading,
   onRowClick,
 }: {
-  tasks: ProducerTask[]
-  columns: TableColumn<ProducerTask>[]
-  onRowClick?: (task: ProducerTask) => void
+  tasks: TaskListItem[]
+  columns: TableColumn<TaskListItem>[]
+  loading?: boolean
+  onRowClick?: (task: TaskListItem) => void
 }) {
+  if (loading && tasks.length === 0) {
+    return <LoadingState />
+  }
+
   if (tasks.length === 0) {
     return (
       <div className="py-12">

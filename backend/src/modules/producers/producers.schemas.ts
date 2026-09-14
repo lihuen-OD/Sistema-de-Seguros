@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema, ActiveFilterSchema } from '../../shared/schemas/common'
+import { PaginationSchema, ActiveFilterSchema, booleanFromString } from '../../shared/schemas/common'
 
 const ISODate = z
   .string()
@@ -19,6 +19,13 @@ export const UpdateProducerSchema = CreateProducerSchema.partial()
 
 export const ListProducersQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
   search: z.string().optional(),
+})
+
+export const SearchProducersQuerySchema = z.object({
+  q: z.string().trim().max(100).optional().default(''),
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  selectedId: z.string().uuid('ID de productor inválido').optional(),
+  activeOnly: booleanFromString.optional(),
 })
 
 export const CreateTaskSchema = z.object({
@@ -48,6 +55,7 @@ export const ListOverdueTasksQuerySchema = z.object({
 export type CreateProducerDTO = z.infer<typeof CreateProducerSchema>
 export type UpdateProducerDTO = z.infer<typeof UpdateProducerSchema>
 export type ListProducersQueryDTO = z.infer<typeof ListProducersQuerySchema>
+export type SearchProducersQueryDTO = z.infer<typeof SearchProducersQuerySchema>
 export type CreateTaskDTO = z.infer<typeof CreateTaskSchema>
 export type UpdateTaskDTO = z.infer<typeof UpdateTaskSchema>
 export type ListOverdueTasksQueryDTO = z.infer<typeof ListOverdueTasksQuerySchema>

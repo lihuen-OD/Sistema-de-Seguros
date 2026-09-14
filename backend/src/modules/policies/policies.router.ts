@@ -12,6 +12,7 @@ import {
   DeactivateCoverageSchema,
   AddPolicyAttachmentSchema,
   ListPoliciesQuerySchema,
+  SearchPoliciesQuerySchema,
 } from './policies.schemas'
 import { policiesController } from './policies.controller'
 
@@ -21,6 +22,8 @@ policiesRouter.use(authMiddleware)
 
 // CRUD principal
 policiesRouter.get('/', requireModule('policies', 'renewal_projections', 'renewal_projections_economic'), validateQuery(ListPoliciesQuerySchema), policiesController.list)
+// Debe declararse antes de /:id para que Express no interprete "search" como un ID de póliza.
+policiesRouter.get('/search', requireModule('policies', 'renewal_projections', 'renewal_projections_economic'), validateQuery(SearchPoliciesQuerySchema), policiesController.search)
 policiesRouter.post(
   '/',
   requireModule('policies'),

@@ -13,9 +13,11 @@ import {
   FormSelect,
   FormTextarea,
 } from '../../shared/components/forms/FormSection'
-import { producersApi, producerQueries, producerKeys } from '../../shared/api/producers.api'
-import { policyQueries } from '../../shared/api/policies.api'
-import { assetQueries } from '../../shared/api/assets.api'
+import { ProducerRemoteSelect } from '../../shared/components/forms/ProducerRemoteSelect'
+import { PolicyRemoteSelect } from '../../shared/components/forms/PolicyRemoteSelect'
+import { AssetRemoteSelect } from '../../shared/components/forms/AssetRemoteSelect'
+import { tasksApi, taskKeys } from '../../shared/api/tasks.api'
+import { producerKeys } from '../../shared/api/producers.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { TASK_PRIORITY_LABELS } from '../../shared/constants'
@@ -33,9 +35,6 @@ export default function TaskNewPage() {
   const [searchParams] = useSearchParams()
   const prefilledProducerId = searchParams.get('producerId') ?? ''
 
-  const { data: allProducers = [] } = useQuery(producerQueries.list())
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: taskTypes = [] } = useQuery(catalogQueries.byCategory('task_type'))
 
   const [title, setTitle] = useState('')
@@ -48,10 +47,6 @@ export default function TaskNewPage() {
   const [priority, setPriority] = useState<TaskPriority>('media')
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
-
-  const filteredPolicies = producerId
-    ? allPolicies.filter((p) => p.producerId === producerId)
-    : allPolicies
 
   function validate(): boolean {
     const e: FormErrors = {}
@@ -75,7 +70,8 @@ export default function TaskNewPage() {
     }
 
     try {
-      await producersApi.createTask(producerId, {
+      await tasksApi.create({
+        producerId,
         title: title.trim(),
         description: description.trim() || undefined,
         dueDate: dueDate || undefined,
@@ -84,6 +80,7 @@ export default function TaskNewPage() {
         policyId: policyId || undefined,
         assetId: assetId || undefined,
       })
+      queryClient.invalidateQueries({ queryKey: taskKeys.all })
       queryClient.invalidateQueries({ queryKey: producerKeys.all })
       navigate(ROUTES.TASKS)
     } catch {
@@ -99,7 +96,7 @@ export default function TaskNewPage() {
     <PageContent>
       <PageHeader
         title="Nueva Tarea"
-        subtitle="Crear una tarea operativa, con o sin productor asignado"
+        subtitle="Crear una tarea operativa, siempre asignada a un productor"
         category="Tareas"
         backTo={backTo}
         backLabel={prefilledProducerId ? 'Volver al Productor' : 'Volver a Tareas'}
@@ -141,19 +138,13 @@ export default function TaskNewPage() {
 
           <div className="mt-5">
             <FormSection title="Asignación">
-              <FormField label="Productor asignado">
-                <FormSelect
+              <FormField label="Productor asignado" required>
+                <ProducerRemoteSelect
                   value={producerId}
-                  onChange={(e) => {
-                    setProducerId(e.target.value)
-                    setPolicyId('')
-                  }}
-                >
-                  <option value="">— Sin productor (tarea propia)</option>
-                  {allProducers.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </FormSelect>
+                  onChange={(v) => { setProducerId(v); setPolicyId('') }}
+                  placeholder="Seleccionar productor…"
+                  emptyOptionLabel="Seleccionar productor…"
+                />
               </FormField>
               <FormField label="Responsable interno">
                 <FormInput
@@ -168,24 +159,22 @@ export default function TaskNewPage() {
           <div className="mt-5">
             <FormSection title="Vínculos opcionales">
               <FormField label="Póliza asociada">
-                <FormSelect value={policyId} onChange={(e) => setPolicyId(e.target.value)}>
-                  <option value="">— Sin póliza</option>
-                  {filteredPolicies.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.policyNumber} — {(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}
-                    </option>
-                  ))}
-                </FormSelect>
+                <PolicyRemoteSelect
+                  value={policyId}
+                  onChange={setPolicyId}
+                  placeholder="— Sin póliza"
+                  emptyOptionLabel="— Sin póliza"
+                  noResultsMessage="No se encontraron pólizas"
+                />
               </FormField>
               <FormField label="Activo asociado">
-                <FormSelect value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-                  <option value="">— Sin activo</option>
-                  {allAssets.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.internalCode} — {a.name}
-                    </option>
-                  ))}
-                </FormSelect>
+                <AssetRemoteSelect
+                  value={assetId}
+                  onChange={setAssetId}
+                  placeholder="— Sin activo"
+                  emptyOptionLabel="— Sin activo"
+                  noResultsMessage="No se encontraron activos"
+                />
               </FormField>
             </FormSection>
           </div>

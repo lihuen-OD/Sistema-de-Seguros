@@ -29,6 +29,7 @@ import type {
   CreateDocumentDTO,
   UpdateDocumentDTO,
   ListDocumentsQueryDTO,
+  SearchDocumentsQueryDTO,
   UpdateInstallmentDTO,
   ReplaceInstallmentsDTO,
   ReplaceAllocationsDTO,
@@ -221,6 +222,125 @@ export const documentsService = {
       endorsementTypes: Object.entries(ENDORSEMENT_TYPES).map(([key, label]) => ({ key, label })),
       economicImpactTypes: Object.entries(ECONOMIC_IMPACT_TYPES).map(([key, label]) => ({ key, label })),
     }
+  },
+
+  // Un documento "pertenece" a una póliza vía su propio policyId (Endoso) o
+  // vía policyAssetCoverage.policyId de sus allocations (Factura/NC/ND/
+  // Ajuste) — mismo join que ya resuelve validateTypeConstraints al validar
+  // que la factura vinculada de un Endoso sea de la póliza que modifica, acá
+  // reutilizado para no tener dos criterios de "pertenencia" distintos.
+  belongsToPolicy(policyId: string): Prisma.AccountingDocumentWhereInput {
+    return {
+      OR: [
+        { policyId },
+        { allocations: { some: { policyAssetCoverage: { policyId } } } },
+      ],
+    }
+  },
+
+  // Selector liviano de "documento vinculado" (Fase 1B.4) — reemplaza, para
+  // los formularios de NC/ND/Endoso/Ajuste, el findAll(limit 200) que traían
+  // entero para filtrar en el cliente. Payload sin allocations/installments/
+  // attachments: solo lo que el selector necesita para mostrar y filtrar.
+  async search(query: SearchDocumentsQueryDTO) {
+    const q = query.q.trim()
+    // AND de condiciones independientes, no un solo objeto con spreads — dos
+    // filtros que necesitan su propio OR (policyId y q) colisionarían si
+    // compartieran la misma clave `OR` de un objeto literal (la última
+    // sobrescribe a la anterior).
+    const conditions: Prisma.AccountingDocumentWhereInput[] = []
+    if (query.excludeCancelled) conditions.push({ documentStatus: { not: 'CANCELLED' } })
+    if (query.type && query.type.length > 0) conditions.push({ documentType: { in: query.type } })
+    // insuranceCompany viene de un catálogo cerrado (combo, no texto libre) —
+    // igualdad exacta, mismo criterio que ya usan los formularios hoy
+    // (d.insuranceCompany === form.insuranceCompany) al filtrar en el cliente.
+    if (query.insuranceCompany) conditions.push({ insuranceCompany: query.insuranceCompany })
+    if (query.policyId) conditions.push(this.belongsToPolicy(query.policyId))
+    if (q) {
+      conditions.push({
+        OR: [
+          { documentNumber: { contains: q, mode: 'insensitive' } },
+          { insuranceCompany: { contains: q, mode: 'insensitive' } },
+          { description: { contains: q, mode: 'insensitive' } },
+        ],
+      })
+    }
+    const where: Prisma.AccountingDocumentWhereInput = conditions.length > 0 ? { AND: conditions } : {}
+    const select = {
+      id: true,
+      documentNumber: true,
+      documentType: true,
+      issueDate: true,
+      insuranceCompany: true,
+      currency: true,
+      netAmount: true,
+      vatAmount: true,
+      otherTaxesAmount: true,
+      paymentStatus: true,
+      paymentMethod: true,
+    } satisfies Prisma.AccountingDocumentSelect
+
+    const results = await prisma.accountingDocument.findMany({
+      where,
+      select,
+      orderBy: { createdAt: 'desc' },
+      take: query.limit,
+    })
+
+    // Un documento vinculado existente (edición) debe seguir visible aunque
+    // ya no cumpla los filtros activos (ej. quedó CANCELLED después) — mismo
+    // patrón que producers/assets/policies.search. La única excepción es
+    // policyId: para un Endoso, pertenecer a la póliza es una regla de
+    // negocio dura (validateTypeConstraints la exige para poder guardar), no
+    // un filtro blando de UX — si selectedId no pertenece a la póliza pedida,
+    // no debe colarse igual.
+    if (query.selectedId && !results.some((doc) => doc.id === query.selectedId)) {
+      const selected = await prisma.accountingDocument.findFirst({
+        where: {
+          id: query.selectedId,
+          ...(query.policyId && this.belongsToPolicy(query.policyId)),
+        },
+        select,
+      })
+      if (selected) results.unshift(selected)
+    }
+
+    const mapped = results.slice(0, query.limit).map((doc) => ({
+      id: doc.id,
+      documentNumber: doc.documentNumber,
+      type: doc.documentType,
+      issueDate: toDateStr(doc.issueDate),
+      insuranceCompany: doc.insuranceCompany,
+      currency: doc.currency,
+      totalAmount: computeTotalAmount(doc),
+      paymentStatus: doc.paymentStatus,
+      paymentMethod: doc.paymentMethod,
+    }))
+
+    if (!query.withAvailableBalance) return mapped
+
+    // Acotado a los resultados ya limitados por `take` (≤ query.limit, o sea
+    // ≤50) — no a los ~200 que traía antes el findAll(limit 200) + 1 consulta
+    // de saldo por candidato del lado del cliente (Fase 1B.4, auditoría NC).
+    // Reutiliza documentsBalanceService.getBalance, la misma fuente de saldo
+    // que ya usan GET /:id/balance y apply()/cancel() — no duplica el
+    // cálculo de créditos/débitos/ajustes/impacto económico en otro lugar.
+    const withBalance = await Promise.all(
+      mapped.map(async (doc) => ({
+        ...doc,
+        availableBalance: (await documentsBalanceService.getBalance(doc.id)).effectiveAmount,
+      })),
+    )
+
+    if (query.minAvailableBalance === undefined) return withBalance
+
+    // El documento vinculado ya existente (edición) no se oculta aunque su
+    // saldo haya quedado en 0 por la propia NC que lo está editando — mismo
+    // criterio que ya usaba el filtrado client-side de DocumentoNotaCreditoForm
+    // antes de esta migración.
+    return withBalance.filter(
+      (doc) => doc.id === query.selectedId || doc.availableBalance >= query.minAvailableBalance!,
+    )
   },
 
   async findAll(query: ListDocumentsQueryDTO) {

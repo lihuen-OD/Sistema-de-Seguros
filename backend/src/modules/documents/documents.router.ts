@@ -8,6 +8,7 @@ import {
   CreateDocumentSchema,
   UpdateDocumentSchema,
   ListDocumentsQuerySchema,
+  SearchDocumentsQuerySchema,
   UpdateInstallmentSchema,
   ReplaceInstallmentsSchema,
   ReplaceAllocationsSchema,
@@ -30,6 +31,14 @@ documentsRouter.post(
   requireModule('documents'),
   validate(CreateDocumentSchema),
   documentsController.create,
+)
+
+// ── Búsqueda liviana para selectores (debe ir antes de /:id) ─────────────────
+documentsRouter.get(
+  '/search',
+  requireModule('documents'),
+  validateQuery(SearchDocumentsQuerySchema),
+  documentsController.search,
 )
 
 // ── Tipos de documento controlados (debe ir antes de /:id) ───────────────────

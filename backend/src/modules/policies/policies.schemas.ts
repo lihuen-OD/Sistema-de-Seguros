@@ -83,6 +83,15 @@ export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema
   includeCoverages: booleanFromString.optional(),
 })
 
+export const SearchPoliciesQuerySchema = z.object({
+  q: z.string().trim().max(100).optional().default(''),
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  selectedId: z.string().uuid('ID de póliza inválido').optional(),
+  assetId: z.string().uuid('ID de activo inválido').optional(),
+  insuranceCompany: z.string().trim().max(300).optional(),
+  activeOnly: booleanFromString.optional(),
+})
+
 export const AddPolicyAttachmentSchema = z.object({
   description: z.string().max(500).optional(),
   // Llega por multipart/form-data — el frontend solo manda el campo cuando
@@ -99,4 +108,5 @@ export type AddCoverageDTO = z.infer<typeof AddCoverageSchema>
 export type UpdateCoverageDTO = z.infer<typeof UpdateCoverageSchema>
 export type DeactivateCoverageDTO = z.infer<typeof DeactivateCoverageSchema>
 export type ListPoliciesQueryDTO = z.infer<typeof ListPoliciesQuerySchema>
+export type SearchPoliciesQueryDTO = z.infer<typeof SearchPoliciesQuerySchema>
 export type AddPolicyAttachmentDTO = z.infer<typeof AddPolicyAttachmentSchema>

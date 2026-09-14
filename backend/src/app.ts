@@ -17,6 +17,7 @@ import { fixedAssetsRouter } from './modules/fixed-assets/fixed-assets.router'
 import { insuranceTypesRouter } from './modules/insurance-types/insurance-types.router'
 import { assetsRouter } from './modules/assets/assets.router'
 import { producersRouter } from './modules/producers/producers.router'
+import { tasksRouter } from './modules/tasks/tasks.router'
 import { policiesRouter } from './modules/policies/policies.router'
 import { documentsRouter } from './modules/documents/documents.router'
 import { fireExtinguishersRouter } from './modules/fire-extinguishers/fire-extinguishers.router'
@@ -150,6 +151,10 @@ app.use('/api/v1/insurance-types', insuranceTypesRouter)
 app.use('/api/v1/assets', assetsRouter)
 // Fase 4 — Productores
 app.use('/api/v1/producers', producersRouter)
+// Fase 2A (optimización) — Tareas: listado global paginado. Las rutas
+// anidadas bajo /producers/:id/tasks y /producers/tasks/overdue siguen
+// intactas en producersRouter — este módulo es aditivo, no un reemplazo.
+app.use('/api/v1/tasks', tasksRouter)
 // Fase 5 — Pólizas
 app.use('/api/v1/policies', policiesRouter)
 // Fase 6 — Documentos Contables

@@ -12,7 +12,8 @@ import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
 import { ExportPresetsButton } from '../../shared/components/data-table/ExportPresetsButton'
 import { DataTable } from '../../shared/components/data-table/DataTable'
-import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
+import { PaginationControls } from '../../shared/components/data-table/PaginationControls'
+import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
@@ -34,6 +35,7 @@ type ActivityFilter = 'active' | 'inactive' | 'all'
 // Orden por severidad al ordenar la columna "Estado" — alfabético dejaría
 // "próximo_vencer" antes que "vencido", que no es el orden que espera nadie.
 const STATUS_SORT_ORDER: Record<string, number> = { vigente: 0, proximo_vencer: 1, vencido: 2, sin_fecha: 3 }
+const DEFAULT_PAGE_SIZE = 20
 
 // `fe.status` ya es el peor de tres estados (carga, vida útil por
 // fabricación y prueba hidráulica — ver computeFireExtinguisherStatus en el
@@ -62,22 +64,32 @@ export default function FireExtinguishersPage() {
   const navigate = useNavigate()
 
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<string[]>([])
-  const [filterLocation, setFilterLocation] = useState<string[]>([])
-  const [filterEstablishment, setFilterEstablishment] = useState<string[]>([])
+  const [filterStatus, setFilterStatus] = useState('')
+  const [filterLocation, setFilterLocation] = useState('')
+  const [filterEstablishment, setFilterEstablishment] = useState('')
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('active')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showRechargeModal, setShowRechargeModal] = useState(false)
   const [deactivateId, setDeactivateId] = useState<string | null>(null)
   const [reactivateId, setReactivateId] = useState<string | null>(null)
   const [isChangingActivity, setIsChangingActivity] = useState(false)
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
   const queryClient = useQueryClient()
 
   const activityParam = activityFilter === 'all' ? null : activityFilter === 'active'
-  const { data: all = [], isError } = useQuery(fireExtinguisherQueries.list({ isActive: activityParam }))
-  // Los KPI describen siempre el parque operativo, aunque la tabla esté
-  // mostrando bajas. En la vista Activos React Query reutiliza la misma key.
-  const { data: activeItems = [], isError: isActiveOverviewError } = useQuery(fireExtinguisherQueries.list({ isActive: true }))
+  const { data: result, isLoading, isFetching, isError } = useQuery(fireExtinguisherQueries.listPaginated({
+    page,
+    limit,
+    search: search.trim() || undefined,
+    status: filterStatus || undefined,
+    locationType: filterLocation || undefined,
+    establishment: filterEstablishment || undefined,
+    ...(activityParam !== null && { isActive: activityParam }),
+  }))
+  const all = useMemo(() => result?.data ?? [], [result?.data])
+  const pagination = result?.pagination
+  const { data: dashboardSummary, isError: isActiveOverviewError } = useQuery(fireExtinguisherQueries.dashboardSummary())
   const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: establishmentCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_establishment'))
   const ESTABLISHMENT_OPTIONS = useMemo(
@@ -371,50 +383,25 @@ export default function FireExtinguishersPage() {
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('fire-extinguishers', FE_COL_DEFS)
 
-  const counts = useMemo(() => ({
-    vigente:        activeItems.filter((f) => f.status === 'vigente').length,
-    proximo_vencer: activeItems.filter((f) => f.status === 'proximo_vencer').length,
-    vencido:        activeItems.filter((f) => f.status === 'vencido').length,
-    sin_fecha:      activeItems.filter((f) => f.status === 'sin_fecha').length,
-  }), [activeItems])
+  const counts = dashboardSummary?.totals ?? { total: 0, vigente: 0, proximo_vencer: 0, vencido: 0, sin_fecha: 0 }
 
   // Desglose del banner de vencidos por establecimiento + asignación física —
   // solo tiene sentido mostrarlo cuando afecta a más de un sector, si no
   // duplicaría la misma info que ya dice la oración principal del banner.
   const vencidoBreakdown = useMemo(() => {
     const groups = new Map<string, number>()
-    for (const fe of activeItems) {
-      if (fe.status !== 'vencido') continue
-      const key = [fe.establishment, fe.associatedLocationType].filter(Boolean).join(' — ') || 'Sin establecimiento'
-      groups.set(key, (groups.get(key) ?? 0) + 1)
+    for (const bucket of dashboardSummary?.byEstablishment ?? []) {
+      if (bucket.vencido === 0) continue
+      groups.set(bucket.establishment || 'Sin establecimiento', bucket.vencido)
     }
     if (groups.size <= 1) return null
     return [...groups.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([key, count]) => `${count} en ${key}`)
       .join(', ')
-  }, [activeItems])
+  }, [dashboardSummary])
 
-  const filtered = useMemo(() => {
-    return all.filter((fe) => {
-      const q = search.toLowerCase()
-      const asset = fe.associatedAssetId ? assetById.get(fe.associatedAssetId) : null
-      const matchSearch =
-        !search ||
-        fe.code.toLowerCase().includes(q) ||
-        fe.type.toLowerCase().includes(q) ||
-        (fe.cylinderNumber?.toLowerCase().includes(q) ?? false) ||
-        (fe.iramCertificateNumber?.toLowerCase().includes(q) ?? false) ||
-        (fe.establishment?.toLowerCase().includes(q) ?? false) ||
-        (fe.location?.toLowerCase().includes(q) ?? false) ||
-        (fe.brand?.toLowerCase().includes(q) ?? false) ||
-        (asset?.name.toLowerCase().includes(q) ?? false)
-      const matchStatus        = filterStatus.length === 0        || filterStatus.includes(fe.status)
-      const matchLocation      = filterLocation.length === 0      || filterLocation.includes(fe.associatedLocationType)
-      const matchEstablishment = filterEstablishment.length === 0 || (fe.establishment != null && filterEstablishment.includes(fe.establishment))
-      return matchSearch && matchStatus && matchLocation && matchEstablishment
-    })
-  }, [all, assetById, search, filterStatus, filterLocation, filterEstablishment])
+  const filtered = all
 
   // Selection helpers
   const selectedCount = selectedIds.size
@@ -486,7 +473,7 @@ export default function FireExtinguishersPage() {
         <KpiCard label="Próximos a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
         <KpiCard label="Vencidos"          value={counts.vencido}        description="Requieren recarga inmediata"     icon={ShieldOff} variant={counts.vencido > 0 ? 'danger' : 'default'} />
         <KpiCard label="Sin Fecha"         value={counts.sin_fecha}      description="Sin vencimiento cargado"         icon={CalendarOff} variant={counts.sin_fecha > 0 ? 'warning' : 'default'} />
-        <KpiCard label="Total Activos"     value={activeItems.length}    description="Matafuegos operativos"            icon={Flame} variant="default" />
+        <KpiCard label="Total Activos"     value={counts.total}          description="Matafuegos operativos"            icon={Flame} variant="default" />
       </MetricGrid>
 
       {counts.vencido > 0 && (
@@ -505,34 +492,31 @@ export default function FireExtinguishersPage() {
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
             value={search}
-            onChange={setSearch}
+            onChange={(value) => { setPage(1); setSearch(value) }}
             placeholder="Buscar por código, tipo, cilindro, establecimiento, ubicación, marca o activo…"
             className="w-full sm:w-72"
           />
-          <MultiSelectFilter
-            label="Estado"
-            options={STATUS_OPTIONS}
-            value={filterStatus}
-            onChange={setFilterStatus}
-          />
-          <MultiSelectFilter
-            label="Ubicación"
-            options={LOCATION_OPTIONS}
-            value={filterLocation}
-            onChange={setFilterLocation}
-          />
-          <MultiSelectFilter
-            label="Establecimiento"
-            options={ESTABLISHMENT_OPTIONS}
-            value={filterEstablishment}
-            onChange={setFilterEstablishment}
-          />
+          <FilterBar filters={[
+            {
+              key: 'status', label: 'Estado', options: STATUS_OPTIONS, value: filterStatus,
+              onChange: (value) => { setPage(1); setFilterStatus(value) },
+            },
+            {
+              key: 'location', label: 'Ubicación', options: LOCATION_OPTIONS, value: filterLocation,
+              onChange: (value) => { setPage(1); setFilterLocation(value) },
+            },
+            {
+              key: 'establishment', label: 'Establecimiento', options: ESTABLISHMENT_OPTIONS, value: filterEstablishment,
+              onChange: (value) => { setPage(1); setFilterEstablishment(value) },
+            },
+          ]} />
           <label className="sr-only" htmlFor="fire-extinguisher-activity-filter">Estado de actividad</label>
           <select
             id="fire-extinguisher-activity-filter"
             value={activityFilter}
             onChange={(e) => {
               setActivityFilter(e.target.value as ActivityFilter)
+              setPage(1)
               setSelectedIds(new Set())
             }}
             className="px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
@@ -543,7 +527,7 @@ export default function FireExtinguishersPage() {
           </select>
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
-              {filtered.length} de {all.length} matafuegos
+              {filtered.length} visibles en esta página · {pagination?.total ?? 0} resultados
             </span>
             <ExportPresetsButton
               tableKey="fire-extinguishers"
@@ -553,6 +537,7 @@ export default function FireExtinguishersPage() {
               filenamePrefix="matafuegos"
               onApplyPreset={applyPreset}
             />
+            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -588,6 +573,7 @@ export default function FireExtinguishersPage() {
           tableKey="fire-extinguishers"
           columns={visibleColumns}
           data={filtered}
+          loading={isLoading}
           rowKey="id"
           selectable={activityFilter === 'active'}
           selectedIds={selectedIds}
@@ -599,6 +585,21 @@ export default function FireExtinguishersPage() {
           emptyDescription="No se encontraron matafuegos con los filtros aplicados."
           minWidth={900}
         />
+        {pagination && (
+          <PaginationControls
+            {...pagination}
+            isLoading={isFetching}
+            onPageChange={(nextPage) => {
+              setSelectedIds(new Set())
+              setPage(nextPage)
+            }}
+            onLimitChange={(nextLimit) => {
+              setSelectedIds(new Set())
+              setPage(1)
+              setLimit(nextLimit)
+            }}
+          />
+        )}
       </SectionCard>
 
       {showRechargeModal && (

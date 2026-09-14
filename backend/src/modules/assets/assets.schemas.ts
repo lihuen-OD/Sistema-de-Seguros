@@ -84,6 +84,12 @@ export const ListAssetsQuerySchema = PaginationSchema.merge(ActiveFilterSchema).
   assetType: z.string().optional(),
 })
 
+export const SearchAssetsQuerySchema = z.object({
+  q: z.string().trim().max(100).optional().default(''),
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  selectedId: z.string().uuid('ID de activo inválido').optional(),
+})
+
 export const CreateAssetPledgeSchema = z.object({
   creditorName: z.string().trim().min(1, 'El acreedor es obligatorio').max(200),
   startDate: ISODate,
@@ -105,5 +111,6 @@ export type AddValueHistoryDTO = z.infer<typeof AddValueHistorySchema>
 export type AddAttachmentDTO = z.infer<typeof AddAttachmentSchema>
 export type UpdateAttachmentDTO = z.infer<typeof UpdateAttachmentSchema>
 export type ListAssetsQueryDTO = z.infer<typeof ListAssetsQuerySchema>
+export type SearchAssetsQueryDTO = z.infer<typeof SearchAssetsQuerySchema>
 export type CreateAssetPledgeDTO = z.infer<typeof CreateAssetPledgeSchema>
 export type CancelAssetPledgeDTO = z.infer<typeof CancelAssetPledgeSchema>

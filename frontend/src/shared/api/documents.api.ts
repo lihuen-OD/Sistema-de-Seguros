@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import type { PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type {
   AccountingDocument,
@@ -193,15 +194,60 @@ export interface DocumentTypesResponse {
   economicImpactTypes: EconomicImpactTypeOption[]
 }
 
+export interface DocumentSearchResult {
+  id: string
+  documentNumber: string
+  type: DocumentType
+  issueDate: string
+  insuranceCompany: string | null
+  currency: Currency
+  totalAmount: number
+  paymentStatus: PaymentStatus
+  paymentMethod: string | null
+  // Solo presente cuando se pide withAvailableBalance=true (Nota de Crédito).
+  availableBalance?: number
+}
+
+export interface DocumentSearchParams {
+  q?: string
+  limit?: number
+  selectedId?: string
+  type?: DocumentType | DocumentType[]
+  excludeCancelled?: boolean
+  insuranceCompany?: string
+  // Fase 1B.4.c (Endoso) — documentos de una póliza puntual, por
+  // document.policyId (Endoso) o por policyAssetCoverage.policyId de sus
+  // allocations (Factura/NC/ND/Ajuste). Ver documents.service.ts#search.
+  policyId?: string
+  // Fase 1B.4.d (Nota de Crédito) — calcula availableBalance por resultado
+  // (acotado a los ya limitados por `limit`, no a los ~200 de antes) y,
+  // opcionalmente, filtra por un mínimo. Ver documents.service.ts#search.
+  withAvailableBalance?: boolean
+  minAvailableBalance?: number
+}
+
 export const documentsApi = {
   async getTypes(): Promise<DocumentTypesResponse> {
     const res = await apiClient.get<{ data: DocumentTypesResponse }>('/documents/types')
     return res.data.data
   },
 
+  async search(params: DocumentSearchParams): Promise<DocumentSearchResult[]> {
+    const { type, ...rest } = params
+    const res = await apiClient.get<{ data: DocumentSearchResult[] }>('/documents/search', {
+      params: { ...rest, type: Array.isArray(type) ? type.join(',') : type },
+    })
+    return res.data.data
+  },
+
   async findAll(): Promise<AccountingDocument[]> {
     const res = await apiClient.get<Paginated<BackendDocument>>('/documents', { params: { limit: 200 } })
     return res.data.data.map(mapDocument)
+  },
+
+  async findAllPaginated(filters: DocumentListFilters): Promise<PaginatedResult<AccountingDocument>> {
+    const res = await apiClient.get<Paginated<BackendDocument>>('/documents', { params: filters })
+    return { data: res.data.data.map(mapDocument), pagination: res.data.pagination }
   },
 
   async findAllForFinancial(params?: { from?: string; to?: string; includeInstallments?: boolean }): Promise<DocumentForFinancial[]> {
@@ -382,6 +428,10 @@ export const documentsApi = {
 // staleTime corto + refetchOnWindowFocus true. El resto es categoría B.
 
 type FinancialFilters = { from?: string; to?: string; includeInstallments?: boolean }
+export type DocumentListFilters = {
+  page?: number; limit?: number; search?: string; paymentStatus?: string
+  documentType?: string; currency?: string; year?: number
+}
 
 export const documentKeys = {
   all: ['documents'] as const,
@@ -410,6 +460,18 @@ export const documentQueries = {
     queryOptions({
       queryKey: documentKeys.all,
       queryFn: () => documentsApi.findAll(),
+      staleTime: 60 * 1000,
+    }),
+  search: (params: DocumentSearchParams) =>
+    queryOptions({
+      queryKey: [...documentKeys.all, 'search', params] as const,
+      queryFn: () => documentsApi.search(params),
+      staleTime: 60 * 1000,
+    }),
+  listPaginated: (filters: DocumentListFilters) =>
+    queryOptions({
+      queryKey: [...documentKeys.all, 'paginated', filters] as const,
+      queryFn: () => documentsApi.findAllPaginated(filters),
       staleTime: 60 * 1000,
     }),
   types: () =>

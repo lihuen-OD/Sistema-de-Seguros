@@ -17,6 +17,7 @@ import type {
   DeactivateCoverageDTO,
   ListPoliciesQueryDTO,
   AddPolicyAttachmentDTO,
+  SearchPoliciesQueryDTO,
 } from './policies.schemas'
 
 // Fecha "sin fin" para tratar una línea sin bajaDate como vigente hacia
@@ -30,6 +31,8 @@ function isPrismaKnownError(err: unknown, code: string): boolean {
 
 const COVERAGE_ASSET_CHANGE_WITH_ATTACHMENTS_MESSAGE =
   'No se puede cambiar el activo de esta cobertura porque ya tiene adjuntos cargados. Para cambiar el activo, eliminá primero los adjuntos de esta cobertura o creá una nueva línea de cobertura.'
+
+const POLICY_ASSOCIABLE_ASSET_STATUSES = ['activo', 'vendido'] as const
 
 // La tarjeta de circulación (y cualquier otro adjunto) ahora cuelga de la
 // línea de cobertura, no de la póliza — así una póliza de flota con varios
@@ -45,7 +48,7 @@ const COVERAGE_DETAIL_INCLUDE = {
   // otro fetch (ver PolicyDetailPage.tsx).
   asset: {
     select: {
-      id: true, code: true, name: true, assetType: true, fixedAssetCode: true,
+      id: true, code: true, name: true, assetType: true, status: true, fixedAssetCode: true,
       metadata: true, brand: true, model: true,
       fixedAsset: { select: { id: true, code: true, name: true } },
       allocations: { select: { percentage: true, costCenter: { select: { id: true, code: true, name: true } } } },
@@ -182,8 +185,9 @@ function pickCurrentAssetCoverage<T extends { assetId: string | null; effectiveD
 }
 
 // Valida referencias (tipo de seguro activo, coberturas pertenecen a ese
-// tipo, activo/empresa/centro de costo activos) y cierra insuredAmount en
-// ambas monedas — comparte esta lógica create() y replaceCoverages().
+// tipo, activo asociable a pólizas y empresa/centro de costo activos) y
+// cierra insuredAmount en ambas monedas — comparte esta lógica create() y
+// replaceCoverages().
 async function resolveCoverageInput(input: PolicyAssetCoverageInputDTO) {
   const [insuranceType, asset, company, costCenter] = await Promise.all([
     prisma.insuranceType.findFirst({
@@ -195,7 +199,10 @@ async function resolveCoverageInput(input: PolicyAssetCoverageInputDTO) {
       select: { id: true, coverages: { select: { id: true } } },
     }),
     input.assetId
-      ? prisma.asset.findFirst({ where: { id: input.assetId, isActive: true }, select: { id: true } })
+      ? prisma.asset.findFirst({
+          where: { id: input.assetId, isActive: true, status: { in: [...POLICY_ASSOCIABLE_ASSET_STATUSES] } },
+          select: { id: true },
+        })
       : Promise.resolve(null),
     input.companyId
       ? prisma.company.findFirst({ where: { id: input.companyId, isActive: true }, select: { id: true } })
@@ -206,7 +213,7 @@ async function resolveCoverageInput(input: PolicyAssetCoverageInputDTO) {
   ])
 
   if (!insuranceType) throw new AppError(400, 'Tipo de seguro no encontrado o inactivo', 'INVALID_REFERENCE')
-  if (input.assetId && !asset) throw new AppError(400, 'Activo no encontrado o inactivo', 'INVALID_REFERENCE')
+  if (input.assetId && !asset) throw new AppError(400, 'Activo no encontrado o no asociable a pólizas', 'INVALID_REFERENCE')
   if (input.companyId && !company) throw new AppError(400, 'Empresa no encontrada o inactiva', 'INVALID_REFERENCE')
   if (input.costCenterId && !costCenter) throw new AppError(400, 'Centro de costo no encontrado o inactivo', 'INVALID_REFERENCE')
 
@@ -259,7 +266,14 @@ async function resolveCoverageInputsBatch(
       select: { id: true, coverages: { select: { id: true } } },
     }),
     assetIds.length > 0
-      ? prisma.asset.findMany({ where: { id: { in: assetIds }, isActive: true }, select: { id: true } })
+      ? prisma.asset.findMany({
+          where: {
+            id: { in: assetIds },
+            isActive: true,
+            status: { in: [...POLICY_ASSOCIABLE_ASSET_STATUSES] },
+          },
+          select: { id: true },
+        })
       : Promise.resolve([]),
     companyIds.length > 0
       ? prisma.company.findMany({ where: { id: { in: companyIds }, isActive: true }, select: { id: true } })
@@ -278,7 +292,7 @@ async function resolveCoverageInputsBatch(
     const insuranceType = insuranceTypeById.get(input.insuranceTypeId)
     if (!insuranceType) throw new AppError(400, 'Tipo de seguro no encontrado o inactivo', 'INVALID_REFERENCE')
     if (input.assetId && !activeAssetIds.has(input.assetId)) {
-      throw new AppError(400, 'Activo no encontrado o inactivo', 'INVALID_REFERENCE')
+      throw new AppError(400, 'Activo no encontrado o no asociable a pólizas', 'INVALID_REFERENCE')
     }
     if (input.companyId && !activeCompanyIds.has(input.companyId)) {
       throw new AppError(400, 'Empresa no encontrada o inactiva', 'INVALID_REFERENCE')
@@ -398,6 +412,73 @@ async function assertNoOverlappingCoverage(
 }
 
 export const policiesService = {
+  async search(query: SearchPoliciesQueryDTO) {
+    const q = query.q.trim()
+    const contextualWhere: Prisma.PolicyWhereInput = {
+      ...(query.assetId && { coverages: { some: { assetId: query.assetId } } }),
+      ...(query.insuranceCompany && {
+        insuredName: { equals: query.insuranceCompany, mode: 'insensitive' },
+      }),
+      ...(query.activeOnly && {
+        isActive: true,
+        deactivatedAt: null,
+        endDate: { gte: todayDate() },
+      }),
+    }
+    const searchWhere: Prisma.PolicyWhereInput = q
+      ? {
+          OR: [
+            { policyNumber: { contains: q, mode: 'insensitive' } },
+            { insuredName: { contains: q, mode: 'insensitive' } },
+            { producer: { is: { name: { contains: q, mode: 'insensitive' } } } },
+            { coverages: { some: { insuranceType: { name: { contains: q, mode: 'insensitive' } } } } },
+            { coverages: { some: { asset: { is: { name: { contains: q, mode: 'insensitive' } } } } } },
+            { coverages: { some: { asset: { is: { code: { contains: q, mode: 'insensitive' } } } } } },
+          ],
+        }
+      : {}
+    const select = {
+      id: true,
+      policyNumber: true,
+      insuredName: true,
+      startDate: true,
+      endDate: true,
+      deactivatedAt: true,
+      producer: { select: { name: true } },
+      coverages: { select: { insuranceType: { select: { name: true } } } },
+    } satisfies Prisma.PolicySelect
+
+    const results = await prisma.policy.findMany({
+      where: { AND: [contextualWhere, searchWhere] },
+      select,
+      orderBy: [{ endDate: 'desc' }, { policyNumber: 'asc' }],
+      take: query.limit,
+    })
+
+    // La selección histórica se conserva aunque ya no cumpla los filtros
+    // contextuales actuales (por ejemplo, una póliza vencida en un Endoso en
+    // edición). La autorización sigue aplicada por la ruta y no se cargan
+    // relaciones adicionales.
+    if (query.selectedId && !results.some((policy) => policy.id === query.selectedId)) {
+      const selected = await prisma.policy.findFirst({
+        where: { id: query.selectedId },
+        select,
+      })
+      if (selected) results.unshift(selected)
+    }
+
+    return results.slice(0, query.limit).map((policy) => ({
+      id: policy.id,
+      policyNumber: policy.policyNumber,
+      insuranceCompany: policy.insuredName,
+      status: policy.deactivatedAt ? 'de_baja' : computePolicyStatus(policy.endDate),
+      startDate: toDateStr(policy.startDate),
+      endDate: toDateStr(policy.endDate),
+      producerName: policy.producer?.name ?? null,
+      insuranceTypeNames: [...new Set(policy.coverages.map((coverage) => coverage.insuranceType.name))],
+    }))
+  },
+
   async findAll(query: ListPoliciesQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
 

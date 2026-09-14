@@ -3,7 +3,7 @@ import { asyncHandler } from '../../shared/utils/async-handler'
 import { policiesService } from './policies.service'
 import { AppError } from '../../shared/errors/AppError'
 import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
-import type { ListPoliciesQueryDTO } from './policies.schemas'
+import type { ListPoliciesQueryDTO, SearchPoliciesQueryDTO } from './policies.schemas'
 
 type IdParam = { id: string }
 type CoverageParam = { id: string; coverageId: string }
@@ -13,6 +13,11 @@ export const policiesController = {
   list: asyncHandler(async (req: Request, res: Response) => {
     const result = await policiesService.findAll(req.query as unknown as ListPoliciesQueryDTO)
     res.json(result)
+  }),
+
+  search: asyncHandler(async (req: Request, res: Response) => {
+    const data = await policiesService.search(req.query as unknown as SearchPoliciesQueryDTO)
+    res.json({ data })
   }),
 
   getById: asyncHandler(async (req: Request<IdParam>, res: Response) => {

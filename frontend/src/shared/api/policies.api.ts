@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import type { PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Policy, PolicyStatus, PolicyCoverage, PolicyAsset, PolicyAttachment, ProducerTask, TaskPriority, Currency } from '../types'
 
@@ -10,6 +11,7 @@ interface BackendProducer { id: string; name: string }
 interface BackendCoverage { id: string; name: string; description: string | null }
 interface BackendPolicyAsset {
   id: string; code: string | null; name: string; assetType: string
+  status?: string
   fixedAssetCode: string | null
   metadata?: Record<string, unknown> | null
   brand?: string | null
@@ -61,6 +63,10 @@ interface BackendPolicy {
   assetCoverage?: BackendAssetCoverageSummary | null
   attachmentsCount?: number
 }
+interface BackendPolicySearchResult {
+  id: string; policyNumber: string; insuranceCompany: string; status: string
+  startDate: string; endDate: string; producerName: string | null; insuranceTypeNames: string[]
+}
 interface BackendTask {
   id: string; producerId: string; title: string; description: string | null
   dueDate: string | null; status: string; createdAt: string; updatedAt: string
@@ -104,6 +110,7 @@ function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
     internalCode: a.code ?? '',
     name: a.name,
     assetType: a.assetType,
+    status: a.status as PolicyAsset['status'],
     fixedAssetCode: a.fixedAssetCode,
     fixedAssetName: a.fixedAsset?.name ?? null,
     metadata: a.metadata ?? null,
@@ -227,6 +234,26 @@ export interface PolicyCreateInput {
 
 export type PolicyUpdateInput = Partial<Omit<PolicyCreateInput, 'policyNumber' | 'coverages'>>
 
+export interface PolicySearchResult {
+  id: string
+  policyNumber: string
+  insuranceCompany: string
+  status: PolicyStatus
+  startDate: string
+  endDate: string
+  producerName: string | null
+  insuranceTypeNames: string[]
+}
+
+export interface PolicySearchParams {
+  q?: string
+  limit?: number
+  selectedId?: string
+  assetId?: string
+  insuranceCompany?: string
+  activeOnly?: boolean
+}
+
 // Alta explícita de una línea nueva (POST /coverages) — a diferencia de
 // PolicyCoverageInput (usado por create()/replaceCoverages(), que todavía
 // completan effectiveDate con policy.startDate), acá la fecha de alta la
@@ -241,6 +268,11 @@ export interface DeactivateCoverageInput {
 }
 
 export const policiesApi = {
+  async search(params: PolicySearchParams): Promise<PolicySearchResult[]> {
+    const res = await apiClient.get<{ data: BackendPolicySearchResult[] }>('/policies/search', { params })
+    return res.data.data.map((policy) => ({ ...policy, status: mapStatus(policy.status) }))
+  },
+
   async findAll(filters?: { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }): Promise<Policy[]> {
     const res = await apiClient.get<Paginated<BackendPolicy>>('/policies', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapPolicy)
@@ -351,6 +383,7 @@ export const policiesApi = {
 // mantiene así a propósito para no fragmentar cache con lo ya existente.
 
 type PolicyFilters = { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }
+export type PolicyListFilters = PolicyFilters & { page?: number; search?: string; status?: PolicyStatus }
 
 export const policyKeys = {
   all: ['policies'] as const,
@@ -362,10 +395,25 @@ export const policyKeys = {
 }
 
 export const policyQueries = {
+  search: (params: PolicySearchParams) =>
+    queryOptions({
+      queryKey: [...policyKeys.all, 'search', params] as const,
+      queryFn: () => policiesApi.search(params),
+      staleTime: 60 * 1000,
+    }),
   list: (filters?: PolicyFilters) =>
     queryOptions({
       queryKey: policyKeys.list(filters),
       queryFn: () => policiesApi.findAll(filters),
+      staleTime: 60 * 1000,
+    }),
+  listPaginated: (filters: PolicyListFilters) =>
+    queryOptions({
+      queryKey: [...policyKeys.all, 'paginated', filters] as const,
+      queryFn: async (): Promise<PaginatedResult<Policy>> => {
+        const res = await apiClient.get<Paginated<BackendPolicy>>('/policies', { params: filters })
+        return { data: res.data.data.map(mapPolicy), pagination: res.data.pagination }
+      },
       staleTime: 60 * 1000,
     }),
   detail: (id: string) =>

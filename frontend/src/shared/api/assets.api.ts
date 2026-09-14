@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Asset, AssetAttachment, AssetPledge, AssetStatus, AssetStatusHistory, Building, Currency } from '../types'
+import type { PaginatedResult } from './pagination'
 
 interface BackendCompany { id: string; name: string; cuit: string }
 interface BackendCostCenter { id: string; name: string; code: string | null }
@@ -42,6 +43,17 @@ interface BackendAttachment {
   fileSize: string; fileUrl: string; expirationDate: string | null; uploadedAt: string; uploadedBy: string
 }
 interface Paginated<T> { data: T[]; pagination: { total: number; page: number; limit: number; totalPages: number } }
+
+export interface AssetSearchResult {
+  id: string
+  name: string
+  code: string | null
+  status: AssetStatus
+  assetType: string
+  plate: string | null
+  fixedAssetCode: string | null
+  fixedAssetName: string | null
+}
 
 function parseCoordinatesFromMapsUrl(url: string | null | undefined): { lat: number; lng: number } | undefined {
   if (!url) return undefined
@@ -189,6 +201,11 @@ export interface CreateAssetPledgeInput {
 }
 
 export const assetsApi = {
+  async search(params: { q?: string; limit?: number; selectedId?: string }): Promise<AssetSearchResult[]> {
+    const res = await apiClient.get<{ data: AssetSearchResult[] }>('/assets/search', { params })
+    return res.data.data
+  },
+
   async findAll(filters?: { isActive?: boolean; assetType?: string; limit?: number }): Promise<Asset[]> {
     const res = await apiClient.get<Paginated<BackendAsset>>('/assets', { params: { limit: 200, ...filters } })
     return res.data.data.map(mapAsset)
@@ -295,6 +312,7 @@ export const assetsApi = {
 // migran los call sites — no se inventa un esquema nuevo de sub-namespacing.
 
 type AssetFilters = { isActive?: boolean; assetType?: string; limit?: number }
+export type AssetListFilters = AssetFilters & { page?: number; search?: string }
 
 export const assetKeys = {
   all: ['assets'] as const,
@@ -306,10 +324,25 @@ export const assetKeys = {
 }
 
 export const assetQueries = {
+  search: (params: { q?: string; limit?: number; selectedId?: string }) =>
+    queryOptions({
+      queryKey: [...assetKeys.all, 'search', params] as const,
+      queryFn: () => assetsApi.search(params),
+      staleTime: 60 * 1000,
+    }),
   list: (filters?: AssetFilters) =>
     queryOptions({
       queryKey: assetKeys.list(filters),
       queryFn: () => assetsApi.findAll(filters),
+      staleTime: 60 * 1000,
+    }),
+  listPaginated: (filters: AssetListFilters) =>
+    queryOptions({
+      queryKey: [...assetKeys.all, 'paginated', filters] as const,
+      queryFn: async (): Promise<PaginatedResult<Asset>> => {
+        const res = await apiClient.get<Paginated<BackendAsset>>('/assets', { params: filters })
+        return { data: res.data.data.map(mapAsset), pagination: res.data.pagination }
+      },
       staleTime: 60 * 1000,
     }),
   detail: (id: string) =>

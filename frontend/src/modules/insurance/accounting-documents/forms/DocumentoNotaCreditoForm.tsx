@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Info, ArrowLeftRight, AlertTriangle } from 'lucide-react'
 import { PageContent } from '../../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../../shared/components/cards/SectionCard'
 import { FormSection, FormField, FormInput, FormSelect, FormTextarea } from '../../../../shared/components/forms/FormSection'
 import { PolicySelector, createEmptyPolicyRow, type PolicyAllocationRow } from '../../../../shared/components/forms/PolicySelector'
-import { DocumentRelationSelector } from '../components/DocumentRelationSelector'
+import { DocumentRemoteSelect } from '../../../../shared/components/forms/DocumentRemoteSelect'
 import { DocumentImpactPreview } from '../components/DocumentImpactPreview'
 import { DocumentBalanceSummary } from '../components/DocumentBalanceSummary'
 import { DocumentFormFooter } from '../components/DocumentFormFooter'
@@ -93,29 +93,14 @@ function DocumentoNotaCreditoFormBody({ initialDoc, sourceLinkedDocument }: Docu
   const { savedDocId, isSaved, markUnsaved, markSaved } = useSavedDocState(initialDoc?.id)
   const { dupWarning, dupChecking } = useDuplicateDocumentNumberCheck(form.documentNumber, true, 'CREDIT_NOTE', form.insuranceCompany, initialDoc?.id)
 
-  const { data: allDocuments = [] } = useQuery(documentQueries.list())
   const { data: insuranceCompanies = [] } = useQuery(catalogQueries.byCategory('insurance_company'))
 
-  // Facturas candidatas: mismo tipo, no anuladas, misma compañía. Se resuelve
-  // el saldo de cada una para excluir las que ya no tienen saldo disponible.
-  const candidateInvoices = allDocuments.filter(
-    (d) => d.documentType === 'INVOICE' && d.documentStatus !== 'CANCELLED' && d.insuranceCompany === form.insuranceCompany,
-  )
-  const balanceQueries = useQueries({
-    queries: candidateInvoices.map((inv) => ({
-      ...documentQueries.balance(inv.id),
-      enabled: !!form.insuranceCompany,
-    })),
-  })
-  const linkableInvoices = candidateInvoices.filter((inv, idx) => {
-    // Ya vinculada (edición) o precargada por contexto ("Crear documento
-    // relacionado" desde la Factura) — no ocultar aunque su saldo actual sea 0.
-    if (inv.id === form.linkedDocumentId) return true
-    const balance = balanceQueries[idx]?.data
-    return balance ? balance.effectiveAmount > 0 : true // mientras carga, no ocultar
-  })
-
-  const linkedInvoice = allDocuments.find((d) => d.id === form.linkedDocumentId) ?? null
+  // Detalle completo del vinculado (no el resultado liviano del selector) —
+  // hace falta para useLinkedDocumentPolicies (necesita policyIds, derivado
+  // de las allocations) y para DocumentImpactPreview. El saldo disponible ya
+  // no se resuelve acá factura por factura: /documents/search lo calcula
+  // server-side, acotado a los resultados del propio selector.
+  const { data: linkedInvoice } = useQuery(documentQueries.detail(form.linkedDocumentId))
   const { data: linkedBalance } = useQuery(documentQueries.balance(form.linkedDocumentId))
   const linkedPolicies = useLinkedDocumentPolicies(linkedInvoice)
 
@@ -292,25 +277,26 @@ function DocumentoNotaCreditoFormBody({ initialDoc, sourceLinkedDocument }: Docu
               error={errors.linkedDocumentId}
               fullWidth
             >
-              <DocumentRelationSelector
-                documents={linkableInvoices}
+              <DocumentRemoteSelect
                 value={form.linkedDocumentId}
-                onChange={(id) => {
+                onChange={(id, document) => {
                   // La moneda de la NC/ND siempre tiene que coincidir con la
                   // de la factura que ajusta — si no, el saldo y los totales
                   // combinados dejan de tener sentido (se estaría restando un
                   // monto en una moneda de un total en otra).
-                  const linked = allDocuments.find((d) => d.id === id)
-                  setForm((p) => ({ ...p, linkedDocumentId: id, currency: linked?.currency ?? p.currency }))
+                  setForm((p) => ({ ...p, linkedDocumentId: id, currency: document?.currency ?? p.currency }))
                   setPolicyRows([createEmptyPolicyRow()])
                   markUnsaved()
                 }}
-                required
-                emptyMessage={
-                  !form.insuranceCompany
-                    ? 'Seleccioná primero la compañía aseguradora.'
-                    : 'No hay facturas con saldo disponible para esta compañía.'
-                }
+                type="INVOICE"
+                excludeCancelled
+                insuranceCompany={form.insuranceCompany || undefined}
+                withAvailableBalance
+                minAvailableBalance={0.01}
+                disabled={!form.insuranceCompany}
+                placeholder={!form.insuranceCompany ? 'Seleccioná primero la compañía aseguradora' : 'Seleccionar factura…'}
+                emptyOptionLabel="Seleccionar factura…"
+                noResultsMessage="No hay facturas con saldo disponible para esta compañía"
               />
             </FormField>
 

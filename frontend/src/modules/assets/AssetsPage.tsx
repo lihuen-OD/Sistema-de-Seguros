@@ -8,10 +8,11 @@ import { MetricGrid } from '../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { DataTable } from '../../shared/components/data-table/DataTable'
+import { PaginationControls } from '../../shared/components/data-table/PaginationControls'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { ColumnConfigButton } from '../../shared/components/data-table/ColumnConfigButton'
 import { ExportPresetsButton } from '../../shared/components/data-table/ExportPresetsButton'
-import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
+import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
@@ -23,24 +24,31 @@ import { policyKeys } from '../../shared/api/policies.api'
 import { fireExtinguisherKeys } from '../../shared/api/fire-extinguishers.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
-import { ASSET_TYPES, ASSET_STATUS_LABELS } from '../../shared/constants'
+import { ASSET_TYPES } from '../../shared/constants'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { Asset, TableColumn } from '../../shared/types'
 
-const STATUS_OPTIONS = Object.entries(ASSET_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 const TYPE_OPTIONS = ASSET_TYPES.map((t) => ({ value: t, label: t }))
+const DEFAULT_PAGE_SIZE = 20
 
 export default function AssetsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<string[]>([])
-  const [filterType, setFilterType] = useState<string[]>([])
-  const [filterCompany, setFilterCompany] = useState<string[]>([])
+  const [filterType, setFilterType] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deBajaId, setDeBajaId] = useState<string | null>(null)
 
-  const { data: allAssets = [], isLoading, isError } = useQuery(assetQueries.list())
+  const { data: result, isLoading, isFetching, isError } = useQuery(assetQueries.listPaginated({
+    page,
+    limit,
+    search: search.trim() || undefined,
+    assetType: filterType || undefined,
+  }))
+  const allAssets = useMemo(() => result?.data ?? [], [result?.data])
+  const pagination = result?.pagination
   const { data: allCompanies = [] } = useQuery(companyQueries.list())
   const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
@@ -62,20 +70,7 @@ export default function AssetsPage() {
     setDeleteId(null)
   }
 
-  const filtered = useMemo(() => {
-    return allAssets.filter((a) => {
-      const q = search.trim().toLowerCase()
-      const matchSearch =
-        !q ||
-        [a.name, a.internalCode, a.brand, a.model, a.assetType, a.serialNumber, a.plate, a.chassisNumber, a.engineNumber]
-          .filter(Boolean)
-          .some((v) => v!.toLowerCase().includes(q))
-      const matchStatus = filterStatus.length === 0 || filterStatus.includes(a.status)
-      const matchType = filterType.length === 0 || filterType.includes(a.assetType)
-      const matchCompany = filterCompany.length === 0 || filterCompany.includes(a.companyId)
-      return matchSearch && matchStatus && matchType && matchCompany
-    })
-  }, [allAssets, search, filterStatus, filterType, filterCompany])
+  const filtered = allAssets
 
   const { active, baja, vendido, totalValueUsd } = useMemo(() => {
     const active = allAssets.filter((a) => a.status === 'activo')
@@ -87,7 +82,6 @@ export default function AssetsPage() {
     }
   }, [allAssets])
 
-  const companyOptions = useMemo(() => allCompanies.map((c) => ({ value: c.id, label: c.name })), [allCompanies])
   const companyNameById = useMemo(() => new Map(allCompanies.map((c) => [c.id, c.name])), [allCompanies])
   const costCenterById = useMemo(
     () => new Map(allCostCenters.map((cc) => [cc.id, { code: cc.code, name: cc.name }])),
@@ -427,26 +421,27 @@ export default function AssetsPage() {
       />
 
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard label="Activos Totales" value={allAssets.length} description={`${active.length} activos operativos`} icon={Package} variant="info" />
-        <KpiCard label="Valor Patrimonial" value={formatCurrencyCompact(totalValueUsd, 'USD')} description="Activos operativos" icon={DollarSign} variant="success" />
-        <KpiCard label="Dados de Baja" value={baja.length} description="Activos inactivos o retirados" icon={AlertTriangle} variant={baja.length > 0 ? 'warning' : 'default'} />
-        <KpiCard label="Vendidos" value={vendido.length} description="Activos transferidos o vendidos" icon={Archive} variant="default" />
+        <KpiCard label="Activos Totales" value={pagination?.total ?? 0} description={`${active.length} operativos en esta página`} icon={Package} variant="info" />
+        <KpiCard label="Valor Patrimonial" value={formatCurrencyCompact(totalValueUsd, 'USD')} description="Activos operativos de esta página" icon={DollarSign} variant="success" />
+        <KpiCard label="Dados de Baja" value={baja.length} description="En esta página" icon={AlertTriangle} variant={baja.length > 0 ? 'warning' : 'default'} />
+        <KpiCard label="Vendidos" value={vendido.length} description="En esta página" icon={Archive} variant="default" />
       </MetricGrid>
 
       <SectionCard noPadding>
         <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <SearchInput
             value={search}
-            onChange={setSearch}
+            onChange={(value) => { setPage(1); setSearch(value) }}
             placeholder="Buscar por código, nombre, marca, modelo, tipo, patente, chasis, motor o N° de serie…"
             className="w-full sm:w-72"
           />
-          <MultiSelectFilter label="Estado" options={STATUS_OPTIONS} value={filterStatus} onChange={setFilterStatus} />
-          <MultiSelectFilter label="Tipo" options={TYPE_OPTIONS} value={filterType} onChange={setFilterType} />
-          <MultiSelectFilter label="Empresa" options={companyOptions} value={filterCompany} onChange={setFilterCompany} />
+          <FilterBar filters={[{
+            key: 'type', label: 'Tipo', options: TYPE_OPTIONS, value: filterType,
+            onChange: (value) => { setPage(1); setFilterType(value) },
+          }]} />
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-400 whitespace-nowrap">
-              {filtered.length} de {allAssets.length} activos
+              {filtered.length} visibles en esta página · {pagination?.total ?? 0} resultados
             </span>
             <ExportPresetsButton
               tableKey="assets"
@@ -456,6 +451,7 @@ export default function AssetsPage() {
               filenamePrefix="activos"
               onApplyPreset={applyPreset}
             />
+            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -475,6 +471,17 @@ export default function AssetsPage() {
           emptyDescription="No se encontraron activos con los filtros aplicados."
           minWidth={900}
         />
+        {pagination && (
+          <PaginationControls
+            {...pagination}
+            isLoading={isFetching}
+            onPageChange={setPage}
+            onLimitChange={(nextLimit) => {
+              setPage(1)
+              setLimit(nextLimit)
+            }}
+          />
+        )}
       </SectionCard>
       <ConfirmDialog
         open={deleteId !== null}

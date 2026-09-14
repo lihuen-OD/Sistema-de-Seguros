@@ -1,6 +1,7 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import type { FireExtinguisher, FireExtinguisherHistory, FireExtinguisherHistoryChange, AssociatedLocationType, FireExtStatus } from '../types'
+import type { PaginatedResult } from './pagination'
 
 interface BackendHistoryChange {
   field: string; label: string
@@ -162,6 +163,15 @@ export const fireExtinguisherQueries = {
       },
       staleTime: 60 * 1000,
     }),
+  listPaginated: (filters: FireExtinguisherListFilters) =>
+    queryOptions({
+      queryKey: [...fireExtinguisherKeys.all, 'paginated', filters] as const,
+      queryFn: async (): Promise<PaginatedResult<FireExtinguisher>> => {
+        const res = await apiClient.get<Paginated<BackendExtinguisher>>('/fire-extinguishers', { params: filters })
+        return { data: res.data.data.map(mapExtinguisher), pagination: res.data.pagination }
+      },
+      staleTime: 60 * 1000,
+    }),
   detail: (id: string) =>
     queryOptions({
       queryKey: fireExtinguisherKeys.detail(id),
@@ -183,6 +193,16 @@ export const fireExtinguisherQueries = {
       staleTime: 30 * 1000,
       gcTime: 5 * 60 * 1000,
     }),
+}
+
+export interface FireExtinguisherListFilters {
+  page?: number
+  limit?: number
+  search?: string
+  status?: string
+  locationType?: string
+  establishment?: string
+  isActive?: boolean
 }
 
 // ── Dashboard propio del módulo (Fase 5) ────────────────────────────────────────

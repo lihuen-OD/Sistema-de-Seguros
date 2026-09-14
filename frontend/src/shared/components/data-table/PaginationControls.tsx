@@ -17,6 +17,8 @@ export interface PaginationControlsProps {
    *  state propio (eso lo maneja la tabla), solo evita doble clic. */
   isLoading?: boolean
   onPageChange: (page: number) => void
+  onLimitChange?: (limit: number) => void
+  limitOptions?: number[]
   className?: string
 }
 
@@ -27,6 +29,8 @@ export function PaginationControls({
   totalPages,
   isLoading = false,
   onPageChange,
+  onLimitChange,
+  limitOptions = [20, 50, 100],
   className,
 }: PaginationControlsProps) {
   // Sin resultados no hay nada que paginar — mostrar "Página 1 de 0" o
@@ -49,6 +53,19 @@ export function PaginationControls({
         Mostrando {from}–{to} de {total}
       </span>
       <div className="flex items-center gap-2">
+        {onLimitChange && (
+          <label className="flex items-center gap-1.5 text-xs text-slate-500 whitespace-nowrap">
+            Filas
+            <select
+              value={limit}
+              onChange={(event) => onLimitChange(Number(event.target.value))}
+              disabled={isLoading}
+              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            >
+              {limitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+        )}
         <button type="button" onClick={() => onPageChange(page - 1)} disabled={!canGoPrev} className={navButtonClass}>
           <ChevronLeft size={14} />
           Anterior
