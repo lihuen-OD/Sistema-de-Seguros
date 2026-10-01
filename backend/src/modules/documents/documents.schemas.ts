@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema, booleanFromString } from '../../shared/schemas/common'
+import { PaginationSchema, IncludeSummarySchema, booleanFromString } from '../../shared/schemas/common'
 import { sortQueryFields } from '../../shared/utils/sorting'
 import { EmailRecipientsSchema } from '../email/email.schemas'
 import { isValidDocumentType } from './document-types'
@@ -89,7 +89,7 @@ export const DOCUMENT_SORT_KEYS = [
 ] as const
 export type DocumentSortKey = (typeof DOCUMENT_SORT_KEYS)[number]
 
-export const ListDocumentsQuerySchema = PaginationSchema.extend({
+export const ListDocumentsQuerySchema = PaginationSchema.merge(IncludeSummarySchema).extend({
   ...sortQueryFields(DOCUMENT_SORT_KEYS),
   search: z.string().optional(),
   paymentStatus: z.enum(['PENDING', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'NOT_APPLICABLE']).optional(),

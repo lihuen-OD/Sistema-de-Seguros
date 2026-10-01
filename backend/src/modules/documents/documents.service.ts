@@ -364,26 +364,31 @@ export const documentsService = {
   async findAll(query: ListDocumentsQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
 
-    const where: Record<string, unknown> = {}
-    if (query.paymentStatus) where.paymentStatus = query.paymentStatus
-    if (query.documentType) where.documentType = query.documentType
-    if (query.currency) where.currency = query.currency
+    // baseWhere = todos los filtros salvo el estado de pago — el desglose
+    // pendiente/pagado del summary se calcula sobre él (ver summarize).
+    const baseWhere: Record<string, unknown> = {}
+    if (query.documentType) baseWhere.documentType = query.documentType
+    if (query.currency) baseWhere.currency = query.currency
     if (query.year) {
       const y = String(query.year)
-      where.issueDate = {
+      baseWhere.issueDate = {
         gte: new Date(`${y}-01-01T00:00:00.000Z`),
         lte: new Date(`${y}-12-31T00:00:00.000Z`),
       }
     }
     if (query.search) {
-      where.OR = [
+      baseWhere.OR = [
         { documentNumber: { contains: query.search, mode: 'insensitive' } },
         { insuranceCompany: { contains: query.search, mode: 'insensitive' } },
         { description: { contains: query.search, mode: 'insensitive' } },
       ]
     }
+    const where: Record<string, unknown> = {
+      ...baseWhere,
+      ...(query.paymentStatus && { paymentStatus: query.paymentStatus }),
+    }
 
-    const [rawData, total] = await Promise.all([
+    const [rawData, total, summary] = await Promise.all([
       prisma.accountingDocument.findMany({
         where,
         skip,
@@ -392,9 +397,10 @@ export const documentsService = {
         include: DOCUMENT_LIST_INCLUDE,
       }),
       prisma.accountingDocument.count({ where }),
+      query.includeSummary ? documentsService.summarize(baseWhere as Prisma.AccountingDocumentWhereInput) : undefined,
     ])
 
-    return buildPaginatedResponse(
+    const response = buildPaginatedResponse(
       rawData.map((doc) => ({
         ...withTotalAmount(doc),
         allocations: doc.allocations.map((a) => ({
@@ -410,6 +416,64 @@ export const documentsService = {
       total,
       { page, limit },
     )
+    return { ...response, ...(summary && { summary }) }
+  },
+
+  // KPIs de DocumentsPage sobre TODO el resultado filtrado (Fase 3B) —
+  // reemplaza el cálculo de página con /documents/bulk/installments del
+  // frontend. Mismo criterio que tenía ese cálculo:
+  // - documento con cuotas: cada cuota suma a pagado si está PAID, si no a
+  //   pendiente (así un "Pago Parcial" aporta solo lo que realmente falta);
+  // - documento sin cuotas: su total según el estado de pago del documento,
+  //   NOT_APPLICABLE no cuenta en ninguno;
+  // - CANCELLED nunca suma (conserva estado de pago y cuotas, pero no es
+  //   deuda ni pago real — mismo criterio que findAllForFinancial).
+  // Es un desglose por estado de pago, así que usa todos los filtros salvo
+  // el de estado de pago (baseWhere). 3 GROUP BY con índices existentes
+  // (accountingDocumentId en cuotas, paymentStatus en documentos).
+  async summarize(baseWhere: Prisma.AccountingDocumentWhereInput) {
+    const notCancelled: Prisma.AccountingDocumentWhereInput = { AND: [baseWhere, { documentStatus: { not: 'CANCELLED' } }] }
+    const [installmentRows, docsWithoutInstallmentsRows, countRows] = await Promise.all([
+      prisma.documentInstallment.groupBy({
+        by: ['paymentStatus'],
+        where: { document: notCancelled },
+        _sum: { amountArs: true, amountUsd: true },
+      }),
+      prisma.accountingDocument.groupBy({
+        by: ['paymentStatus'],
+        where: { AND: [notCancelled, { installments: { none: {} } }, { paymentStatus: { not: 'NOT_APPLICABLE' } }] },
+        _sum: { totalAmountArs: true, totalAmountUsd: true },
+      }),
+      prisma.accountingDocument.groupBy({
+        by: ['paymentStatus'],
+        where: notCancelled,
+        _count: { _all: true },
+      }),
+    ])
+
+    let pendingArs = 0, pendingUsd = 0, paidArs = 0, paidUsd = 0
+    for (const row of installmentRows) {
+      if (row.paymentStatus === 'PAID') {
+        paidArs += row._sum.amountArs ?? 0
+        paidUsd += row._sum.amountUsd ?? 0
+      } else {
+        pendingArs += row._sum.amountArs ?? 0
+        pendingUsd += row._sum.amountUsd ?? 0
+      }
+    }
+    for (const row of docsWithoutInstallmentsRows) {
+      if (row.paymentStatus === 'PAID') {
+        paidArs += row._sum.totalAmountArs ?? 0
+        paidUsd += row._sum.totalAmountUsd ?? 0
+      } else {
+        pendingArs += row._sum.totalAmountArs ?? 0
+        pendingUsd += row._sum.totalAmountUsd ?? 0
+      }
+    }
+    const countByPaymentStatus: Record<string, number> = {}
+    for (const row of countRows) countByPaymentStatus[row.paymentStatus] = row._count._all
+
+    return { pendingArs, pendingUsd, paidArs, paidUsd, countByPaymentStatus }
   },
 
   async findAllForFinancial(params?: { from?: string; to?: string; includeInstallments?: boolean }) {

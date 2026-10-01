@@ -272,7 +272,7 @@ export const assetsService = {
   async findAll(query: ListAssetsQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
 
-    const where = {
+    const where: Prisma.AssetWhereInput = {
       ...(query.isActive !== undefined && { isActive: query.isActive }),
       ...(query.assetType && { assetType: query.assetType }),
       ...(query.search && {
@@ -285,7 +285,7 @@ export const assetsService = {
       }),
     }
 
-    const [data, total] = await Promise.all([
+    const [data, total, summary] = await Promise.all([
       prisma.asset.findMany({
         where,
         skip,
@@ -294,9 +294,43 @@ export const assetsService = {
         include: ASSET_LIST_INCLUDE,
       }),
       prisma.asset.count({ where }),
+      query.includeSummary ? assetsService.summarize(where) : undefined,
     ])
 
-    return buildPaginatedResponse(data, total, { page, limit })
+    return { ...buildPaginatedResponse(data, total, { page, limit }), ...(summary && { summary }) }
+  },
+
+  // KPIs de AssetsPage sobre TODO el resultado filtrado (Fase 3B). El listado
+  // no tiene filtro de estado, así que todo usa el mismo `where` de la tabla.
+  async summarize(where: Prisma.AssetWhereInput) {
+    // Valor patrimonial = mismo fallback que assets.api.ts#mapAsset en el
+    // frontend (currentValueUsd ?? currentValue ?? purchaseValue), solo de
+    // activos en estado 'activo'. Un aggregate por rama del fallback, con
+    // condiciones excluyentes, reproduce el COALESCE sin SQL crudo.
+    const active: Prisma.AssetWhereInput = { AND: [where, { status: 'activo' }] }
+    const [byStatusRows, usd, raw, purchase] = await Promise.all([
+      prisma.asset.groupBy({ by: ['status'], where, _count: { _all: true } }),
+      prisma.asset.aggregate({
+        where: { AND: [active, { currentValueUsd: { not: null } }] },
+        _sum: { currentValueUsd: true },
+      }),
+      prisma.asset.aggregate({
+        where: { AND: [active, { currentValueUsd: null }, { currentValue: { not: null } }] },
+        _sum: { currentValue: true },
+      }),
+      prisma.asset.aggregate({
+        where: { AND: [active, { currentValueUsd: null }, { currentValue: null }] },
+        _sum: { purchaseValue: true },
+      }),
+    ])
+
+    const byStatus: Record<string, number> = {}
+    for (const row of byStatusRows) byStatus[row.status] = row._count._all
+    return {
+      total: Object.values(byStatus).reduce((s, n) => s + n, 0),
+      byStatus,
+      activeValueUsd: (usd._sum.currentValueUsd ?? 0) + (raw._sum.currentValue ?? 0) + (purchase._sum.purchaseValue ?? 0),
+    }
   },
 
   async findById(id: string) {

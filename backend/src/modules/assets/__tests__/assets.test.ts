@@ -11,6 +11,8 @@ jest.mock('../../../config/database', () => ({
     asset: {
       findMany:         jest.fn(),
       count:            jest.fn(),
+      groupBy:          jest.fn(),
+      aggregate:        jest.fn(),
       findUnique:       jest.fn(),
       findUniqueOrThrow: jest.fn(),
       findFirst:        jest.fn(),
@@ -149,6 +151,64 @@ describe('Assets API', () => {
       expect(res.body.data).toHaveLength(1)
       expect(res.body.data[0].name).toBe('Toyota Hilux')
       expect(res.body.pagination.total).toBe(1)
+    })
+
+    describe('summary (Fase 3B)', () => {
+      beforeEach(() => {
+        db.asset.findMany.mockResolvedValue([fakeAsset])
+        db.asset.count.mockResolvedValue(57)
+        db.asset.groupBy.mockResolvedValue([
+          { status: 'activo', _count: { _all: 50 } },
+          { status: 'baja', _count: { _all: 5 } },
+          { status: 'vendido', _count: { _all: 2 } },
+        ])
+        // Una rama del fallback por aggregate (ver assetsService.summarize).
+        db.asset.aggregate.mockImplementation((args: { _sum: Record<string, boolean> }) => {
+          if (args._sum.currentValueUsd) return Promise.resolve({ _sum: { currentValueUsd: 1000 } })
+          if (args._sum.currentValue) return Promise.resolve({ _sum: { currentValue: 200 } })
+          return Promise.resolve({ _sum: { purchaseValue: 30 } })
+        })
+      })
+
+      it.each(['', '?includeSummary=false'])('keeps the legacy response and runs no summary query (query "%s")', async (qs) => {
+        const res = await request(app).get(`/api/v1/assets${qs}`).set('Authorization', `Bearer ${adminToken()}`)
+        expect(res.status).toBe(200)
+        expect(res.body).not.toHaveProperty('summary')
+        expect(Object.keys(res.body).sort()).toEqual(['data', 'pagination'])
+        expect(db.asset.groupBy).not.toHaveBeenCalled()
+        expect(db.asset.aggregate).not.toHaveBeenCalled()
+      })
+
+      it('computes the summary over the whole filtered set, not the requested page', async () => {
+        const res = await request(app)
+          .get('/api/v1/assets?includeSummary=true&page=3&limit=1&search=hilux&assetType=Rodado')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.data).toHaveLength(1)
+        expect(res.body.summary).toEqual({
+          total: 57,
+          byStatus: { activo: 50, baja: 5, vendido: 2 },
+          activeValueUsd: 1230,
+        })
+        const listWhere = db.asset.findMany.mock.calls[0][0].where
+        const groupByArgs = db.asset.groupBy.mock.calls[0][0]
+        expect(groupByArgs.where).toEqual(listWhere)
+        expect(groupByArgs.where.assetType).toBe('Rodado')
+        expect(groupByArgs).not.toHaveProperty('skip')
+        expect(groupByArgs).not.toHaveProperty('take')
+      })
+
+      it('reproduces the frontend currentValueUsd ?? currentValue ?? purchaseValue fallback, only for status activo', async () => {
+        await request(app).get('/api/v1/assets?includeSummary=true').set('Authorization', `Bearer ${adminToken()}`)
+
+        const wheres = db.asset.aggregate.mock.calls.map((c: [{ where: { AND: unknown[] } }]) => c[0].where.AND)
+        expect(wheres).toHaveLength(3)
+        for (const and of wheres) expect(and[0]).toEqual({ AND: [{}, { status: 'activo' }] })
+        expect(wheres[0].slice(1)).toEqual([{ currentValueUsd: { not: null } }])
+        expect(wheres[1].slice(1)).toEqual([{ currentValueUsd: null }, { currentValue: { not: null } }])
+        expect(wheres[2].slice(1)).toEqual([{ currentValueUsd: null }, { currentValue: null }])
+      })
     })
 
     describe('server-side sort (Fase 3A)', () => {

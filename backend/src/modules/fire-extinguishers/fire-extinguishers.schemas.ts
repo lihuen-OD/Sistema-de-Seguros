@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema } from '../../shared/schemas/common'
+import { PaginationSchema, IncludeSummarySchema } from '../../shared/schemas/common'
 import { sortQueryFields } from '../../shared/utils/sorting'
 
 const ISODate = z
@@ -44,7 +44,7 @@ export const FIRE_EXT_SORT_KEYS = [
 ] as const
 export type FireExtSortKey = (typeof FIRE_EXT_SORT_KEYS)[number]
 
-export const ListFireExtinguishersQuerySchema = PaginationSchema.extend({
+export const ListFireExtinguishersQuerySchema = PaginationSchema.merge(IncludeSummarySchema).extend({
   ...sortQueryFields(FIRE_EXT_SORT_KEYS),
   status: z.enum(['vigente', 'proximo_vencer', 'vencido', 'sin_fecha']).optional(),
   locationType: z.string().optional(),

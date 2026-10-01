@@ -49,9 +49,13 @@ export default function AssetsPage() {
     search: search.trim() || undefined,
     assetType: filterType || undefined,
     ...toSortParams(sort),
+    includeSummary: true,
   }))
   const allAssets = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
+  // KPIs sobre todo el resultado filtrado (backend), nunca sobre la página.
+  const summary = result?.summary
+  const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: allCompanies = [] } = useQuery(companyQueries.list())
   const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
@@ -74,16 +78,6 @@ export default function AssetsPage() {
   }
 
   const filtered = allAssets
-
-  const { active, baja, vendido, totalValueUsd } = useMemo(() => {
-    const active = allAssets.filter((a) => a.status === 'activo')
-    return {
-      active,
-      baja: allAssets.filter((a) => a.status === 'baja'),
-      vendido: allAssets.filter((a) => a.status === 'vendido'),
-      totalValueUsd: active.reduce((s, a) => s + (a.patrimonialValueUsd ?? 0), 0),
-    }
-  }, [allAssets])
 
   const companyNameById = useMemo(() => new Map(allCompanies.map((c) => [c.id, c.name])), [allCompanies])
   const costCenterById = useMemo(
@@ -411,10 +405,10 @@ export default function AssetsPage() {
       />
 
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard label="Activos Totales" value={pagination?.total ?? 0} description={`${active.length} operativos en esta página`} icon={Package} variant="info" />
-        <KpiCard label="Valor Patrimonial" value={formatCurrencyCompact(totalValueUsd, 'USD')} description="Activos operativos de esta página" icon={DollarSign} variant="success" />
-        <KpiCard label="Dados de Baja" value={baja.length} description="En esta página" icon={AlertTriangle} variant={baja.length > 0 ? 'warning' : 'default'} />
-        <KpiCard label="Vendidos" value={vendido.length} description="En esta página" icon={Archive} variant="default" />
+        <KpiCard label="Activos Totales" value={summary?.total ?? '—'} description={summary ? `${summary.byStatus.activo ?? 0} operativos` : summaryHint} icon={Package} variant="info" />
+        <KpiCard label="Valor Patrimonial" value={summary ? formatCurrencyCompact(summary.activeValueUsd, 'USD') : '—'} description={summary ? 'Activos operativos' : summaryHint} icon={DollarSign} variant="success" />
+        <KpiCard label="Dados de Baja" value={summary ? summary.byStatus.baja ?? 0 : '—'} description={summary ? 'Con los filtros aplicados' : summaryHint} icon={AlertTriangle} variant={summary?.byStatus.baja ? 'warning' : 'default'} />
+        <KpiCard label="Vendidos" value={summary ? summary.byStatus.vendido ?? 0 : '—'} description={summary ? 'Con los filtros aplicados' : summaryHint} icon={Archive} variant="default" />
       </MetricGrid>
 
       <SectionCard noPadding>

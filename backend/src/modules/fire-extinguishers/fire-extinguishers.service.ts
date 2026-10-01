@@ -284,10 +284,9 @@ export const fireExtinguishersService = {
     // el filtro de 'vencido' trae su propio OR de raíz, y un spread/assign
     // junto al OR de la búsqueda hacía que uno pisara al otro (vencidos +
     // búsqueda devolvía cualquier matafuego que matcheara el texto).
-    const conditions: Record<string, unknown>[] = []
-    if (query.status) conditions.push(buildFireExtinguisherStatusFilter(query.status))
+    const searchConditions: Record<string, unknown>[] = []
     if (query.search) {
-      conditions.push({
+      searchConditions.push({
         OR: [
           { code: { contains: query.search, mode: 'insensitive' } },
           { type: { contains: query.search, mode: 'insensitive' } },
@@ -299,9 +298,17 @@ export const fireExtinguishersService = {
         ],
       })
     }
+    // baseWhere = todos los filtros salvo el de estado — la distribución por
+    // estado del summary se calcula sobre él (ver summarize).
+    const baseWhere: Record<string, unknown> = { ...where }
+    if (searchConditions.length > 0) baseWhere.AND = searchConditions
+    const conditions = [
+      ...(query.status ? [buildFireExtinguisherStatusFilter(query.status)] : []),
+      ...searchConditions,
+    ]
     if (conditions.length > 0) where.AND = conditions
 
-    const [rawData, total] = await Promise.all([
+    const [rawData, total, summary] = await Promise.all([
       prisma.fireExtinguisher.findMany({
         where,
         skip,
@@ -310,13 +317,46 @@ export const fireExtinguishersService = {
         include: { asset: { select: { id: true, name: true } } },
       }),
       prisma.fireExtinguisher.count({ where }),
+      query.includeSummary ? fireExtinguishersService.summarize(baseWhere as Prisma.FireExtinguisherWhereInput) : undefined,
     ])
 
-    return buildPaginatedResponse(
+    const response = buildPaginatedResponse(
       rawData.map((fe) => mapFireExt(fe as unknown as Record<string, unknown>)),
       total,
       { page, limit },
     )
+    return { ...response, ...(summary && { summary }) }
+  },
+
+  // KPIs y banner de vencidos de FireExtinguishersPage sobre TODO el resultado
+  // filtrado (Fase 3B) — reemplaza, en la pantalla de listado, la dependencia
+  // de /dashboard/summary (que además exige fire_extinguisher_dashboard).
+  // Es una distribución por estado: respeta búsqueda, ubicación,
+  // establecimiento y actividad, e ignora solo el filtro de estado
+  // (baseWhere). Mismo criterio que fire-extinguishers-dashboard.service:
+  // buildFireExtinguisherStatusFilter para cada estado y vigente por
+  // diferencia (los 4 estados son excluyentes y cubren todo).
+  async summarize(baseWhere: Prisma.FireExtinguisherWhereInput) {
+    const withStatus = (status: string): Prisma.FireExtinguisherWhereInput => ({
+      AND: [baseWhere, buildFireExtinguisherStatusFilter(status) as Prisma.FireExtinguisherWhereInput],
+    })
+    const [total, vencido, proximoVencer, sinFecha, vencidoByEstablishmentRows] = await Promise.all([
+      prisma.fireExtinguisher.count({ where: baseWhere }),
+      prisma.fireExtinguisher.count({ where: withStatus('vencido') }),
+      prisma.fireExtinguisher.count({ where: withStatus('proximo_vencer') }),
+      prisma.fireExtinguisher.count({ where: withStatus('sin_fecha') }),
+      prisma.fireExtinguisher.groupBy({ by: ['establishment'], where: withStatus('vencido'), _count: { _all: true } }),
+    ])
+    return {
+      total,
+      vigente: total - vencido - proximoVencer - sinFecha,
+      proximo_vencer: proximoVencer,
+      vencido,
+      sin_fecha: sinFecha,
+      vencidoByEstablishment: vencidoByEstablishmentRows
+        .map((row) => ({ establishment: row.establishment, count: row._count._all }))
+        .sort((a, b) => b.count - a.count),
+    }
   },
 
   async findById(id: string) {

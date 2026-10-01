@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
-import type { ListSortParams, PaginatedResult } from './pagination'
+import type { ListSortParams, ListSummaryParams, PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Policy, PolicyStatus, PolicyCoverage, PolicyAsset, PolicyAttachment, ProducerTask, TaskPriority, Currency } from '../types'
 
@@ -383,7 +383,17 @@ export const policiesApi = {
 // mantiene así a propósito para no fragmentar cache con lo ya existente.
 
 type PolicyFilters = { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }
-export type PolicyListFilters = PolicyFilters & ListSortParams & { page?: number; search?: string; status?: PolicyStatus }
+export type PolicyListFilters = PolicyFilters & ListSortParams & ListSummaryParams & { page?: number; search?: string; status?: PolicyStatus }
+
+// GET /policies?includeSummary=true — sobre todo el resultado filtrado.
+// byStatus usa el vocabulario del backend (proxima_a_vencer) e ignora solo el
+// filtro de estado; la suma asegurada es solo de líneas vigentes hoy.
+export interface PolicyListSummary {
+  total: number
+  byStatus: { vigente: number; proxima_a_vencer: number; vencida: number; de_baja: number }
+  insuredActiveArs: number
+  insuredActiveUsd: number
+}
 
 export const policyKeys = {
   all: ['policies'] as const,
@@ -410,9 +420,9 @@ export const policyQueries = {
   listPaginated: (filters: PolicyListFilters) =>
     queryOptions({
       queryKey: [...policyKeys.all, 'paginated', filters] as const,
-      queryFn: async (): Promise<PaginatedResult<Policy>> => {
-        const res = await apiClient.get<Paginated<BackendPolicy>>('/policies', { params: filters })
-        return { data: res.data.data.map(mapPolicy), pagination: res.data.pagination }
+      queryFn: async (): Promise<PaginatedResult<Policy, PolicyListSummary>> => {
+        const res = await apiClient.get<Paginated<BackendPolicy> & { summary?: PolicyListSummary }>('/policies', { params: filters })
+        return { data: res.data.data.map(mapPolicy), pagination: res.data.pagination, summary: res.data.summary }
       },
       staleTime: 60 * 1000,
     }),

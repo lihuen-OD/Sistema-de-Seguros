@@ -29,8 +29,6 @@ import { RechargeModal } from './RechargeModal'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { FireExtinguisher, SortState, TableColumn } from '../../shared/types'
-import { useCurrentUser } from '../../app/auth/AuthContext'
-import { hasModule } from '../../app/auth/roleScope'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 type ActivityFilter = 'active' | 'inactive' | 'all'
@@ -88,21 +86,16 @@ export default function FireExtinguishersPage() {
     establishment: filterEstablishment || undefined,
     ...(activityParam !== null && { isActive: activityParam }),
     ...toSortParams(sort),
+    includeSummary: true,
   }))
   const all = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
-  // Los KPIs y el banner de vencidos salen de /dashboard/summary, que el
-  // backend protege con fire_extinguisher_dashboard. Un usuario con solo
-  // fire_extinguishers tiene que poder usar la tabla igual: sin ese módulo no
-  // se pide (evita el 403) y, si falla, se ocultan los KPIs en vez de tirar
-  // la pantalla entera a ErrorState.
-  const { user } = useCurrentUser()
-  const canViewSummary = hasModule(user, 'fire_extinguisher_dashboard')
-  const { data: dashboardSummary, isError: isSummaryError } = useQuery({
-    ...fireExtinguisherQueries.dashboardSummary(),
-    enabled: canViewSummary,
-  })
-  const showSummary = canViewSummary && !isSummaryError
+  // KPIs y banner de vencidos: summary del propio listado (mismo permiso que
+  // la tabla, sin depender de /dashboard/summary ni de
+  // fire_extinguisher_dashboard), sobre todo el resultado filtrado e
+  // ignorando solo el filtro de estado.
+  const summary = result?.summary
+  const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: establishmentCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_establishment'))
   const ESTABLISHMENT_OPTIONS = useMemo(
@@ -390,23 +383,21 @@ export default function FireExtinguishersPage() {
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('fire-extinguishers', FE_COL_DEFS)
 
-  const counts = dashboardSummary?.totals ?? { total: 0, vigente: 0, proximo_vencer: 0, vencido: 0, sin_fecha: 0 }
-
   // Desglose del banner de vencidos por establecimiento + asignación física —
   // solo tiene sentido mostrarlo cuando afecta a más de un sector, si no
   // duplicaría la misma info que ya dice la oración principal del banner.
   const vencidoBreakdown = useMemo(() => {
     const groups = new Map<string, number>()
-    for (const bucket of dashboardSummary?.byEstablishment ?? []) {
-      if (bucket.vencido === 0) continue
-      groups.set(bucket.establishment || 'Sin establecimiento', bucket.vencido)
+    for (const bucket of summary?.vencidoByEstablishment ?? []) {
+      const key = bucket.establishment || 'Sin establecimiento'
+      groups.set(key, (groups.get(key) ?? 0) + bucket.count)
     }
     if (groups.size <= 1) return null
     return [...groups.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([key, count]) => `${count} en ${key}`)
       .join(', ')
-  }, [dashboardSummary])
+  }, [summary])
 
   const filtered = all
 
@@ -475,22 +466,20 @@ export default function FireExtinguishersPage() {
         }
       />
 
-      {showSummary && (
-        <MetricGrid cols={5} className="mb-5">
-          <KpiCard label="Vigentes"          value={counts.vigente}        description="Con carga al día"                icon={ShieldCheck} variant="success" />
-          <KpiCard label="Próximos a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
-          <KpiCard label="Vencidos"          value={counts.vencido}        description="Requieren recarga inmediata"     icon={ShieldOff} variant={counts.vencido > 0 ? 'danger' : 'default'} />
-          <KpiCard label="Sin Fecha"         value={counts.sin_fecha}      description="Sin vencimiento cargado"         icon={CalendarOff} variant={counts.sin_fecha > 0 ? 'warning' : 'default'} />
-          <KpiCard label="Total Activos"     value={counts.total}          description="Matafuegos operativos"            icon={Flame} variant="default" />
-        </MetricGrid>
-      )}
+      <MetricGrid cols={5} className="mb-5">
+        <KpiCard label="Vigentes"          value={summary?.vigente ?? '—'}        description={summary ? 'Con carga al día' : summaryHint}                icon={ShieldCheck} variant="success" />
+        <KpiCard label="Próximos a Vencer" value={summary?.proximo_vencer ?? '—'} description={summary ? 'Vencen en los próximos 30 días' : summaryHint} icon={AlertTriangle} variant="warning" />
+        <KpiCard label="Vencidos"          value={summary?.vencido ?? '—'}        description={summary ? 'Requieren recarga inmediata' : summaryHint}     icon={ShieldOff} variant={summary?.vencido ? 'danger' : 'default'} />
+        <KpiCard label="Sin Fecha"         value={summary?.sin_fecha ?? '—'}      description={summary ? 'Sin vencimiento cargado' : summaryHint}         icon={CalendarOff} variant={summary?.sin_fecha ? 'warning' : 'default'} />
+        <KpiCard label="Total"             value={summary?.total ?? '—'}          description={summary ? 'Con los filtros aplicados' : summaryHint}       icon={Flame} variant="default" />
+      </MetricGrid>
 
-      {showSummary && counts.vencido > 0 && (
+      {summary && summary.vencido > 0 && (
         <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
           <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
           <span>
             <strong>
-              {counts.vencido} matafuego{counts.vencido !== 1 ? 's' : ''} vencido{counts.vencido !== 1 ? 's' : ''}
+              {summary.vencido} matafuego{summary.vencido !== 1 ? 's' : ''} vencido{summary.vencido !== 1 ? 's' : ''}
             </strong>{' '}
             requieren recarga inmediata{vencidoBreakdown ? ` (${vencidoBreakdown})` : ''}. Seleccionálos en la tabla para registrar la recarga en bloque.
           </span>

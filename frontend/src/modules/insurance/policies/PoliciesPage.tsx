@@ -61,9 +61,15 @@ export default function PoliciesPage() {
     search: search.trim() || undefined,
     status: filterStatus ? filterStatus as Policy['status'] : undefined,
     ...toSortParams(sort),
+    includeSummary: true,
   }))
   const allPolicies = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
+  // KPIs sobre todo el resultado filtrado (backend), nunca sobre la página.
+  // La distribución por estado ignora solo el filtro de estado; la suma
+  // asegurada es solo de líneas de cobertura vigentes hoy.
+  const summary = result?.summary
+  const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: allProducers = [] } = useQuery(producerQueries.list())
 
   async function handleDelete(id: string) {
@@ -97,28 +103,6 @@ export default function PoliciesPage() {
   }
 
   const filtered = allPolicies
-
-  const counts = useMemo(() => ({
-    vigente: allPolicies.filter((p) => p.status === 'vigente').length,
-    vencida: allPolicies.filter((p) => p.status === 'vencida').length,
-    proximo_vencer: allPolicies.filter((p) => p.status === 'proximo_vencer').length,
-  }), [allPolicies])
-
-  // "Próxima a vencer" sigue teniendo cobertura activa — si se cuenta solo
-  // 'vigente' se subestima la suma asegurada real (mismo criterio ya usado en
-  // AssetDetailPage.tsx para "seguro vigente").
-  const activeInsuredPolicies = useMemo(
-    () => allPolicies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer'),
-    [allPolicies],
-  )
-  const totalInsuredArs = useMemo(
-    () => activeInsuredPolicies.reduce((s, p) => s + (p.totalInsuredAmountArs ?? 0), 0),
-    [activeInsuredPolicies],
-  )
-  const totalInsuredUsd = useMemo(
-    () => activeInsuredPolicies.reduce((s, p) => s + (p.totalInsuredAmountUsd ?? 0), 0),
-    [activeInsuredPolicies],
-  )
 
   const ALL_COLUMNS: TableColumn<Policy>[] = useMemo(() => [
     {
@@ -348,10 +332,10 @@ export default function PoliciesPage() {
       />
 
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard label="Vigentes" value={counts.vigente} description="En esta página" icon={ShieldCheck} variant="success" />
-        <KpiCard label="Vencidas" value={counts.vencida} description="En esta página" icon={ShieldOff} variant="danger" />
-        <KpiCard label="Próximas a Vencer" value={counts.proximo_vencer} description="En esta página" icon={AlertTriangle} variant="warning" />
-        <KpiCard label="Suma Asegurada" value={formatCurrencyCompact(totalInsuredUsd, 'USD')} description={`${formatCurrencyCompact(totalInsuredArs, 'ARS')} · esta página`} icon={DollarSign} variant="info" />
+        <KpiCard label="Vigentes" value={summary?.byStatus.vigente ?? '—'} description={summary ? `de ${summary.total} pólizas` : summaryHint} icon={ShieldCheck} variant="success" />
+        <KpiCard label="Vencidas" value={summary?.byStatus.vencida ?? '—'} description={summary ? `de ${summary.total} pólizas` : summaryHint} icon={ShieldOff} variant="danger" />
+        <KpiCard label="Próximas a Vencer" value={summary?.byStatus.proxima_a_vencer ?? '—'} description={summary ? 'En los próximos 30 días' : summaryHint} icon={AlertTriangle} variant="warning" />
+        <KpiCard label="Suma Asegurada" value={summary ? formatCurrencyCompact(summary.insuredActiveUsd, 'USD') : '—'} description={summary ? `${formatCurrencyCompact(summary.insuredActiveArs, 'ARS')} · coberturas vigentes` : summaryHint} icon={DollarSign} variant="info" />
       </MetricGrid>
 
       <SectionCard noPadding>

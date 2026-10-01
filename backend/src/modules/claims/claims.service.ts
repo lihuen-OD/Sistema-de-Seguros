@@ -135,7 +135,24 @@ export const claimsService = {
 
     // Los siniestros dados de baja (softDelete → isActive:false) no se listan
     // salvo que se pidan explícitamente con isActive=false.
-    const where: Record<string, unknown> = { isActive: query.isActive ?? true }
+    // baseWhere = todos los filtros salvo el de estado — la distribución por
+    // estado del summary se calcula sobre él (ver summarize).
+    const baseWhere: Record<string, unknown> = { isActive: query.isActive ?? true }
+    if (query.claimType) baseWhere.claimType = query.claimType
+    if (query.policyId) baseWhere.policyId = query.policyId
+    if (query.assetId) baseWhere.assetId = query.assetId
+    if (query.year) {
+      const y = String(query.year)
+      baseWhere.occurrenceDate = { gte: `${y}-01-01`, lte: `${y}-12-31` }
+    }
+    if (query.search) {
+      baseWhere.OR = [
+        { claimNumber: { contains: query.search, mode: 'insensitive' } },
+        { description: { contains: query.search, mode: 'insensitive' } },
+        { insuranceCompany: { contains: query.search, mode: 'insensitive' } },
+      ]
+    }
+    const where: Record<string, unknown> = { ...baseWhere }
     if (query.status) {
       // Los estados son texto libre de catálogo y pueden estar guardados con
       // otra capitalización/acentos que lo que manda el cliente ("En trámite"
@@ -145,22 +162,8 @@ export const claimsService = {
       const statuses = await prisma.claim.groupBy({ by: ['status'] })
       where.status = { in: statuses.map((s) => s.status).filter((s) => normalizeCatalogText(s) === wanted) }
     }
-    if (query.claimType) where.claimType = query.claimType
-    if (query.policyId) where.policyId = query.policyId
-    if (query.assetId) where.assetId = query.assetId
-    if (query.year) {
-      const y = String(query.year)
-      where.occurrenceDate = { gte: `${y}-01-01`, lte: `${y}-12-31` }
-    }
-    if (query.search) {
-      where.OR = [
-        { claimNumber: { contains: query.search, mode: 'insensitive' } },
-        { description: { contains: query.search, mode: 'insensitive' } },
-        { insuranceCompany: { contains: query.search, mode: 'insensitive' } },
-      ]
-    }
 
-    const [rawData, total] = await Promise.all([
+    const [rawData, total, summary] = await Promise.all([
       prisma.claim.findMany({
         where,
         skip,
@@ -169,9 +172,34 @@ export const claimsService = {
         include: CLAIM_LIST_INCLUDE,
       }),
       prisma.claim.count({ where }),
+      query.includeSummary
+        ? claimsService.summarize(baseWhere as Prisma.ClaimWhereInput, where as Prisma.ClaimWhereInput)
+        : undefined,
     ])
 
-    return buildPaginatedResponse(rawData, total, { page, limit })
+    return { ...buildPaginatedResponse(rawData, total, { page, limit }), ...(summary && { summary }) }
+  },
+
+  // KPIs de ClaimsPage sobre TODO el resultado filtrado (Fase 3B).
+  // - totalClaimedArs/totalSettledArs: sobre el resultado de la tabla (where).
+  // - byStatus: distribución con todos los filtros salvo el de estado
+  //   (baseWhere), agrupada por el texto real guardado — los estados son
+  //   dinámicos (catálogo claim_status), nunca una lista fija. Ordenada de
+  //   mayor a menor, igual que el gráfico.
+  async summarize(baseWhere: Prisma.ClaimWhereInput, where: Prisma.ClaimWhereInput) {
+    const [amounts, statusRows] = await Promise.all([
+      prisma.claim.aggregate({ where, _sum: { claimedAmountArs: true, settledAmountArs: true } }),
+      prisma.claim.groupBy({ by: ['status'], where: baseWhere, _count: { _all: true } }),
+    ])
+    const byStatus = statusRows
+      .map((row) => ({ status: row.status, count: row._count._all }))
+      .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status, 'es'))
+    return {
+      totalClaimedArs: amounts._sum.claimedAmountArs ?? 0,
+      totalSettledArs: amounts._sum.settledAmountArs ?? 0,
+      statusTotal: byStatus.reduce((s, row) => s + row.count, 0),
+      byStatus,
+    }
   },
 
   async findById(id: string) {

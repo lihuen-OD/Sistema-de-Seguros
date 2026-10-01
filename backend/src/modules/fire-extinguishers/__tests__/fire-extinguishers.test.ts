@@ -10,6 +10,7 @@ jest.mock('../../../config/database', () => ({
     fireExtinguisher: {
       findMany: jest.fn(),
       count: jest.fn(),
+      groupBy: jest.fn(),
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       create: jest.fn(),
@@ -164,6 +165,76 @@ describe('Fire Extinguishers API', () => {
       await request(app).get('/api/v1/fire-extinguishers').set('Authorization', `Bearer ${adminToken()}`)
       expect(db.asset.findMany).not.toHaveBeenCalled()
       expect(db.fireExtinguisher.findMany.mock.calls[0][0].where.assetId).toBeUndefined()
+    })
+
+    describe('summary (Fase 3B)', () => {
+      // El primer count es el de la tabla; los del summary se identifican por
+      // el filtro de estado que agregan dentro de su AND.
+      function statusOf(where: { AND?: Record<string, unknown>[] }): string {
+        const status = where.AND?.[1]
+        if (!status) return 'base'
+        if (status.expirationDate === null) return 'sin_fecha'
+        if (Array.isArray(status.OR)) return 'vencido'
+        return 'proximo_vencer'
+      }
+
+      beforeEach(() => {
+        db.fireExtinguisher.findMany.mockResolvedValue([])
+        db.fireExtinguisher.count.mockImplementation((args: { where: { AND?: Record<string, unknown>[] } }) => {
+          const counts: Record<string, number> = { base: 100, vencido: 9, proximo_vencer: 6, sin_fecha: 5 }
+          return Promise.resolve(counts[statusOf(args.where)] ?? 0)
+        })
+        db.fireExtinguisher.groupBy.mockResolvedValue([
+          { establishment: 'Planta', _count: { _all: 3 } },
+          { establishment: 'Campo', _count: { _all: 6 } },
+        ])
+      })
+
+      it('keeps the legacy response and runs no summary query without includeSummary', async () => {
+        const res = await request(app).get('/api/v1/fire-extinguishers').set('Authorization', `Bearer ${adminToken()}`)
+        expect(res.body).not.toHaveProperty('summary')
+        expect(db.fireExtinguisher.count).toHaveBeenCalledTimes(1)
+        expect(db.fireExtinguisher.groupBy).not.toHaveBeenCalled()
+      })
+
+      it('returns the status distribution over the whole filtered set, with vigente by difference (same rule as the dashboard)', async () => {
+        const res = await request(app)
+          .get('/api/v1/fire-extinguishers?includeSummary=true&isActive=true&limit=1')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.summary).toEqual({
+          total: 100,
+          vigente: 80,
+          proximo_vencer: 6,
+          vencido: 9,
+          sin_fecha: 5,
+          vencidoByEstablishment: [
+            { establishment: 'Campo', count: 6 },
+            { establishment: 'Planta', count: 3 },
+          ],
+        })
+      })
+
+      it('combines search + status: the table keeps both, the distribution keeps search and drops only status', async () => {
+        await request(app)
+          .get('/api/v1/fire-extinguishers?includeSummary=true&status=vencido&search=planta&establishment=Planta&isActive=true')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        const listWhere = db.fireExtinguisher.findMany.mock.calls[0][0].where
+        expect(listWhere.AND).toHaveLength(2)
+
+        const summaryCountWheres = db.fireExtinguisher.count.mock.calls.slice(1).map((c: [{ where: unknown }]) => c[0].where)
+        const base = summaryCountWheres[0]
+        expect(base.establishment).toBe('Planta')
+        expect(base.isActive).toBe(true)
+        expect(base.AND).toEqual([listWhere.AND[1]]) // solo la búsqueda
+        for (const w of summaryCountWheres.slice(1)) expect(w.AND[0]).toEqual(base)
+
+        const groupByWhere = db.fireExtinguisher.groupBy.mock.calls[0][0].where
+        expect(groupByWhere.AND[0]).toEqual(base)
+        expect(groupByWhere.AND[1].OR).toHaveLength(3) // regla de vencido intacta
+      })
     })
 
     describe('server-side sort (Fase 3A)', () => {

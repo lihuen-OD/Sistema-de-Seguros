@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
-import type { ListSortParams, PaginatedResult } from './pagination'
+import type { ListSortParams, ListSummaryParams, PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment, ClaimExpense, ClaimExpenseAttachment, Currency } from '../types'
 
@@ -223,7 +223,16 @@ export const claimsApi = {
 // ── Query keys / query options (categoría B — semi-dinámico) ────────────────────
 
 type ClaimFilters = { assetId?: string; policyId?: string; status?: string; limit?: number }
-export type ClaimListFilters = ClaimFilters & ListSortParams & { page?: number; search?: string; claimType?: string; year?: number }
+// GET /claims?includeSummary=true — montos sobre el resultado de la tabla;
+// byStatus (estados reales, dinámicos) ignora solo el filtro de estado.
+export interface ClaimListSummary {
+  totalClaimedArs: number
+  totalSettledArs: number
+  statusTotal: number
+  byStatus: { status: string; count: number }[]
+}
+
+export type ClaimListFilters = ClaimFilters & ListSortParams & ListSummaryParams & { page?: number; search?: string; claimType?: string; year?: number }
 
 export const claimKeys = {
   all: ['claims'] as const,
@@ -244,9 +253,9 @@ export const claimQueries = {
   listPaginated: (filters: ClaimListFilters) =>
     queryOptions({
       queryKey: [...claimKeys.all, 'paginated', filters] as const,
-      queryFn: async (): Promise<PaginatedResult<Claim>> => {
-        const res = await apiClient.get<Paginated<BackendClaim>>('/claims', { params: filters })
-        return { data: res.data.data.map(mapClaim), pagination: res.data.pagination }
+      queryFn: async (): Promise<PaginatedResult<Claim, ClaimListSummary>> => {
+        const res = await apiClient.get<Paginated<BackendClaim> & { summary?: ClaimListSummary }>('/claims', { params: filters })
+        return { data: res.data.data.map(mapClaim), pagination: res.data.pagination, summary: res.data.summary }
       },
       staleTime: 60 * 1000,
     }),

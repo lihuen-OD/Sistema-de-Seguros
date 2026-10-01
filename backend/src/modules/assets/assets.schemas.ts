@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema, ActiveFilterSchema } from '../../shared/schemas/common'
+import { PaginationSchema, ActiveFilterSchema, IncludeSummarySchema } from '../../shared/schemas/common'
 import { sortQueryFields } from '../../shared/utils/sorting'
 
 const ISODate = z
@@ -92,7 +92,7 @@ export const ASSET_SORT_KEYS = [
 ] as const
 export type AssetSortKey = (typeof ASSET_SORT_KEYS)[number]
 
-export const ListAssetsQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
+export const ListAssetsQuerySchema = PaginationSchema.merge(ActiveFilterSchema).merge(IncludeSummarySchema).extend({
   search: z.string().optional(),
   assetType: z.string().optional(),
   ...sortQueryFields(ASSET_SORT_KEYS),

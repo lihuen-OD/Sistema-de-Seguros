@@ -26,6 +26,7 @@ import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
+import { LoadingState } from '../../shared/components/empty-states/LoadingState'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import {
   normalizeClaimStatusText, resolveClaimStatusKey,
@@ -56,9 +57,14 @@ export default function ClaimsPage() {
     status: filterStatus ? normalizeClaimStatusText(filterStatus) : undefined,
     claimType: filterType || undefined,
     ...toSortParams(sort),
+    includeSummary: true,
   }))
   const all = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
+  // Montos sobre todo el resultado filtrado y distribución por estado (estados
+  // reales, dinámicos) ignorando solo el filtro de estado — ambos del backend.
+  const summary = result?.summary
+  const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: allPolicies = [] } = useQuery(policyQueries.list())
   const { data: claimStatusCatalog = [] } = useQuery(catalogQueries.byCategory('claim_status'))
@@ -97,23 +103,18 @@ export default function ClaimsPage() {
     setDeleteId(null)
   }
 
-  // Distribución real por estado — agrupa por el texto tal cual está en cada
-  // siniestro (nunca se relabelea ni se inventa una categoría), ordenada de
-  // mayor a menor para el gráfico "Siniestros por estado".
+  // Distribución real por estado — el backend agrupa por el texto tal cual
+  // está en cada siniestro (nunca se relabelea ni se inventa una categoría),
+  // ya ordenada de mayor a menor para el gráfico "Siniestros por estado".
   const statusDistribution = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const c of all) counts.set(c.status, (counts.get(c.status) ?? 0) + 1)
-    const total = all.length
-    return [...counts.entries()]
-      .map(([status, count]) => ({ status, count, pct: total > 0 ? (count / total) * 100 : 0 }))
-      .sort((a, b) => b.count - a.count)
-  }, [all])
+    const total = summary?.statusTotal ?? 0
+    return (summary?.byStatus ?? []).map(({ status, count }) => ({
+      status,
+      count,
+      pct: total > 0 ? (count / total) * 100 : 0,
+    }))
+  }, [summary])
   const topStatus = statusDistribution[0] ?? null
-
-  const totals = useMemo(() => ({
-    totalClaimed: all.reduce((s, c) => s + c.claimedAmountArs, 0),
-    totalSettled: all.reduce((s, c) => s + (c.settledAmountArs ?? 0), 0),
-  }), [all])
 
   const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
   const policyById = useMemo(() => new Map(allPolicies.map((p) => [p.id, p])), [allPolicies])
@@ -390,25 +391,27 @@ export default function ClaimsPage() {
 
       <MetricGrid cols={3} className="mb-5">
         <KpiCard label="Total de Siniestros" value={pagination?.total ?? 0} description="Resultados del listado" icon={ClipboardList} variant="info" />
-        <KpiCard label="Monto Reclamado" value={formatCurrencyCompact(totals.totalClaimed, 'ARS')} description="Total de esta página" icon={ShieldAlert} variant="info" />
-        <KpiCard label="Monto Liquidado" value={formatCurrencyCompact(totals.totalSettled, 'ARS')} description="Total de esta página" icon={CheckCircle2} variant={totals.totalSettled > 0 ? 'success' : 'default'} />
+        <KpiCard label="Monto Reclamado" value={summary ? formatCurrencyCompact(summary.totalClaimedArs, 'ARS') : '—'} description={summary ? 'Total de los resultados' : summaryHint} icon={ShieldAlert} variant="info" />
+        <KpiCard label="Monto Liquidado" value={summary ? formatCurrencyCompact(summary.totalSettledArs, 'ARS') : '—'} description={summary ? 'Total de los resultados' : summaryHint} icon={CheckCircle2} variant={summary?.totalSettledArs ? 'success' : 'default'} />
       </MetricGrid>
 
       <ChartCard
-        title="Siniestros por estado en esta página"
+        title="Siniestros por estado"
         subtitle={
           topStatus
             ? `Estado más frecuente: "${topStatus.status}" — ${topStatus.count} (${topStatus.pct.toFixed(0)}%)`
-            : 'Distribución de los siniestros de la página actual'
+            : 'Distribución de los siniestros con los filtros aplicados (sin el filtro de estado)'
         }
         className="mb-5"
         height={statusDistribution.length > 0 ? Math.max(220, statusDistribution.length * 52 + 24) : 200}
       >
-        {statusDistribution.length === 0 ? (
+        {!summary ? (
+          <LoadingState rows={3} />
+        ) : statusDistribution.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <EmptyState
               title="Sin siniestros"
-              description="Todavía no hay siniestros registrados para mostrar la distribución por estado."
+              description="No hay siniestros con los filtros aplicados para mostrar la distribución por estado."
               icon={ShieldAlert}
             />
           </div>

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema, ActiveFilterSchema, booleanFromString } from '../../shared/schemas/common'
+import { PaginationSchema, ActiveFilterSchema, IncludeSummarySchema, booleanFromString } from '../../shared/schemas/common'
 import { sortQueryFields } from '../../shared/utils/sorting'
 
 const ISODate = z
@@ -80,7 +80,7 @@ export const POLICY_SORT_KEYS = [
 ] as const
 export type PolicySortKey = (typeof POLICY_SORT_KEYS)[number]
 
-export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
+export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema).merge(IncludeSummarySchema).extend({
   ...sortQueryFields(POLICY_SORT_KEYS),
   search: z.string().optional(),
   // El frontend usa 'proximo_vencer' (mismo vocabulario que ExpirationStatus de

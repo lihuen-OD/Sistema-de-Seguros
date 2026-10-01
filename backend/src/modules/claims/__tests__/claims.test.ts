@@ -11,6 +11,7 @@ jest.mock('../../../config/database', () => ({
       findMany:          jest.fn(),
       count:             jest.fn(),
       groupBy:           jest.fn(),
+      aggregate:         jest.fn(),
       findUnique:        jest.fn(),
       findUniqueOrThrow: jest.fn(),
       create:            jest.fn(),
@@ -211,6 +212,65 @@ describe('Claims API', () => {
       const where = db.claim.findMany.mock.calls[0][0].where
       expect(where.status).toEqual({ in: ['En trámite', 'EN TRAMITE'] })
       expect(db.claim.count.mock.calls[0][0].where.status).toEqual(where.status)
+    })
+
+    describe('summary (Fase 3B)', () => {
+      beforeEach(() => {
+        db.claim.findMany.mockResolvedValue([fakeClaim])
+        db.claim.count.mockResolvedValue(25)
+        db.claim.aggregate.mockResolvedValue({ _sum: { claimedAmountArs: 9_000_000, settledAmountArs: null } })
+        db.claim.groupBy.mockImplementation((args: { _count?: unknown }) =>
+          Promise.resolve(args._count
+            ? [
+                { status: 'En trámite', _count: { _all: 5 } },
+                { status: 'Denunciado', _count: { _all: 12 } },
+                { status: 'CERRADO', _count: { _all: 8 } },
+              ]
+            // groupBy sin _count = resolución del filtro de estado (Fase 3.0)
+            : [{ status: 'Denunciado' }, { status: 'En trámite' }, { status: 'CERRADO' }]),
+        )
+      })
+
+      it('keeps the legacy response and runs no summary query without includeSummary', async () => {
+        const res = await request(app).get('/api/v1/claims').set('Authorization', `Bearer ${adminToken()}`)
+        expect(res.body).not.toHaveProperty('summary')
+        expect(db.claim.aggregate).not.toHaveBeenCalled()
+      })
+
+      it('returns amounts over the table result and a dynamic status distribution sorted by count', async () => {
+        const res = await request(app).get('/api/v1/claims?includeSummary=true&limit=1').set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.summary).toEqual({
+          totalClaimedArs: 9_000_000,
+          totalSettledArs: 0,
+          statusTotal: 25,
+          byStatus: [
+            { status: 'Denunciado', count: 12 },
+            { status: 'CERRADO', count: 8 },
+            { status: 'En trámite', count: 5 },
+          ],
+        })
+        expect(db.claim.aggregate.mock.calls[0][0]).not.toHaveProperty('take')
+      })
+
+      it('ignores only the status filter for the distribution, keeping search/type and hiding soft-deleted claims', async () => {
+        await request(app)
+          .get('/api/v1/claims?includeSummary=true&status=en%20tramite&claimType=Robo&search=toyota')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        const listWhere = db.claim.findMany.mock.calls[0][0].where
+        expect(listWhere.status).toEqual({ in: ['En trámite'] })
+        expect(db.claim.aggregate.mock.calls[0][0].where).toEqual(listWhere)
+
+        const distributionWhere = db.claim.groupBy.mock.calls
+          .map((c: [{ _count?: unknown; where?: Record<string, unknown> }]) => c[0])
+          .find((args: { _count?: unknown }) => args._count).where
+        expect(distributionWhere).not.toHaveProperty('status')
+        expect(distributionWhere.isActive).toBe(true)
+        expect(distributionWhere.claimType).toBe('Robo')
+        expect(distributionWhere.OR).toBeDefined()
+      })
     })
 
     describe('server-side sort (Fase 3A)', () => {

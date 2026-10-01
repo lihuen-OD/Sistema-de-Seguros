@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema } from '../../shared/schemas/common'
+import { PaginationSchema, IncludeSummarySchema } from '../../shared/schemas/common'
 import { sortQueryFields } from '../../shared/utils/sorting'
 
 const ISODate = z
@@ -80,7 +80,7 @@ export const CLAIM_SORT_KEYS = [
 ] as const
 export type ClaimSortKey = (typeof CLAIM_SORT_KEYS)[number]
 
-export const ListClaimsQuerySchema = PaginationSchema.extend({
+export const ListClaimsQuerySchema = PaginationSchema.merge(IncludeSummarySchema).extend({
   ...sortQueryFields(CLAIM_SORT_KEYS),
   search: z.string().optional(),
   status: z.string().max(100).optional(),

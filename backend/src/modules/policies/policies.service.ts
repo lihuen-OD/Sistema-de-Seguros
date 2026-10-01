@@ -497,9 +497,10 @@ export const policiesService = {
   async findAll(query: ListPoliciesQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
 
-    const where = {
+    // baseWhere = todos los filtros salvo el de estado — la distribución por
+    // estado del summary se calcula sobre él (ver summarize).
+    const baseWhere: Prisma.PolicyWhereInput = {
       ...(query.isActive !== undefined && { isActive: query.isActive }),
-      ...(query.status && buildPolicyStatusFilter(query.status)),
       ...(query.insuranceTypeId && { coverages: { some: { insuranceTypeId: query.insuranceTypeId } } }),
       ...(query.assetId && { coverages: { some: { assetId: query.assetId } } }),
       ...(query.companyId && {
@@ -520,8 +521,12 @@ export const policiesService = {
         ],
       }),
     }
+    const where: Prisma.PolicyWhereInput = {
+      ...baseWhere,
+      ...(query.status && (buildPolicyStatusFilter(query.status) as Prisma.PolicyWhereInput)),
+    }
 
-    const [rawData, total] = await Promise.all([
+    const [rawData, total, summary] = await Promise.all([
       prisma.policy.findMany({
         where,
         skip,
@@ -534,9 +539,10 @@ export const policiesService = {
         },
       }),
       prisma.policy.count({ where }),
+      query.includeSummary ? policiesService.summarize(baseWhere, where) : undefined,
     ])
 
-    return buildPaginatedResponse(
+    const response = buildPaginatedResponse(
       rawData.map((p) => {
         // Con varios activos (o varios tipos de seguro) por póliza, el
         // listado agrega en vez de mostrar un solo valor — el detalle de
@@ -594,6 +600,45 @@ export const policiesService = {
       total,
       { page, limit },
     )
+    return { ...response, ...(summary && { summary }) }
+  },
+
+  // KPIs de PoliciesPage sobre TODO el resultado filtrado (Fase 3B).
+  // - byStatus: distribución por estado con todos los filtros salvo el de
+  //   estado (baseWhere), así las cards no quedan en 0 al filtrar uno. Usa
+  //   el mismo buildPolicyStatusFilter que el filtro de la tabla.
+  // - insuredActiveArs/Usd: suma asegurada solo de líneas de cobertura
+  //   vigentes hoy (mismo criterio que isCoverageActiveOn: effectiveDate <=
+  //   hoy y sin bajaDate o bajaDate >= hoy) de pólizas con cobertura activa
+  //   (vigente o próxima a vencer), sobre el resultado de la tabla (where).
+  async summarize(baseWhere: Prisma.PolicyWhereInput, where: Prisma.PolicyWhereInput) {
+    const today = todayDate()
+    const countByStatus = (status: string) =>
+      prisma.policy.count({ where: { AND: [baseWhere, buildPolicyStatusFilter(status) as Prisma.PolicyWhereInput] } })
+
+    const [vigente, proximaAVencer, vencida, deBaja, insured] = await Promise.all([
+      countByStatus('vigente'),
+      countByStatus('proxima_a_vencer'),
+      countByStatus('vencida'),
+      countByStatus('de_baja'),
+      prisma.policyAssetCoverage.aggregate({
+        where: {
+          policy: { AND: [where, { deactivatedAt: null, endDate: { gte: today } }] },
+          effectiveDate: { lte: today },
+          OR: [{ bajaDate: null }, { bajaDate: { gte: today } }],
+        },
+        _sum: { insuredAmountArs: true, insuredAmountUsd: true },
+      }),
+    ])
+
+    return {
+      // Los 4 estados son excluyentes y cubren todo (de_baja por
+      // deactivatedAt; el resto por rangos de endDate), así que suman el total.
+      total: vigente + proximaAVencer + vencida + deBaja,
+      byStatus: { vigente, proxima_a_vencer: proximaAVencer, vencida, de_baja: deBaja },
+      insuredActiveArs: insured._sum.insuredAmountArs ?? 0,
+      insuredActiveUsd: insured._sum.insuredAmountUsd ?? 0,
+    }
   },
 
   async findById(id: string) {
