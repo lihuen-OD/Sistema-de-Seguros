@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import type { FireExtinguisher, FireExtinguisherHistory, FireExtinguisherHistoryChange, AssociatedLocationType, FireExtStatus } from '../types'
-import type { PaginatedResult } from './pagination'
+import type { ListSortParams, ListSummaryParams, PaginatedResult } from './pagination'
 
 interface BackendHistoryChange {
   field: string; label: string
@@ -15,6 +15,8 @@ interface BackendHistory {
 interface BackendExtinguisher {
   id: string; code: string | null; type: string; capacity: string
   chargeDate: string | null; expirationDate: string | null; associatedAssetId: string | null
+  // Solo en el listado GET /fire-extinguishers (Fase 3D).
+  associatedAssetName?: string | null
   hydraulicTestExpirationDate: string | null; hydraulicTestStatus?: string | null
   associatedLocationType: string; location: string | null; establishment: string | null
   status: string; chargeStatus: string; manufacturingLifeStatus: string | null
@@ -57,6 +59,7 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
     expirationDate: b.expirationDate ?? null,
     hydraulicTestExpirationDate: b.hydraulicTestExpirationDate ?? null,
     associatedAssetId: b.associatedAssetId ?? null,
+    ...(b.associatedAssetName !== undefined && { associatedAssetName: b.associatedAssetName }),
     associatedLocationType: b.associatedLocationType as AssociatedLocationType,
     location: b.location ?? null,
     establishment: b.establishment ?? null,
@@ -166,9 +169,9 @@ export const fireExtinguisherQueries = {
   listPaginated: (filters: FireExtinguisherListFilters) =>
     queryOptions({
       queryKey: [...fireExtinguisherKeys.all, 'paginated', filters] as const,
-      queryFn: async (): Promise<PaginatedResult<FireExtinguisher>> => {
-        const res = await apiClient.get<Paginated<BackendExtinguisher>>('/fire-extinguishers', { params: filters })
-        return { data: res.data.data.map(mapExtinguisher), pagination: res.data.pagination }
+      queryFn: async (): Promise<PaginatedResult<FireExtinguisher, FireExtinguisherListSummary>> => {
+        const res = await apiClient.get<Paginated<BackendExtinguisher> & { summary?: FireExtinguisherListSummary }>('/fire-extinguishers', { params: filters })
+        return { data: res.data.data.map(mapExtinguisher), pagination: res.data.pagination, summary: res.data.summary }
       },
       staleTime: 60 * 1000,
     }),
@@ -195,7 +198,19 @@ export const fireExtinguisherQueries = {
     }),
 }
 
-export interface FireExtinguisherListFilters {
+// GET /fire-extinguishers?includeSummary=true — distribución por estado sobre
+// todo el resultado filtrado, ignorando solo el filtro de estado. No depende
+// de /dashboard/summary (ni de su permiso).
+export interface FireExtinguisherListSummary {
+  total: number
+  vigente: number
+  proximo_vencer: number
+  vencido: number
+  sin_fecha: number
+  vencidoByEstablishment: { establishment: string | null; count: number }[]
+}
+
+export interface FireExtinguisherListFilters extends ListSortParams, ListSummaryParams {
   page?: number
   limit?: number
   search?: string

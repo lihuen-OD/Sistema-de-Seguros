@@ -1,7 +1,7 @@
 import type { AuditDashboardSector, AuditFlaggedExtinguisher } from '../api/fire-extinguisher-audits.api'
 import { formatPeriodLabel } from '../../modules/fire-extinguishers/audits/findingsReportFields'
 import { drawHorizontalBar, hexToRgb } from './pdfShapes'
-import { classifyLevel } from './auditLevel'
+import { classifyLevel, withCleaningOkLevel } from './auditLevel'
 
 // PDF armado a mano con las primitivas de jsPDF (texto y figuras) — nada de
 // html2canvas/capturas de pantalla. Mismo estilo que ve la pantalla "Informe
@@ -374,7 +374,8 @@ export async function buildAuditDashboardPdf(period: string, sectors: AuditDashb
         drawFlagCard(group, innerX, innerW, flagCardGapAfter(i, flagGroups.length))
       })
 
-      for (const cp of sector.controlPoints) {
+      // Misma barra "Limpieza" que la pantalla: % sin limpieza urgente, no el score.
+      for (const cp of withCleaningOkLevel(sector.controlPoints, sector.cleaningOkPercentage)) {
         ensureSpace(CONTROL_POINT_ROW_H)
         drawLevelRow(cp.label, cp.level, innerX, innerW, true)
         cursor.y += CONTROL_POINT_ROW_H

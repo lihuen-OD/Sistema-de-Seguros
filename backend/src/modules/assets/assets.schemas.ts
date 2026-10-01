@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { PaginationSchema, ActiveFilterSchema } from '../../shared/schemas/common'
+import { PaginationSchema, ActiveFilterSchema, IncludeSummarySchema } from '../../shared/schemas/common'
+import { sortQueryFields } from '../../shared/utils/sorting'
 
 const ISODate = z
   .string()
@@ -79,9 +80,22 @@ export const UpdateAttachmentSchema = z.object({
   expirationDate: ISODate.nullable().optional(),
 })
 
-export const ListAssetsQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
+// Ids de columna de AssetsPage ordenables en el servidor — el mapeo a Prisma
+// está en assets.service.ts (ASSET_SORT). Quedan afuera las columnas que no
+// son un campo ordenable en SQL: empresa/centro de costo (salen de la
+// imputación principal), valor patrimonial (fallback currentValueUsd ??
+// currentValue ?? purchaseValue calculado al mapear) y chasis/motor (metadata).
+export const ASSET_SORT_KEYS = [
+  'internalCode', 'name', 'assetType', 'status', 'valuationDate', 'brand', 'model', 'year',
+  'serialNumber', 'plate', 'fixedAssetCode', 'patrimonialValueNew', 'productiveUnit', 'area',
+  'dischargeDate', 'saleDate', 'attachmentsCount', 'createdAt',
+] as const
+export type AssetSortKey = (typeof ASSET_SORT_KEYS)[number]
+
+export const ListAssetsQuerySchema = PaginationSchema.merge(ActiveFilterSchema).merge(IncludeSummarySchema).extend({
   search: z.string().optional(),
   assetType: z.string().optional(),
+  ...sortQueryFields(ASSET_SORT_KEYS),
 })
 
 export const SearchAssetsQuerySchema = z.object({

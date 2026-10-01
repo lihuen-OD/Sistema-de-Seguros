@@ -18,7 +18,6 @@ import {
 } from '../../../shared/components/forms/FormSection'
 import { formatDate } from '../../../shared/utils/format'
 import { companiesApi, companyQueries, companyKeys, type CompanyInput } from '../../../shared/api/companies.api'
-import { assetQueries } from '../../../shared/api/assets.api'
 import { costCenterQueries } from '../../../shared/api/cost-centers.api'
 import type { Company, TableColumn } from '../../../shared/types'
 
@@ -139,7 +138,9 @@ export default function CompaniesPage() {
 
   const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  // Conteos reales del backend (imputación principal) — no /assets?limit=200.
+  const { data: assetCounts } = useQuery(companyQueries.assetCounts())
+  const assetCountOf = (companyId: string) => assetCounts?.byCompanyId[companyId] ?? 0
 
   const filtered = useMemo(() => {
     if (!search) return allCompanies
@@ -154,7 +155,7 @@ export default function CompaniesPage() {
   const activeCount = allCompanies.filter((c) => c.status === 'activo').length
   const inactiveCount = allCompanies.filter((c) => c.status === 'inactivo').length
   const totalCostCenters = allCostCenters.filter((cc) => cc.status === 'activo').length
-  const totalAssets = allAssets.filter((a) => a.status === 'activo').length
+  const totalAssets = assetCounts?.activeAssets
 
   async function handleSave(input: CompanyInput) {
     if (modalCompany) {
@@ -187,9 +188,10 @@ export default function CompaniesPage() {
       key: 'id',
       label: 'Activos',
       sortable: true,
-      sortValue: (row) => allAssets.filter((a) => a.companyId === row.id && a.status === 'activo').length,
+      sortValue: (row) => assetCountOf(row.id),
       render: (v) => {
-        const ccCount = allAssets.filter((a) => a.companyId === v && a.status === 'activo').length
+        if (!assetCounts) return <span className="text-xs text-slate-400">—</span>
+        const ccCount = assetCountOf(v as string)
         return (
           <span className="inline-flex items-center gap-1 text-xs text-slate-600">
             <Hash size={12} />
@@ -270,7 +272,7 @@ export default function CompaniesPage() {
         />
         <KpiCard
           label="Activos Asociados"
-          value={totalAssets}
+          value={totalAssets ?? '—'}
           description="Bienes en estado activo"
           icon={CheckCircle2}
           variant="success"
@@ -301,7 +303,7 @@ export default function CompaniesPage() {
 
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {allCompanies.map((company) => {
-          const assetList = allAssets.filter((a) => a.companyId === company.id && a.status === 'activo')
+          const assetCount = assetCounts ? assetCountOf(company.id) : null
           return (
             <div
               key={company.id}
@@ -318,7 +320,7 @@ export default function CompaniesPage() {
               <p className="text-xs text-slate-400 font-mono mb-4">CUIT {company.taxId}</p>
               <div className="flex items-center gap-4 pt-3 border-t border-slate-100">
                 <div className="text-center">
-                  <span className="block text-lg font-bold text-slate-800">{assetList.length}</span>
+                  <span className="block text-lg font-bold text-slate-800">{assetCount ?? '—'}</span>
                   <span className="block text-xs text-slate-400">Activos</span>
                 </div>
               </div>

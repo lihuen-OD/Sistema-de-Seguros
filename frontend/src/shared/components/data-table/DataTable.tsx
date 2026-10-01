@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
-import type { TableColumn } from '../../types'
+import type { SortState, TableColumn } from '../../types'
 import { EmptyState } from '../empty-states/EmptyState'
 import { LoadingState } from '../empty-states/LoadingState'
 import { TableShell } from './TableShell'
 
-type SortDirection = 'asc' | 'desc'
-interface SortState { key: string; direction: SortDirection }
+// Ciclo de un click en un encabezado: asc → desc → sin orden.
+function nextSortState(prev: SortState | null, colId: string): SortState | null {
+  if (!prev || prev.key !== colId) return { key: colId, direction: 'asc' }
+  if (prev.direction === 'asc') return { key: colId, direction: 'desc' }
+  return null
+}
 
 // Comparación "natural": números como números, texto con acentos/ñ en orden
 // de diccionario español, y strings con números adentro (ej. códigos
@@ -72,6 +76,13 @@ interface DataTableProps<T extends object> {
    *  así que conviene reusar la misma key. Sin ella, el resize funciona igual
    *  pero solo dura la visita actual a la página. */
   tableKey?: string
+  /** Orden controlado (server-side). Si se pasa onSortChange, la tabla NO
+   *  reordena `data` — solo muestra el indicador de `sort` y avisa el click,
+   *  y el padre pide al backend la página ya ordenada. Es obligatorio en
+   *  listados paginados: ordenar localmente solo reordenaría la página
+   *  visible. Sin estas props, ordena localmente (datasets completos). */
+  sort?: SortState | null
+  onSortChange?: (sort: SortState | null) => void
 }
 
 function SelectAllCheckbox({
@@ -115,8 +126,12 @@ export function DataTable<T extends object>({
   isRowSelectable,
   rowClassName,
   tableKey,
+  sort,
+  onSortChange,
 }: DataTableProps<T>) {
-  const [sortState, setSortState] = useState<SortState | null>(null)
+  const isSortControlled = onSortChange !== undefined
+  const [localSortState, setLocalSortState] = useState<SortState | null>(null)
+  const sortState = isSortControlled ? (sort ?? null) : localSortState
   const [widths, setWidths] = useState<Record<string, number>>(() => loadWidths(tableKey))
   const [isResizing, setIsResizing] = useState(false)
   const widthsRef = useRef(widths)
@@ -260,15 +275,12 @@ export function DataTable<T extends object>({
   }
 
   function toggleSort(colId: string) {
-    setSortState((prev) => {
-      if (!prev || prev.key !== colId) return { key: colId, direction: 'asc' }
-      if (prev.direction === 'asc') return { key: colId, direction: 'desc' }
-      return null
-    })
+    if (onSortChange) onSortChange(nextSortState(sortState, colId))
+    else setLocalSortState((prev) => nextSortState(prev, colId))
   }
 
   const sortedData = useMemo(() => {
-    if (!sortState) return data
+    if (!sortState || isSortControlled) return data
     const col = columns.find((c) => (c.id ?? String(c.key)) === sortState.key)
     if (!col) return data
     const getValue = (row: T) =>
@@ -284,7 +296,7 @@ export function DataTable<T extends object>({
       if (bNil) return -1
       return dir * compareValues(av, bv)
     })
-  }, [data, columns, sortState])
+  }, [data, columns, sortState, isSortControlled])
 
   if (loading) {
     return <LoadingState />

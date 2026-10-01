@@ -20,26 +20,18 @@ import {
   formatDate,
 } from '../../../shared/utils/format'
 import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
+import { toSortParams } from '../../../shared/api/pagination'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PAYMENT_STATUS_LABELS } from '../../../shared/constants'
 import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
-import type { AccountingDocument, TableColumn } from '../../../shared/types'
+import type { AccountingDocument, SortState, TableColumn } from '../../../shared/types'
+import { EXPORT_SCOPE_HINT, fetchRowsForExport } from '../../../shared/utils/export'
 
 const PAYMENT_STATUS_OPTIONS = Object.entries(PAYMENT_STATUS_LABELS).map(([value, label]) => ({
   value,
   label,
 }))
 
-// Orden por severidad al ordenar la columna "Estado Pago" — alfabético
-// dejaría "NOT_APPLICABLE" antes que "PENDING", que no refleja el ciclo de
-// vida real del pago. Mismo orden que PAYMENT_STATUS_LABELS.
-const PAYMENT_STATUS_SORT_ORDER: Record<string, number> = {
-  PENDING: 0,
-  PARTIALLY_PAID: 1,
-  PAID: 2,
-  OVERDUE: 3,
-  NOT_APPLICABLE: 4,
-}
 const DEFAULT_PAGE_SIZE = 20
 
 export default function DocumentsPage() {
@@ -51,16 +43,36 @@ export default function DocumentsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [sort, setSort] = useState<SortState | null>(null)
 
-  const { data: result, isLoading, isFetching, isError } = useQuery(documentQueries.listPaginated({
-    page,
-    limit,
+  // Filtros + orden de la tabla: los mismos para la página visible, para
+  // el summary y para exportar (getExportRows).
+  const listFilters = {
     search: search.trim() || undefined,
     documentType: filterType || undefined,
     paymentStatus: filterStatus || undefined,
+    ...toSortParams(sort),
+  }
+  const { data: result, isLoading, isFetching, isError } = useQuery(documentQueries.listPaginated({
+    ...listFilters,
+    page,
+    limit,
+    includeSummary: true,
   }))
+  // Exporta el resultado filtrado y ordenado completo (hasta
+  // EXPORT_MAX_ROWS), nunca la página visible. staleTime 0: siempre datos
+  // frescos al momento del clic, aunque la página esté cacheada.
+  const getExportRows = () =>
+    fetchRowsForExport((pageParams) =>
+      queryClient.fetchQuery({ ...documentQueries.listPaginated({ ...listFilters, ...pageParams, includeSummary: false }), staleTime: 0 }),
+    )
   const allDocuments = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
+  // Pendiente/pagado/parcial sobre todo el resultado filtrado (backend, ver
+  // documentsService.summarize): por cuota si el documento tiene cuotas, sin
+  // anulados, e ignorando solo el filtro de estado de pago.
+  const summary = result?.summary
+  const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: documentTypesData } = useQuery(documentQueries.types())
   const documentTypes = documentTypesData?.types ?? []
   const documentTypeLabels = useMemo(
@@ -70,63 +82,6 @@ export default function DocumentsPage() {
 
   const DOCUMENT_TYPE_OPTIONS = documentTypes.map((t) => ({ value: t.key, label: t.label }))
 
-  // Cuotas de todos los documentos listados — necesarias para que "Total
-  // Pendiente"/"Total Pagado" reflejen la porción real de cada documento con
-  // pago parcial (antes solo miraba el estado del documento completo, así que
-  // un documento "Pago Parcial" no aportaba nada a ninguno de los dos totales).
-  const documentIds = useMemo(() => allDocuments.map((d) => d.id), [allDocuments])
-  const { data: allInstallments = [], isLoading: isLoadingInstallments } = useQuery({
-    queryKey: [...documentKeys.all, 'installments-bulk', documentIds],
-    queryFn: () => documentsApi.findInstallmentsBulk(documentIds),
-    enabled: documentIds.length > 0,
-  })
-  // Mientras allDocuments ya resolvió pero las cuotas todavía no, "totals" no
-  // puede confiar en qué documentos tienen cuotas propias — sin este flag, las
-  // KPI mostrarían primero un total aproximado (sin cuotas) y un instante
-  // después el total real, un salto visible y engañoso en vez de un loading.
-  const totalsReady = documentIds.length === 0 || !isLoadingInstallments
-
-  const totals = useMemo(() => {
-    let pendingArs = 0, pendingUsd = 0, paidArs = 0, paidUsd = 0
-    const installmentsByDoc = new Map<string, typeof allInstallments>()
-    allInstallments.forEach((inst) => {
-      const list = installmentsByDoc.get(inst.accountingDocumentId) ?? []
-      list.push(inst)
-      installmentsByDoc.set(inst.accountingDocumentId, list)
-    })
-
-    allDocuments.forEach((doc) => {
-      const docInstallments = installmentsByDoc.get(doc.id)
-      if (docInstallments && docInstallments.length > 0) {
-        // Cuota por cuota — así un documento "Pago Parcial" solo aporta al
-        // total pendiente lo que realmente falta pagar, y al pagado lo que ya
-        // se pagó (nunca el total completo del documento en uno solo).
-        docInstallments.forEach((inst) => {
-          if (inst.paymentStatus === 'PAID') {
-            paidArs += inst.amountArs ?? 0
-            paidUsd += inst.amountUsd ?? 0
-          } else {
-            pendingArs += inst.amountArs ?? 0
-            pendingUsd += inst.amountUsd ?? 0
-          }
-        })
-      } else {
-        // Documentos sin cuotas propias (ej. Endoso) — se usa el estado de
-        // pago del documento completo. NOT_APPLICABLE no cuenta en ninguno.
-        if (doc.paymentStatus === 'PAID') {
-          paidArs += doc.totalAmountArs ?? 0
-          paidUsd += doc.totalAmountUsd ?? 0
-        } else if (doc.paymentStatus !== 'NOT_APPLICABLE') {
-          pendingArs += doc.totalAmountArs ?? 0
-          pendingUsd += doc.totalAmountUsd ?? 0
-        }
-      }
-    })
-
-    return { pendingArs, pendingUsd, paidArs, paidUsd }
-  }, [allDocuments, allInstallments])
-
-  const partialCount = allDocuments.filter((d) => d.paymentStatus === 'PARTIALLY_PAID').length
 
   const filtered = allDocuments
 
@@ -164,7 +119,6 @@ export default function DocumentsPage() {
       label: 'Tipo',
       defaultVisible: true,
       sortable: true,
-      sortValue: (row) => documentTypeLabels[row.documentType] ?? row.documentType,
       render: (v) => <span className="text-slate-700 font-medium text-xs">{documentTypeLabels[v as string] ?? String(v)}</span>,
     },
     {
@@ -223,7 +177,6 @@ export default function DocumentsPage() {
       key: 'totalAmount',
       label: 'Total',
       defaultVisible: true,
-      sortable: true,
       exportValue: (row) => String(row.totalAmount),
       render: (v, row) => (
         <span className="tabular-nums text-sm font-semibold text-slate-800">
@@ -238,8 +191,6 @@ export default function DocumentsPage() {
       key: 'paymentStatus',
       label: 'Estado Pago',
       defaultVisible: true,
-      sortable: true,
-      sortValue: (row) => PAYMENT_STATUS_SORT_ORDER[row.paymentStatus] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
@@ -393,9 +344,9 @@ export default function DocumentsPage() {
 
       <MetricGrid cols={4} className="mb-6">
         <KpiCard label="Total Documentos" value={pagination?.total ?? 0} description="Resultados del listado" icon={FileText} variant="default" />
-        <KpiCard label="Total Pendiente" value={totalsReady ? formatCurrencyCompact(totals.pendingArs, 'ARS') : '—'} description={totalsReady ? `${formatCurrencyCompact(totals.pendingUsd, 'USD')} · esta página` : 'Calculando…'} icon={Clock} variant="warning" />
-        <KpiCard label="Total Pagado" value={totalsReady ? formatCurrencyCompact(totals.paidArs, 'ARS') : '—'} description={totalsReady ? `${formatCurrencyCompact(totals.paidUsd, 'USD')} · esta página` : 'Calculando…'} icon={CheckCircle2} variant="success" />
-        <KpiCard label="Pago Parcial" value={partialCount} description="En esta página" icon={AlertCircle} variant="warning" />
+        <KpiCard label="Total Pendiente" value={summary ? formatCurrencyCompact(summary.pendingArs, 'ARS') : '—'} description={summary ? `${formatCurrencyCompact(summary.pendingUsd, 'USD')} · sin anulados` : summaryHint} icon={Clock} variant="warning" />
+        <KpiCard label="Total Pagado" value={summary ? formatCurrencyCompact(summary.paidArs, 'ARS') : '—'} description={summary ? `${formatCurrencyCompact(summary.paidUsd, 'USD')} · sin anulados` : summaryHint} icon={CheckCircle2} variant="success" />
+        <KpiCard label="Pago Parcial" value={summary ? summary.countByPaymentStatus.PARTIALLY_PAID ?? 0 : '—'} description={summary ? 'Documentos con pago parcial' : summaryHint} icon={AlertCircle} variant="warning" />
       </MetricGrid>
 
       <SectionCard noPadding>
@@ -425,10 +376,11 @@ export default function DocumentsPage() {
               allColumns={ALL_COLUMNS}
               visibleColumns={visibleColumns}
               filteredRows={filtered}
+              getExportRows={getExportRows}
               filenamePrefix="documentos"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">{EXPORT_SCOPE_HINT}</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -446,6 +398,8 @@ export default function DocumentsPage() {
           onRowClick={(row) => navigate(`/insurance/documents/${row.id}`)}
           emptyTitle="Sin documentos"
           emptyDescription="No se encontraron documentos con los filtros aplicados."
+          sort={sort}
+          onSortChange={(next) => { setPage(1); setSort(next) }}
         />
         {pagination && (
           <PaginationControls

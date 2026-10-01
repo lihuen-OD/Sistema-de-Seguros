@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { PaginationSchema, booleanFromString } from '../../shared/schemas/common'
+import { PaginationSchema, IncludeSummarySchema, booleanFromString } from '../../shared/schemas/common'
+import { sortQueryFields } from '../../shared/utils/sorting'
 import { EmailRecipientsSchema } from '../email/email.schemas'
 import { isValidDocumentType } from './document-types'
 import { isReasonableDate } from '../../shared/utils/dates'
@@ -78,7 +79,18 @@ export const CreateDocumentSchema = DocumentBaseSchema
 
 export const UpdateDocumentSchema = DocumentBaseSchema.partial()
 
-export const ListDocumentsQuerySchema = PaginationSchema.extend({
+// Ids de columna de DocumentsPage ordenables en el servidor — mapeo a Prisma
+// en documents.service.ts (DOCUMENT_SORT). Quedan afuera el total (neto + IVA
+// + otros, calculado en withTotalAmount en la moneda del documento) y el
+// estado de pago (código, no tiene un orden de severidad en SQL).
+export const DOCUMENT_SORT_KEYS = [
+  'documentNumber', 'documentType', 'issueDate', 'currency', 'netAmount', 'vatAmount',
+  'otherTaxesAmount', 'insuranceCompany', 'paymentMethod', 'exchangeRate', 'attachmentsCount', 'createdAt',
+] as const
+export type DocumentSortKey = (typeof DOCUMENT_SORT_KEYS)[number]
+
+export const ListDocumentsQuerySchema = PaginationSchema.merge(IncludeSummarySchema).extend({
+  ...sortQueryFields(DOCUMENT_SORT_KEYS),
   search: z.string().optional(),
   paymentStatus: z.enum(['PENDING', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'NOT_APPLICABLE']).optional(),
   documentType: z.string().max(100).optional(),

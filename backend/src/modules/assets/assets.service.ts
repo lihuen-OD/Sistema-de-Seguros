@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { buildOrderBy, nullsLast, type SortMap } from '../../shared/utils/sorting'
 import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { toDateStr } from '../../shared/utils/dates'
 import { deleteFromCloudinary } from '../../config/cloudinary'
@@ -18,7 +19,35 @@ import type {
   UpdateAttachmentDTO,
   ListAssetsQueryDTO,
   SearchAssetsQueryDTO,
+  AssetSortKey,
 } from './assets.schemas'
+
+// Id de columna de AssetsPage → orderBy de Prisma (ver ASSET_SORT_KEYS).
+const ASSET_SORT: SortMap<AssetSortKey, Prisma.AssetOrderByWithRelationInput> = {
+  internalCode: (dir) => ({ code: nullsLast(dir) }),
+  name: (dir) => ({ name: dir }),
+  assetType: (dir) => ({ assetType: dir }),
+  status: (dir) => ({ status: dir }),
+  valuationDate: (dir) => ({ purchaseDate: nullsLast(dir) }),
+  brand: (dir) => ({ brand: nullsLast(dir) }),
+  model: (dir) => ({ model: nullsLast(dir) }),
+  year: (dir) => ({ year: nullsLast(dir) }),
+  serialNumber: (dir) => ({ serialNumber: nullsLast(dir) }),
+  // La patente se muestra desde metadata.plate; la columna normalizada (sin
+  // espacios/guiones, mayúsculas) ordena igual y es un campo real.
+  plate: (dir) => ({ licensePlateNormalized: nullsLast(dir) }),
+  // La columna "Bien de Uso" muestra (y ordenaba localmente por) el nombre.
+  fixedAssetCode: (dir) => ({ fixedAsset: { name: dir } }),
+  // Se anuncia en USD: los alta/edición actuales siempre guardan el cierre en
+  // dólares junto al valor crudo; activos legacy sin él quedan al final.
+  patrimonialValueNew: (dir) => ({ patrimonialValueNewUsd: nullsLast(dir) }),
+  productiveUnit: (dir) => ({ productiveUnit: nullsLast(dir) }),
+  area: (dir) => ({ area: nullsLast(dir) }),
+  dischargeDate: (dir) => ({ dischargeDate: nullsLast(dir) }),
+  saleDate: (dir) => ({ saleDate: nullsLast(dir) }),
+  attachmentsCount: (dir) => ({ attachments: { _count: dir } }),
+  createdAt: (dir) => ({ createdAt: dir }),
+}
 
 // Lista: solo IDs de empresa/centro de costo — sin datos anidados pesados
 const ASSET_LIST_INCLUDE = {
@@ -29,7 +58,9 @@ const ASSET_LIST_INCLUDE = {
       costCenterId: true,
       percentage: true,
     },
-    orderBy: { percentage: 'desc' as const },
+    // id desempata: la principal (allocations[0] en el frontend) tiene que
+    // ser la misma que cuenta countActiveAssetsByPrimaryAllocation.
+    orderBy: [{ percentage: 'desc' as const }, { id: 'asc' as const }],
   },
   fixedAsset: { select: { id: true, code: true, name: true } },
   _count: { select: { attachments: true, fireExtinguishers: true } },
@@ -42,7 +73,7 @@ const ASSET_DETAIL_INCLUDE = {
       company: { select: { id: true, name: true, cuit: true } },
       costCenter: { select: { id: true, name: true, code: true } },
     },
-    orderBy: { percentage: 'desc' as const },
+    orderBy: [{ percentage: 'desc' as const }, { id: 'asc' as const }],
   },
   fixedAsset: { select: { id: true, code: true, name: true } },
   _count: { select: { attachments: true, fireExtinguishers: true } },
@@ -243,7 +274,7 @@ export const assetsService = {
   async findAll(query: ListAssetsQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
 
-    const where = {
+    const where: Prisma.AssetWhereInput = {
       ...(query.isActive !== undefined && { isActive: query.isActive }),
       ...(query.assetType && { assetType: query.assetType }),
       ...(query.search && {
@@ -256,18 +287,52 @@ export const assetsService = {
       }),
     }
 
-    const [data, total] = await Promise.all([
+    const [data, total, summary] = await Promise.all([
       prisma.asset.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { name: 'asc' },
+        orderBy: buildOrderBy(ASSET_SORT, query, [{ name: 'asc' }]),
         include: ASSET_LIST_INCLUDE,
       }),
       prisma.asset.count({ where }),
+      query.includeSummary ? assetsService.summarize(where) : undefined,
     ])
 
-    return buildPaginatedResponse(data, total, { page, limit })
+    return { ...buildPaginatedResponse(data, total, { page, limit }), ...(summary && { summary }) }
+  },
+
+  // KPIs de AssetsPage sobre TODO el resultado filtrado (Fase 3B). El listado
+  // no tiene filtro de estado, así que todo usa el mismo `where` de la tabla.
+  async summarize(where: Prisma.AssetWhereInput) {
+    // Valor patrimonial = mismo fallback que assets.api.ts#mapAsset en el
+    // frontend (currentValueUsd ?? currentValue ?? purchaseValue), solo de
+    // activos en estado 'activo'. Un aggregate por rama del fallback, con
+    // condiciones excluyentes, reproduce el COALESCE sin SQL crudo.
+    const active: Prisma.AssetWhereInput = { AND: [where, { status: 'activo' }] }
+    const [byStatusRows, usd, raw, purchase] = await Promise.all([
+      prisma.asset.groupBy({ by: ['status'], where, _count: { _all: true } }),
+      prisma.asset.aggregate({
+        where: { AND: [active, { currentValueUsd: { not: null } }] },
+        _sum: { currentValueUsd: true },
+      }),
+      prisma.asset.aggregate({
+        where: { AND: [active, { currentValueUsd: null }, { currentValue: { not: null } }] },
+        _sum: { currentValue: true },
+      }),
+      prisma.asset.aggregate({
+        where: { AND: [active, { currentValueUsd: null }, { currentValue: null }] },
+        _sum: { purchaseValue: true },
+      }),
+    ])
+
+    const byStatus: Record<string, number> = {}
+    for (const row of byStatusRows) byStatus[row.status] = row._count._all
+    return {
+      total: Object.values(byStatus).reduce((s, n) => s + n, 0),
+      byStatus,
+      activeValueUsd: (usd._sum.currentValueUsd ?? 0) + (raw._sum.currentValue ?? 0) + (purchase._sum.purchaseValue ?? 0),
+    }
   },
 
   async findById(id: string) {

@@ -19,19 +19,20 @@ import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
-import { assetQueries } from '../../shared/api/assets.api'
-import { policyQueries } from '../../shared/api/policies.api'
+import { toSortParams } from '../../shared/api/pagination'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { EmptyState } from '../../shared/components/empty-states/EmptyState'
+import { LoadingState } from '../../shared/components/empty-states/LoadingState'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import {
   normalizeClaimStatusText, resolveClaimStatusKey,
   getClaimStatusIcon, getClaimStatusChartColor,
 } from '../../shared/utils/claimStatus'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
-import type { Claim, TableColumn } from '../../shared/types'
+import type { Claim, SortState, TableColumn } from '../../shared/types'
+import { EXPORT_SCOPE_HINT, fetchRowsForExport } from '../../shared/utils/export'
 
 const DEFAULT_PAGE_SIZE = 20
 
@@ -45,19 +46,36 @@ export default function ClaimsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [sort, setSort] = useState<SortState | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: result, isLoading, isFetching, isError } = useQuery(claimQueries.listPaginated({
-    page,
-    limit,
+  // Filtros + orden de la tabla: los mismos para la página visible, para
+  // el summary y para exportar (getExportRows).
+  const listFilters = {
     search: search.trim() || undefined,
     status: filterStatus ? normalizeClaimStatusText(filterStatus) : undefined,
     claimType: filterType || undefined,
+    ...toSortParams(sort),
+  }
+  const { data: result, isLoading, isFetching, isError } = useQuery(claimQueries.listPaginated({
+    ...listFilters,
+    page,
+    limit,
+    includeSummary: true,
   }))
+  // Exporta el resultado filtrado y ordenado completo (hasta
+  // EXPORT_MAX_ROWS), nunca la página visible. staleTime 0: siempre datos
+  // frescos al momento del clic, aunque la página esté cacheada.
+  const getExportRows = () =>
+    fetchRowsForExport((pageParams) =>
+      queryClient.fetchQuery({ ...claimQueries.listPaginated({ ...listFilters, ...pageParams, includeSummary: false }), staleTime: 0 }),
+    )
   const all = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  // Montos sobre todo el resultado filtrado y distribución por estado (estados
+  // reales, dinámicos) ignorando solo el filtro de estado — ambos del backend.
+  const summary = result?.summary
+  const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: claimStatusCatalog = [] } = useQuery(catalogQueries.byCategory('claim_status'))
 
   const TYPE_OPTIONS = useMemo(() => {
@@ -88,43 +106,25 @@ export default function ClaimsPage() {
     return options
   }, [claimStatusCatalog, all])
 
-  // Orden por severidad al ordenar la columna "Estado" — el orden real del
-  // catálogo (sortOrder), comparado de forma normalizada. Un estado que no
-  // está en el catálogo cae al final (99), igual que antes.
-  const statusSortOrder = useMemo(() => {
-    const order = new Map<string, number>()
-    ;[...claimStatusCatalog]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .forEach((item, idx) => order.set(normalizeClaimStatusText(item.label), idx))
-    return order
-  }, [claimStatusCatalog])
-
   async function handleDelete(id: string) {
     await claimsApi.softDelete(id)
     queryClient.invalidateQueries({ queryKey: claimKeys.all })
     setDeleteId(null)
   }
 
-  // Distribución real por estado — agrupa por el texto tal cual está en cada
-  // siniestro (nunca se relabelea ni se inventa una categoría), ordenada de
-  // mayor a menor para el gráfico "Siniestros por estado".
+  // Distribución real por estado — el backend agrupa por el texto tal cual
+  // está en cada siniestro (nunca se relabelea ni se inventa una categoría),
+  // ya ordenada de mayor a menor para el gráfico "Siniestros por estado".
   const statusDistribution = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const c of all) counts.set(c.status, (counts.get(c.status) ?? 0) + 1)
-    const total = all.length
-    return [...counts.entries()]
-      .map(([status, count]) => ({ status, count, pct: total > 0 ? (count / total) * 100 : 0 }))
-      .sort((a, b) => b.count - a.count)
-  }, [all])
+    const total = summary?.statusTotal ?? 0
+    return (summary?.byStatus ?? []).map(({ status, count }) => ({
+      status,
+      count,
+      pct: total > 0 ? (count / total) * 100 : 0,
+    }))
+  }, [summary])
   const topStatus = statusDistribution[0] ?? null
 
-  const totals = useMemo(() => ({
-    totalClaimed: all.reduce((s, c) => s + c.claimedAmountArs, 0),
-    totalSettled: all.reduce((s, c) => s + (c.settledAmountArs ?? 0), 0),
-  }), [all])
-
-  const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
-  const policyById = useMemo(() => new Map(allPolicies.map((p) => [p.id, p])), [allPolicies])
 
   const filtered = all
 
@@ -159,25 +159,18 @@ export default function ClaimsPage() {
       label: 'Activo',
       defaultVisible: true,
       sortable: true,
-      sortValue: (row) => {
-        const a = row.assetId ? assetById.get(row.assetId) : null
-        return a ? a.name : null
-      },
-      exportValue: (row) => {
-        const a = row.assetId ? assetById.get(row.assetId) : null
-        return a ? `${a.name} (${a.internalCode})` : ''
-      },
-      render: (v) => {
-        if (!v) return <span className="text-xs text-slate-400">—</span>
-        const asset = assetById.get(v as string)
-        if (!asset) return <span className="text-xs text-slate-400">—</span>
+      // Nombre/código vienen resueltos en cada fila desde el backend (Fase 3D),
+      // no de un lookup sobre /assets?limit=200.
+      exportValue: (row) => (row.assetName ? `${row.assetName} (${row.assetInternalCode})` : ''),
+      render: (v, row) => {
+        if (!v || !row.assetName) return <span className="text-xs text-slate-400">—</span>
         return (
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/assets/${v}`) }}
             className="text-left block min-w-0 max-w-[200px] group"
           >
-            <OverflowCell value={asset.name} lines={1} className="text-xs text-brand-600 group-hover:underline" />
-            <OverflowCell value={asset.internalCode} lines={1} className="text-slate-400 font-mono text-[10px] mt-0.5" />
+            <OverflowCell value={row.assetName} lines={1} className="text-xs text-brand-600 group-hover:underline" />
+            <OverflowCell value={row.assetInternalCode ?? null} lines={1} className="text-slate-400 font-mono text-[10px] mt-0.5" />
           </button>
         )
       },
@@ -188,21 +181,11 @@ export default function ClaimsPage() {
       label: 'Póliza',
       defaultVisible: true,
       sortable: true,
-      sortValue: (row) => {
-        const p = row.policyId ? policyById.get(row.policyId) : null
-        return p?.policyNumber ?? null
-      },
-      exportValue: (row) => {
-        const p = row.policyId ? policyById.get(row.policyId) : null
-        return p?.policyNumber ?? ''
-      },
-      render: (v) => {
-        if (!v) return <span className="text-xs text-slate-400">—</span>
-        const pol = policyById.get(v as string)
-        return pol
-          ? <span className="text-xs font-mono text-slate-600">{pol.policyNumber}</span>
-          : <span className="text-xs text-slate-400">—</span>
-      },
+      exportValue: (row) => row.policyNumber ?? '',
+      render: (_, row) =>
+        row.policyNumber
+          ? <span className="text-xs font-mono text-slate-600">{row.policyNumber}</span>
+          : <span className="text-xs text-slate-400">—</span>,
     },
     {
       id: 'occurrenceDate',
@@ -259,7 +242,6 @@ export default function ClaimsPage() {
       label: 'Estado',
       defaultVisible: true,
       sortable: true,
-      sortValue: (row) => statusSortOrder.get(normalizeClaimStatusText(row.status)) ?? 99,
       render: (v) => (
         <StatusPill status={resolveClaimStatusKey(String(v))} label={String(v)} icon={getClaimStatusIcon(String(v))} size="sm" />
       ),
@@ -383,7 +365,7 @@ export default function ClaimsPage() {
         </div>
       ),
     },
-  ], [navigate, assetById, policyById, statusSortOrder])
+  ], [navigate])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('claims', ALL_COLUMNS)
 
@@ -407,25 +389,27 @@ export default function ClaimsPage() {
 
       <MetricGrid cols={3} className="mb-5">
         <KpiCard label="Total de Siniestros" value={pagination?.total ?? 0} description="Resultados del listado" icon={ClipboardList} variant="info" />
-        <KpiCard label="Monto Reclamado" value={formatCurrencyCompact(totals.totalClaimed, 'ARS')} description="Total de esta página" icon={ShieldAlert} variant="info" />
-        <KpiCard label="Monto Liquidado" value={formatCurrencyCompact(totals.totalSettled, 'ARS')} description="Total de esta página" icon={CheckCircle2} variant={totals.totalSettled > 0 ? 'success' : 'default'} />
+        <KpiCard label="Monto Reclamado" value={summary ? formatCurrencyCompact(summary.totalClaimedArs, 'ARS') : '—'} description={summary ? 'Total de los resultados' : summaryHint} icon={ShieldAlert} variant="info" />
+        <KpiCard label="Monto Liquidado" value={summary ? formatCurrencyCompact(summary.totalSettledArs, 'ARS') : '—'} description={summary ? 'Total de los resultados' : summaryHint} icon={CheckCircle2} variant={summary?.totalSettledArs ? 'success' : 'default'} />
       </MetricGrid>
 
       <ChartCard
-        title="Siniestros por estado en esta página"
+        title="Siniestros por estado"
         subtitle={
           topStatus
             ? `Estado más frecuente: "${topStatus.status}" — ${topStatus.count} (${topStatus.pct.toFixed(0)}%)`
-            : 'Distribución de los siniestros de la página actual'
+            : 'Distribución de los siniestros con los filtros aplicados (sin el filtro de estado)'
         }
         className="mb-5"
         height={statusDistribution.length > 0 ? Math.max(220, statusDistribution.length * 52 + 24) : 200}
       >
-        {statusDistribution.length === 0 ? (
+        {!summary ? (
+          <LoadingState rows={3} />
+        ) : statusDistribution.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <EmptyState
               title="Sin siniestros"
-              description="Todavía no hay siniestros registrados para mostrar la distribución por estado."
+              description="No hay siniestros con los filtros aplicados para mostrar la distribución por estado."
               icon={ShieldAlert}
             />
           </div>
@@ -490,10 +474,11 @@ export default function ClaimsPage() {
               allColumns={ALL_COLUMNS}
               visibleColumns={visibleColumns}
               filteredRows={filtered}
+              getExportRows={getExportRows}
               filenamePrefix="siniestros"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">{EXPORT_SCOPE_HINT}</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -511,6 +496,8 @@ export default function ClaimsPage() {
           onRowClick={(row) => navigate(`/claims/${row.id}`)}
           emptyTitle="Sin siniestros"
           emptyDescription="No se encontraron siniestros con los filtros aplicados."
+          sort={sort}
+          onSortChange={(next) => { setPage(1); setSort(next) }}
           minWidth={900}
         />
         {pagination && (

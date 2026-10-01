@@ -1,6 +1,7 @@
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { countActiveAssetsByPrimaryAllocation } from '../assets/asset-allocation-counts'
 import type { CreateCompanyDTO, UpdateCompanyDTO, ListCompaniesQueryDTO } from './companies.schemas'
 
 export const companiesService = {
@@ -17,7 +18,7 @@ export const companiesService = {
       }),
     }
 
-    const [data, total] = await Promise.all([
+    const [data, total, assetCounts] = await Promise.all([
       prisma.company.findMany({
         where,
         skip,
@@ -25,9 +26,25 @@ export const companiesService = {
         orderBy: { name: 'asc' },
       }),
       prisma.company.count({ where }),
+      query.includeAssetCounts
+        ? Promise.all([countActiveAssetsByPrimaryAllocation(), prisma.asset.count({ where: { status: 'activo' } })])
+        : undefined,
     ])
 
-    return buildPaginatedResponse(data, total, { page, limit })
+    if (!assetCounts) return buildPaginatedResponse(data, total, { page, limit })
+    // Fase 3D: conteos reales del backend en vez de contar en CompaniesPage
+    // sobre /assets?limit=200 — por imputación principal (ver
+    // countActiveAssetsByPrimaryAllocation) y, en summary, el total de
+    // activos en estado 'activo' (mismo KPI "Activos Asociados" de antes).
+    const [{ byCompany }, activeAssets] = assetCounts
+    return {
+      ...buildPaginatedResponse(
+        data.map((c) => ({ ...c, activeAssetCount: byCompany.get(c.id) ?? 0 })),
+        total,
+        { page, limit },
+      ),
+      summary: { activeAssets },
+    }
   },
 
   async findById(id: string) {

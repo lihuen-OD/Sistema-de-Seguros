@@ -13,6 +13,8 @@ import {
   CONTROL_POINT_DEFS,
   controlPointLabel,
   classifyLevel,
+  isUrgentCleaningIssue,
+  cleaningOkPercentage,
   type ControlPointKey,
 } from './fire-extinguisher-audit-dashboard.constants'
 
@@ -161,13 +163,24 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
         controlPoints: Record<ControlPointKey, Accumulator>
         expiredExtinguishers: FlaggedExtinguisher[]
         needsCleaningExtinguishers: FlaggedExtinguisher[]
+        // Auditados con limpieza urgente (MUY_SUCIO/SUCIEDAD_ACUMULADA) — solo
+        // para cleaningOkPercentage, población ESTABLISHMENT.
+        urgentCleaning: number
       }
       function emptyGroupAcc(): GroupAcc {
-        return { total: 0, audited: 0, controlPoints: emptyAccumulators(), expiredExtinguishers: [], needsCleaningExtinguishers: [] }
+        return {
+          total: 0,
+          audited: 0,
+          controlPoints: emptyAccumulators(),
+          expiredExtinguishers: [],
+          needsCleaningExtinguishers: [],
+          urgentCleaning: 0,
+        }
       }
 
       let totalRegistered = 0
       let totalAudited = 0
+      let totalUrgentCleaning = 0
 
       if (population === 'ESTABLISHMENT') {
         // El filtro por establecimiento ya se aplicó en el WHERE de Prisma
@@ -197,6 +210,10 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
           totalAudited += 1
           sectorAcc.audited += 1
           accumulateAuditScores(sectorAcc.controlPoints, audit)
+          if (isUrgentCleaningIssue(audit.cleanliness)) {
+            totalUrgentCleaning += 1
+            sectorAcc.urgentCleaning += 1
+          }
           if (audit.cleanliness !== CLEAN_CLEANLINESS_VALUE) {
             sectorAcc.needsCleaningExtinguishers.push({
               cylinderNumber: fe.cylinderNumber ?? fe.code,
@@ -221,6 +238,8 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
                 controlPoints,
                 expiredExtinguishers: sectorAcc.expiredExtinguishers,
                 needsCleaningExtinguishers: sectorAcc.needsCleaningExtinguishers,
+                urgentCleaningCount: sectorAcc.urgentCleaning,
+                cleaningOkPercentage: cleaningOkPercentage(sectorAcc.audited, sectorAcc.urgentCleaning),
               }
             }),
           )
@@ -240,6 +259,10 @@ function buildFireExtinguisherAuditDashboardService(population: FireExtAuditPopu
           totalAudited,
           overallLevel,
           overallLevelLabel: classifyLevel(overallLevel),
+          // Ponderado por matafuego auditado (no promedio de sectores como
+          // overallLevel) — es un conteo, no un puntaje.
+          totalUrgentCleaning,
+          cleaningOkPercentage: cleaningOkPercentage(totalAudited, totalUrgentCleaning),
           controlPoints,
           sectors,
         }

@@ -21,28 +21,21 @@ import {
   formatDate,
 } from '../../../shared/utils/format'
 import { policiesApi, policyKeys, policyQueries } from '../../../shared/api/policies.api'
+import { toSortParams } from '../../../shared/api/pagination'
 import { documentKeys } from '../../../shared/api/documents.api'
 import { producerQueries } from '../../../shared/api/producers.api'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { POLICY_STATUS_LABELS } from '../../../shared/constants'
 import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
-import type { Policy, TableColumn } from '../../../shared/types'
+import type { Policy, SortState, TableColumn } from '../../../shared/types'
+import { EXPORT_SCOPE_HINT, fetchRowsForExport } from '../../../shared/utils/export'
 
 const STATUS_OPTIONS = Object.entries(POLICY_STATUS_LABELS).map(([value, label]) => ({
   value,
   label,
 }))
 
-// Orden por severidad al ordenar la columna "Estado" — alfabético dejaría
-// "de_baja" antes que "vigente", que no refleja el ciclo de vida real de la
-// póliza. Mismo orden que POLICY_STATUS_LABELS.
-const POLICY_STATUS_SORT_ORDER: Record<string, number> = {
-  vigente: 0,
-  proximo_vencer: 1,
-  vencida: 2,
-  de_baja: 3,
-}
 const DEFAULT_PAGE_SIZE = 20
 
 export default function PoliciesPage() {
@@ -52,6 +45,7 @@ export default function PoliciesPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [sort, setSort] = useState<SortState | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deBajaId, setDeBajaId] = useState<string | null>(null)
   // En vuelo (no "cuál fila tiene el diálogo abierto", eso ya es deleteId/
@@ -62,14 +56,33 @@ export default function PoliciesPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [isDeactivating, setIsDeactivating] = useState(false)
 
-  const { data: result, isLoading, isFetching, isError } = useQuery(policyQueries.listPaginated({
-    page,
-    limit,
+  // Filtros + orden de la tabla: los mismos para la página visible, para
+  // el summary y para exportar (getExportRows).
+  const listFilters = {
     search: search.trim() || undefined,
     status: filterStatus ? filterStatus as Policy['status'] : undefined,
+    ...toSortParams(sort),
+  }
+  const { data: result, isLoading, isFetching, isError } = useQuery(policyQueries.listPaginated({
+    ...listFilters,
+    page,
+    limit,
+    includeSummary: true,
   }))
+  // Exporta el resultado filtrado y ordenado completo (hasta
+  // EXPORT_MAX_ROWS), nunca la página visible. staleTime 0: siempre datos
+  // frescos al momento del clic, aunque la página esté cacheada.
+  const getExportRows = () =>
+    fetchRowsForExport((pageParams) =>
+      queryClient.fetchQuery({ ...policyQueries.listPaginated({ ...listFilters, ...pageParams, includeSummary: false }), staleTime: 0 }),
+    )
   const allPolicies = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
+  // KPIs sobre todo el resultado filtrado (backend), nunca sobre la página.
+  // La distribución por estado ignora solo el filtro de estado; la suma
+  // asegurada es solo de líneas de cobertura vigentes hoy.
+  const summary = result?.summary
+  const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: allProducers = [] } = useQuery(producerQueries.list())
 
   async function handleDelete(id: string) {
@@ -104,28 +117,6 @@ export default function PoliciesPage() {
 
   const filtered = allPolicies
 
-  const counts = useMemo(() => ({
-    vigente: allPolicies.filter((p) => p.status === 'vigente').length,
-    vencida: allPolicies.filter((p) => p.status === 'vencida').length,
-    proximo_vencer: allPolicies.filter((p) => p.status === 'proximo_vencer').length,
-  }), [allPolicies])
-
-  // "Próxima a vencer" sigue teniendo cobertura activa — si se cuenta solo
-  // 'vigente' se subestima la suma asegurada real (mismo criterio ya usado en
-  // AssetDetailPage.tsx para "seguro vigente").
-  const activeInsuredPolicies = useMemo(
-    () => allPolicies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer'),
-    [allPolicies],
-  )
-  const totalInsuredArs = useMemo(
-    () => activeInsuredPolicies.reduce((s, p) => s + (p.totalInsuredAmountArs ?? 0), 0),
-    [activeInsuredPolicies],
-  )
-  const totalInsuredUsd = useMemo(
-    () => activeInsuredPolicies.reduce((s, p) => s + (p.totalInsuredAmountUsd ?? 0), 0),
-    [activeInsuredPolicies],
-  )
-
   const ALL_COLUMNS: TableColumn<Policy>[] = useMemo(() => [
     {
       id: 'policyNumber',
@@ -149,7 +140,6 @@ export default function PoliciesPage() {
       label: 'Productor',
       defaultVisible: true,
       sortable: true,
-      sortValue: (row) => allProducers.find((p) => p.id === row.producerId)?.name,
       exportValue: (row) => allProducers.find((p) => p.id === row.producerId)?.name ?? '',
       render: (v) => {
         const producer = allProducers.find((p) => p.id === v)
@@ -165,8 +155,6 @@ export default function PoliciesPage() {
       key: 'insuranceTypeNames',
       label: 'Tipo(s) de Seguro',
       defaultVisible: true,
-      sortable: true,
-      sortValue: (row) => (row.insuranceTypeNames ?? []).join(', '),
       exportValue: (row) => (row.insuranceTypeNames ?? []).join(', '),
       render: (_v, row) => {
         const label = (row.insuranceTypeNames ?? []).join(', ') || null
@@ -182,8 +170,6 @@ export default function PoliciesPage() {
       key: 'assetNames',
       label: 'Activos Cubiertos',
       defaultVisible: true,
-      sortable: true,
-      sortValue: (row) => (row.assetNames ?? []).join(', ') || (row.hasSinActivo ? 'Sin activo' : ''),
       exportValue: (row) => (row.assetNames ?? []).join(', ') || (row.hasSinActivo ? 'Sin activo asociado' : ''),
       render: (_v, row) => {
         const names = row.assetNames ?? []
@@ -221,7 +207,6 @@ export default function PoliciesPage() {
       key: 'totalInsuredAmountArs',
       label: 'Suma aseg. ARS',
       defaultVisible: true,
-      sortable: true,
       exportValue: (row) => String(row.totalInsuredAmountArs ?? 0),
       render: (v) => (
         <span className="font-semibold text-slate-800 tabular-nums">
@@ -236,8 +221,6 @@ export default function PoliciesPage() {
       key: 'status',
       label: 'Estado',
       defaultVisible: true,
-      sortable: true,
-      sortValue: (row) => POLICY_STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
@@ -246,7 +229,6 @@ export default function PoliciesPage() {
       key: 'totalInsuredAmountUsd',
       label: 'Suma aseg. USD',
       defaultVisible: false,
-      sortable: true,
       exportValue: (row) => String(row.totalInsuredAmountUsd ?? 0),
       render: (v) => (
         <span className="tabular-nums text-slate-700">
@@ -284,7 +266,6 @@ export default function PoliciesPage() {
       key: 'attachmentsCount',
       label: 'Adjuntos',
       defaultVisible: false,
-      sortable: true,
       exportValue: (row) => String(row.attachmentsCount ?? 0),
       render: (v) => {
         const n = v as number | undefined
@@ -364,10 +345,10 @@ export default function PoliciesPage() {
       />
 
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard label="Vigentes" value={counts.vigente} description="En esta página" icon={ShieldCheck} variant="success" />
-        <KpiCard label="Vencidas" value={counts.vencida} description="En esta página" icon={ShieldOff} variant="danger" />
-        <KpiCard label="Próximas a Vencer" value={counts.proximo_vencer} description="En esta página" icon={AlertTriangle} variant="warning" />
-        <KpiCard label="Suma Asegurada" value={formatCurrencyCompact(totalInsuredUsd, 'USD')} description={`${formatCurrencyCompact(totalInsuredArs, 'ARS')} · esta página`} icon={DollarSign} variant="info" />
+        <KpiCard label="Vigentes" value={summary?.byStatus.vigente ?? '—'} description={summary ? `de ${summary.total} pólizas` : summaryHint} icon={ShieldCheck} variant="success" />
+        <KpiCard label="Vencidas" value={summary?.byStatus.vencida ?? '—'} description={summary ? `de ${summary.total} pólizas` : summaryHint} icon={ShieldOff} variant="danger" />
+        <KpiCard label="Próximas a Vencer" value={summary?.byStatus.proxima_a_vencer ?? '—'} description={summary ? 'En los próximos 30 días' : summaryHint} icon={AlertTriangle} variant="warning" />
+        <KpiCard label="Suma Asegurada" value={summary ? formatCurrencyCompact(summary.insuredActiveUsd, 'USD') : '—'} description={summary ? `${formatCurrencyCompact(summary.insuredActiveArs, 'ARS')} · coberturas vigentes` : summaryHint} icon={DollarSign} variant="info" />
       </MetricGrid>
 
       <SectionCard noPadding>
@@ -391,10 +372,11 @@ export default function PoliciesPage() {
               allColumns={ALL_COLUMNS}
               visibleColumns={visibleColumns}
               filteredRows={filtered}
+              getExportRows={getExportRows}
               filenamePrefix="polizas"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">{EXPORT_SCOPE_HINT}</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -413,6 +395,8 @@ export default function PoliciesPage() {
           emptyTitle="Sin pólizas"
           emptyDescription="No se encontraron pólizas con los filtros aplicados."
           minWidth={900}
+          sort={sort}
+          onSortChange={(next) => { setPage(1); setSort(next) }}
         />
         {pagination && (
           <PaginationControls

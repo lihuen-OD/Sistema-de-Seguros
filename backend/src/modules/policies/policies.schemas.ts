@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { PaginationSchema, ActiveFilterSchema, booleanFromString } from '../../shared/schemas/common'
+import { PaginationSchema, ActiveFilterSchema, IncludeSummarySchema, booleanFromString } from '../../shared/schemas/common'
+import { sortQueryFields } from '../../shared/utils/sorting'
 
 const ISODate = z
   .string()
@@ -69,9 +70,26 @@ export const DeactivateCoverageSchema = z.object({
   bajaReason: z.string().min(1, 'El motivo de baja es obligatorio').max(1000),
 })
 
-export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
+// Ids de columna de PoliciesPage ordenables en el servidor — mapeo a Prisma
+// en policies.service.ts (POLICY_SORT). Quedan afuera los valores agregados
+// desde las líneas de cobertura (tipos, activos, sumas aseguradas, adjuntos)
+// y el estado, que se calcula por fechas (para eso está "Vencimiento").
+export const POLICY_SORT_KEYS = [
+  'policyNumber', 'insuranceCompany', 'producerId', 'startDate', 'endDate', 'description',
+  'coverageCount', 'createdAt',
+] as const
+export type PolicySortKey = (typeof POLICY_SORT_KEYS)[number]
+
+export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema).merge(IncludeSummarySchema).extend({
+  ...sortQueryFields(POLICY_SORT_KEYS),
   search: z.string().optional(),
-  status: z.enum(['vigente', 'proxima_a_vencer', 'vencida', 'de_baja']).optional(),
+  // El frontend usa 'proximo_vencer' (mismo vocabulario que ExpirationStatus de
+  // matafuegos) para el filtro de estado; se acepta como alias y se normaliza
+  // al valor canónico de PolicyStatus para no romper a quien ya manda este.
+  status: z
+    .enum(['vigente', 'proxima_a_vencer', 'proximo_vencer', 'vencida', 'de_baja'])
+    .transform((s) => (s === 'proximo_vencer' ? 'proxima_a_vencer' : s))
+    .optional(),
   insuranceTypeId: z.string().uuid().optional(),
   companyId: z.string().uuid().optional(),
   producerId: z.string().uuid().optional(),

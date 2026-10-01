@@ -20,21 +20,19 @@ import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { fireExtinguishersApi, fireExtinguisherKeys, fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
+import { toSortParams } from '../../shared/api/pagination'
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
-import { assetQueries } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
-import type { FireExtinguisher, TableColumn } from '../../shared/types'
+import type { FireExtinguisher, SortState, TableColumn } from '../../shared/types'
+import { EXPORT_SCOPE_HINT, fetchRowsForExport } from '../../shared/utils/export'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 type ActivityFilter = 'active' | 'inactive' | 'all'
 
-// Orden por severidad al ordenar la columna "Estado" — alfabético dejaría
-// "próximo_vencer" antes que "vencido", que no es el orden que espera nadie.
-const STATUS_SORT_ORDER: Record<string, number> = { vigente: 0, proximo_vencer: 1, vencido: 2, sin_fecha: 3 }
 const DEFAULT_PAGE_SIZE = 20
 
 // `fe.status` ya es el peor de tres estados (carga, vida útil por
@@ -75,22 +73,41 @@ export default function FireExtinguishersPage() {
   const [isChangingActivity, setIsChangingActivity] = useState(false)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [sort, setSort] = useState<SortState | null>(null)
   const queryClient = useQueryClient()
 
   const activityParam = activityFilter === 'all' ? null : activityFilter === 'active'
-  const { data: result, isLoading, isFetching, isError } = useQuery(fireExtinguisherQueries.listPaginated({
-    page,
-    limit,
+  // Filtros + orden de la tabla: los mismos para la página visible, para
+  // el summary y para exportar (getExportRows).
+  const listFilters = {
     search: search.trim() || undefined,
     status: filterStatus || undefined,
     locationType: filterLocation || undefined,
     establishment: filterEstablishment || undefined,
     ...(activityParam !== null && { isActive: activityParam }),
+    ...toSortParams(sort),
+  }
+  const { data: result, isLoading, isFetching, isError } = useQuery(fireExtinguisherQueries.listPaginated({
+    ...listFilters,
+    page,
+    limit,
+    includeSummary: true,
   }))
+  // Exporta el resultado filtrado y ordenado completo (hasta
+  // EXPORT_MAX_ROWS), nunca la página visible. staleTime 0: siempre datos
+  // frescos al momento del clic, aunque la página esté cacheada.
+  const getExportRows = () =>
+    fetchRowsForExport((pageParams) =>
+      queryClient.fetchQuery({ ...fireExtinguisherQueries.listPaginated({ ...listFilters, ...pageParams, includeSummary: false }), staleTime: 0 }),
+    )
   const all = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
-  const { data: dashboardSummary, isError: isActiveOverviewError } = useQuery(fireExtinguisherQueries.dashboardSummary())
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  // KPIs y banner de vencidos: summary del propio listado (mismo permiso que
+  // la tabla, sin depender de /dashboard/summary ni de
+  // fire_extinguisher_dashboard), sobre todo el resultado filtrado e
+  // ignorando solo el filtro de estado.
+  const summary = result?.summary
+  const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: establishmentCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_establishment'))
   const ESTABLISHMENT_OPTIONS = useMemo(
     () => establishmentCatalog.map((e) => ({ value: e.label, label: e.label })),
@@ -102,7 +119,6 @@ export default function FireExtinguishersPage() {
     [locationTypeCatalog],
   )
 
-  const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
 
   function toggleOne(id: string) {
     setSelectedIds((prev) => {
@@ -211,24 +227,20 @@ export default function FireExtinguishersPage() {
       defaultVisible: true,
       hideable: true,
       sortable: true,
-      sortValue: (row) => {
-        const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
-        return asset ? asset.name : row.associatedLocationType
-      },
+      // Nombre del activo resuelto en cada fila desde el backend (Fase 3D), no
+      // de un lookup sobre /assets?limit=200.
       exportValue: (row) => {
-        const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
         const locationLabel = row.associatedLocationType
-        return asset ? `${asset.name} — ${locationLabel}` : locationLabel
+        return row.associatedAssetName ? `${row.associatedAssetName} — ${locationLabel}` : locationLabel
       },
       render: (_, row) => {
-        const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
         const locationLabel = row.associatedLocationType
-        return asset ? (
+        return row.associatedAssetId && row.associatedAssetName ? (
           <button
-            onClick={(e) => { e.stopPropagation(); navigate(`/assets/${asset.id}`) }}
+            onClick={(e) => { e.stopPropagation(); navigate(`/assets/${row.associatedAssetId}`) }}
             className="text-left block min-w-0 max-w-[200px] group"
           >
-            <OverflowCell value={asset.name} lines={1} className="text-xs text-brand-600 group-hover:underline" />
+            <OverflowCell value={row.associatedAssetName} lines={1} className="text-xs text-brand-600 group-hover:underline" />
             <OverflowCell value={locationLabel} lines={1} className="text-xs text-slate-400 mt-0.5" />
           </button>
         ) : (
@@ -297,8 +309,6 @@ export default function FireExtinguishersPage() {
       label: 'Estado',
       defaultVisible: true,
       hideable: true,
-      sortable: true,
-      sortValue: (row) => STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v, row) => <StatusPill status={row.isActive ? (v as string) : 'de_baja'} size="sm" />,
     },
     {
@@ -379,27 +389,25 @@ export default function FireExtinguishersPage() {
         </div>
       ),
     },
-  ], [assetById, navigate])
+  ], [navigate])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('fire-extinguishers', FE_COL_DEFS)
-
-  const counts = dashboardSummary?.totals ?? { total: 0, vigente: 0, proximo_vencer: 0, vencido: 0, sin_fecha: 0 }
 
   // Desglose del banner de vencidos por establecimiento + asignación física —
   // solo tiene sentido mostrarlo cuando afecta a más de un sector, si no
   // duplicaría la misma info que ya dice la oración principal del banner.
   const vencidoBreakdown = useMemo(() => {
     const groups = new Map<string, number>()
-    for (const bucket of dashboardSummary?.byEstablishment ?? []) {
-      if (bucket.vencido === 0) continue
-      groups.set(bucket.establishment || 'Sin establecimiento', bucket.vencido)
+    for (const bucket of summary?.vencidoByEstablishment ?? []) {
+      const key = bucket.establishment || 'Sin establecimiento'
+      groups.set(key, (groups.get(key) ?? 0) + bucket.count)
     }
     if (groups.size <= 1) return null
     return [...groups.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([key, count]) => `${count} en ${key}`)
       .join(', ')
-  }, [dashboardSummary])
+  }, [summary])
 
   const filtered = all
 
@@ -450,7 +458,7 @@ export default function FireExtinguishersPage() {
     [all, selectedIds],
   )
 
-  if (isError || isActiveOverviewError) return <PageContent><ErrorState /></PageContent>
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>
@@ -469,19 +477,19 @@ export default function FireExtinguishersPage() {
       />
 
       <MetricGrid cols={5} className="mb-5">
-        <KpiCard label="Vigentes"          value={counts.vigente}        description="Con carga al día"                icon={ShieldCheck} variant="success" />
-        <KpiCard label="Próximos a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
-        <KpiCard label="Vencidos"          value={counts.vencido}        description="Requieren recarga inmediata"     icon={ShieldOff} variant={counts.vencido > 0 ? 'danger' : 'default'} />
-        <KpiCard label="Sin Fecha"         value={counts.sin_fecha}      description="Sin vencimiento cargado"         icon={CalendarOff} variant={counts.sin_fecha > 0 ? 'warning' : 'default'} />
-        <KpiCard label="Total Activos"     value={counts.total}          description="Matafuegos operativos"            icon={Flame} variant="default" />
+        <KpiCard label="Vigentes"          value={summary?.vigente ?? '—'}        description={summary ? 'Con carga al día' : summaryHint}                icon={ShieldCheck} variant="success" />
+        <KpiCard label="Próximos a Vencer" value={summary?.proximo_vencer ?? '—'} description={summary ? 'Vencen en los próximos 30 días' : summaryHint} icon={AlertTriangle} variant="warning" />
+        <KpiCard label="Vencidos"          value={summary?.vencido ?? '—'}        description={summary ? 'Requieren recarga inmediata' : summaryHint}     icon={ShieldOff} variant={summary?.vencido ? 'danger' : 'default'} />
+        <KpiCard label="Sin Fecha"         value={summary?.sin_fecha ?? '—'}      description={summary ? 'Sin vencimiento cargado' : summaryHint}         icon={CalendarOff} variant={summary?.sin_fecha ? 'warning' : 'default'} />
+        <KpiCard label="Total"             value={summary?.total ?? '—'}          description={summary ? 'Con los filtros aplicados' : summaryHint}       icon={Flame} variant="default" />
       </MetricGrid>
 
-      {counts.vencido > 0 && (
+      {summary && summary.vencido > 0 && (
         <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
           <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
           <span>
             <strong>
-              {counts.vencido} matafuego{counts.vencido !== 1 ? 's' : ''} vencido{counts.vencido !== 1 ? 's' : ''}
+              {summary.vencido} matafuego{summary.vencido !== 1 ? 's' : ''} vencido{summary.vencido !== 1 ? 's' : ''}
             </strong>{' '}
             requieren recarga inmediata{vencidoBreakdown ? ` (${vencidoBreakdown})` : ''}. Seleccionálos en la tabla para registrar la recarga en bloque.
           </span>
@@ -534,10 +542,11 @@ export default function FireExtinguishersPage() {
               allColumns={FE_COL_DEFS}
               visibleColumns={visibleColumns}
               filteredRows={filtered}
+              getExportRows={getExportRows}
               filenamePrefix="matafuegos"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">{EXPORT_SCOPE_HINT}</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -583,6 +592,8 @@ export default function FireExtinguishersPage() {
           onRowClick={(row) => navigate(`/fire-extinguishers/${row.id}`)}
           emptyTitle="Sin matafuegos"
           emptyDescription="No se encontraron matafuegos con los filtros aplicados."
+          sort={sort}
+          onSortChange={(next) => { setPage(1); setSort(next) }}
           minWidth={900}
         />
         {pagination && (

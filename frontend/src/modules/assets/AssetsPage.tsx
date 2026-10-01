@@ -17,6 +17,7 @@ import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
+import { toSortParams } from '../../shared/api/pagination'
 import { companyQueries } from '../../shared/api/companies.api'
 import { costCenterQueries } from '../../shared/api/cost-centers.api'
 import { claimKeys } from '../../shared/api/claims.api'
@@ -26,7 +27,8 @@ import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { ASSET_TYPES } from '../../shared/constants'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
-import type { Asset, TableColumn } from '../../shared/types'
+import type { Asset, SortState, TableColumn } from '../../shared/types'
+import { EXPORT_SCOPE_HINT, fetchRowsForExport } from '../../shared/utils/export'
 
 const TYPE_OPTIONS = ASSET_TYPES.map((t) => ({ value: t, label: t }))
 const DEFAULT_PAGE_SIZE = 20
@@ -38,17 +40,35 @@ export default function AssetsPage() {
   const [filterType, setFilterType] = useState('')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [sort, setSort] = useState<SortState | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deBajaId, setDeBajaId] = useState<string | null>(null)
 
-  const { data: result, isLoading, isFetching, isError } = useQuery(assetQueries.listPaginated({
-    page,
-    limit,
+  // Filtros + orden de la tabla: los mismos para la página visible, para
+  // el summary y para exportar (getExportRows).
+  const listFilters = {
     search: search.trim() || undefined,
     assetType: filterType || undefined,
+    ...toSortParams(sort),
+  }
+  const { data: result, isLoading, isFetching, isError } = useQuery(assetQueries.listPaginated({
+    ...listFilters,
+    page,
+    limit,
+    includeSummary: true,
   }))
+  // Exporta el resultado filtrado y ordenado completo (hasta
+  // EXPORT_MAX_ROWS), nunca la página visible. staleTime 0: siempre datos
+  // frescos al momento del clic, aunque la página esté cacheada.
+  const getExportRows = () =>
+    fetchRowsForExport((pageParams) =>
+      queryClient.fetchQuery({ ...assetQueries.listPaginated({ ...listFilters, ...pageParams, includeSummary: false }), staleTime: 0 }),
+    )
   const allAssets = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
+  // KPIs sobre todo el resultado filtrado (backend), nunca sobre la página.
+  const summary = result?.summary
+  const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: allCompanies = [] } = useQuery(companyQueries.list())
   const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
 
@@ -71,16 +91,6 @@ export default function AssetsPage() {
   }
 
   const filtered = allAssets
-
-  const { active, baja, vendido, totalValueUsd } = useMemo(() => {
-    const active = allAssets.filter((a) => a.status === 'activo')
-    return {
-      active,
-      baja: allAssets.filter((a) => a.status === 'baja'),
-      vendido: allAssets.filter((a) => a.status === 'vendido'),
-      totalValueUsd: active.reduce((s, a) => s + (a.patrimonialValueUsd ?? 0), 0),
-    }
-  }, [allAssets])
 
   const companyNameById = useMemo(() => new Map(allCompanies.map((c) => [c.id, c.name])), [allCompanies])
   const costCenterById = useMemo(
@@ -136,8 +146,6 @@ export default function AssetsPage() {
       key: 'companyId',
       label: 'Empresa',
       defaultVisible: true,
-      sortable: true,
-      sortValue: (row) => companyNameById.get(row.companyId) ?? null,
       exportValue: (row) => companyNameById.get(row.companyId) ?? '',
       render: (v) => {
         const name = v ? companyNameById.get(v as string) : null
@@ -149,8 +157,6 @@ export default function AssetsPage() {
       key: 'costCenterId',
       label: 'C. Costo',
       defaultVisible: true,
-      sortable: true,
-      sortValue: (row) => costCenterById.get(row.costCenterId)?.code ?? null,
       exportValue: (row) => costCenterById.get(row.costCenterId)?.code ?? '',
       render: (v) => {
         const cc = v ? costCenterById.get(v as string) : null
@@ -162,7 +168,6 @@ export default function AssetsPage() {
       key: 'patrimonialValueUsd',
       label: 'Valor (USD)',
       defaultVisible: true,
-      sortable: true,
       exportValue: (row) => row.patrimonialValueUsd != null ? String(row.patrimonialValueUsd) : '',
       render: (v) =>
         v != null
@@ -220,7 +225,6 @@ export default function AssetsPage() {
       key: 'chassisNumber',
       label: 'N° Chasis',
       defaultVisible: false,
-      sortable: true,
       render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
@@ -236,7 +240,6 @@ export default function AssetsPage() {
       key: 'engineNumber',
       label: 'N° Motor',
       defaultVisible: false,
-      sortable: true,
       render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
@@ -245,7 +248,6 @@ export default function AssetsPage() {
       label: 'Bien de Uso',
       defaultVisible: false,
       sortable: true,
-      sortValue: (row) => row.fixedAsset?.name ?? null,
       render: (_, row) =>
         row.fixedAsset ? (
           <div className="min-w-0">
@@ -266,7 +268,6 @@ export default function AssetsPage() {
       // patrimonialValueNew es el valor crudo en la moneda del activo (puede
       // ser ARS) — para esta columna, que se anuncia en USD, prioriza el
       // cierre en dólares (ver mismo criterio en assets.api.ts#mapAsset).
-      sortValue: (row) => row.patrimonialValueNewUsd ?? row.patrimonialValueNew ?? null,
       exportValue: (row) => {
         const v = row.patrimonialValueNewUsd ?? row.patrimonialValueNew
         return v != null ? String(v) : ''
@@ -285,10 +286,6 @@ export default function AssetsPage() {
       key: 'costCenterId',
       label: 'Centro de costo',
       defaultVisible: false,
-      sortable: true,
-      // Distinta de la columna "C. Costo" (que ordena por código): acá el
-      // diferencial de esta columna es el nombre, así que ordena por nombre.
-      sortValue: (row) => costCenterById.get(row.costCenterId)?.name ?? null,
       exportValue: (row) => {
         const cc = costCenterById.get(row.costCenterId)
         return cc ? `${cc.code} — ${cc.name}` : ''
@@ -421,10 +418,10 @@ export default function AssetsPage() {
       />
 
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard label="Activos Totales" value={pagination?.total ?? 0} description={`${active.length} operativos en esta página`} icon={Package} variant="info" />
-        <KpiCard label="Valor Patrimonial" value={formatCurrencyCompact(totalValueUsd, 'USD')} description="Activos operativos de esta página" icon={DollarSign} variant="success" />
-        <KpiCard label="Dados de Baja" value={baja.length} description="En esta página" icon={AlertTriangle} variant={baja.length > 0 ? 'warning' : 'default'} />
-        <KpiCard label="Vendidos" value={vendido.length} description="En esta página" icon={Archive} variant="default" />
+        <KpiCard label="Activos Totales" value={summary?.total ?? '—'} description={summary ? `${summary.byStatus.activo ?? 0} operativos` : summaryHint} icon={Package} variant="info" />
+        <KpiCard label="Valor Patrimonial" value={summary ? formatCurrencyCompact(summary.activeValueUsd, 'USD') : '—'} description={summary ? 'Activos operativos' : summaryHint} icon={DollarSign} variant="success" />
+        <KpiCard label="Dados de Baja" value={summary ? summary.byStatus.baja ?? 0 : '—'} description={summary ? 'Con los filtros aplicados' : summaryHint} icon={AlertTriangle} variant={summary?.byStatus.baja ? 'warning' : 'default'} />
+        <KpiCard label="Vendidos" value={summary ? summary.byStatus.vendido ?? 0 : '—'} description={summary ? 'Con los filtros aplicados' : summaryHint} icon={Archive} variant="default" />
       </MetricGrid>
 
       <SectionCard noPadding>
@@ -448,10 +445,11 @@ export default function AssetsPage() {
               allColumns={ALL_COLUMNS}
               visibleColumns={visibleColumns}
               filteredRows={filtered}
+              getExportRows={getExportRows}
               filenamePrefix="activos"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">{EXPORT_SCOPE_HINT}</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -470,6 +468,8 @@ export default function AssetsPage() {
           emptyTitle="Sin activos"
           emptyDescription="No se encontraron activos con los filtros aplicados."
           minWidth={900}
+          sort={sort}
+          onSortChange={(next) => { setPage(1); setSort(next) }}
         />
         {pagination && (
           <PaginationControls

@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
-import type { PaginatedResult } from './pagination'
+import type { ListSortParams, ListSummaryParams, PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type {
   AccountingDocument,
@@ -245,9 +245,9 @@ export const documentsApi = {
     return res.data.data.map(mapDocument)
   },
 
-  async findAllPaginated(filters: DocumentListFilters): Promise<PaginatedResult<AccountingDocument>> {
-    const res = await apiClient.get<Paginated<BackendDocument>>('/documents', { params: filters })
-    return { data: res.data.data.map(mapDocument), pagination: res.data.pagination }
+  async findAllPaginated(filters: DocumentListFilters): Promise<PaginatedResult<AccountingDocument, DocumentListSummary>> {
+    const res = await apiClient.get<Paginated<BackendDocument> & { summary?: DocumentListSummary }>('/documents', { params: filters })
+    return { data: res.data.data.map(mapDocument), pagination: res.data.pagination, summary: res.data.summary }
   },
 
   async findAllForFinancial(params?: { from?: string; to?: string; includeInstallments?: boolean }): Promise<DocumentForFinancial[]> {
@@ -428,7 +428,17 @@ export const documentsApi = {
 // staleTime corto + refetchOnWindowFocus true. El resto es categoría B.
 
 type FinancialFilters = { from?: string; to?: string; includeInstallments?: boolean }
-export type DocumentListFilters = {
+// GET /documents?includeSummary=true — sobre todo el resultado filtrado,
+// sin documentos anulados e ignorando solo el filtro de estado de pago.
+export interface DocumentListSummary {
+  pendingArs: number
+  pendingUsd: number
+  paidArs: number
+  paidUsd: number
+  countByPaymentStatus: Record<string, number>
+}
+
+export type DocumentListFilters = ListSortParams & ListSummaryParams & {
   page?: number; limit?: number; search?: string; paymentStatus?: string
   documentType?: string; currency?: string; year?: number
 }

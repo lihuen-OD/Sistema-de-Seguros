@@ -16,6 +16,7 @@ jest.mock('../../../config/database', () => ({
     },
     policyAssetCoverage: {
       findMany: jest.fn(),
+      aggregate: jest.fn(),
       findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -101,6 +102,133 @@ describe('Policies API', () => {
         bajaReason: true,
         deactivatedAt: true,
       })
+    })
+
+    it.each(['proximo_vencer', 'proxima_a_vencer'])(
+      'accepts status=%s and filters by the "próxima a vencer" range (regression: the frontend alias was rejected by validation)',
+      async (status) => {
+        db.policy.findMany.mockResolvedValueOnce([])
+        db.policy.count.mockResolvedValueOnce(0)
+
+        const res = await request(app)
+          .get(`/api/v1/policies?status=${status}`)
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        const where = db.policy.findMany.mock.calls[0][0].where
+        expect(where.deactivatedAt).toBeNull()
+        expect(where.endDate).toEqual({ gte: expect.any(Date), lte: expect.any(Date) })
+      },
+    )
+
+    describe('summary (Fase 3B)', () => {
+      // Cada count de estado se identifica por su filtro (ver buildPolicyStatusFilter).
+      function statusOf(where: { AND?: Record<string, unknown>[] }): string {
+        const f = where.AND?.[1] ?? {}
+        if (f.deactivatedAt && typeof f.deactivatedAt === 'object') return 'de_baja'
+        const end = f.endDate as Record<string, unknown> | undefined
+        if (end?.gt) return 'vigente'
+        if (end?.gte && end?.lte) return 'proxima_a_vencer'
+        if (end?.lt) return 'vencida'
+        return 'list'
+      }
+      const COUNTS: Record<string, number> = { list: 7, vigente: 40, proxima_a_vencer: 6, vencida: 12, de_baja: 3 }
+
+      beforeEach(() => {
+        db.policy.findMany.mockResolvedValue([])
+        db.policy.count.mockImplementation((args: { where: { AND?: Record<string, unknown>[] } }) =>
+          Promise.resolve(COUNTS[statusOf(args.where)]),
+        )
+        db.policyAssetCoverage.aggregate.mockResolvedValue({ _sum: { insuredAmountArs: 5_000_000, insuredAmountUsd: 4_000 } })
+      })
+
+      it('keeps the legacy response and runs no summary query without includeSummary', async () => {
+        const res = await request(app).get('/api/v1/policies').set('Authorization', `Bearer ${adminToken()}`)
+        expect(res.body).not.toHaveProperty('summary')
+        expect(db.policy.count).toHaveBeenCalledTimes(1)
+        expect(db.policyAssetCoverage.aggregate).not.toHaveBeenCalled()
+      })
+
+      it('returns the status distribution over the whole filtered set, ignoring only the status filter', async () => {
+        const res = await request(app)
+          .get('/api/v1/policies?includeSummary=true&status=vigente&search=Sancor&limit=5')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.pagination.total).toBe(7)
+        expect(res.body.summary).toEqual({
+          total: 61,
+          byStatus: { vigente: 40, proxima_a_vencer: 6, vencida: 12, de_baja: 3 },
+          insuredActiveArs: 5_000_000,
+          insuredActiveUsd: 4_000,
+        })
+        // La tabla filtra por estado; los counts de la distribución usan el
+        // resto de los filtros (search) sin el estado.
+        const listWhere = db.policy.findMany.mock.calls[0][0].where
+        expect(listWhere.endDate).toEqual({ gt: expect.any(Date) })
+        const statusCounts = db.policy.count.mock.calls.map((c: [{ where: { AND?: unknown[] } }]) => c[0].where).filter((w: { AND?: unknown[] }) => w.AND)
+        expect(statusCounts).toHaveLength(4)
+        for (const w of statusCounts) {
+          expect(w.AND[0]).toHaveProperty('OR')
+          expect(w.AND[0]).not.toHaveProperty('endDate')
+        }
+      })
+
+      it('sums only coverage lines active today, of policies with active coverage, never de-baja lines', async () => {
+        await request(app).get('/api/v1/policies?includeSummary=true&assetId=' + ASSET_ID).set('Authorization', `Bearer ${adminToken()}`)
+
+        const { where } = db.policyAssetCoverage.aggregate.mock.calls[0][0]
+        expect(where.effectiveDate).toEqual({ lte: expect.any(Date) })
+        expect(where.OR).toEqual([{ bajaDate: null }, { bajaDate: { gte: expect.any(Date) } }])
+        expect(where.policy.AND[0]).toEqual(db.policy.findMany.mock.calls[0][0].where)
+        expect(where.policy.AND[1]).toEqual({ deactivatedAt: null, endDate: { gte: expect.any(Date) } })
+      })
+    })
+
+    describe('server-side sort (Fase 3A)', () => {
+      beforeEach(() => {
+        db.policy.findMany.mockResolvedValue([])
+        db.policy.count.mockResolvedValue(0)
+      })
+      const lastOrderBy = () => db.policy.findMany.mock.calls.at(-1)[0].orderBy
+
+      it('keeps the legacy createdAt desc order when no sortBy is sent (plus id tiebreak)', async () => {
+        await request(app).get('/api/v1/policies').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ createdAt: 'desc' }, { id: 'asc' }])
+      })
+
+      it('maps the frontend "Aseguradora" and "Productor" columns to insuredName and producer.name', async () => {
+        await request(app).get('/api/v1/policies?sortBy=insuranceCompany').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ insuredName: 'asc' }, { id: 'asc' }])
+
+        await request(app).get('/api/v1/policies?sortBy=producerId&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ producer: { name: 'desc' } })
+
+        await request(app).get('/api/v1/policies?sortBy=coverageCount&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ coverages: { _count: 'desc' } })
+      })
+
+      it('combines sort with the status filter', async () => {
+        await request(app).get('/api/v1/policies?status=vencida&sortBy=endDate&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        const call = db.policy.findMany.mock.calls.at(-1)[0]
+        expect(call.orderBy).toEqual([{ endDate: 'desc' }, { id: 'asc' }])
+        expect(call.where.endDate).toEqual({ lt: expect.any(Date) })
+      })
+
+      it.each(['status', 'totalInsuredAmountArs', 'assetNames', 'attachmentsCount'])(
+        'rejects sortBy=%s (derived from dates or aggregated from coverage lines)',
+        async (sortBy) => {
+          const res = await request(app).get(`/api/v1/policies?sortBy=${sortBy}`).set('Authorization', `Bearer ${adminToken()}`)
+          expect(res.status).toBe(422)
+        },
+      )
+    })
+
+    it('rejects an unknown status value', async () => {
+      const res = await request(app)
+        .get('/api/v1/policies?status=cualquiera')
+        .set('Authorization', `Bearer ${adminToken()}`)
+      expect(res.status).toBe(422)
     })
 
     // Fechas relativas a "hoy" (no fijas en 2026) — pickCurrentAssetCoverage

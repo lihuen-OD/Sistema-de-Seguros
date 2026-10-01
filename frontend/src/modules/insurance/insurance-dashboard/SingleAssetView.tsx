@@ -86,10 +86,10 @@ export function SingleAssetView({ summaries }: SingleAssetViewProps) {
           label="Suma asegurada"
           value={formatCurrencyCompact(summary.sumaAseguradaUsd, 'USD')}
           description={
-            summary.coveragePct == null
-              ? 'Sin valuación cargada'
-              : summary.sumaAseguradaUsd === 0
-                ? 'Sin pólizas activas'
+            summary.sumaAseguradaUsd === 0
+              ? 'Sin pólizas activas'
+              : summary.coveragePct == null
+                ? 'Sin valuación cargada'
                 : `${summary.coveragePct.toFixed(1)}% cubierto sobre valor a nuevo`
           }
           icon={ShieldCheck}

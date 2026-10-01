@@ -40,6 +40,13 @@ export const costCentersApi = {
     return res.data.data.map(mapCostCenter)
   },
 
+  async findAssetCounts(): Promise<Record<string, number>> {
+    const res = await apiClient.get<PaginatedResponse<BackendCostCenter & { activeAssetCount: number }>>('/cost-centers', {
+      params: { limit: 200, includeAssetCounts: true },
+    })
+    return Object.fromEntries(res.data.data.map((cc) => [cc.id, cc.activeAssetCount]))
+  },
+
   async create(input: CostCenterInput): Promise<CostCenter> {
     const res = await apiClient.post<{ data: BackendCostCenter }>('/cost-centers', {
       name: input.name.trim(),
@@ -79,5 +86,16 @@ export const costCenterQueries = {
       // Puede editarse en otra pestaña (ej. Configuración → Centros de Costo)
       // mientras un formulario queda abierto con datos a medio cargar acá.
       refetchOnWindowFocus: 'always',
+    }),
+// Conteo real de activos en estado 'activo' por centro de costo (Fase 3D), calculado
+// en el backend (includeAssetCounts) — reemplaza contar en la pantalla sobre
+// /assets?limit=200. Por imputación principal (la de mayor %). Clave bajo costCenterKeys.all: las invalidaciones de alta/
+// edición la refrescan; staleTime corto porque cambia con los activos, no con
+// el catálogo.
+  assetCounts: () =>
+    queryOptions({
+      queryKey: [...costCenterKeys.all, 'asset-counts'] as const,
+      queryFn: () => costCentersApi.findAssetCounts(),
+      staleTime: 60 * 1000,
     }),
 }

@@ -61,6 +61,7 @@ function mapProducer(b: BackendProducer): Producer {
     registrationNumber: b.matricula ?? '', address: b.address ?? '',
     status: b.isActive ? 'activo' : 'inactivo',
     createdAt: b.createdAt,
+    ...(b._count && { policyCount: b._count.policies }),
   }
 }
 

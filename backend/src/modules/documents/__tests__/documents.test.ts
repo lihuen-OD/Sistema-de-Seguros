@@ -12,6 +12,7 @@ jest.mock('../../../config/database', () => ({
     accountingDocument: {
       findMany:   jest.fn(),
       count:      jest.fn(),
+      groupBy:    jest.fn(),
       findUnique: jest.fn(),
       findFirst:  jest.fn(),
       create:     jest.fn(),
@@ -20,6 +21,7 @@ jest.mock('../../../config/database', () => ({
     },
     documentInstallment: {
       findMany:   jest.fn(),
+      groupBy:    jest.fn(),
       findFirst:  jest.fn(),
       createMany: jest.fn(),
       deleteMany: jest.fn(),
@@ -166,6 +168,103 @@ describe('Documents API', () => {
       expect(res.status).toBe(200)
       expect(res.body.data).toHaveLength(1)
       expect(res.body.pagination.total).toBe(1)
+    })
+
+    describe('summary (Fase 3B)', () => {
+      beforeEach(() => {
+        db.accountingDocument.findMany.mockResolvedValue([fakeDocument])
+        db.accountingDocument.count.mockResolvedValue(30)
+        db.documentInstallment.groupBy.mockResolvedValue([
+          { paymentStatus: 'PAID', _sum: { amountArs: 1000, amountUsd: 1 } },
+          { paymentStatus: 'PENDING', _sum: { amountArs: 300, amountUsd: 0.3 } },
+          { paymentStatus: 'OVERDUE', _sum: { amountArs: 200, amountUsd: 0.2 } },
+        ])
+        db.accountingDocument.groupBy.mockImplementation((args: { _sum?: unknown }) =>
+          Promise.resolve(args._sum
+            ? [
+                { paymentStatus: 'PAID', _sum: { totalAmountArs: 50, totalAmountUsd: 0.05 } },
+                { paymentStatus: 'PENDING', _sum: { totalAmountArs: 70, totalAmountUsd: null } },
+              ]
+            : [
+                { paymentStatus: 'PAID', _count: { _all: 10 } },
+                { paymentStatus: 'PARTIALLY_PAID', _count: { _all: 4 } },
+              ]),
+        )
+      })
+
+      it('keeps the legacy response and runs no summary query without includeSummary', async () => {
+        const res = await request(app).get('/api/v1/documents').set('Authorization', `Bearer ${adminToken()}`)
+        expect(res.body).not.toHaveProperty('summary')
+        expect(db.documentInstallment.groupBy).not.toHaveBeenCalled()
+        expect(db.accountingDocument.groupBy).not.toHaveBeenCalled()
+      })
+
+      it('splits pending/paid by installment when there are any, else by the document total — over the whole filtered set', async () => {
+        const res = await request(app)
+          .get('/api/v1/documents?includeSummary=true&limit=1&page=4')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.summary.paidArs).toBe(1050)
+        expect(res.body.summary.pendingArs).toBe(570)
+        expect(res.body.summary.paidUsd).toBeCloseTo(1.05)
+        expect(res.body.summary.pendingUsd).toBeCloseTo(0.5)
+        expect(res.body.summary.countByPaymentStatus).toEqual({ PAID: 10, PARTIALLY_PAID: 4 })
+        for (const call of db.accountingDocument.groupBy.mock.calls) {
+          expect(call[0]).not.toHaveProperty('skip')
+          expect(call[0]).not.toHaveProperty('take')
+        }
+      })
+
+      it('never counts CANCELLED documents, and uses the payment-status-free filters for the breakdown', async () => {
+        await request(app)
+          .get('/api/v1/documents?includeSummary=true&paymentStatus=PAID&documentType=INVOICE&search=sancor')
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        const notCancelled = { documentStatus: { not: 'CANCELLED' } }
+        const installmentWhere = db.documentInstallment.groupBy.mock.calls[0][0].where.document
+        expect(installmentWhere.AND[1]).toEqual(notCancelled)
+        // baseWhere: respeta tipo y búsqueda, ignora el estado de pago.
+        expect(installmentWhere.AND[0].documentType).toBe('INVOICE')
+        expect(installmentWhere.AND[0].OR).toBeDefined()
+        expect(installmentWhere.AND[0]).not.toHaveProperty('paymentStatus')
+
+        const [withoutInstallments, counts] = db.accountingDocument.groupBy.mock.calls.map((c: [{ where: unknown }]) => c[0].where)
+        expect(withoutInstallments.AND).toEqual([
+          { AND: [installmentWhere.AND[0], notCancelled] },
+          { installments: { none: {} } },
+          { paymentStatus: { not: 'NOT_APPLICABLE' } },
+        ])
+        expect(counts.AND[1]).toEqual(notCancelled)
+        // La tabla sí filtra por estado de pago.
+        expect(db.accountingDocument.findMany.mock.calls[0][0].where.paymentStatus).toBe('PAID')
+      })
+    })
+
+    describe('server-side sort (Fase 3A)', () => {
+      beforeEach(() => {
+        db.accountingDocument.findMany.mockResolvedValue([])
+        db.accountingDocument.count.mockResolvedValue(0)
+      })
+      const lastOrderBy = () => db.accountingDocument.findMany.mock.calls.at(-1)[0].orderBy
+
+      it('keeps the legacy createdAt desc order when no sortBy is sent (plus id tiebreak)', async () => {
+        await request(app).get('/api/v1/documents').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ createdAt: 'desc' }, { id: 'asc' }])
+      })
+
+      it('sorts by a real column in the requested direction', async () => {
+        await request(app).get('/api/v1/documents?sortBy=issueDate&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ issueDate: 'desc' }, { id: 'asc' }])
+
+        await request(app).get('/api/v1/documents?sortBy=insuranceCompany').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ insuranceCompany: { sort: 'asc', nulls: 'last' } })
+      })
+
+      it.each(['totalAmount', 'paymentStatus'])('rejects sortBy=%s (computed / no severity order in SQL)', async (sortBy) => {
+        const res = await request(app).get(`/api/v1/documents?sortBy=${sortBy}`).set('Authorization', `Bearer ${adminToken()}`)
+        expect(res.status).toBe(422)
+      })
     })
 
     it('returns 401 without token', async () => {

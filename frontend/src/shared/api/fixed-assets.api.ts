@@ -40,6 +40,13 @@ export const fixedAssetsApi = {
     return res.data.data.map(mapFixedAsset)
   },
 
+  async findAssetCounts(): Promise<Record<string, number>> {
+    const res = await apiClient.get<PaginatedResponse<BackendFixedAsset & { activeAssetCount: number }>>('/fixed-assets', {
+      params: { limit: 200, includeAssetCounts: true },
+    })
+    return Object.fromEntries(res.data.data.map((fa) => [fa.id, fa.activeAssetCount]))
+  },
+
   async create(input: FixedAssetInput): Promise<BienDeUso> {
     const res = await apiClient.post<{ data: BackendFixedAsset }>('/fixed-assets', {
       name: input.name.trim(),
@@ -79,5 +86,16 @@ export const fixedAssetQueries = {
       // Puede editarse en otra pestaña (ej. Configuración → Bienes de Uso)
       // mientras un formulario queda abierto con datos a medio cargar acá.
       refetchOnWindowFocus: 'always',
+    }),
+// Conteo real de activos en estado 'activo' por bien de uso (Fase 3D), calculado
+// en el backend (includeAssetCounts) — reemplaza contar en la pantalla sobre
+// /assets?limit=200. Relación directa Asset.fixedAssetId. Clave bajo fixedAssetKeys.all: las invalidaciones de alta/
+// edición la refrescan; staleTime corto porque cambia con los activos, no con
+// el catálogo.
+  assetCounts: () =>
+    queryOptions({
+      queryKey: [...fixedAssetKeys.all, 'asset-counts'] as const,
+      queryFn: () => fixedAssetsApi.findAssetCounts(),
+      staleTime: 60 * 1000,
     }),
 }

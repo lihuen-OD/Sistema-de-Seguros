@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema, ActiveFilterSchema } from '../../shared/schemas/common'
+import { PaginationSchema, ActiveFilterSchema, IncludeAssetCountsSchema } from '../../shared/schemas/common'
 
 export const CreateCostCenterSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido').max(200),
@@ -14,7 +14,7 @@ export const CreateCostCenterSchema = z.object({
 
 export const UpdateCostCenterSchema = CreateCostCenterSchema.partial()
 
-export const ListCostCentersQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
+export const ListCostCentersQuerySchema = PaginationSchema.merge(ActiveFilterSchema).merge(IncludeAssetCountsSchema).extend({
   search: z.string().optional(),
 })
 

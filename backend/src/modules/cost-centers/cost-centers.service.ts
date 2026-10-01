@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { countActiveAssetsByPrimaryAllocation } from '../assets/asset-allocation-counts'
 import type { CreateCostCenterDTO, UpdateCostCenterDTO, ListCostCentersQueryDTO } from './cost-centers.schemas'
 
 export const costCentersService = {
@@ -18,7 +19,7 @@ export const costCentersService = {
       }),
     }
 
-    const [data, total] = await Promise.all([
+    const [data, total, assetCounts] = await Promise.all([
       prisma.costCenter.findMany({
         where,
         skip,
@@ -26,9 +27,16 @@ export const costCentersService = {
         orderBy: { name: 'asc' },
       }),
       prisma.costCenter.count({ where }),
+      query.includeAssetCounts ? countActiveAssetsByPrimaryAllocation() : undefined,
     ])
 
-    return buildPaginatedResponse(data, total, { page, limit })
+    // Fase 3D: conteo real del backend en vez de contar en CostCentersPage
+    // sobre /assets?limit=200 — por imputación principal (ver
+    // countActiveAssetsByPrimaryAllocation).
+    const rows = assetCounts
+      ? data.map((cc) => ({ ...cc, activeAssetCount: assetCounts.byCostCenter.get(cc.id) ?? 0 }))
+      : data
+    return buildPaginatedResponse(rows, total, { page, limit })
   },
 
   async findById(id: string) {

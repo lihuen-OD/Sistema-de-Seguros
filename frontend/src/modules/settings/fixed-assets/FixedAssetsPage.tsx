@@ -15,7 +15,6 @@ import {
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
-import { assetQueries } from '../../../shared/api/assets.api'
 import { fixedAssetsApi, fixedAssetQueries, fixedAssetKeys, type FixedAssetInput } from '../../../shared/api/fixed-assets.api'
 import type { BienDeUso, TableColumn } from '../../../shared/types'
 
@@ -137,7 +136,8 @@ export default function FixedAssetsPage() {
 
   const { data: allFixedAssets = [], isLoading, isError } = useQuery(fixedAssetQueries.list())
 
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  // Conteo real del backend (Asset.fixedAssetId) — no /assets?limit=200.
+  const { data: assetCounts } = useQuery(fixedAssetQueries.assetCounts())
 
   const filtered = useMemo(() => {
     return allFixedAssets.filter((fa) => {
@@ -198,9 +198,10 @@ export default function FixedAssetsPage() {
       key: 'id',
       label: 'Activos',
       sortable: true,
-      sortValue: (row) => allAssets.filter((a) => a.fixedAssetId === row.id && a.status === 'activo').length,
+      sortValue: (row) => assetCounts?.[row.id] ?? 0,
       render: (v) => {
-        const count = allAssets.filter((a) => a.fixedAssetId === v && a.status === 'activo').length
+        if (!assetCounts) return <span className="text-xs text-slate-400">—</span>
+        const count = assetCounts[v as string] ?? 0
         return <span className="text-xs text-slate-500">{count} activo{count !== 1 ? 's' : ''}</span>
       },
     },

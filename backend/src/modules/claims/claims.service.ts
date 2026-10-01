@@ -1,7 +1,10 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { buildOrderBy, nullsLast, type SortMap } from '../../shared/utils/sorting'
 import { toDateStr } from '../../shared/utils/dates'
+import { normalizeCatalogText } from '../../shared/utils/normalize'
 import { computeDualAmounts } from '../../shared/utils/currency'
 import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { deleteFromCloudinary } from '../../config/cloudinary'
@@ -16,12 +19,38 @@ import type {
   AddClaimExpenseAttachmentDTO,
   CreateExpenseDTO,
   UpdateExpenseDTO,
+  ClaimSortKey,
 } from './claims.schemas'
+
+// Id de columna de ClaimsPage → orderBy de Prisma (ver CLAIM_SORT_KEYS).
+const CLAIM_SORT: SortMap<ClaimSortKey, Prisma.ClaimOrderByWithRelationInput> = {
+  claimNumber: (dir) => ({ claimNumber: dir }),
+  title: (dir) => ({ title: nullsLast(dir) }),
+  claimType: (dir) => ({ claimType: dir }),
+  assetId: (dir) => ({ asset: { name: dir } }),
+  policyId: (dir) => ({ policy: { policyNumber: dir } }),
+  occurrenceDate: (dir) => ({ occurrenceDate: dir }),
+  reportDate: (dir) => ({ reportDate: dir }),
+  insuranceCompany: (dir) => ({ insuranceCompany: nullsLast(dir) }),
+  claimedAmountArs: (dir) => ({ claimedAmountArs: dir }),
+  settledAmountArs: (dir) => ({ settledAmountArs: nullsLast(dir) }),
+  realAmountArs: (dir) => ({ realAmountArs: nullsLast(dir) }),
+  deductibleArs: (dir) => ({ deductibleArs: nullsLast(dir) }),
+  // Texto libre de catálogo: orden alfabético (el orden del catálogo no existe
+  // como dato en SQL).
+  status: (dir) => ({ status: dir }),
+  currency: (dir) => ({ currency: dir }),
+  description: (dir) => ({ description: nullsLast(dir) }),
+  observations: (dir) => ({ observations: nullsLast(dir) }),
+  createdAt: (dir) => ({ createdAt: dir }),
+}
 
 // ── Includes ──────────────────────────────────────────────────────────────────
 
+// asset/policy livianos por fila: ClaimsPage los muestra directo (Fase 3D) en
+// vez de resolverlos con /assets?limit=200 y /policies?limit=200.
 const CLAIM_LIST_INCLUDE = {
-  asset: { select: { id: true, name: true } },
+  asset: { select: { id: true, name: true, code: true } },
   policy: { select: { id: true, policyNumber: true } },
   _count: { select: { events: true, expenses: true } },
 }
@@ -106,36 +135,73 @@ export const claimsService = {
   async findAll(query: ListClaimsQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
 
-    const where: Record<string, unknown> = {}
-    if (query.isActive !== undefined) where.isActive = query.isActive
-    if (query.status) where.status = query.status
-    if (query.claimType) where.claimType = query.claimType
-    if (query.policyId) where.policyId = query.policyId
-    if (query.assetId) where.assetId = query.assetId
+    // Los siniestros dados de baja (softDelete → isActive:false) no se listan
+    // salvo que se pidan explícitamente con isActive=false.
+    // baseWhere = todos los filtros salvo el de estado — la distribución por
+    // estado del summary se calcula sobre él (ver summarize).
+    const baseWhere: Record<string, unknown> = { isActive: query.isActive ?? true }
+    if (query.claimType) baseWhere.claimType = query.claimType
+    if (query.policyId) baseWhere.policyId = query.policyId
+    if (query.assetId) baseWhere.assetId = query.assetId
     if (query.year) {
       const y = String(query.year)
-      where.occurrenceDate = { gte: `${y}-01-01`, lte: `${y}-12-31` }
+      baseWhere.occurrenceDate = { gte: `${y}-01-01`, lte: `${y}-12-31` }
     }
     if (query.search) {
-      where.OR = [
+      baseWhere.OR = [
         { claimNumber: { contains: query.search, mode: 'insensitive' } },
         { description: { contains: query.search, mode: 'insensitive' } },
         { insuranceCompany: { contains: query.search, mode: 'insensitive' } },
       ]
     }
+    const where: Record<string, unknown> = { ...baseWhere }
+    if (query.status) {
+      // Los estados son texto libre de catálogo y pueden estar guardados con
+      // otra capitalización/acentos que lo que manda el cliente ("En trámite"
+      // vs "en tramite"): se resuelven los valores reales que matchean por
+      // significado. GROUP BY sobre la columna indexada — pocos valores.
+      const wanted = normalizeCatalogText(query.status)
+      const statuses = await prisma.claim.groupBy({ by: ['status'] })
+      where.status = { in: statuses.map((s) => s.status).filter((s) => normalizeCatalogText(s) === wanted) }
+    }
 
-    const [rawData, total] = await Promise.all([
+    const [rawData, total, summary] = await Promise.all([
       prisma.claim.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: buildOrderBy(CLAIM_SORT, query, [{ createdAt: 'desc' }]),
         include: CLAIM_LIST_INCLUDE,
       }),
       prisma.claim.count({ where }),
+      query.includeSummary
+        ? claimsService.summarize(baseWhere as Prisma.ClaimWhereInput, where as Prisma.ClaimWhereInput)
+        : undefined,
     ])
 
-    return buildPaginatedResponse(rawData, total, { page, limit })
+    return { ...buildPaginatedResponse(rawData, total, { page, limit }), ...(summary && { summary }) }
+  },
+
+  // KPIs de ClaimsPage sobre TODO el resultado filtrado (Fase 3B).
+  // - totalClaimedArs/totalSettledArs: sobre el resultado de la tabla (where).
+  // - byStatus: distribución con todos los filtros salvo el de estado
+  //   (baseWhere), agrupada por el texto real guardado — los estados son
+  //   dinámicos (catálogo claim_status), nunca una lista fija. Ordenada de
+  //   mayor a menor, igual que el gráfico.
+  async summarize(baseWhere: Prisma.ClaimWhereInput, where: Prisma.ClaimWhereInput) {
+    const [amounts, statusRows] = await Promise.all([
+      prisma.claim.aggregate({ where, _sum: { claimedAmountArs: true, settledAmountArs: true } }),
+      prisma.claim.groupBy({ by: ['status'], where: baseWhere, _count: { _all: true } }),
+    ])
+    const byStatus = statusRows
+      .map((row) => ({ status: row.status, count: row._count._all }))
+      .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status, 'es'))
+    return {
+      totalClaimedArs: amounts._sum.claimedAmountArs ?? 0,
+      totalSettledArs: amounts._sum.settledAmountArs ?? 0,
+      statusTotal: byStatus.reduce((s, row) => s + row.count, 0),
+      byStatus,
+    }
   },
 
   async findById(id: string) {
