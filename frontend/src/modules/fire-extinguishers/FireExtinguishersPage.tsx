@@ -29,6 +29,7 @@ import { RechargeModal } from './RechargeModal'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { FireExtinguisher, SortState, TableColumn } from '../../shared/types'
+import { EXPORT_SCOPE_HINT, fetchRowsForExport } from '../../shared/utils/export'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 type ActivityFilter = 'active' | 'inactive' | 'all'
@@ -77,17 +78,29 @@ export default function FireExtinguishersPage() {
   const queryClient = useQueryClient()
 
   const activityParam = activityFilter === 'all' ? null : activityFilter === 'active'
-  const { data: result, isLoading, isFetching, isError } = useQuery(fireExtinguisherQueries.listPaginated({
-    page,
-    limit,
+  // Filtros + orden de la tabla: los mismos para la página visible, para
+  // el summary y para exportar (getExportRows).
+  const listFilters = {
     search: search.trim() || undefined,
     status: filterStatus || undefined,
     locationType: filterLocation || undefined,
     establishment: filterEstablishment || undefined,
     ...(activityParam !== null && { isActive: activityParam }),
     ...toSortParams(sort),
+  }
+  const { data: result, isLoading, isFetching, isError } = useQuery(fireExtinguisherQueries.listPaginated({
+    ...listFilters,
+    page,
+    limit,
     includeSummary: true,
   }))
+  // Exporta el resultado filtrado y ordenado completo (hasta
+  // EXPORT_MAX_ROWS), nunca la página visible. staleTime 0: siempre datos
+  // frescos al momento del clic, aunque la página esté cacheada.
+  const getExportRows = () =>
+    fetchRowsForExport((pageParams) =>
+      queryClient.fetchQuery({ ...fireExtinguisherQueries.listPaginated({ ...listFilters, ...pageParams, includeSummary: false }), staleTime: 0 }),
+    )
   const all = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
   // KPIs y banner de vencidos: summary del propio listado (mismo permiso que
@@ -532,10 +545,11 @@ export default function FireExtinguishersPage() {
               allColumns={FE_COL_DEFS}
               visibleColumns={visibleColumns}
               filteredRows={filtered}
+              getExportRows={getExportRows}
               filenamePrefix="matafuegos"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">{EXPORT_SCOPE_HINT}</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}

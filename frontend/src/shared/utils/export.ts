@@ -1,5 +1,33 @@
+import { toast } from 'sonner'
 import type { TableColumn, ExportCell } from '../types'
 import { packIntoPages } from './pdfPagination'
+
+// ─── Exportación de listados paginados ───────────────────────────────────────
+
+// Tope de filas por exportación de un listado paginado (Fase 3C) — mismo
+// valor que ya usaban las colas de auditoría y que el máximo de `limit` que
+// acepta el backend (PaginationSchema). Más que esto requeriría un export
+// asíncrono del lado del servidor, no un pedido más grande desde acá.
+export const EXPORT_MAX_ROWS = 500
+
+export const EXPORT_SCOPE_HINT = `Exporta hasta ${EXPORT_MAX_ROWS} resultados filtrados`
+
+// Para `getExportRows` de ExportPresetsButton en tablas con paginador real:
+// pide la página 1 con limit EXPORT_MAX_ROWS usando los MISMOS filtros y
+// orden que la tabla (los arma quien llama), nunca la página visible. Si el
+// total filtrado supera el tope, avisa en vez de truncar en silencio.
+export async function fetchRowsForExport<T>(
+  fetchPage: (params: { page: number; limit: number }) => Promise<{ data: T[]; pagination: { total: number } }>,
+): Promise<T[]> {
+  const result = await fetchPage({ page: 1, limit: EXPORT_MAX_ROWS })
+  const { total } = result.pagination
+  if (total > result.data.length) {
+    toast.warning(
+      `Se exportaron las primeras ${result.data.length} filas de ${total} resultados. Refiná los filtros para exportar menos registros.`,
+    )
+  }
+  return result.data
+}
 
 // ─── Excel (.xlsx) ────────────────────────────────────────────────────────────
 

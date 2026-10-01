@@ -29,6 +29,7 @@ import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { POLICY_STATUS_LABELS } from '../../../shared/constants'
 import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
 import type { Policy, SortState, TableColumn } from '../../../shared/types'
+import { EXPORT_SCOPE_HINT, fetchRowsForExport } from '../../../shared/utils/export'
 
 const STATUS_OPTIONS = Object.entries(POLICY_STATUS_LABELS).map(([value, label]) => ({
   value,
@@ -55,14 +56,26 @@ export default function PoliciesPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [isDeactivating, setIsDeactivating] = useState(false)
 
-  const { data: result, isLoading, isFetching, isError } = useQuery(policyQueries.listPaginated({
-    page,
-    limit,
+  // Filtros + orden de la tabla: los mismos para la página visible, para
+  // el summary y para exportar (getExportRows).
+  const listFilters = {
     search: search.trim() || undefined,
     status: filterStatus ? filterStatus as Policy['status'] : undefined,
     ...toSortParams(sort),
+  }
+  const { data: result, isLoading, isFetching, isError } = useQuery(policyQueries.listPaginated({
+    ...listFilters,
+    page,
+    limit,
     includeSummary: true,
   }))
+  // Exporta el resultado filtrado y ordenado completo (hasta
+  // EXPORT_MAX_ROWS), nunca la página visible. staleTime 0: siempre datos
+  // frescos al momento del clic, aunque la página esté cacheada.
+  const getExportRows = () =>
+    fetchRowsForExport((pageParams) =>
+      queryClient.fetchQuery({ ...policyQueries.listPaginated({ ...listFilters, ...pageParams, includeSummary: false }), staleTime: 0 }),
+    )
   const allPolicies = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
   // KPIs sobre todo el resultado filtrado (backend), nunca sobre la página.
@@ -359,10 +372,11 @@ export default function PoliciesPage() {
               allColumns={ALL_COLUMNS}
               visibleColumns={visibleColumns}
               filteredRows={filtered}
+              getExportRows={getExportRows}
               filenamePrefix="polizas"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">{EXPORT_SCOPE_HINT}</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}

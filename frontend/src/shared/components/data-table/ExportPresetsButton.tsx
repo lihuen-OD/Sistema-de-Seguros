@@ -53,6 +53,13 @@ export function ExportPresetsButton<T>({
       // el conjunto completo recién acá, no antes — un solo pedido puntual
       // por exportación, nunca automático ni repetido.
       const rows = getExportRows ? await getExportRows() : filteredRows
+      // Solo en el camino de getExportRows (listados paginados): sin
+      // resultados no se descarga un archivo con solo encabezados. Sin
+      // getExportRows el comportamiento queda exactamente como antes.
+      if (getExportRows && rows.length === 0) {
+        toast.info('No hay datos para exportar.')
+        return
+      }
       const exportCols = columns.filter((c) => c.hideable !== false)
       const exportRows = buildExportRows(rows, exportCols)
       const numericColumnIndexes = exportCols
