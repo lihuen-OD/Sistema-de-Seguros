@@ -258,8 +258,11 @@ export function computeFleetSummaries(
     const valorNuevoUsd = asset.patrimonialValueNewUsd ?? asset.patrimonialValueNew
 
     const primaPctValor = valorRealUsd && valorRealUsd > 0 ? (sumaAseguradaUsd / valorRealUsd) * 100 : null
-    const coverageBase = valorNuevoUsd ?? valorRealUsd
-    const coveragePct = coverageBase && coverageBase > 0 ? (sumaAseguradaUsd / coverageBase) * 100 : null
+    // % Cobertura solo es calculable si hay SA y base patrimonial ambas > 0 —
+    // si no, null (la UI muestra "—"). Un valor a nuevo en 0 no bloquea el
+    // fallback al valor real.
+    const coverageBase = [valorNuevoUsd, valorRealUsd].find((v): v is number => v != null && v > 0) ?? null
+    const coveragePct = sumaAseguradaUsd > 0 && coverageBase != null ? (sumaAseguradaUsd / coverageBase) * 100 : null
 
     const claimsCostUsd = assetClaims.reduce(
       (s, c) => s + (c.settledAmountUsd ?? c.realAmountUsd ?? c.claimedAmountUsd ?? 0),

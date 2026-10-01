@@ -161,7 +161,7 @@ export function FleetRiskView({ summaries }: FleetRiskViewProps) {
                     className="text-sm font-bold text-right tabular-nums"
                     style={{ color: a.coveragePct == null ? '#94a3b8' : severityColor(a.coveragePct) }}
                   >
-                    {a.coveragePct == null ? 'Sin datos' : `${a.coveragePct.toFixed(0)}%`}
+                    {a.coveragePct == null ? '—' :`${a.coveragePct.toFixed(0)}%`}
                   </span>
                 </button>
               ))}
