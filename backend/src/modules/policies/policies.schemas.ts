@@ -71,7 +71,13 @@ export const DeactivateCoverageSchema = z.object({
 
 export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
   search: z.string().optional(),
-  status: z.enum(['vigente', 'proxima_a_vencer', 'vencida', 'de_baja']).optional(),
+  // El frontend usa 'proximo_vencer' (mismo vocabulario que ExpirationStatus de
+  // matafuegos) para el filtro de estado; se acepta como alias y se normaliza
+  // al valor canónico de PolicyStatus para no romper a quien ya manda este.
+  status: z
+    .enum(['vigente', 'proxima_a_vencer', 'proximo_vencer', 'vencida', 'de_baja'])
+    .transform((s) => (s === 'proximo_vencer' ? 'proxima_a_vencer' : s))
+    .optional(),
   insuranceTypeId: z.string().uuid().optional(),
   companyId: z.string().uuid().optional(),
   producerId: z.string().uuid().optional(),

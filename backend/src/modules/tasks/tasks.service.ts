@@ -100,7 +100,14 @@ export const tasksService = {
         where,
         skip,
         take: limit,
-        orderBy: [{ status: 'asc' }, { dueDate: 'asc' }],
+        // Abiertas primero: pendiente → en_progreso → completada → cancelada,
+        // y dentro de cada grupo por vencimiento (sin fecha al final). status
+        // es String, no enum, pero los 4 valores válidos (ver tasks.schemas)
+        // ordenados alfabéticamente DESC dan justo ese orden — 'asc' mostraba
+        // canceladas/completadas primero. Si se agrega un estado nuevo, revisar
+        // este orden (lo fija el test "orders open tasks first"). id desempata
+        // para que la paginación sea estable entre páginas.
+        orderBy: [{ status: 'desc' }, { dueDate: 'asc' }, { id: 'asc' }],
         include: TASK_WITH_PRODUCER_INCLUDE,
       }),
       prisma.producerTask.count({ where }),

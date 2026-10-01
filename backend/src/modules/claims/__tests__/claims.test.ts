@@ -10,6 +10,7 @@ jest.mock('../../../config/database', () => ({
     claim: {
       findMany:          jest.fn(),
       count:             jest.fn(),
+      groupBy:           jest.fn(),
       findUnique:        jest.fn(),
       findUniqueOrThrow: jest.fn(),
       create:            jest.fn(),
@@ -178,6 +179,47 @@ describe('Claims API', () => {
       expect(res.status).toBe(200)
       expect(res.body.data).toHaveLength(0)
       expect(res.body.pagination.total).toBe(0)
+    })
+
+    it('hides soft-deleted claims by default (isActive=true unless asked otherwise)', async () => {
+      db.claim.findMany.mockResolvedValue([])
+      db.claim.count.mockResolvedValue(0)
+
+      await request(app).get('/api/v1/claims').set('Authorization', `Bearer ${adminToken()}`)
+      expect(db.claim.findMany.mock.calls[0][0].where.isActive).toBe(true)
+      expect(db.claim.count.mock.calls[0][0].where.isActive).toBe(true)
+
+      await request(app).get('/api/v1/claims?isActive=false').set('Authorization', `Bearer ${adminToken()}`)
+      expect(db.claim.findMany.mock.calls[1][0].where.isActive).toBe(false)
+    })
+
+    it('matches the status filter by meaning, not exact text (regression: normalized status matched nothing)', async () => {
+      db.claim.groupBy.mockResolvedValue([
+        { status: 'Denunciado' },
+        { status: 'En trámite' },
+        { status: 'EN TRAMITE' },
+        { status: 'Cerrado' },
+      ])
+      db.claim.findMany.mockResolvedValue([])
+      db.claim.count.mockResolvedValue(0)
+
+      const res = await request(app)
+        .get('/api/v1/claims?status=en%20tramite')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const where = db.claim.findMany.mock.calls[0][0].where
+      expect(where.status).toEqual({ in: ['En trámite', 'EN TRAMITE'] })
+      expect(db.claim.count.mock.calls[0][0].where.status).toEqual(where.status)
+    })
+
+    it('returns no rows (not every row) when the status matches no stored value', async () => {
+      db.claim.groupBy.mockResolvedValue([{ status: 'Denunciado' }])
+      db.claim.findMany.mockResolvedValue([])
+      db.claim.count.mockResolvedValue(0)
+
+      await request(app).get('/api/v1/claims?status=inexistente').set('Authorization', `Bearer ${adminToken()}`)
+      expect(db.claim.findMany.mock.calls[0][0].where.status).toEqual({ in: [] })
     })
   })
 

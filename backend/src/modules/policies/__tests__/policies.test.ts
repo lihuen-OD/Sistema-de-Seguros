@@ -103,6 +103,30 @@ describe('Policies API', () => {
       })
     })
 
+    it.each(['proximo_vencer', 'proxima_a_vencer'])(
+      'accepts status=%s and filters by the "próxima a vencer" range (regression: the frontend alias was rejected by validation)',
+      async (status) => {
+        db.policy.findMany.mockResolvedValueOnce([])
+        db.policy.count.mockResolvedValueOnce(0)
+
+        const res = await request(app)
+          .get(`/api/v1/policies?status=${status}`)
+          .set('Authorization', `Bearer ${adminToken()}`)
+
+        expect(res.status).toBe(200)
+        const where = db.policy.findMany.mock.calls[0][0].where
+        expect(where.deactivatedAt).toBeNull()
+        expect(where.endDate).toEqual({ gte: expect.any(Date), lte: expect.any(Date) })
+      },
+    )
+
+    it('rejects an unknown status value', async () => {
+      const res = await request(app)
+        .get('/api/v1/policies?status=cualquiera')
+        .set('Authorization', `Bearer ${adminToken()}`)
+      expect(res.status).toBe(422)
+    })
+
     // Fechas relativas a "hoy" (no fijas en 2026) — pickCurrentAssetCoverage
     // usa todayDate(), que es el reloj real, así que el fixture tiene que
     // moverse con la fecha en la que corre el test, no quedar fijo en el

@@ -257,18 +257,26 @@ export const fireExtinguishersService = {
       const excludedAssetIds = assets.filter((a) => classifyAssetType(a.assetType) !== null).map((a) => a.id)
       if (excludedAssetIds.length > 0) where.assetId = { notIn: excludedAssetIds }
     }
-    if (query.status) Object.assign(where, buildFireExtinguisherStatusFilter(query.status))
+    // Estado y búsqueda van como condiciones independientes dentro de un AND:
+    // el filtro de 'vencido' trae su propio OR de raíz, y un spread/assign
+    // junto al OR de la búsqueda hacía que uno pisara al otro (vencidos +
+    // búsqueda devolvía cualquier matafuego que matcheara el texto).
+    const conditions: Record<string, unknown>[] = []
+    if (query.status) conditions.push(buildFireExtinguisherStatusFilter(query.status))
     if (query.search) {
-      where.OR = [
-        { code: { contains: query.search, mode: 'insensitive' } },
-        { type: { contains: query.search, mode: 'insensitive' } },
-        { observations: { contains: query.search, mode: 'insensitive' } },
-        { cylinderNumber: { contains: query.search, mode: 'insensitive' } },
-        { location: { contains: query.search, mode: 'insensitive' } },
-        { brand: { contains: query.search, mode: 'insensitive' } },
-        { establishment: { contains: query.search, mode: 'insensitive' } },
-      ]
+      conditions.push({
+        OR: [
+          { code: { contains: query.search, mode: 'insensitive' } },
+          { type: { contains: query.search, mode: 'insensitive' } },
+          { observations: { contains: query.search, mode: 'insensitive' } },
+          { cylinderNumber: { contains: query.search, mode: 'insensitive' } },
+          { location: { contains: query.search, mode: 'insensitive' } },
+          { brand: { contains: query.search, mode: 'insensitive' } },
+          { establishment: { contains: query.search, mode: 'insensitive' } },
+        ],
+      })
     }
+    if (conditions.length > 0) where.AND = conditions
 
     const [rawData, total] = await Promise.all([
       prisma.fireExtinguisher.findMany({

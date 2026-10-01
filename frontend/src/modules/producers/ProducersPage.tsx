@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Plus, Users, ShieldCheck, AlertTriangle, CheckCircle2,
+  Plus, Users, ShieldCheck, AlertTriangle,
   Phone, Mail, ClipboardList, Clock, ListTodo,
 } from 'lucide-react'
 import { PageContent } from '../../shared/components/page-header/PageContent'
@@ -19,8 +19,9 @@ import type { Producer } from '../../shared/types'
 interface ProducerCardStats {
   producer: Producer
   policyCount: number
-  activeTasks: number
-  overdueTasks: number
+  /** null = dato no disponible (se muestra "—"), nunca un 0 inventado. */
+  activeTasks: number | null
+  overdueTasks: number | null
 }
 
 export default function ProducersPage() {
@@ -30,13 +31,27 @@ export default function ProducersPage() {
 
   const { data: allProducers = [], isError } = useQuery(producerQueries.list())
   const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  // Mismo endpoint liviano (y misma cache) que el Dashboard: todas las tareas
+  // pendientes con vencimiento pasado, de todos los productores, en 1 request.
+  const { data: overdueResult } = useQuery(producerQueries.overdueTasks())
 
   const producerStats: ProducerCardStats[] = useMemo(() => {
+    const overdueByProducer = new Map<string, number>()
+    for (const t of overdueResult?.items ?? []) {
+      overdueByProducer.set(t.producerId, (overdueByProducer.get(t.producerId) ?? 0) + 1)
+    }
     return allProducers.map((p) => {
       const policyCount = allPolicies.filter((pol) => pol.producerId === p.id).length
-      return { producer: p, policyCount, activeTasks: 0, overdueTasks: 0 }
+      return {
+        producer: p,
+        policyCount,
+        // Sin fuente liviana de tareas activas por productor todavía — null se
+        // muestra como "—" (no disponible), nunca como un 0 que parezca real.
+        activeTasks: null,
+        overdueTasks: overdueResult ? overdueByProducer.get(p.id) ?? 0 : null,
+      }
     })
-  }, [allProducers, allPolicies])
+  }, [allProducers, allPolicies, overdueResult])
 
   const filtered = useMemo(() => {
     return producerStats.filter(({ producer }) => {
@@ -53,8 +68,7 @@ export default function ProducersPage() {
   // Global KPIs
   const activeProducers = allProducers.filter((p) => p.status === 'activo').length
   const totalPoliciesManaged = allPolicies.length
-  const totalOverdueTasks = 0
-  const compliancePct = 0
+  const totalOverdueTasks = overdueResult?.total
 
   if (isError) return <PageContent><ErrorState /></PageContent>
 
@@ -84,7 +98,7 @@ export default function ProducersPage() {
       />
 
       {/* KPIs */}
-      <MetricGrid cols={4} className="mb-6">
+      <MetricGrid cols={3} className="mb-6">
         <KpiCard
           label="Productores Activos"
           value={activeProducers}
@@ -101,17 +115,10 @@ export default function ProducersPage() {
         />
         <KpiCard
           label="Tareas Vencidas"
-          value={totalOverdueTasks}
-          description="requieren atención inmediata"
+          value={totalOverdueTasks ?? '—'}
+          description={totalOverdueTasks === undefined ? 'No disponible' : 'requieren atención inmediata'}
           icon={AlertTriangle}
-          variant={totalOverdueTasks > 0 ? 'danger' : 'default'}
-        />
-        <KpiCard
-          label="Cumplimiento"
-          value="—"
-          description="Calculado desde el detalle de cada productor"
-          icon={CheckCircle2}
-          variant={compliancePct >= 80 ? 'success' : compliancePct >= 50 ? 'warning' : 'danger'}
+          variant={totalOverdueTasks ? 'danger' : 'default'}
         />
       </MetricGrid>
 
@@ -165,8 +172,8 @@ export default function ProducersPage() {
 interface ProducerCardProps {
   producer: Producer
   policyCount: number
-  activeTasks: number
-  overdueTasks: number
+  activeTasks: number | null
+  overdueTasks: number | null
   onClick: () => void
 }
 
@@ -207,8 +214,8 @@ function ProducerCard({ producer, policyCount, activeTasks, overdueTasks, onClic
           icon={Clock}
           value={overdueTasks}
           label="Vencidas"
-          colorClass={overdueTasks > 0 ? 'text-red-600' : 'text-slate-500'}
-          bgClass={overdueTasks > 0 ? 'bg-red-50' : 'bg-slate-50'}
+          colorClass={overdueTasks ? 'text-red-600' : 'text-slate-500'}
+          bgClass={overdueTasks ? 'bg-red-50' : 'bg-slate-50'}
         />
       </div>
     </div>
@@ -223,7 +230,7 @@ function StatChip({
   bgClass,
 }: {
   icon: React.ElementType
-  value: number
+  value: number | null
   label: string
   colorClass: string
   bgClass: string
@@ -231,7 +238,12 @@ function StatChip({
   return (
     <div className={`${bgClass} rounded-lg p-2.5 flex flex-col items-center gap-1`}>
       <Icon size={13} className={colorClass} />
-      <span className={`text-base font-bold leading-none ${colorClass}`}>{value}</span>
+      <span
+        className={`text-base font-bold leading-none ${colorClass}`}
+        title={value === null ? 'No disponible' : undefined}
+      >
+        {value ?? '—'}
+      </span>
       <span className="text-xs text-slate-500 leading-none">{label}</span>
     </div>
   )

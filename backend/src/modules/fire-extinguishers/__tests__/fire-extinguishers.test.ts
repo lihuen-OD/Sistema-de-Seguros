@@ -165,6 +165,27 @@ describe('Fire Extinguishers API', () => {
       expect(db.asset.findMany).not.toHaveBeenCalled()
       expect(db.fireExtinguisher.findMany.mock.calls[0][0].where.assetId).toBeUndefined()
     })
+
+    it('combines status=vencido with search instead of letting one OR overwrite the other (regression)', async () => {
+      db.fireExtinguisher.findMany.mockResolvedValue([])
+      db.fireExtinguisher.count.mockResolvedValue(0)
+
+      const res = await request(app)
+        .get('/api/v1/fire-extinguishers?status=vencido&search=planta')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const where = db.fireExtinguisher.findMany.mock.calls[0][0].where
+      expect(where.OR).toBeUndefined()
+      expect(where.AND).toHaveLength(2)
+      const [statusCond, searchCond] = where.AND
+      // Regla de vencido intacta: alguna de las 3 fechas/vida útil vencida.
+      expect(statusCond.expirationDate).toEqual({ not: null })
+      expect(statusCond.OR).toHaveLength(3)
+      expect(statusCond.OR[0]).toHaveProperty('expirationDate')
+      expect(searchCond.OR).toContainEqual({ code: { contains: 'planta', mode: 'insensitive' } })
+      expect(db.fireExtinguisher.count.mock.calls[0][0].where).toEqual(where)
+    })
   })
 
   // ── GET /api/v1/fire-extinguishers/:id ────────────────────────────────────

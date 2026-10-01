@@ -118,6 +118,22 @@ describe('GET /api/v1/tasks', () => {
     expect(res.body.pagination).toEqual({ total: 45, page: 2, limit: 10, totalPages: 5 })
   })
 
+  it('orders open tasks first (pendiente → en_progreso → completada → cancelada), then by dueDate — regression: status asc showed closed tasks first', async () => {
+    db.producerTask.findMany.mockResolvedValue([])
+
+    await request(app)
+      .get('/api/v1/tasks')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    const { orderBy } = db.producerTask.findMany.mock.calls[0][0]
+    expect(orderBy).toEqual([{ status: 'desc' }, { dueDate: 'asc' }, { id: 'asc' }])
+
+    // El orden por status DESC depende de cómo comparan los valores reales:
+    // si alguien agrega/renombra un estado, este assert lo hace explícito.
+    const statuses = ['cancelada', 'en_progreso', 'pendiente', 'completada']
+    expect([...statuses].sort().reverse()).toEqual(['pendiente', 'en_progreso', 'completada', 'cancelada'])
+  })
+
   it('rejects a limit greater than 500 (same PaginationSchema cap as other list endpoints)', async () => {
     const res = await request(app)
       .get('/api/v1/tasks?limit=501')

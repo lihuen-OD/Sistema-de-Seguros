@@ -2,6 +2,7 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { toDateStr } from '../../shared/utils/dates'
+import { normalizeCatalogText } from '../../shared/utils/normalize'
 import { computeDualAmounts } from '../../shared/utils/currency'
 import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { deleteFromCloudinary } from '../../config/cloudinary'
@@ -106,9 +107,18 @@ export const claimsService = {
   async findAll(query: ListClaimsQueryDTO) {
     const { page, limit, skip } = getPaginationParams(query)
 
-    const where: Record<string, unknown> = {}
-    if (query.isActive !== undefined) where.isActive = query.isActive
-    if (query.status) where.status = query.status
+    // Los siniestros dados de baja (softDelete → isActive:false) no se listan
+    // salvo que se pidan explícitamente con isActive=false.
+    const where: Record<string, unknown> = { isActive: query.isActive ?? true }
+    if (query.status) {
+      // Los estados son texto libre de catálogo y pueden estar guardados con
+      // otra capitalización/acentos que lo que manda el cliente ("En trámite"
+      // vs "en tramite"): se resuelven los valores reales que matchean por
+      // significado. GROUP BY sobre la columna indexada — pocos valores.
+      const wanted = normalizeCatalogText(query.status)
+      const statuses = await prisma.claim.groupBy({ by: ['status'] })
+      where.status = { in: statuses.map((s) => s.status).filter((s) => normalizeCatalogText(s) === wanted) }
+    }
     if (query.claimType) where.claimType = query.claimType
     if (query.policyId) where.policyId = query.policyId
     if (query.assetId) where.assetId = query.assetId

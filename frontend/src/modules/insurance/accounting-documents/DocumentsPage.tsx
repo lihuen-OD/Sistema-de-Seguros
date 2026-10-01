@@ -96,6 +96,10 @@ export default function DocumentsPage() {
     })
 
     allDocuments.forEach((doc) => {
+      // Un documento anulado conserva paymentStatus y cuotas, pero no es deuda
+      // ni pago real — mismo criterio que documentEconomicEffect y que
+      // findAllForFinancial en el backend.
+      if (doc.documentStatus === 'CANCELLED') return
       const docInstallments = installmentsByDoc.get(doc.id)
       if (docInstallments && docInstallments.length > 0) {
         // Cuota por cuota — así un documento "Pago Parcial" solo aporta al
@@ -126,7 +130,7 @@ export default function DocumentsPage() {
     return { pendingArs, pendingUsd, paidArs, paidUsd }
   }, [allDocuments, allInstallments])
 
-  const partialCount = allDocuments.filter((d) => d.paymentStatus === 'PARTIALLY_PAID').length
+  const partialCount = allDocuments.filter((d) => d.documentStatus !== 'CANCELLED' && d.paymentStatus === 'PARTIALLY_PAID').length
 
   const filtered = allDocuments
 

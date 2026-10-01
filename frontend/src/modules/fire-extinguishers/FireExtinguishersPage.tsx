@@ -28,6 +28,8 @@ import { RechargeModal } from './RechargeModal'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
 import type { FireExtinguisher, TableColumn } from '../../shared/types'
+import { useCurrentUser } from '../../app/auth/AuthContext'
+import { hasModule } from '../../app/auth/roleScope'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 type ActivityFilter = 'active' | 'inactive' | 'all'
@@ -89,7 +91,18 @@ export default function FireExtinguishersPage() {
   }))
   const all = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
-  const { data: dashboardSummary, isError: isActiveOverviewError } = useQuery(fireExtinguisherQueries.dashboardSummary())
+  // Los KPIs y el banner de vencidos salen de /dashboard/summary, que el
+  // backend protege con fire_extinguisher_dashboard. Un usuario con solo
+  // fire_extinguishers tiene que poder usar la tabla igual: sin ese módulo no
+  // se pide (evita el 403) y, si falla, se ocultan los KPIs en vez de tirar
+  // la pantalla entera a ErrorState.
+  const { user } = useCurrentUser()
+  const canViewSummary = hasModule(user, 'fire_extinguisher_dashboard')
+  const { data: dashboardSummary, isError: isSummaryError } = useQuery({
+    ...fireExtinguisherQueries.dashboardSummary(),
+    enabled: canViewSummary,
+  })
+  const showSummary = canViewSummary && !isSummaryError
   const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: establishmentCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_establishment'))
   const ESTABLISHMENT_OPTIONS = useMemo(
@@ -450,7 +463,7 @@ export default function FireExtinguishersPage() {
     [all, selectedIds],
   )
 
-  if (isError || isActiveOverviewError) return <PageContent><ErrorState /></PageContent>
+  if (isError) return <PageContent><ErrorState /></PageContent>
 
   return (
     <PageContent>
@@ -468,15 +481,17 @@ export default function FireExtinguishersPage() {
         }
       />
 
-      <MetricGrid cols={5} className="mb-5">
-        <KpiCard label="Vigentes"          value={counts.vigente}        description="Con carga al día"                icon={ShieldCheck} variant="success" />
-        <KpiCard label="Próximos a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
-        <KpiCard label="Vencidos"          value={counts.vencido}        description="Requieren recarga inmediata"     icon={ShieldOff} variant={counts.vencido > 0 ? 'danger' : 'default'} />
-        <KpiCard label="Sin Fecha"         value={counts.sin_fecha}      description="Sin vencimiento cargado"         icon={CalendarOff} variant={counts.sin_fecha > 0 ? 'warning' : 'default'} />
-        <KpiCard label="Total Activos"     value={counts.total}          description="Matafuegos operativos"            icon={Flame} variant="default" />
-      </MetricGrid>
+      {showSummary && (
+        <MetricGrid cols={5} className="mb-5">
+          <KpiCard label="Vigentes"          value={counts.vigente}        description="Con carga al día"                icon={ShieldCheck} variant="success" />
+          <KpiCard label="Próximos a Vencer" value={counts.proximo_vencer} description="Vencen en los próximos 30 días" icon={AlertTriangle} variant="warning" />
+          <KpiCard label="Vencidos"          value={counts.vencido}        description="Requieren recarga inmediata"     icon={ShieldOff} variant={counts.vencido > 0 ? 'danger' : 'default'} />
+          <KpiCard label="Sin Fecha"         value={counts.sin_fecha}      description="Sin vencimiento cargado"         icon={CalendarOff} variant={counts.sin_fecha > 0 ? 'warning' : 'default'} />
+          <KpiCard label="Total Activos"     value={counts.total}          description="Matafuegos operativos"            icon={Flame} variant="default" />
+        </MetricGrid>
+      )}
 
-      {counts.vencido > 0 && (
+      {showSummary && counts.vencido > 0 && (
         <div className="mb-5 flex items-start gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
           <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
           <span>
