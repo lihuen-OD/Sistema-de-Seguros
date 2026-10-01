@@ -148,6 +148,110 @@ describe('GET /api/v1/fire-extinguisher-audits/audit-dashboard', () => {
     expect(sector.level).toBeCloseTo(100, 1)
   })
 
+  describe('cleaningOkPercentage — "Sin limpieza urgente", independiente de CLEANLINESS_SCORES', () => {
+    // N matafuegos auditados en el mismo sector, cada uno con el cleanliness dado.
+    function mockAuditedSector(counts: Record<string, number>, locationType = 'Engorde', idPrefix = 'fe') {
+      const extinguishers: unknown[] = []
+      const audits: unknown[] = []
+      for (const [cleanliness, count] of Object.entries(counts)) {
+        for (let i = 0; i < count; i++) {
+          const id = `${idPrefix}-${cleanliness}-${i}`
+          extinguishers.push(fe({ id, locationType }))
+          audits.push(auditRow({ fireExtinguisherId: id, cleanliness }))
+        }
+      }
+      return { extinguishers, audits }
+    }
+
+    async function getDashboard(counts: Record<string, number>) {
+      const { extinguishers, audits } = mockAuditedSector(counts)
+      db.fireExtinguisher.findMany.mockResolvedValue(extinguishers)
+      db.fireExtinguisherAudit.findMany.mockResolvedValue(audits)
+      const res = await request(app)
+        .get('/api/v1/fire-extinguisher-audits/audit-dashboard')
+        .query({ period: PERIOD })
+        .set('Authorization', `Bearer ${adminToken()}`)
+      expect(res.status).toBe(200)
+      return res.body.data
+    }
+
+    it('70 IMPECABLE + 20 LEVE_POLVO + 10 MUY_SUCIO → 90% sin limpieza urgente (el score de Limpieza sigue en 87)', async () => {
+      const data = await getDashboard({ IMPECABLE: 70, LEVE_POLVO: 20, MUY_SUCIO: 10 })
+      const sector = data.sectors[0]
+
+      expect(sector.urgentCleaningCount).toBe(10)
+      expect(sector.cleaningOkPercentage).toBeCloseTo(90, 1)
+      expect(data.totalUrgentCleaning).toBe(10)
+      expect(data.cleaningOkPercentage).toBeCloseTo(90, 1)
+      // Score viejo intacto: (70·100 + 20·80 + 10·10) / 100
+      expect(findControlPoint(sector, 'cleanliness').level).toBeCloseTo(87, 1)
+    })
+
+    it('70 IMPECABLE + 20 SUCIEDAD_VISIBLE + 10 SUCIEDAD_ACUMULADA → 90% sin limpieza urgente (el score de Limpieza sigue en 81)', async () => {
+      const data = await getDashboard({ IMPECABLE: 70, SUCIEDAD_VISIBLE: 20, SUCIEDAD_ACUMULADA: 10 })
+      const sector = data.sectors[0]
+
+      expect(sector.urgentCleaningCount).toBe(10)
+      expect(sector.cleaningOkPercentage).toBeCloseTo(90, 1)
+      // Score viejo intacto: (70·100 + 20·50 + 10·10) / 100
+      expect(findControlPoint(sector, 'cleanliness').level).toBeCloseTo(81, 1)
+    })
+
+    it('solo "Sugiere limpieza" (LEVE_POLVO/SUCIEDAD_VISIBLE) → 100%: no baja este porcentaje, aunque el score sí baja', async () => {
+      const data = await getDashboard({ LEVE_POLVO: 50, SUCIEDAD_VISIBLE: 50 })
+      const sector = data.sectors[0]
+
+      expect(sector.urgentCleaningCount).toBe(0)
+      expect(sector.cleaningOkPercentage).toBe(100)
+      // Score viejo: (50·80 + 50·50) / 100
+      expect(findControlPoint(sector, 'cleanliness').level).toBeCloseTo(65, 1)
+      // Siguen listados para el PDF como "Sugiere limpieza".
+      expect(sector.needsCleaningExtinguishers).toHaveLength(100)
+    })
+
+    it('todos MUY_SUCIO/SUCIEDAD_ACUMULADA → 0% (el score de Limpieza sigue en 10)', async () => {
+      const data = await getDashboard({ MUY_SUCIO: 50, SUCIEDAD_ACUMULADA: 50 })
+      const sector = data.sectors[0]
+
+      expect(sector.urgentCleaningCount).toBe(100)
+      expect(sector.cleaningOkPercentage).toBe(0)
+      expect(findControlPoint(sector, 'cleanliness').level).toBeCloseTo(10, 1)
+    })
+
+    it('es null sin auditados y no cuenta matafuegos sin auditoría del período', async () => {
+      db.fireExtinguisher.findMany.mockResolvedValue([fe({ id: 'fe-1' }), fe({ id: 'fe-2' })])
+      db.fireExtinguisherAudit.findMany.mockResolvedValue([auditRow({ fireExtinguisherId: 'fe-1', cleanliness: 'IMPECABLE' })])
+      const res = await request(app)
+        .get('/api/v1/fire-extinguisher-audits/audit-dashboard')
+        .query({ period: PERIOD })
+        .set('Authorization', `Bearer ${adminToken()}`)
+      // 1 auditado de 2 registrados: el sin auditar no baja el porcentaje.
+      expect(res.body.data.sectors[0].cleaningOkPercentage).toBe(100)
+
+      db.fireExtinguisherAudit.findMany.mockResolvedValue([])
+      const empty = await request(app)
+        .get('/api/v1/fire-extinguisher-audits/audit-dashboard')
+        .query({ period: PERIOD })
+        .set('Authorization', `Bearer ${adminToken()}`)
+      expect(empty.body.data.sectors[0].cleaningOkPercentage).toBeNull()
+      expect(empty.body.data.cleaningOkPercentage).toBeNull()
+    })
+
+    it('el total se pondera por matafuego auditado, no promediando sectores como overallLevel', async () => {
+      const a = mockAuditedSector({ IMPECABLE: 10 }, 'Engorde', 'a')
+      const b = mockAuditedSector({ MUY_SUCIO: 2 }, 'Taller', 'b')
+      db.fireExtinguisher.findMany.mockResolvedValue([...a.extinguishers, ...b.extinguishers])
+      db.fireExtinguisherAudit.findMany.mockResolvedValue([...a.audits, ...b.audits])
+      const res = await request(app)
+        .get('/api/v1/fire-extinguisher-audits/audit-dashboard')
+        .query({ period: PERIOD })
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      // (12 − 2) / 12 — un promedio de sectores daría (100 + 0) / 2 = 50.
+      expect(res.body.data.cleaningOkPercentage).toBeCloseTo(83.3, 1)
+    })
+  })
+
   it('computes "expiration" from the master record combined status (charge + manufacturing lifespan + hydraulic test), same as the findings report', async () => {
     db.fireExtinguisher.findMany.mockResolvedValue([fe({ id: 'fe-1', expirationDate: null, manufacturingYear: null })])
 

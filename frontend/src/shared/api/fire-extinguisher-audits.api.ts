@@ -196,6 +196,10 @@ export interface AuditDashboardSector {
   controlPoints: AuditControlPointLevel[]
   expiredExtinguishers: AuditFlaggedExtinguisher[]
   needsCleaningExtinguishers: AuditFlaggedExtinguisher[]
+  // "Sin limpieza urgente": solo MUY_SUCIO/SUCIEDAD_ACUMULADA cuentan como
+  // urgentes — independiente del score de Limpieza de controlPoints.
+  urgentCleaningCount: number
+  cleaningOkPercentage: number | null
 }
 
 export interface AuditDashboard {
@@ -206,6 +210,8 @@ export interface AuditDashboard {
   totalAudited: number
   overallLevel: number | null
   overallLevelLabel: string | null
+  totalUrgentCleaning: number
+  cleaningOkPercentage: number | null
   controlPoints: AuditControlPointLevel[]
   sectors: AuditDashboardSector[]
 }

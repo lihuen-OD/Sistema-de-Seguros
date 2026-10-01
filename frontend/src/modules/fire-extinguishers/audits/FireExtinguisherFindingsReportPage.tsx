@@ -14,7 +14,7 @@ import { fireExtinguisherAuditQueries } from '../../../shared/api/fire-extinguis
 import type { AuditControlPointLevel, AuditDashboardSector, AuditDashboard, AuditorProgressReport } from '../../../shared/api/fire-extinguisher-audits.api'
 import { ROUTES } from '../../../app/routes'
 import { currentPeriod } from '../../../shared/utils/period'
-import { classifyLevel } from '../../../shared/utils/auditLevel'
+import { classifyLevel, cleaningOkPercentage, withCleaningOkLevel } from '../../../shared/utils/auditLevel'
 import { sectorKey, formatPeriodLabel } from './findingsReportFields'
 import { LevelBar } from '../../../shared/components/audit-wizard/LevelBar'
 
@@ -208,23 +208,33 @@ function FindingsReportBody({ period, onPeriodChange, data, progress }: Findings
     [data, selectedSectors],
   )
 
+  const totalAudited = selectedSectorsFlat.reduce((sum, s) => sum + s.audited, 0)
+  const totalRegistered = selectedSectorsFlat.reduce((sum, s) => sum + s.total, 0)
+  // "Sin limpieza urgente" de los sectores tildados, ponderado por matafuego
+  // auditado — es lo que muestra la barra "Limpieza" (ver withCleaningOkLevel).
+  const totalUrgentCleaning = selectedSectorsFlat.reduce((sum, s) => sum + s.urgentCleaningCount, 0)
+  const cleaningOk = cleaningOkPercentage(totalAudited, totalUrgentCleaning)
+
   const controlPoints: AuditControlPointLevel[] = useMemo(
     () =>
-      data.controlPoints.map((cp) => ({
-        key: cp.key,
-        label: cp.label,
-        level: averageOfLevels(selectedSectorsFlat.map((s) => s.controlPoints.find((c) => c.key === cp.key)?.level ?? null)),
-        levelLabel: null,
-      })),
-    [data, selectedSectorsFlat],
+      withCleaningOkLevel(
+        data.controlPoints.map((cp) => ({
+          key: cp.key,
+          label: cp.label,
+          level: averageOfLevels(selectedSectorsFlat.map((s) => s.controlPoints.find((c) => c.key === cp.key)?.level ?? null)),
+          levelLabel: null,
+        })),
+        cleaningOk,
+      ),
+    [data, selectedSectorsFlat, cleaningOk],
   )
 
   const sortedControlPoints = [...controlPoints].sort(byLevelAscending)
   const sortedSelectedSectors = [...selectedSectorsFlat].sort(byLevelAscending)
   const lowestSector = sortedSelectedSectors[0]
+  // Nivel general/sector: siguen promediando el score de Limpieza que manda
+  // el backend en cada sector, no el porcentaje que muestra la barra.
   const overallLevel = averageOfLevels(selectedSectorsFlat.map((s) => s.level))
-  const totalAudited = selectedSectorsFlat.reduce((sum, s) => sum + s.audited, 0)
-  const totalRegistered = selectedSectorsFlat.reduce((sum, s) => sum + s.total, 0)
   const pointsBelow50 = controlPoints.filter((c) => c.level != null && c.level < 50).length
   const singleSector = selectedSectorsFlat.length === 1
   const kpiCount = singleSector ? 3 : 4
@@ -440,7 +450,7 @@ function EstablishmentBlock({
                 </div>
 
                 <div className="space-y-2">
-                  {sector.controlPoints.map((cp) => (
+                  {withCleaningOkLevel(sector.controlPoints, sector.cleaningOkPercentage).map((cp) => (
                     <LevelBar key={cp.key} label={cp.label} level={cp.level} compact />
                   ))}
                 </div>

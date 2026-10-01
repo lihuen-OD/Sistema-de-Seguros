@@ -11,6 +11,24 @@ export const CLEANLINESS_SCORES: Record<string, number> = {
   SUCIEDAD_ACUMULADA: 10,
 }
 
+// "Requieren limpieza" (limpieza urgente) — mismo par que agrupa el PDF del
+// informe (HEAVY_DIRT_CLEANLINESS en buildAuditDashboardPdf.ts). Alimenta
+// solo el porcentaje "Sin limpieza urgente" (cleaningOkPercentage), que es
+// independiente de CLEANLINESS_SCORES: ahí LEVE_POLVO/SUCIEDAD_VISIBLE
+// ("Sugiere limpieza") siguen restando puntaje; acá no.
+export const URGENT_CLEANING_CLEANLINESS: readonly string[] = ['MUY_SUCIO', 'SUCIEDAD_ACUMULADA']
+
+export function isUrgentCleaningIssue(cleanliness: string): boolean {
+  return URGENT_CLEANING_CLEANLINESS.includes(cleanliness)
+}
+
+// % de auditados que NO requieren limpieza urgente: (auditados − urgentes) /
+// auditados. Sin auditados da `null`, igual que un punto de control sin dato.
+export function cleaningOkPercentage(audited: number, urgentCleaning: number): number | null {
+  if (audited <= 0) return null
+  return +(((audited - urgentCleaning) / audited) * 100).toFixed(1)
+}
+
 export const CHARGE_FILL_SCORES: Record<string, number> = {
   CARGADO: 100,
   SOBRECARGADO: 30,
