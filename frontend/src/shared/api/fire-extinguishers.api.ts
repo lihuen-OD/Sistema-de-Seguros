@@ -15,6 +15,8 @@ interface BackendHistory {
 interface BackendExtinguisher {
   id: string; code: string | null; type: string; capacity: string
   chargeDate: string | null; expirationDate: string | null; associatedAssetId: string | null
+  // Solo en el listado GET /fire-extinguishers (Fase 3D).
+  associatedAssetName?: string | null
   hydraulicTestExpirationDate: string | null; hydraulicTestStatus?: string | null
   associatedLocationType: string; location: string | null; establishment: string | null
   status: string; chargeStatus: string; manufacturingLifeStatus: string | null
@@ -57,6 +59,7 @@ function mapExtinguisher(b: BackendExtinguisher): FireExtinguisher {
     expirationDate: b.expirationDate ?? null,
     hydraulicTestExpirationDate: b.hydraulicTestExpirationDate ?? null,
     associatedAssetId: b.associatedAssetId ?? null,
+    ...(b.associatedAssetName !== undefined && { associatedAssetName: b.associatedAssetName }),
     associatedLocationType: b.associatedLocationType as AssociatedLocationType,
     location: b.location ?? null,
     establishment: b.establishment ?? null,

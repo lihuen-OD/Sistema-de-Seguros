@@ -47,8 +47,10 @@ const CLAIM_SORT: SortMap<ClaimSortKey, Prisma.ClaimOrderByWithRelationInput> = 
 
 // ── Includes ──────────────────────────────────────────────────────────────────
 
+// asset/policy livianos por fila: ClaimsPage los muestra directo (Fase 3D) en
+// vez de resolverlos con /assets?limit=200 y /policies?limit=200.
 const CLAIM_LIST_INCLUDE = {
-  asset: { select: { id: true, name: true } },
+  asset: { select: { id: true, name: true, code: true } },
   policy: { select: { id: true, policyNumber: true } },
   _count: { select: { events: true, expenses: true } },
 }

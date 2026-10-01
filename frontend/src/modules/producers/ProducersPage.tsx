@@ -18,7 +18,7 @@ import type { Producer } from '../../shared/types'
 
 interface ProducerCardStats {
   producer: Producer
-  policyCount: number
+  policyCount: number | null
   /** null = dato no disponible (se muestra "—"), nunca un 0 inventado. */
   activeTasks: number | null
   overdueTasks: number | null
@@ -30,7 +30,9 @@ export default function ProducersPage() {
   const [filterStatus, setFilterStatus] = useState<'' | 'activo' | 'inactivo'>('')
 
   const { data: allProducers = [], isError } = useQuery(producerQueries.list())
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
+  // Total de pólizas: solo pagination.total de 1 fila (count real en el
+  // backend) en vez de traer /policies?limit=200 con coberturas para contar.
+  const { data: policiesPage } = useQuery(policyQueries.listPaginated({ page: 1, limit: 1 }))
   // Mismo endpoint liviano (y misma cache) que el Dashboard: todas las tareas
   // pendientes con vencimiento pasado, de todos los productores, en 1 request.
   const { data: overdueResult } = useQuery(producerQueries.overdueTasks())
@@ -41,17 +43,18 @@ export default function ProducersPage() {
       overdueByProducer.set(t.producerId, (overdueByProducer.get(t.producerId) ?? 0) + 1)
     }
     return allProducers.map((p) => {
-      const policyCount = allPolicies.filter((pol) => pol.producerId === p.id).length
       return {
         producer: p,
-        policyCount,
+        // Count real del backend (_count.policies), no un filtro sobre una
+        // lista de pólizas cortada en 200.
+        policyCount: p.policyCount ?? null,
         // Sin fuente liviana de tareas activas por productor todavía — null se
         // muestra como "—" (no disponible), nunca como un 0 que parezca real.
         activeTasks: null,
         overdueTasks: overdueResult ? overdueByProducer.get(p.id) ?? 0 : null,
       }
     })
-  }, [allProducers, allPolicies, overdueResult])
+  }, [allProducers, overdueResult])
 
   const filtered = useMemo(() => {
     return producerStats.filter(({ producer }) => {
@@ -67,7 +70,7 @@ export default function ProducersPage() {
 
   // Global KPIs
   const activeProducers = allProducers.filter((p) => p.status === 'activo').length
-  const totalPoliciesManaged = allPolicies.length
+  const totalPoliciesManaged = policiesPage?.pagination.total
   const totalOverdueTasks = overdueResult?.total
 
   if (isError) return <PageContent><ErrorState /></PageContent>
@@ -108,8 +111,8 @@ export default function ProducersPage() {
         />
         <KpiCard
           label="Pólizas Gestionadas"
-          value={totalPoliciesManaged}
-          description="en cartera total"
+          value={totalPoliciesManaged ?? '—'}
+          description={totalPoliciesManaged === undefined ? 'No disponible' : 'en cartera total'}
           icon={ShieldCheck}
           variant="success"
         />
@@ -171,7 +174,7 @@ export default function ProducersPage() {
 
 interface ProducerCardProps {
   producer: Producer
-  policyCount: number
+  policyCount: number | null
   activeTasks: number | null
   overdueTasks: number | null
   onClick: () => void

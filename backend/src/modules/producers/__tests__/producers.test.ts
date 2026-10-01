@@ -61,6 +61,19 @@ function fakeOverdueTaskRow(overrides: Record<string, unknown> = {}) {
 describe('Producers API', () => {
   // ── GET /api/v1/producers/search ─────────────────────────────────────────────
 
+  describe('GET /api/v1/producers', () => {
+    it('includes the real per-producer policy count (_count.policies) that ProducersPage shows — Fase 3D', async () => {
+      db.producer.findMany.mockResolvedValue([{ id: 'p1', name: 'Juan', isActive: true, _count: { policies: 312, tasks: 4 } }])
+      db.producer.count.mockResolvedValue(1)
+
+      const res = await request(app).get('/api/v1/producers').set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.producer.findMany.mock.calls[0][0].include).toEqual({ _count: { select: { policies: true, tasks: true } } })
+      expect(res.body.data[0]._count.policies).toBe(312)
+    })
+  })
+
   describe('GET /api/v1/producers/search', () => {
     const searchProducer = {
       id: PRODUCER_ID,

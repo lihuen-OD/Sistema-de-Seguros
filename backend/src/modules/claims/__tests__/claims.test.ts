@@ -214,6 +214,20 @@ describe('Claims API', () => {
       expect(db.claim.count.mock.calls[0][0].where.status).toEqual(where.status)
     })
 
+    it('includes a light asset {id, name, code} and policy {id, policyNumber} per row (Fase 3D — no more 200-row lookups)', async () => {
+      db.claim.findMany.mockResolvedValue([
+        { ...fakeClaim, asset: { id: 'a1', name: 'Toyota Hilux', code: 'ACT-0001' }, policy: { id: 'p1', policyNumber: 'POL-9' } },
+      ])
+      db.claim.count.mockResolvedValue(1)
+
+      const res = await request(app).get('/api/v1/claims').set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(db.claim.findMany.mock.calls[0][0].include.asset).toEqual({ select: { id: true, name: true, code: true } })
+      expect(db.claim.findMany.mock.calls[0][0].include.policy).toEqual({ select: { id: true, policyNumber: true } })
+      expect(res.body.data[0].asset).toEqual({ id: 'a1', name: 'Toyota Hilux', code: 'ACT-0001' })
+      expect(res.body.data[0].policy).toEqual({ id: 'p1', policyNumber: 'POL-9' })
+    })
+
     describe('summary (Fase 3B)', () => {
       beforeEach(() => {
         db.claim.findMany.mockResolvedValue([fakeClaim])

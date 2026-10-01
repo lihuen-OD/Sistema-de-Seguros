@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PaginationSchema, ActiveFilterSchema } from '../../shared/schemas/common'
+import { PaginationSchema, ActiveFilterSchema, IncludeAssetCountsSchema } from '../../shared/schemas/common'
 
 export const CreateCompanySchema = z.object({
   name: z.string().min(1, 'El nombre es requerido').max(200),
@@ -12,7 +12,7 @@ export const CreateCompanySchema = z.object({
 
 export const UpdateCompanySchema = CreateCompanySchema.partial()
 
-export const ListCompaniesQuerySchema = PaginationSchema.merge(ActiveFilterSchema).extend({
+export const ListCompaniesQuerySchema = PaginationSchema.merge(ActiveFilterSchema).merge(IncludeAssetCountsSchema).extend({
   search: z.string().optional(),
 })
 

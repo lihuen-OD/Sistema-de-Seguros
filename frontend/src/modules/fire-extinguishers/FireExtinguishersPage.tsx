@@ -22,7 +22,6 @@ import { formatDate, daysUntil } from '../../shared/utils/format'
 import { fireExtinguishersApi, fireExtinguisherKeys, fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
 import { toSortParams } from '../../shared/api/pagination'
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
-import { assetQueries } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
@@ -109,7 +108,6 @@ export default function FireExtinguishersPage() {
   // ignorando solo el filtro de estado.
   const summary = result?.summary
   const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
   const { data: establishmentCatalog = [] } = useQuery(catalogQueries.byCategory('fire_ext_establishment'))
   const ESTABLISHMENT_OPTIONS = useMemo(
     () => establishmentCatalog.map((e) => ({ value: e.label, label: e.label })),
@@ -121,7 +119,6 @@ export default function FireExtinguishersPage() {
     [locationTypeCatalog],
   )
 
-  const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
 
   function toggleOne(id: string) {
     setSelectedIds((prev) => {
@@ -230,20 +227,20 @@ export default function FireExtinguishersPage() {
       defaultVisible: true,
       hideable: true,
       sortable: true,
+      // Nombre del activo resuelto en cada fila desde el backend (Fase 3D), no
+      // de un lookup sobre /assets?limit=200.
       exportValue: (row) => {
-        const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
         const locationLabel = row.associatedLocationType
-        return asset ? `${asset.name} — ${locationLabel}` : locationLabel
+        return row.associatedAssetName ? `${row.associatedAssetName} — ${locationLabel}` : locationLabel
       },
       render: (_, row) => {
-        const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
         const locationLabel = row.associatedLocationType
-        return asset ? (
+        return row.associatedAssetId && row.associatedAssetName ? (
           <button
-            onClick={(e) => { e.stopPropagation(); navigate(`/assets/${asset.id}`) }}
+            onClick={(e) => { e.stopPropagation(); navigate(`/assets/${row.associatedAssetId}`) }}
             className="text-left block min-w-0 max-w-[200px] group"
           >
-            <OverflowCell value={asset.name} lines={1} className="text-xs text-brand-600 group-hover:underline" />
+            <OverflowCell value={row.associatedAssetName} lines={1} className="text-xs text-brand-600 group-hover:underline" />
             <OverflowCell value={locationLabel} lines={1} className="text-xs text-slate-400 mt-0.5" />
           </button>
         ) : (
@@ -392,7 +389,7 @@ export default function FireExtinguishersPage() {
         </div>
       ),
     },
-  ], [assetById, navigate])
+  ], [navigate])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('fire-extinguishers', FE_COL_DEFS)
 

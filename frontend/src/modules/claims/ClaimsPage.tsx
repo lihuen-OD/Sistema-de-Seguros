@@ -20,8 +20,6 @@ import { formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
 import { toSortParams } from '../../shared/api/pagination'
-import { assetQueries } from '../../shared/api/assets.api'
-import { policyQueries } from '../../shared/api/policies.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
@@ -78,8 +76,6 @@ export default function ClaimsPage() {
   // reales, dinámicos) ignorando solo el filtro de estado — ambos del backend.
   const summary = result?.summary
   const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
-  const { data: allPolicies = [] } = useQuery(policyQueries.list())
   const { data: claimStatusCatalog = [] } = useQuery(catalogQueries.byCategory('claim_status'))
 
   const TYPE_OPTIONS = useMemo(() => {
@@ -129,8 +125,6 @@ export default function ClaimsPage() {
   }, [summary])
   const topStatus = statusDistribution[0] ?? null
 
-  const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets])
-  const policyById = useMemo(() => new Map(allPolicies.map((p) => [p.id, p])), [allPolicies])
 
   const filtered = all
 
@@ -165,21 +159,18 @@ export default function ClaimsPage() {
       label: 'Activo',
       defaultVisible: true,
       sortable: true,
-      exportValue: (row) => {
-        const a = row.assetId ? assetById.get(row.assetId) : null
-        return a ? `${a.name} (${a.internalCode})` : ''
-      },
-      render: (v) => {
-        if (!v) return <span className="text-xs text-slate-400">—</span>
-        const asset = assetById.get(v as string)
-        if (!asset) return <span className="text-xs text-slate-400">—</span>
+      // Nombre/código vienen resueltos en cada fila desde el backend (Fase 3D),
+      // no de un lookup sobre /assets?limit=200.
+      exportValue: (row) => (row.assetName ? `${row.assetName} (${row.assetInternalCode})` : ''),
+      render: (v, row) => {
+        if (!v || !row.assetName) return <span className="text-xs text-slate-400">—</span>
         return (
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/assets/${v}`) }}
             className="text-left block min-w-0 max-w-[200px] group"
           >
-            <OverflowCell value={asset.name} lines={1} className="text-xs text-brand-600 group-hover:underline" />
-            <OverflowCell value={asset.internalCode} lines={1} className="text-slate-400 font-mono text-[10px] mt-0.5" />
+            <OverflowCell value={row.assetName} lines={1} className="text-xs text-brand-600 group-hover:underline" />
+            <OverflowCell value={row.assetInternalCode ?? null} lines={1} className="text-slate-400 font-mono text-[10px] mt-0.5" />
           </button>
         )
       },
@@ -190,17 +181,11 @@ export default function ClaimsPage() {
       label: 'Póliza',
       defaultVisible: true,
       sortable: true,
-      exportValue: (row) => {
-        const p = row.policyId ? policyById.get(row.policyId) : null
-        return p?.policyNumber ?? ''
-      },
-      render: (v) => {
-        if (!v) return <span className="text-xs text-slate-400">—</span>
-        const pol = policyById.get(v as string)
-        return pol
-          ? <span className="text-xs font-mono text-slate-600">{pol.policyNumber}</span>
-          : <span className="text-xs text-slate-400">—</span>
-      },
+      exportValue: (row) => row.policyNumber ?? '',
+      render: (_, row) =>
+        row.policyNumber
+          ? <span className="text-xs font-mono text-slate-600">{row.policyNumber}</span>
+          : <span className="text-xs text-slate-400">—</span>,
     },
     {
       id: 'occurrenceDate',
@@ -380,7 +365,7 @@ export default function ClaimsPage() {
         </div>
       ),
     },
-  ], [navigate, assetById, policyById])
+  ], [navigate])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('claims', ALL_COLUMNS)
 

@@ -58,7 +58,9 @@ const ASSET_LIST_INCLUDE = {
       costCenterId: true,
       percentage: true,
     },
-    orderBy: { percentage: 'desc' as const },
+    // id desempata: la principal (allocations[0] en el frontend) tiene que
+    // ser la misma que cuenta countActiveAssetsByPrimaryAllocation.
+    orderBy: [{ percentage: 'desc' as const }, { id: 'asc' as const }],
   },
   fixedAsset: { select: { id: true, code: true, name: true } },
   _count: { select: { attachments: true, fireExtinguishers: true } },
@@ -71,7 +73,7 @@ const ASSET_DETAIL_INCLUDE = {
       company: { select: { id: true, name: true, cuit: true } },
       costCenter: { select: { id: true, name: true, code: true } },
     },
-    orderBy: { percentage: 'desc' as const },
+    orderBy: [{ percentage: 'desc' as const }, { id: 'asc' as const }],
   },
   fixedAsset: { select: { id: true, code: true, name: true } },
   _count: { select: { attachments: true, fireExtinguishers: true } },

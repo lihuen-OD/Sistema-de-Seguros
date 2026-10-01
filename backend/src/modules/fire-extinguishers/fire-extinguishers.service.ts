@@ -321,7 +321,14 @@ export const fireExtinguishersService = {
     ])
 
     const response = buildPaginatedResponse(
-      rawData.map((fe) => mapFireExt(fe as unknown as Record<string, unknown>)),
+      // Nombre del activo asociado (ya viene en el include del listado):
+      // FireExtinguishersPage lo muestra directo (Fase 3D) en vez de
+      // resolverlo con /assets?limit=200. Solo en el listado — mapFireExt lo
+      // comparten detalle/alta/edición, que no lo necesitan.
+      rawData.map((fe) => ({
+        ...mapFireExt(fe as unknown as Record<string, unknown>),
+        associatedAssetName: fe.asset?.name ?? null,
+      })),
       total,
       { page, limit },
     )

@@ -32,7 +32,25 @@ export const fixedAssetsService = {
       prisma.fixedAsset.count({ where }),
     ])
 
-    return buildPaginatedResponse(data, total, { page, limit })
+    if (!query.includeAssetCounts) return buildPaginatedResponse(data, total, { page, limit })
+
+    // Fase 3D: activos en estado 'activo' por bien de uso, contados en la base
+    // (relación directa Asset.fixedAssetId) en vez de en FixedAssetsPage sobre
+    // /assets?limit=200 — misma regla que antes. Un solo GROUP BY acotado a
+    // los bienes de la página, no un count por fila.
+    const countRows = data.length > 0
+      ? await prisma.asset.groupBy({
+          by: ['fixedAssetId'],
+          where: { status: 'activo', fixedAssetId: { in: data.map((fa) => fa.id) } },
+          _count: { _all: true },
+        })
+      : []
+    const countById = new Map(countRows.map((row) => [row.fixedAssetId, row._count._all]))
+    return buildPaginatedResponse(
+      data.map((fa) => ({ ...fa, activeAssetCount: countById.get(fa.id) ?? 0 })),
+      total,
+      { page, limit },
+    )
   },
 
   async findById(id: string) {

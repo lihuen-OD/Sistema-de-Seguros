@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import type { ListSortParams, ListSummaryParams, PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
+import { assetInternalCode } from '../utils/assetCode'
 import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment, ClaimExpense, ClaimExpenseAttachment, Currency } from '../types'
 
 interface BackendClaimEvent {
@@ -19,6 +20,9 @@ interface BackendClaimExpense {
 }
 interface BackendClaim {
   id: string; claimNumber: string; title: string | null; assetId: string | null; policyId: string | null
+  // Livianos, solo en el listado (Fase 3D) — ver CLAIM_LIST_INCLUDE en el backend.
+  asset?: { id: string; name: string; code: string | null } | null
+  policy?: { id: string; policyNumber: string } | null
   claimType: string; occurrenceDate: string; reportDate: string; description: string | null
   insuranceCompany: string | null
   ownershipType: string | null
@@ -52,6 +56,11 @@ function mapClaim(b: BackendClaim): Claim {
   return {
     id: b.id, claimNumber: b.claimNumber, title: b.title ?? null,
     assetId: b.assetId ?? null, policyId: b.policyId ?? null,
+    ...(b.asset !== undefined && {
+      assetName: b.asset?.name ?? null,
+      assetInternalCode: b.asset ? assetInternalCode(b.asset) : null,
+    }),
+    ...(b.policy !== undefined && { policyNumber: b.policy?.policyNumber ?? null }),
     claimType: b.claimType,
     occurrenceDate: b.occurrenceDate?.slice(0, 10) ?? '',
     reportDate: b.reportDate?.slice(0, 10) ?? '',

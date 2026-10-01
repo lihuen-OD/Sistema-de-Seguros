@@ -167,6 +167,19 @@ describe('Fire Extinguishers API', () => {
       expect(db.fireExtinguisher.findMany.mock.calls[0][0].where.assetId).toBeUndefined()
     })
 
+    it('returns associatedAssetName per row from the list include (Fase 3D — no more 200-row asset lookup)', async () => {
+      db.fireExtinguisher.findMany.mockResolvedValue([
+        { id: 'fe1', code: 'MAT-1', assetId: 'a1', asset: { id: 'a1', name: 'Camión 12' } },
+        { id: 'fe2', code: 'MAT-2', assetId: null, asset: null },
+      ])
+      db.fireExtinguisher.count.mockResolvedValue(2)
+
+      const res = await request(app).get('/api/v1/fire-extinguishers').set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data.map((fe: { associatedAssetName: string | null }) => fe.associatedAssetName)).toEqual(['Camión 12', null])
+    })
+
     describe('summary (Fase 3B)', () => {
       // El primer count es el de la tabla; los del summary se identifican por
       // el filtro de estado que agregan dentro de su AND.

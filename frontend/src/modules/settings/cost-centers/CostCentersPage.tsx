@@ -15,7 +15,6 @@ import {
   FormTextarea,
 } from '../../../shared/components/forms/FormSection'
 import { notifyValidationErrors } from '../../../shared/utils/formValidation'
-import { assetQueries } from '../../../shared/api/assets.api'
 import { costCentersApi, costCenterQueries, costCenterKeys, type CostCenterInput } from '../../../shared/api/cost-centers.api'
 import type { CostCenter, TableColumn } from '../../../shared/types'
 
@@ -137,7 +136,8 @@ export default function CostCentersPage() {
 
   const { data: allCostCenters = [], isLoading, isError } = useQuery(costCenterQueries.list())
 
-  const { data: allAssets = [] } = useQuery(assetQueries.list())
+  // Conteo real del backend (imputación principal) — no /assets?limit=200.
+  const { data: assetCounts } = useQuery(costCenterQueries.assetCounts())
 
   const filtered = useMemo(() => {
     return allCostCenters.filter((cc) => {
@@ -198,9 +198,10 @@ export default function CostCentersPage() {
       key: 'id',
       label: 'Activos',
       sortable: true,
-      sortValue: (row) => allAssets.filter((a) => a.costCenterId === row.id && a.status === 'activo').length,
+      sortValue: (row) => assetCounts?.[row.id] ?? 0,
       render: (v) => {
-        const count = allAssets.filter((a) => a.costCenterId === v && a.status === 'activo').length
+        if (!assetCounts) return <span className="text-xs text-slate-400">—</span>
+        const count = assetCounts[v as string] ?? 0
         return <span className="text-xs text-slate-500">{count} activo{count !== 1 ? 's' : ''}</span>
       },
     },

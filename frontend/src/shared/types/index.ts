@@ -598,6 +598,9 @@ export interface Producer {
   address: string
   status: 'activo' | 'inactivo'
   createdAt: string
+  /** Pólizas del productor (todas, como cuenta el backend en _count.policies).
+   *  Solo presente en el listado GET /producers. */
+  policyCount?: number
 }
 
 export interface ProducerTask {
@@ -624,6 +627,8 @@ export interface FireExtinguisher {
   expirationDate: string | null
   hydraulicTestExpirationDate: string | null
   associatedAssetId: string | null
+  /** Resuelto por el backend, solo en el listado GET /fire-extinguishers (Fase 3D). */
+  associatedAssetName?: string | null
   associatedLocationType: AssociatedLocationType
   location: string | null
   establishment: string | null
@@ -674,6 +679,10 @@ export interface Claim {
   id: string
   assetId: string | null
   policyId: string | null
+  /** Resueltos por el backend, solo en el listado GET /claims (Fase 3D). */
+  assetName?: string | null
+  assetInternalCode?: string | null
+  policyNumber?: string | null
   claimNumber: string
   title?: string | null
   claimType: string

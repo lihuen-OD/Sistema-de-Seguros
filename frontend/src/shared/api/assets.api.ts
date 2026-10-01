@@ -3,6 +3,7 @@ import { apiClient } from './client'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Asset, AssetAttachment, AssetPledge, AssetStatus, AssetStatusHistory, Building, Currency } from '../types'
 import type { ListSortParams, ListSummaryParams, PaginatedResult } from './pagination'
+import { assetInternalCode } from '../utils/assetCode'
 
 interface BackendCompany { id: string; name: string; cuit: string }
 interface BackendCostCenter { id: string; name: string; code: string | null }
@@ -67,7 +68,7 @@ function mapAsset(b: BackendAsset): Asset {
   const meta = (b.metadata ?? {}) as Record<string, unknown>
   return {
     id: b.id,
-    internalCode: b.code ?? `ACT-${b.id.slice(0, 8).toUpperCase()}`,
+    internalCode: assetInternalCode(b),
     fixedAssetId: b.fixedAssetId,
     fixedAsset: b.fixedAsset,
     name: b.name,

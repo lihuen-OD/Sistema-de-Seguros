@@ -19,6 +19,13 @@ export const IncludeSummarySchema = z.object({
   includeSummary: booleanFromString.optional(),
 })
 
+// Opt-in de conteo de activos por fila en catálogos (empresas, centros de
+// costo, bienes de uso — Fase 3D): reemplaza contar en el frontend sobre
+// /assets?limit=200. Sin el parámetro la respuesta y el costo no cambian.
+export const IncludeAssetCountsSchema = z.object({
+  includeAssetCounts: booleanFromString.optional(),
+})
+
 // Filtro de activos reutilizable
 export const ActiveFilterSchema = z.object({
   isActive: booleanFromString.optional(),
