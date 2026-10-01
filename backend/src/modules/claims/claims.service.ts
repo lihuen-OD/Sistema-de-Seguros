@@ -1,6 +1,8 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { buildOrderBy, nullsLast, type SortMap } from '../../shared/utils/sorting'
 import { toDateStr } from '../../shared/utils/dates'
 import { normalizeCatalogText } from '../../shared/utils/normalize'
 import { computeDualAmounts } from '../../shared/utils/currency'
@@ -17,7 +19,31 @@ import type {
   AddClaimExpenseAttachmentDTO,
   CreateExpenseDTO,
   UpdateExpenseDTO,
+  ClaimSortKey,
 } from './claims.schemas'
+
+// Id de columna de ClaimsPage → orderBy de Prisma (ver CLAIM_SORT_KEYS).
+const CLAIM_SORT: SortMap<ClaimSortKey, Prisma.ClaimOrderByWithRelationInput> = {
+  claimNumber: (dir) => ({ claimNumber: dir }),
+  title: (dir) => ({ title: nullsLast(dir) }),
+  claimType: (dir) => ({ claimType: dir }),
+  assetId: (dir) => ({ asset: { name: dir } }),
+  policyId: (dir) => ({ policy: { policyNumber: dir } }),
+  occurrenceDate: (dir) => ({ occurrenceDate: dir }),
+  reportDate: (dir) => ({ reportDate: dir }),
+  insuranceCompany: (dir) => ({ insuranceCompany: nullsLast(dir) }),
+  claimedAmountArs: (dir) => ({ claimedAmountArs: dir }),
+  settledAmountArs: (dir) => ({ settledAmountArs: nullsLast(dir) }),
+  realAmountArs: (dir) => ({ realAmountArs: nullsLast(dir) }),
+  deductibleArs: (dir) => ({ deductibleArs: nullsLast(dir) }),
+  // Texto libre de catálogo: orden alfabético (el orden del catálogo no existe
+  // como dato en SQL).
+  status: (dir) => ({ status: dir }),
+  currency: (dir) => ({ currency: dir }),
+  description: (dir) => ({ description: nullsLast(dir) }),
+  observations: (dir) => ({ observations: nullsLast(dir) }),
+  createdAt: (dir) => ({ createdAt: dir }),
+}
 
 // ── Includes ──────────────────────────────────────────────────────────────────
 
@@ -139,7 +165,7 @@ export const claimsService = {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: buildOrderBy(CLAIM_SORT, query, [{ createdAt: 'desc' }]),
         include: CLAIM_LIST_INCLUDE,
       }),
       prisma.claim.count({ where }),

@@ -19,6 +19,7 @@ import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { claimsApi, claimKeys, claimQueries } from '../../shared/api/claims.api'
+import { toSortParams } from '../../shared/api/pagination'
 import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
@@ -31,7 +32,7 @@ import {
   getClaimStatusIcon, getClaimStatusChartColor,
 } from '../../shared/utils/claimStatus'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
-import type { Claim, TableColumn } from '../../shared/types'
+import type { Claim, SortState, TableColumn } from '../../shared/types'
 
 const DEFAULT_PAGE_SIZE = 20
 
@@ -45,6 +46,7 @@ export default function ClaimsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [sort, setSort] = useState<SortState | null>(null)
   const queryClient = useQueryClient()
 
   const { data: result, isLoading, isFetching, isError } = useQuery(claimQueries.listPaginated({
@@ -53,6 +55,7 @@ export default function ClaimsPage() {
     search: search.trim() || undefined,
     status: filterStatus ? normalizeClaimStatusText(filterStatus) : undefined,
     claimType: filterType || undefined,
+    ...toSortParams(sort),
   }))
   const all = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
@@ -87,17 +90,6 @@ export default function ClaimsPage() {
     }
     return options
   }, [claimStatusCatalog, all])
-
-  // Orden por severidad al ordenar la columna "Estado" — el orden real del
-  // catálogo (sortOrder), comparado de forma normalizada. Un estado que no
-  // está en el catálogo cae al final (99), igual que antes.
-  const statusSortOrder = useMemo(() => {
-    const order = new Map<string, number>()
-    ;[...claimStatusCatalog]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .forEach((item, idx) => order.set(normalizeClaimStatusText(item.label), idx))
-    return order
-  }, [claimStatusCatalog])
 
   async function handleDelete(id: string) {
     await claimsApi.softDelete(id)
@@ -159,10 +151,6 @@ export default function ClaimsPage() {
       label: 'Activo',
       defaultVisible: true,
       sortable: true,
-      sortValue: (row) => {
-        const a = row.assetId ? assetById.get(row.assetId) : null
-        return a ? a.name : null
-      },
       exportValue: (row) => {
         const a = row.assetId ? assetById.get(row.assetId) : null
         return a ? `${a.name} (${a.internalCode})` : ''
@@ -188,10 +176,6 @@ export default function ClaimsPage() {
       label: 'Póliza',
       defaultVisible: true,
       sortable: true,
-      sortValue: (row) => {
-        const p = row.policyId ? policyById.get(row.policyId) : null
-        return p?.policyNumber ?? null
-      },
       exportValue: (row) => {
         const p = row.policyId ? policyById.get(row.policyId) : null
         return p?.policyNumber ?? ''
@@ -259,7 +243,6 @@ export default function ClaimsPage() {
       label: 'Estado',
       defaultVisible: true,
       sortable: true,
-      sortValue: (row) => statusSortOrder.get(normalizeClaimStatusText(row.status)) ?? 99,
       render: (v) => (
         <StatusPill status={resolveClaimStatusKey(String(v))} label={String(v)} icon={getClaimStatusIcon(String(v))} size="sm" />
       ),
@@ -383,7 +366,7 @@ export default function ClaimsPage() {
         </div>
       ),
     },
-  ], [navigate, assetById, policyById, statusSortOrder])
+  ], [navigate, assetById, policyById])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('claims', ALL_COLUMNS)
 
@@ -493,7 +476,7 @@ export default function ClaimsPage() {
               filenamePrefix="siniestros"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">Exporta la página actual</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -511,6 +494,8 @@ export default function ClaimsPage() {
           onRowClick={(row) => navigate(`/claims/${row.id}`)}
           emptyTitle="Sin siniestros"
           emptyDescription="No se encontraron siniestros con los filtros aplicados."
+          sort={sort}
+          onSortChange={(next) => { setPage(1); setSort(next) }}
           minWidth={900}
         />
         {pagination && (

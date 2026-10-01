@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
-import type { PaginatedResult } from './pagination'
+import type { ListSortParams, PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Policy, PolicyStatus, PolicyCoverage, PolicyAsset, PolicyAttachment, ProducerTask, TaskPriority, Currency } from '../types'
 
@@ -383,7 +383,7 @@ export const policiesApi = {
 // mantiene así a propósito para no fragmentar cache con lo ya existente.
 
 type PolicyFilters = { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }
-export type PolicyListFilters = PolicyFilters & { page?: number; search?: string; status?: PolicyStatus }
+export type PolicyListFilters = PolicyFilters & ListSortParams & { page?: number; search?: string; status?: PolicyStatus }
 
 export const policyKeys = {
   all: ['policies'] as const,

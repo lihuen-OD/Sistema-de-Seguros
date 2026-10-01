@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PaginationSchema } from '../../shared/schemas/common'
+import { sortQueryFields } from '../../shared/utils/sorting'
 
 const ISODate = z
   .string()
@@ -69,7 +70,18 @@ export const CreateClaimSchema = withOwnershipRefinement(ClaimBaseSchema)
 
 export const UpdateClaimSchema = withOwnershipRefinement(ClaimBaseSchema.partial())
 
+// Ids de columna de ClaimsPage ordenables en el servidor — mapeo a Prisma en
+// claims.service.ts (CLAIM_SORT). Todas las columnas de datos son campos
+// reales (o relaciones a uno: activo, póliza).
+export const CLAIM_SORT_KEYS = [
+  'claimNumber', 'title', 'claimType', 'assetId', 'policyId', 'occurrenceDate', 'reportDate',
+  'insuranceCompany', 'claimedAmountArs', 'settledAmountArs', 'realAmountArs', 'deductibleArs',
+  'status', 'currency', 'description', 'observations', 'createdAt',
+] as const
+export type ClaimSortKey = (typeof CLAIM_SORT_KEYS)[number]
+
 export const ListClaimsQuerySchema = PaginationSchema.extend({
+  ...sortQueryFields(CLAIM_SORT_KEYS),
   search: z.string().optional(),
   status: z.string().max(100).optional(),
   claimType: z.string().max(100).optional(),

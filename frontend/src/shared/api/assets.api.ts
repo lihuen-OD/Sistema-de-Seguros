@@ -2,7 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Asset, AssetAttachment, AssetPledge, AssetStatus, AssetStatusHistory, Building, Currency } from '../types'
-import type { PaginatedResult } from './pagination'
+import type { ListSortParams, PaginatedResult } from './pagination'
 
 interface BackendCompany { id: string; name: string; cuit: string }
 interface BackendCostCenter { id: string; name: string; code: string | null }
@@ -312,7 +312,7 @@ export const assetsApi = {
 // migran los call sites — no se inventa un esquema nuevo de sub-namespacing.
 
 type AssetFilters = { isActive?: boolean; assetType?: string; limit?: number }
-export type AssetListFilters = AssetFilters & { page?: number; search?: string }
+export type AssetListFilters = AssetFilters & ListSortParams & { page?: number; search?: string }
 
 export const assetKeys = {
   all: ['assets'] as const,

@@ -213,6 +213,35 @@ describe('Claims API', () => {
       expect(db.claim.count.mock.calls[0][0].where.status).toEqual(where.status)
     })
 
+    describe('server-side sort (Fase 3A)', () => {
+      beforeEach(() => {
+        db.claim.findMany.mockResolvedValue([])
+        db.claim.count.mockResolvedValue(0)
+      })
+      const lastOrderBy = () => db.claim.findMany.mock.calls.at(-1)[0].orderBy
+
+      it('keeps the legacy createdAt desc order when no sortBy is sent (plus id tiebreak)', async () => {
+        await request(app).get('/api/v1/claims').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ createdAt: 'desc' }, { id: 'asc' }])
+      })
+
+      it('sorts by amounts and by the related asset / policy', async () => {
+        await request(app).get('/api/v1/claims?sortBy=settledAmountArs&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ settledAmountArs: { sort: 'desc', nulls: 'last' } }, { id: 'asc' }])
+
+        await request(app).get('/api/v1/claims?sortBy=assetId').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ asset: { name: 'asc' } })
+
+        await request(app).get('/api/v1/claims?sortBy=policyId').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ policy: { policyNumber: 'asc' } })
+      })
+
+      it('rejects a sortBy outside the whitelist', async () => {
+        const res = await request(app).get('/api/v1/claims?sortBy=ownershipType').set('Authorization', `Bearer ${adminToken()}`)
+        expect(res.status).toBe(422)
+      })
+    })
+
     it('returns no rows (not every row) when the status matches no stored value', async () => {
       db.claim.groupBy.mockResolvedValue([{ status: 'Denunciado' }])
       db.claim.findMany.mockResolvedValue([])

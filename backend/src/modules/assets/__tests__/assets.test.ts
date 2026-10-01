@@ -151,6 +151,49 @@ describe('Assets API', () => {
       expect(res.body.pagination.total).toBe(1)
     })
 
+    describe('server-side sort (Fase 3A)', () => {
+      beforeEach(() => {
+        db.asset.findMany.mockResolvedValue([])
+        db.asset.count.mockResolvedValue(0)
+      })
+      const lastOrderBy = () => db.asset.findMany.mock.calls.at(-1)[0].orderBy
+
+      it('keeps the legacy name asc order when no sortBy is sent (plus id tiebreak)', async () => {
+        await request(app).get('/api/v1/assets').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ name: 'asc' }, { id: 'asc' }])
+      })
+
+      it('sorts the whole filtered set in the query, before skip/take', async () => {
+        await request(app)
+          .get('/api/v1/assets?sortBy=year&sortDir=desc&page=3&limit=20')
+          .set('Authorization', `Bearer ${adminToken()}`)
+        const call = db.asset.findMany.mock.calls.at(-1)[0]
+        expect(call.orderBy).toEqual([{ year: { sort: 'desc', nulls: 'last' } }, { id: 'asc' }])
+        expect(call.skip).toBe(40)
+      })
+
+      it('maps frontend column ids to real columns and relations', async () => {
+        await request(app).get('/api/v1/assets?sortBy=plate').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ licensePlateNormalized: { sort: 'asc', nulls: 'last' } })
+
+        await request(app).get('/api/v1/assets?sortBy=fixedAssetCode&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ fixedAsset: { name: 'desc' } })
+
+        await request(app).get('/api/v1/assets?sortBy=attachmentsCount').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ attachments: { _count: 'asc' } })
+      })
+
+      it.each(['patrimonialValueUsd', 'companyId', 'chassisNumber', 'id; DROP TABLE'])(
+        'rejects sortBy=%s (computed column or not whitelisted)',
+        async (sortBy) => {
+          const res = await request(app)
+            .get(`/api/v1/assets?sortBy=${encodeURIComponent(sortBy)}`)
+            .set('Authorization', `Bearer ${adminToken()}`)
+          expect(res.status).toBe(422)
+        },
+      )
+    })
+
     it('returns 401 without token', async () => {
       const res = await request(app).get('/api/v1/assets')
       expect(res.status).toBe(401)

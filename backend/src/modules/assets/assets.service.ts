@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { buildOrderBy, nullsLast, type SortMap } from '../../shared/utils/sorting'
 import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { toDateStr } from '../../shared/utils/dates'
 import { deleteFromCloudinary } from '../../config/cloudinary'
@@ -18,7 +19,35 @@ import type {
   UpdateAttachmentDTO,
   ListAssetsQueryDTO,
   SearchAssetsQueryDTO,
+  AssetSortKey,
 } from './assets.schemas'
+
+// Id de columna de AssetsPage → orderBy de Prisma (ver ASSET_SORT_KEYS).
+const ASSET_SORT: SortMap<AssetSortKey, Prisma.AssetOrderByWithRelationInput> = {
+  internalCode: (dir) => ({ code: nullsLast(dir) }),
+  name: (dir) => ({ name: dir }),
+  assetType: (dir) => ({ assetType: dir }),
+  status: (dir) => ({ status: dir }),
+  valuationDate: (dir) => ({ purchaseDate: nullsLast(dir) }),
+  brand: (dir) => ({ brand: nullsLast(dir) }),
+  model: (dir) => ({ model: nullsLast(dir) }),
+  year: (dir) => ({ year: nullsLast(dir) }),
+  serialNumber: (dir) => ({ serialNumber: nullsLast(dir) }),
+  // La patente se muestra desde metadata.plate; la columna normalizada (sin
+  // espacios/guiones, mayúsculas) ordena igual y es un campo real.
+  plate: (dir) => ({ licensePlateNormalized: nullsLast(dir) }),
+  // La columna "Bien de Uso" muestra (y ordenaba localmente por) el nombre.
+  fixedAssetCode: (dir) => ({ fixedAsset: { name: dir } }),
+  // Se anuncia en USD: los alta/edición actuales siempre guardan el cierre en
+  // dólares junto al valor crudo; activos legacy sin él quedan al final.
+  patrimonialValueNew: (dir) => ({ patrimonialValueNewUsd: nullsLast(dir) }),
+  productiveUnit: (dir) => ({ productiveUnit: nullsLast(dir) }),
+  area: (dir) => ({ area: nullsLast(dir) }),
+  dischargeDate: (dir) => ({ dischargeDate: nullsLast(dir) }),
+  saleDate: (dir) => ({ saleDate: nullsLast(dir) }),
+  attachmentsCount: (dir) => ({ attachments: { _count: dir } }),
+  createdAt: (dir) => ({ createdAt: dir }),
+}
 
 // Lista: solo IDs de empresa/centro de costo — sin datos anidados pesados
 const ASSET_LIST_INCLUDE = {
@@ -261,7 +290,7 @@ export const assetsService = {
         where,
         skip,
         take: limit,
-        orderBy: { name: 'asc' },
+        orderBy: buildOrderBy(ASSET_SORT, query, [{ name: 'asc' }]),
         include: ASSET_LIST_INCLUDE,
       }),
       prisma.asset.count({ where }),

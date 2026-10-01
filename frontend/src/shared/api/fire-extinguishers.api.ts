@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import type { FireExtinguisher, FireExtinguisherHistory, FireExtinguisherHistoryChange, AssociatedLocationType, FireExtStatus } from '../types'
-import type { PaginatedResult } from './pagination'
+import type { ListSortParams, PaginatedResult } from './pagination'
 
 interface BackendHistoryChange {
   field: string; label: string
@@ -195,7 +195,7 @@ export const fireExtinguisherQueries = {
     }),
 }
 
-export interface FireExtinguisherListFilters {
+export interface FireExtinguisherListFilters extends ListSortParams {
   page?: number
   limit?: number
   search?: string

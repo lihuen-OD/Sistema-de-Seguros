@@ -17,6 +17,7 @@ import { SearchInput } from '../../shared/components/filters/SearchInput'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { formatCurrencyFull, formatCurrencyCompact, formatDate } from '../../shared/utils/format'
 import { assetsApi, assetKeys, assetQueries } from '../../shared/api/assets.api'
+import { toSortParams } from '../../shared/api/pagination'
 import { companyQueries } from '../../shared/api/companies.api'
 import { costCenterQueries } from '../../shared/api/cost-centers.api'
 import { claimKeys } from '../../shared/api/claims.api'
@@ -26,7 +27,7 @@ import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { ASSET_TYPES } from '../../shared/constants'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
-import type { Asset, TableColumn } from '../../shared/types'
+import type { Asset, SortState, TableColumn } from '../../shared/types'
 
 const TYPE_OPTIONS = ASSET_TYPES.map((t) => ({ value: t, label: t }))
 const DEFAULT_PAGE_SIZE = 20
@@ -38,6 +39,7 @@ export default function AssetsPage() {
   const [filterType, setFilterType] = useState('')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [sort, setSort] = useState<SortState | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deBajaId, setDeBajaId] = useState<string | null>(null)
 
@@ -46,6 +48,7 @@ export default function AssetsPage() {
     limit,
     search: search.trim() || undefined,
     assetType: filterType || undefined,
+    ...toSortParams(sort),
   }))
   const allAssets = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
@@ -136,8 +139,6 @@ export default function AssetsPage() {
       key: 'companyId',
       label: 'Empresa',
       defaultVisible: true,
-      sortable: true,
-      sortValue: (row) => companyNameById.get(row.companyId) ?? null,
       exportValue: (row) => companyNameById.get(row.companyId) ?? '',
       render: (v) => {
         const name = v ? companyNameById.get(v as string) : null
@@ -149,8 +150,6 @@ export default function AssetsPage() {
       key: 'costCenterId',
       label: 'C. Costo',
       defaultVisible: true,
-      sortable: true,
-      sortValue: (row) => costCenterById.get(row.costCenterId)?.code ?? null,
       exportValue: (row) => costCenterById.get(row.costCenterId)?.code ?? '',
       render: (v) => {
         const cc = v ? costCenterById.get(v as string) : null
@@ -162,7 +161,6 @@ export default function AssetsPage() {
       key: 'patrimonialValueUsd',
       label: 'Valor (USD)',
       defaultVisible: true,
-      sortable: true,
       exportValue: (row) => row.patrimonialValueUsd != null ? String(row.patrimonialValueUsd) : '',
       render: (v) =>
         v != null
@@ -220,7 +218,6 @@ export default function AssetsPage() {
       key: 'chassisNumber',
       label: 'N° Chasis',
       defaultVisible: false,
-      sortable: true,
       render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
@@ -236,7 +233,6 @@ export default function AssetsPage() {
       key: 'engineNumber',
       label: 'N° Motor',
       defaultVisible: false,
-      sortable: true,
       render: (v) => <span className="font-mono text-xs text-slate-600">{(v as string) || '—'}</span>,
     },
     {
@@ -245,7 +241,6 @@ export default function AssetsPage() {
       label: 'Bien de Uso',
       defaultVisible: false,
       sortable: true,
-      sortValue: (row) => row.fixedAsset?.name ?? null,
       render: (_, row) =>
         row.fixedAsset ? (
           <div className="min-w-0">
@@ -266,7 +261,6 @@ export default function AssetsPage() {
       // patrimonialValueNew es el valor crudo en la moneda del activo (puede
       // ser ARS) — para esta columna, que se anuncia en USD, prioriza el
       // cierre en dólares (ver mismo criterio en assets.api.ts#mapAsset).
-      sortValue: (row) => row.patrimonialValueNewUsd ?? row.patrimonialValueNew ?? null,
       exportValue: (row) => {
         const v = row.patrimonialValueNewUsd ?? row.patrimonialValueNew
         return v != null ? String(v) : ''
@@ -285,10 +279,6 @@ export default function AssetsPage() {
       key: 'costCenterId',
       label: 'Centro de costo',
       defaultVisible: false,
-      sortable: true,
-      // Distinta de la columna "C. Costo" (que ordena por código): acá el
-      // diferencial de esta columna es el nombre, así que ordena por nombre.
-      sortValue: (row) => costCenterById.get(row.costCenterId)?.name ?? null,
       exportValue: (row) => {
         const cc = costCenterById.get(row.costCenterId)
         return cc ? `${cc.code} — ${cc.name}` : ''
@@ -451,7 +441,7 @@ export default function AssetsPage() {
               filenamePrefix="activos"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">Exporta la página actual</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -470,6 +460,8 @@ export default function AssetsPage() {
           emptyTitle="Sin activos"
           emptyDescription="No se encontraron activos con los filtros aplicados."
           minWidth={900}
+          sort={sort}
+          onSortChange={(next) => { setPage(1); setSort(next) }}
         />
         {pagination && (
           <PaginationControls

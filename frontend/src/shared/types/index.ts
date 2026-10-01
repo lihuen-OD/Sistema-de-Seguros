@@ -809,6 +809,14 @@ export interface ExportPreset {
   columnIds: string[]
 }
 
+// Orden de una tabla: id de columna (TableColumn.id ?? key) + dirección. En
+// listados paginados viaja al backend como sortBy/sortDir (ver toSortParams).
+export type SortDirection = 'asc' | 'desc'
+export interface SortState {
+  key: string
+  direction: SortDirection
+}
+
 export interface PaginationState {
   page: number
   pageSize: number

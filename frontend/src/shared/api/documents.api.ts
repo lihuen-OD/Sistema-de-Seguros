@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
-import type { PaginatedResult } from './pagination'
+import type { ListSortParams, PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type {
   AccountingDocument,
@@ -428,7 +428,7 @@ export const documentsApi = {
 // staleTime corto + refetchOnWindowFocus true. El resto es categoría B.
 
 type FinancialFilters = { from?: string; to?: string; includeInstallments?: boolean }
-export type DocumentListFilters = {
+export type DocumentListFilters = ListSortParams & {
   page?: number; limit?: number; search?: string; paymentStatus?: string
   documentType?: string; currency?: string; year?: number
 }

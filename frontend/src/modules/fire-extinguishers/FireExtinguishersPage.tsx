@@ -20,6 +20,7 @@ import { ErrorState } from '../../shared/components/empty-states/ErrorState'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
 import { formatDate, daysUntil } from '../../shared/utils/format'
 import { fireExtinguishersApi, fireExtinguisherKeys, fireExtinguisherQueries } from '../../shared/api/fire-extinguishers.api'
+import { toSortParams } from '../../shared/api/pagination'
 import type { RechargeInput } from '../../shared/api/fire-extinguishers.api'
 import { assetQueries } from '../../shared/api/assets.api'
 import { catalogQueries } from '../../shared/api/catalogs.api'
@@ -27,16 +28,13 @@ import { FIRE_EXT_STATUS_LABELS } from '../../shared/constants'
 import { RechargeModal } from './RechargeModal'
 import { ConfirmDialog } from '../../shared/components/dialogs/ConfirmDialog'
 import { useColumnConfig } from '../../shared/hooks/useColumnConfig'
-import type { FireExtinguisher, TableColumn } from '../../shared/types'
+import type { FireExtinguisher, SortState, TableColumn } from '../../shared/types'
 import { useCurrentUser } from '../../app/auth/AuthContext'
 import { hasModule } from '../../app/auth/roleScope'
 
 const STATUS_OPTIONS = Object.entries(FIRE_EXT_STATUS_LABELS).map(([value, label]) => ({ value, label }))
 type ActivityFilter = 'active' | 'inactive' | 'all'
 
-// Orden por severidad al ordenar la columna "Estado" — alfabético dejaría
-// "próximo_vencer" antes que "vencido", que no es el orden que espera nadie.
-const STATUS_SORT_ORDER: Record<string, number> = { vigente: 0, proximo_vencer: 1, vencido: 2, sin_fecha: 3 }
 const DEFAULT_PAGE_SIZE = 20
 
 // `fe.status` ya es el peor de tres estados (carga, vida útil por
@@ -77,6 +75,7 @@ export default function FireExtinguishersPage() {
   const [isChangingActivity, setIsChangingActivity] = useState(false)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [sort, setSort] = useState<SortState | null>(null)
   const queryClient = useQueryClient()
 
   const activityParam = activityFilter === 'all' ? null : activityFilter === 'active'
@@ -88,6 +87,7 @@ export default function FireExtinguishersPage() {
     locationType: filterLocation || undefined,
     establishment: filterEstablishment || undefined,
     ...(activityParam !== null && { isActive: activityParam }),
+    ...toSortParams(sort),
   }))
   const all = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
@@ -224,10 +224,6 @@ export default function FireExtinguishersPage() {
       defaultVisible: true,
       hideable: true,
       sortable: true,
-      sortValue: (row) => {
-        const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
-        return asset ? asset.name : row.associatedLocationType
-      },
       exportValue: (row) => {
         const asset = row.associatedAssetId ? assetById.get(row.associatedAssetId) : null
         const locationLabel = row.associatedLocationType
@@ -310,8 +306,6 @@ export default function FireExtinguishersPage() {
       label: 'Estado',
       defaultVisible: true,
       hideable: true,
-      sortable: true,
-      sortValue: (row) => STATUS_SORT_ORDER[row.status] ?? 99,
       render: (v, row) => <StatusPill status={row.isActive ? (v as string) : 'de_baja'} size="sm" />,
     },
     {
@@ -552,7 +546,7 @@ export default function FireExtinguishersPage() {
               filenamePrefix="matafuegos"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">Exporta la página actual</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -598,6 +592,8 @@ export default function FireExtinguishersPage() {
           onRowClick={(row) => navigate(`/fire-extinguishers/${row.id}`)}
           emptyTitle="Sin matafuegos"
           emptyDescription="No se encontraron matafuegos con los filtros aplicados."
+          sort={sort}
+          onSortChange={(next) => { setPage(1); setSort(next) }}
           minWidth={900}
         />
         {pagination && (

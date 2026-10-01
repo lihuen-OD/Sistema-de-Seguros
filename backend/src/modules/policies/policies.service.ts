@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { buildOrderBy, nullsLast, type SortMap } from '../../shared/utils/sorting'
 import { computePolicyStatus, buildPolicyStatusFilter, toDateStr, isCoverageActiveOn, todayDate } from '../../shared/utils/dates'
 import { computeDualAmounts } from '../../shared/utils/currency'
 import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
@@ -18,7 +19,21 @@ import type {
   ListPoliciesQueryDTO,
   AddPolicyAttachmentDTO,
   SearchPoliciesQueryDTO,
+  PolicySortKey,
 } from './policies.schemas'
+
+// Id de columna de PoliciesPage → orderBy de Prisma (ver POLICY_SORT_KEYS).
+const POLICY_SORT: SortMap<PolicySortKey, Prisma.PolicyOrderByWithRelationInput> = {
+  policyNumber: (dir) => ({ policyNumber: dir }),
+  // La columna "Aseguradora" del frontend es insuredName (ver mapPolicy).
+  insuranceCompany: (dir) => ({ insuredName: dir }),
+  producerId: (dir) => ({ producer: { name: dir } }),
+  startDate: (dir) => ({ startDate: dir }),
+  endDate: (dir) => ({ endDate: dir }),
+  description: (dir) => ({ description: nullsLast(dir) }),
+  coverageCount: (dir) => ({ coverages: { _count: dir } }),
+  createdAt: (dir) => ({ createdAt: dir }),
+}
 
 // Fecha "sin fin" para tratar una línea sin bajaDate como vigente hacia
 // adelante indefinidamente al comparar rangos de vigencia (ver
@@ -511,7 +526,7 @@ export const policiesService = {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: buildOrderBy(POLICY_SORT, query, [{ createdAt: 'desc' }]),
         include: {
           producer: { select: { id: true, name: true } },
           coverages: { select: COVERAGE_LIST_SELECT },

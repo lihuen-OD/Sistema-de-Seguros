@@ -166,6 +166,35 @@ describe('Fire Extinguishers API', () => {
       expect(db.fireExtinguisher.findMany.mock.calls[0][0].where.assetId).toBeUndefined()
     })
 
+    describe('server-side sort (Fase 3A)', () => {
+      beforeEach(() => {
+        db.fireExtinguisher.findMany.mockResolvedValue([])
+        db.fireExtinguisher.count.mockResolvedValue(0)
+      })
+      const lastOrderBy = () => db.fireExtinguisher.findMany.mock.calls.at(-1)[0].orderBy
+
+      it('keeps the legacy expirationDate asc order when no sortBy is sent (plus id tiebreak)', async () => {
+        await request(app).get('/api/v1/fire-extinguishers').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ expirationDate: 'asc' }, { id: 'asc' }])
+      })
+
+      it('maps chargeDate → lastRechargeDate, daysUntil → expirationDate and assetId → asset.name', async () => {
+        await request(app).get('/api/v1/fire-extinguishers?sortBy=chargeDate&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ lastRechargeDate: { sort: 'desc', nulls: 'last' } })
+
+        await request(app).get('/api/v1/fire-extinguishers?sortBy=daysUntil').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ expirationDate: { sort: 'asc', nulls: 'last' } })
+
+        await request(app).get('/api/v1/fire-extinguishers?sortBy=assetId').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ asset: { name: 'asc' } })
+      })
+
+      it('rejects sortBy=status (derived from 3 dates + lifespan)', async () => {
+        const res = await request(app).get('/api/v1/fire-extinguishers?sortBy=status').set('Authorization', `Bearer ${adminToken()}`)
+        expect(res.status).toBe(422)
+      })
+    })
+
     it('combines status=vencido with search instead of letting one OR overwrite the other (regression)', async () => {
       db.fireExtinguisher.findMany.mockResolvedValue([])
       db.fireExtinguisher.count.mockResolvedValue(0)

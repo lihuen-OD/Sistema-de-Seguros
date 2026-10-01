@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { buildOrderBy, nullsLast, type SortMap } from '../../shared/utils/sorting'
 import { toDateStr, todayDate, computeExpirationStatus } from '../../shared/utils/dates'
 import {
   computeFireExtinguisherStatus,
@@ -16,7 +17,29 @@ import type {
   ListFireExtinguishersQueryDTO,
   RechargeDTO,
   AddHistoryDTO,
+  FireExtSortKey,
 } from './fire-extinguishers.schemas'
+
+// Id de columna de FireExtinguishersPage → orderBy de Prisma (ver FIRE_EXT_SORT_KEYS).
+const FIRE_EXT_SORT: SortMap<FireExtSortKey, Prisma.FireExtinguisherOrderByWithRelationInput> = {
+  code: (dir) => ({ code: dir }),
+  cylinderNumber: (dir) => ({ cylinderNumber: nullsLast(dir) }),
+  type: (dir) => ({ type: dir }),
+  capacity: (dir) => ({ capacity: dir }),
+  brand: (dir) => ({ brand: nullsLast(dir) }),
+  iramCertificateNumber: (dir) => ({ iramCertificateNumber: nullsLast(dir) }),
+  manufacturingYear: (dir) => ({ manufacturingYear: nullsLast(dir) }),
+  establishment: (dir) => ({ establishment: nullsLast(dir) }),
+  assetId: (dir) => ({ asset: { name: dir } }),
+  location: (dir) => ({ location: nullsLast(dir) }),
+  chargeDate: (dir) => ({ lastRechargeDate: nullsLast(dir) }),
+  expirationDate: (dir) => ({ expirationDate: nullsLast(dir) }),
+  hydraulicTestExpirationDate: (dir) => ({ hydraulicTestExpirationDate: nullsLast(dir) }),
+  // "Días" ya ordenaba por expirationDate (su key) — mismo criterio.
+  daysUntil: (dir) => ({ expirationDate: nullsLast(dir) }),
+  observations: (dir) => ({ observations: nullsLast(dir) }),
+  createdAt: (dir) => ({ createdAt: dir }),
+}
 
 // ── History / audit trail ────────────────────────────────────────────────────
 
@@ -283,7 +306,7 @@ export const fireExtinguishersService = {
         where,
         skip,
         take: limit,
-        orderBy: { expirationDate: 'asc' },
+        orderBy: buildOrderBy(FIRE_EXT_SORT, query, [{ expirationDate: 'asc' }]),
         include: { asset: { select: { id: true, name: true } } },
       }),
       prisma.fireExtinguisher.count({ where }),

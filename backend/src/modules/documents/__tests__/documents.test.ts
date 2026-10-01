@@ -168,6 +168,32 @@ describe('Documents API', () => {
       expect(res.body.pagination.total).toBe(1)
     })
 
+    describe('server-side sort (Fase 3A)', () => {
+      beforeEach(() => {
+        db.accountingDocument.findMany.mockResolvedValue([])
+        db.accountingDocument.count.mockResolvedValue(0)
+      })
+      const lastOrderBy = () => db.accountingDocument.findMany.mock.calls.at(-1)[0].orderBy
+
+      it('keeps the legacy createdAt desc order when no sortBy is sent (plus id tiebreak)', async () => {
+        await request(app).get('/api/v1/documents').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ createdAt: 'desc' }, { id: 'asc' }])
+      })
+
+      it('sorts by a real column in the requested direction', async () => {
+        await request(app).get('/api/v1/documents?sortBy=issueDate&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ issueDate: 'desc' }, { id: 'asc' }])
+
+        await request(app).get('/api/v1/documents?sortBy=insuranceCompany').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ insuranceCompany: { sort: 'asc', nulls: 'last' } })
+      })
+
+      it.each(['totalAmount', 'paymentStatus'])('rejects sortBy=%s (computed / no severity order in SQL)', async (sortBy) => {
+        const res = await request(app).get(`/api/v1/documents?sortBy=${sortBy}`).set('Authorization', `Bearer ${adminToken()}`)
+        expect(res.status).toBe(422)
+      })
+    })
+
     it('returns 401 without token', async () => {
       const res = await request(app).get('/api/v1/documents')
       expect(res.status).toBe(401)

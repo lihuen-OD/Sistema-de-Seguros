@@ -120,6 +120,45 @@ describe('Policies API', () => {
       },
     )
 
+    describe('server-side sort (Fase 3A)', () => {
+      beforeEach(() => {
+        db.policy.findMany.mockResolvedValue([])
+        db.policy.count.mockResolvedValue(0)
+      })
+      const lastOrderBy = () => db.policy.findMany.mock.calls.at(-1)[0].orderBy
+
+      it('keeps the legacy createdAt desc order when no sortBy is sent (plus id tiebreak)', async () => {
+        await request(app).get('/api/v1/policies').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ createdAt: 'desc' }, { id: 'asc' }])
+      })
+
+      it('maps the frontend "Aseguradora" and "Productor" columns to insuredName and producer.name', async () => {
+        await request(app).get('/api/v1/policies?sortBy=insuranceCompany').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()).toEqual([{ insuredName: 'asc' }, { id: 'asc' }])
+
+        await request(app).get('/api/v1/policies?sortBy=producerId&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ producer: { name: 'desc' } })
+
+        await request(app).get('/api/v1/policies?sortBy=coverageCount&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        expect(lastOrderBy()[0]).toEqual({ coverages: { _count: 'desc' } })
+      })
+
+      it('combines sort with the status filter', async () => {
+        await request(app).get('/api/v1/policies?status=vencida&sortBy=endDate&sortDir=desc').set('Authorization', `Bearer ${adminToken()}`)
+        const call = db.policy.findMany.mock.calls.at(-1)[0]
+        expect(call.orderBy).toEqual([{ endDate: 'desc' }, { id: 'asc' }])
+        expect(call.where.endDate).toEqual({ lt: expect.any(Date) })
+      })
+
+      it.each(['status', 'totalInsuredAmountArs', 'assetNames', 'attachmentsCount'])(
+        'rejects sortBy=%s (derived from dates or aggregated from coverage lines)',
+        async (sortBy) => {
+          const res = await request(app).get(`/api/v1/policies?sortBy=${sortBy}`).set('Authorization', `Bearer ${adminToken()}`)
+          expect(res.status).toBe(422)
+        },
+      )
+    })
+
     it('rejects an unknown status value', async () => {
       const res = await request(app)
         .get('/api/v1/policies?status=cualquiera')

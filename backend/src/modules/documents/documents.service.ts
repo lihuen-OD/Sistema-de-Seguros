@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
+import { buildOrderBy, nullsLast, type SortMap } from '../../shared/utils/sorting'
 import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { toDateStr, isCoverageActiveOn } from '../../shared/utils/dates'
 import { deleteFromCloudinary } from '../../config/cloudinary'
@@ -35,7 +36,24 @@ import type {
   ReplaceAllocationsDTO,
   AddDocumentAttachmentDTO,
   SendDocumentEmailDTO,
+  DocumentSortKey,
 } from './documents.schemas'
+
+// Id de columna de DocumentsPage → orderBy de Prisma (ver DOCUMENT_SORT_KEYS).
+const DOCUMENT_SORT: SortMap<DocumentSortKey, Prisma.AccountingDocumentOrderByWithRelationInput> = {
+  documentNumber: (dir) => ({ documentNumber: dir }),
+  documentType: (dir) => ({ documentType: dir }),
+  issueDate: (dir) => ({ issueDate: dir }),
+  currency: (dir) => ({ currency: dir }),
+  netAmount: (dir) => ({ netAmount: dir }),
+  vatAmount: (dir) => ({ vatAmount: dir }),
+  otherTaxesAmount: (dir) => ({ otherTaxesAmount: dir }),
+  insuranceCompany: (dir) => ({ insuranceCompany: nullsLast(dir) }),
+  paymentMethod: (dir) => ({ paymentMethod: nullsLast(dir) }),
+  exchangeRate: (dir) => ({ exchangeRate: dir }),
+  attachmentsCount: (dir) => ({ attachments: { _count: dir } }),
+  createdAt: (dir) => ({ createdAt: dir }),
+}
 
 // ── Include shapes ────────────────────────────────────────────────────────────
 
@@ -370,7 +388,7 @@ export const documentsService = {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: buildOrderBy(DOCUMENT_SORT, query, [{ createdAt: 'desc' }]),
         include: DOCUMENT_LIST_INCLUDE,
       }),
       prisma.accountingDocument.count({ where }),

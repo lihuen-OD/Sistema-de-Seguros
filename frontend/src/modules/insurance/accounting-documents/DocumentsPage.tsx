@@ -20,26 +20,17 @@ import {
   formatDate,
 } from '../../../shared/utils/format'
 import { documentsApi, documentKeys, documentQueries } from '../../../shared/api/documents.api'
+import { toSortParams } from '../../../shared/api/pagination'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PAYMENT_STATUS_LABELS } from '../../../shared/constants'
 import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
-import type { AccountingDocument, TableColumn } from '../../../shared/types'
+import type { AccountingDocument, SortState, TableColumn } from '../../../shared/types'
 
 const PAYMENT_STATUS_OPTIONS = Object.entries(PAYMENT_STATUS_LABELS).map(([value, label]) => ({
   value,
   label,
 }))
 
-// Orden por severidad al ordenar la columna "Estado Pago" — alfabético
-// dejaría "NOT_APPLICABLE" antes que "PENDING", que no refleja el ciclo de
-// vida real del pago. Mismo orden que PAYMENT_STATUS_LABELS.
-const PAYMENT_STATUS_SORT_ORDER: Record<string, number> = {
-  PENDING: 0,
-  PARTIALLY_PAID: 1,
-  PAID: 2,
-  OVERDUE: 3,
-  NOT_APPLICABLE: 4,
-}
 const DEFAULT_PAGE_SIZE = 20
 
 export default function DocumentsPage() {
@@ -51,6 +42,7 @@ export default function DocumentsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [sort, setSort] = useState<SortState | null>(null)
 
   const { data: result, isLoading, isFetching, isError } = useQuery(documentQueries.listPaginated({
     page,
@@ -58,6 +50,7 @@ export default function DocumentsPage() {
     search: search.trim() || undefined,
     documentType: filterType || undefined,
     paymentStatus: filterStatus || undefined,
+    ...toSortParams(sort),
   }))
   const allDocuments = useMemo(() => result?.data ?? [], [result?.data])
   const pagination = result?.pagination
@@ -168,7 +161,6 @@ export default function DocumentsPage() {
       label: 'Tipo',
       defaultVisible: true,
       sortable: true,
-      sortValue: (row) => documentTypeLabels[row.documentType] ?? row.documentType,
       render: (v) => <span className="text-slate-700 font-medium text-xs">{documentTypeLabels[v as string] ?? String(v)}</span>,
     },
     {
@@ -227,7 +219,6 @@ export default function DocumentsPage() {
       key: 'totalAmount',
       label: 'Total',
       defaultVisible: true,
-      sortable: true,
       exportValue: (row) => String(row.totalAmount),
       render: (v, row) => (
         <span className="tabular-nums text-sm font-semibold text-slate-800">
@@ -242,8 +233,6 @@ export default function DocumentsPage() {
       key: 'paymentStatus',
       label: 'Estado Pago',
       defaultVisible: true,
-      sortable: true,
-      sortValue: (row) => PAYMENT_STATUS_SORT_ORDER[row.paymentStatus] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
@@ -432,7 +421,7 @@ export default function DocumentsPage() {
               filenamePrefix="documentos"
               onApplyPreset={applyPreset}
             />
-            <span className="text-[11px] text-slate-400">Ordena y exporta la página actual</span>
+            <span className="text-[11px] text-slate-400">Exporta la página actual</span>
             <ColumnConfigButton
               columnConfigs={columnConfigs}
               onToggle={toggle}
@@ -450,6 +439,8 @@ export default function DocumentsPage() {
           onRowClick={(row) => navigate(`/insurance/documents/${row.id}`)}
           emptyTitle="Sin documentos"
           emptyDescription="No se encontraron documentos con los filtros aplicados."
+          sort={sort}
+          onSortChange={(next) => { setPage(1); setSort(next) }}
         />
         {pagination && (
           <PaginationControls

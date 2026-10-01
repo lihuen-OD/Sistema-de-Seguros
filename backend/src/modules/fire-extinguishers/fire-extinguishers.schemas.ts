@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PaginationSchema } from '../../shared/schemas/common'
+import { sortQueryFields } from '../../shared/utils/sorting'
 
 const ISODate = z
   .string()
@@ -33,7 +34,18 @@ export const CreateFireExtinguisherSchema = FireExtBaseSchema
 
 export const UpdateFireExtinguisherSchema = FireExtBaseSchema.partial()
 
+// Ids de columna de FireExtinguishersPage ordenables en el servidor — mapeo a
+// Prisma en fire-extinguishers.service.ts (FIRE_EXT_SORT). Queda afuera el
+// estado, que combina 3 fechas + vida útil (computeFireExtinguisherStatus).
+export const FIRE_EXT_SORT_KEYS = [
+  'code', 'cylinderNumber', 'type', 'capacity', 'brand', 'iramCertificateNumber', 'manufacturingYear',
+  'establishment', 'assetId', 'location', 'chargeDate', 'expirationDate', 'hydraulicTestExpirationDate',
+  'daysUntil', 'observations', 'createdAt',
+] as const
+export type FireExtSortKey = (typeof FIRE_EXT_SORT_KEYS)[number]
+
 export const ListFireExtinguishersQuerySchema = PaginationSchema.extend({
+  ...sortQueryFields(FIRE_EXT_SORT_KEYS),
   status: z.enum(['vigente', 'proximo_vencer', 'vencido', 'sin_fecha']).optional(),
   locationType: z.string().optional(),
   establishment: z.string().optional(),
