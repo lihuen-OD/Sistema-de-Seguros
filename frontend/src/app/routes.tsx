@@ -43,6 +43,8 @@ export const ROUTES = {
   FIRE_EXTINGUISHERS_AUDIT_CLEANLINESS_HISTORY: '/fire-extinguishers/audits/cleanliness-history',
   FIRE_EXTINGUISHERS_AUDIT_DETAIL: (id: string) => `/fire-extinguishers/audits/${id}`,
   FIRE_EXTINGUISHERS_AUDIT_EDIT: (id: string) => `/fire-extinguishers/audits/${id}/edit`,
+  FIRE_EXTINGUISHERS_CREATION_REQUEST_NEW: '/fire-extinguishers/audits/creation-requests/new',
+  FIRE_EXTINGUISHERS_CREATION_REQUEST_DETAIL: (id: string) => `/fire-extinguishers/audits/creation-requests/${id}`,
 
   ASSET_AUDITS: '/asset-audits',
   ASSET_AUDITS_NEW: '/asset-audits/new',
