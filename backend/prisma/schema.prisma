@@ -145,6 +145,7 @@ model Asset {
   pledges                   AssetPledge[]
   attachments               AssetAttachment[]
   fireExtinguishers         FireExtinguisher[]
+  fireExtinguisherCreationRequests FireExtinguisherCreationRequest[]
   claims                    Claim[]
   policyCoverages           PolicyAssetCoverage[]
   fixedAsset                 FixedAsset?                      @relation(fields: [fixedAssetId], references: [id])
@@ -778,10 +779,54 @@ model FireExtinguisher {
   audits          FireExtinguisherAudit[]
   proposedChanges FireExtinguisherAuditProposedChange[]
   attachments     FireExtinguisherAttachment[]
+  creationRequest FireExtinguisherCreationRequest?
 
   @@index([isActive, expirationDate])
   @@index([assetId])
   @@map("fire_extinguishers")
+}
+
+// Solicitud de alta creada desde la cobertura de auditoría. El snapshot es
+// deliberadamente independiente del maestro: PENDING/REJECTED nunca forman
+// parte del inventario ni de sus indicadores.
+model FireExtinguisherCreationRequest {
+  id                          String    @id @default(uuid())
+  status                      String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  auditPeriod                 String
+  type                        String
+  capacity                    String
+  expirationDate              DateTime? @db.Date
+  chargeDate                  DateTime? @db.Date
+  hydraulicTestExpirationDate DateTime? @db.Date
+  associatedAssetId           String?
+  associatedAssetCode         String?
+  associatedAssetName         String?
+  associatedAssetType         String?
+  associatedLocationType      String
+  location                    String?
+  establishment               String
+  brand                       String?
+  cylinderNumber              String
+  cylinderNumberNormalized    String
+  iramCertificateNumber       String?
+  manufacturingYear           Int
+  observations                String?
+  requestedBy                 String
+  requestedAt                 DateTime  @default(now())
+  reviewedBy                  String?
+  reviewedAt                  DateTime?
+  rejectionReason             String?
+  createdFireExtinguisherId   String?   @unique
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  associatedAsset         Asset?            @relation(fields: [associatedAssetId], references: [id], onDelete: SetNull)
+  createdFireExtinguisher FireExtinguisher? @relation(fields: [createdFireExtinguisherId], references: [id], onDelete: Restrict)
+
+  @@index([status, requestedAt])
+  @@index([requestedBy, requestedAt])
+  @@index([associatedAssetId])
+  @@map("fire_extinguisher_creation_requests")
 }
 
 // nextDueDate/previousExpirationDate: columnas específicas de recarga (sin cambios).

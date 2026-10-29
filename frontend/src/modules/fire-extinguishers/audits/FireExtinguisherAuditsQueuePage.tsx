@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, Gauge } from 'lucide-react'
@@ -39,6 +39,8 @@ import { AUDIT_STATUS_OPTIONS } from '../../../shared/constants'
 import { ROUTES } from '../../../app/routes'
 import type { TableColumn } from '../../../shared/types'
 import { AuditCoverageTab } from './AuditCoverageTab'
+import { FireExtinguisherCreationRequestsTab } from './FireExtinguisherCreationRequestsTab'
+import { creationRequestTabs } from '../../../shared/utils/fireExtinguisherCreationRequests'
 
 // Mismos labels/opciones que ya usa el detalle de la auditoría
 // (ChecklistReadOnlySummary) — se reutilizan acá tanto para las columnas
@@ -70,6 +72,7 @@ function withPageReset<Args extends unknown[]>(setPage: (page: number) => void, 
 
 export default function FireExtinguisherAuditsQueuePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const { user } = useCurrentUser()
   // Auditar y revisar/aprobar son permisos separados — ver el detalle en
@@ -77,7 +80,9 @@ export default function FireExtinguisherAuditsQueuePage() {
   const canReview = user?.role === 'ADMIN' || (user?.modules.includes('fire_extinguisher_audits') ?? false)
   const canAudit = user?.role === 'ADMIN' || (user?.modules.includes('fire_extinguisher_audit_coverage') ?? false)
 
-  const [activeTab, setActiveTab] = useState<'auditorias' | 'cobertura'>('cobertura')
+  const [activeTab, setActiveTab] = useState<'auditorias' | 'cobertura' | 'solicitudes'>(
+    location.state?.tab === 'solicitudes' ? 'solicitudes' : canAudit ? 'cobertura' : 'auditorias',
+  )
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string[]>([])
   const [filterDateFrom, setFilterDateFrom] = useState('')
@@ -204,12 +209,7 @@ export default function FireExtinguisherAuditsQueuePage() {
 
   // Sin permiso de revisión no hay pestaña "Auditorías" para elegir — el
   // auditor cae directo (y solo puede caer) en Cobertura.
-  const tabs: TabItem[] = canReview
-    ? [
-        { id: 'auditorias', label: 'Auditorías' },
-        { id: 'cobertura', label: 'Cobertura', count: pendingCoverageCount },
-      ]
-    : []
+  const tabs: TabItem[] = creationRequestTabs(canReview, canAudit, pendingCoverageCount)
 
   const handleToggleStatusFilter = withPageReset(setPage, (status: string) => {
     setFilterStatus((prev) => (prev.length === 1 && prev[0] === status ? [] : [status]))
@@ -369,9 +369,9 @@ export default function FireExtinguisherAuditsQueuePage() {
         }
       />
 
-      {canReview && (
+      {tabs.length > 1 && (
         <SectionCard noPadding className="mb-5">
-          <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => setActiveTab(id as 'auditorias' | 'cobertura')} />
+          <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => setActiveTab(id as 'auditorias' | 'cobertura' | 'solicitudes')} />
         </SectionCard>
       )}
 
@@ -483,7 +483,7 @@ export default function FireExtinguisherAuditsQueuePage() {
         </>
       )}
 
-      {(activeTab === 'cobertura' || !canReview) && (
+      {activeTab === 'cobertura' && canAudit && (
         <AuditCoverageTab
           period={coveragePeriod}
           onPeriodChange={setCoveragePeriod}
@@ -492,6 +492,8 @@ export default function FireExtinguisherAuditsQueuePage() {
           canAudit={canAudit}
         />
       )}
+
+      {activeTab === 'solicitudes' && <FireExtinguisherCreationRequestsTab />}
 
       <ConfirmDialog
         open={showBulkConfirm}

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { CreateFireExtinguisherSchema } from '../fire-extinguishers/fire-extinguishers.schemas'
 import { PaginationSchema, booleanFromString } from '../../shared/schemas/common'
 import { AuditPeriodQuerySchema, BulkApproveAuditsSchema } from '../../shared/schemas/audit-domain'
 import { AUDITABLE_ASSET_CATEGORIES } from '../../shared/types'
@@ -246,3 +247,19 @@ export const AddCommentSchema = z.object({
   body: z.string().trim().min(1, 'El comentario no puede estar vacío').max(1000),
 })
 export type AddCommentDTO = z.infer<typeof AddCommentSchema>
+
+export const CreateFireExtinguisherCreationRequestSchema = CreateFireExtinguisherSchema
+export const ListFireExtinguisherCreationRequestsQuerySchema = z.object({
+  status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(),
+})
+export const ReviewFireExtinguisherCreationRequestSchema = z.discriminatedUnion('decision', [
+  z.object({ decision: z.literal('APPROVE') }),
+  z.object({
+    decision: z.literal('REJECT'),
+    reason: z.string().trim().min(1, 'El motivo de rechazo es obligatorio').max(1000),
+  }),
+])
+
+export type CreateFireExtinguisherCreationRequestDTO = z.infer<typeof CreateFireExtinguisherCreationRequestSchema>
+export type ListFireExtinguisherCreationRequestsQueryDTO = z.infer<typeof ListFireExtinguisherCreationRequestsQuerySchema>
+export type ReviewFireExtinguisherCreationRequestDTO = z.infer<typeof ReviewFireExtinguisherCreationRequestSchema>

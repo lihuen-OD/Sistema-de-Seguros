@@ -256,11 +256,69 @@ export function resolveCodePrefix(locationType: string): string {
   return PREFIX_MAP[normalizeKey(locationType)] ?? 'GEN'
 }
 
-async function generateCode(locationType: string): Promise<string> {
+async function generateCode(locationType: string, client: HistoryClient = prisma): Promise<string> {
   const prefix = resolveCodePrefix(locationType)
-  const result = await prisma.$queryRaw<[{ nextval: bigint }]>`SELECT nextval('fire_ext_code_seq')`
+  const result = await client.$queryRaw<[{ nextval: bigint }]>`SELECT nextval('fire_ext_code_seq')`
   const seq = String(Number(result[0].nextval)).padStart(3, '0')
   return `MAT-${prefix}${seq}-A`
+}
+
+/**
+ * Primitiva transaccional compartida con la aprobación de solicitudes.
+ * El endpoint de alta normal conserva su contrato y sigue envolviéndola en
+ * su propia transacción.
+ */
+export async function createFireExtinguisherWithClient(
+  tx: Prisma.TransactionClient,
+  data: CreateFireExtinguisherDTO,
+  performedBy?: string | null,
+) {
+  if (data.associatedAssetId) {
+    const asset = await tx.asset.findFirst({
+      where: { id: data.associatedAssetId, isActive: true },
+      select: { id: true },
+    })
+    if (!asset) throw new AppError(400, 'Activo no encontrado o inactivo', 'INVALID_REFERENCE')
+  }
+
+  const code = await generateCode(data.associatedLocationType, tx)
+  const created = await tx.fireExtinguisher.create({
+    data: {
+      code,
+      type: data.type,
+      capacity: data.capacity,
+      expirationDate: data.expirationDate,
+      lastRechargeDate: data.chargeDate ?? null,
+      hydraulicTestExpirationDate: data.hydraulicTestExpirationDate,
+      assetId: data.associatedAssetId ?? null,
+      locationType: data.associatedLocationType,
+      location: data.location ?? null,
+      establishment: data.establishment,
+      brand: data.brand ?? null,
+      cylinderNumber: data.cylinderNumber,
+      iramCertificateNumber: data.iramCertificateNumber ?? null,
+      manufacturingYear: data.manufacturingYear,
+      observations: data.observations ?? null,
+    },
+    include: { asset: { select: { id: true, name: true } } },
+  })
+
+  await recordHistoryEntry(tx, created.id, {
+    action: 'Alta',
+    description: 'Matafuego dado de alta',
+    newData: {
+      code: created.code, type: created.type, capacity: created.capacity,
+      expirationDate: created.expirationDate ? toDateStr(created.expirationDate) : null,
+      lastRechargeDate: created.lastRechargeDate ? toDateStr(created.lastRechargeDate) : null,
+      hydraulicTestExpirationDate: created.hydraulicTestExpirationDate ? toDateStr(created.hydraulicTestExpirationDate) : null,
+      assetId: created.assetId, locationType: created.locationType, location: created.location,
+      establishment: created.establishment, brand: created.brand, cylinderNumber: created.cylinderNumber,
+      iramCertificateNumber: created.iramCertificateNumber, manufacturingYear: created.manufacturingYear,
+      observations: created.observations,
+    },
+    performedBy,
+  })
+  return created
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -395,66 +453,8 @@ export const fireExtinguishersService = {
   },
 
   async create(data: CreateFireExtinguisherDTO, performedBy?: string | null) {
-    if (data.associatedAssetId) {
-      const asset = await prisma.asset.findFirst({
-        where: { id: data.associatedAssetId, isActive: true },
-        select: { id: true },
-      })
-      if (!asset) throw new AppError(400, 'Activo no encontrado o inactivo', 'INVALID_REFERENCE')
-    }
-
-    const code = await generateCode(data.associatedLocationType)
-
     const fe = await prisma
-      .$transaction(async (tx) => {
-        const created = await tx.fireExtinguisher.create({
-          data: {
-            code,
-            type: data.type,
-            capacity: data.capacity,
-            expirationDate: data.expirationDate,
-            lastRechargeDate: data.chargeDate ?? null,
-            hydraulicTestExpirationDate: data.hydraulicTestExpirationDate,
-            assetId: data.associatedAssetId ?? null,
-            locationType: data.associatedLocationType,
-            location: data.location ?? null,
-            establishment: data.establishment,
-            brand: data.brand ?? null,
-            cylinderNumber: data.cylinderNumber,
-            iramCertificateNumber: data.iramCertificateNumber ?? null,
-            manufacturingYear: data.manufacturingYear,
-            observations: data.observations ?? null,
-          },
-          include: { asset: { select: { id: true, name: true } } },
-        })
-
-        await recordHistoryEntry(tx, created.id, {
-          action: 'Alta',
-          description: 'Matafuego dado de alta',
-          newData: {
-            code: created.code,
-            type: created.type,
-            capacity: created.capacity,
-            expirationDate: created.expirationDate ? toDateStr(created.expirationDate) : null,
-            lastRechargeDate: created.lastRechargeDate ? toDateStr(created.lastRechargeDate) : null,
-            hydraulicTestExpirationDate: created.hydraulicTestExpirationDate
-              ? toDateStr(created.hydraulicTestExpirationDate)
-              : null,
-            assetId: created.assetId,
-            locationType: created.locationType,
-            location: created.location,
-            establishment: created.establishment,
-            brand: created.brand,
-            cylinderNumber: created.cylinderNumber,
-            iramCertificateNumber: created.iramCertificateNumber,
-            manufacturingYear: created.manufacturingYear,
-            observations: created.observations,
-          },
-          performedBy,
-        })
-
-        return created
-      })
+      .$transaction((tx) => createFireExtinguisherWithClient(tx, data, performedBy))
       .catch(handleUniqueConstraint)
 
     return mapFireExt(fe as unknown as Record<string, unknown>)

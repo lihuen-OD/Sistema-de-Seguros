@@ -24,6 +24,10 @@ import { catalogQueries } from '../../shared/api/catalogs.api'
 import { ROUTES } from '../../app/routes'
 import { notifyValidationErrors } from '../../shared/utils/formValidation'
 import { buildAssetSearchKeywords } from '../../shared/utils/assetSearch'
+import {
+  fireExtinguisherFormCapabilities,
+  type FireExtinguisherFormContext,
+} from '../../shared/utils/fireExtinguisherFormContext'
 
 function addOneYear(dateStr: string): string {
   if (!dateStr) return ''
@@ -46,12 +50,34 @@ interface FormErrors {
   [key: string]: string | undefined
 }
 
-export default function FireExtinguisherNewPage() {
+export interface FireExtinguisherFormProps {
+  context?: FireExtinguisherFormContext
+  title?: string
+  subtitle?: string
+  backTo?: string
+  backLabel?: string
+  submitLabel?: string
+  onSubmit?: (input: FireExtinguisherCreateInput) => Promise<void>
+}
+
+export function FireExtinguisherForm({
+  context = 'inventory',
+  title = 'Nuevo Matafuego',
+  subtitle = 'Registrar un nuevo matafuego en el sistema',
+  backTo = ROUTES.FIRE_EXTINGUISHERS,
+  backLabel = 'Volver a Matafuegos',
+  submitLabel = 'Registrar Matafuego',
+  onSubmit,
+}: FireExtinguisherFormProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
 
-  const { data: assets = [] } = useQuery(assetQueries.list())
+  const { canSelectAssociatedAsset } = fireExtinguisherFormCapabilities(context)
+  const { data: assets = [] } = useQuery({
+    ...assetQueries.list(),
+    enabled: canSelectAssociatedAsset,
+  })
 
   const { data: extTypes = [] } = useQuery(catalogQueries.byCategory('fire_ext_type'))
   const { data: extCapacities = [] } = useQuery(catalogQueries.byCategory('fire_ext_capacity'))
@@ -65,7 +91,9 @@ export default function FireExtinguisherNewPage() {
   const [expirationDate, setExpirationDate] = useState('')
   const [hydraulicTestExpirationDate, setHydraulicTestExpirationDate] = useState('')
   const [manualExpDate, setManualExpDate] = useState(false)
-  const [associatedAssetId, setAssociatedAssetId] = useState(searchParams.get('assetId') ?? '')
+  const [associatedAssetId, setAssociatedAssetId] = useState(
+    canSelectAssociatedAsset ? (searchParams.get('assetId') ?? '') : '',
+  )
   const [associatedLocationType, setAssociatedLocationType] = useState('')
   const [observations, setObservations] = useState('')
   const [cylinderNumber, setCylinderNumber] = useState('')
@@ -115,7 +143,7 @@ export default function FireExtinguisherNewPage() {
         chargeDate: chargeDate || null,
         expirationDate: expirationDate || null,
         hydraulicTestExpirationDate: hydraulicTestExpirationDate || null,
-        associatedAssetId: associatedAssetId || undefined,
+        associatedAssetId: canSelectAssociatedAsset ? associatedAssetId || undefined : undefined,
         associatedLocationType,
         location: location.trim() || undefined,
         establishment,
@@ -126,9 +154,13 @@ export default function FireExtinguisherNewPage() {
         observations: observations.trim(),
       }
 
-      await fireExtinguishersApi.create(input)
-      await queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
-      navigate(ROUTES.FIRE_EXTINGUISHERS)
+      if (onSubmit) {
+        await onSubmit(input)
+      } else {
+        await fireExtinguishersApi.create(input)
+        await queryClient.invalidateQueries({ queryKey: fireExtinguisherKeys.all })
+        navigate(ROUTES.FIRE_EXTINGUISHERS)
+      }
     } catch {
       setSubmitting(false)
     }
@@ -137,11 +169,11 @@ export default function FireExtinguisherNewPage() {
   return (
     <PageContent>
       <PageHeader
-        title="Nuevo Matafuego"
-        subtitle="Registrar un nuevo matafuego en el sistema"
+        title={title}
+        subtitle={subtitle}
         category="Matafuegos"
-        backTo={ROUTES.FIRE_EXTINGUISHERS}
-        backLabel="Volver a Matafuegos"
+        backTo={backTo}
+        backLabel={backLabel}
       />
 
       <form onSubmit={handleSubmit} noValidate>
@@ -295,23 +327,25 @@ export default function FireExtinguisherNewPage() {
                 placeholder="Ej: Pasillo 3, cerca del tablero eléctrico"
               />
             </FormField>
-            <FormField label="Activo asociado (opcional)">
-              <SearchableSelect
-                value={associatedAssetId}
-                onChange={setAssociatedAssetId}
-                placeholder="— Sin activo específico"
-                searchPlaceholder="Buscar por código, nombre, tipo, patente, bien de uso…"
-                emptyOptionLabel="— Sin activo específico"
-                options={assets
-                  .filter((a) => a.status === 'activo')
-                  .map((a) => ({
-                    value: a.id,
-                    label: `${a.internalCode} — ${a.name}`,
-                    sublabel: a.assetType,
-                    keywords: buildAssetSearchKeywords(a),
-                  }))}
-              />
-            </FormField>
+            {canSelectAssociatedAsset && (
+              <FormField label="Activo asociado (opcional)">
+                <SearchableSelect
+                  value={associatedAssetId}
+                  onChange={setAssociatedAssetId}
+                  placeholder="— Sin activo específico"
+                  searchPlaceholder="Buscar por código, nombre, tipo, patente, bien de uso…"
+                  emptyOptionLabel="— Sin activo específico"
+                  options={assets
+                    .filter((a) => a.status === 'activo')
+                    .map((a) => ({
+                      value: a.id,
+                      label: `${a.internalCode} — ${a.name}`,
+                      sublabel: a.assetType,
+                      keywords: buildAssetSearchKeywords(a),
+                    }))}
+                />
+              </FormField>
+            )}
           </FormSection>
         </SectionCard>
 
@@ -329,7 +363,7 @@ export default function FireExtinguisherNewPage() {
         <div className="flex items-center justify-end gap-3">
           <button
             type="button"
-            onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS)}
+            onClick={() => navigate(backTo)}
             className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
           >
             Cancelar
@@ -340,10 +374,14 @@ export default function FireExtinguisherNewPage() {
             className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
           >
             <Flame size={15} />
-            Registrar Matafuego
+            {submitLabel}
           </button>
         </div>
       </form>
     </PageContent>
   )
+}
+
+export default function FireExtinguisherNewPage() {
+  return <FireExtinguisherForm />
 }

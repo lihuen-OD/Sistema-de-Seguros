@@ -5,6 +5,7 @@ import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
 import { resolveAuditScope } from '../../shared/services/audit-scope.service'
 import { fireExtinguisherAuditsService } from './fire-extinguisher-audits.service'
 import { fireExtinguisherAuditDashboardService } from './fire-extinguisher-audit-dashboard.service'
+import { fireExtinguisherCreationRequestsService } from './fire-extinguisher-creation-requests.service'
 import type {
   ListFireExtinguisherAuditsQueryDTO,
   CoverageQueryDTO,
@@ -12,6 +13,7 @@ import type {
   AuditorProgressQueryDTO,
   CleanlinessHistoryQueryDTO,
   AddCommentDTO,
+  ListFireExtinguisherCreationRequestsQueryDTO,
 } from './fire-extinguisher-audits.schemas'
 
 type IdParam = { id: string }
@@ -22,6 +24,36 @@ type AttachmentParam = { id: string; attachmentId: string }
 const COVERAGE_MODULES = ['fire_extinguisher_audit_coverage'] as const
 
 export const fireExtinguisherAuditsController = {
+  createCreationRequest: asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
+    const scope = await resolveAuditScope(req.user, 'FIRE_EXTINGUISHER_AUDIT', [...COVERAGE_MODULES])
+    const data = await fireExtinguisherCreationRequestsService.create(req.body, req.user.email, scope)
+    res.status(201).json({ data })
+  }),
+
+  listCreationRequests: asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
+    const canReview = req.user.role === 'ADMIN' || req.user.modules.includes('fire_extinguisher_audits')
+    const data = await fireExtinguisherCreationRequestsService.list(
+      req.query as unknown as ListFireExtinguisherCreationRequestsQueryDTO,
+      req.user.email,
+      canReview,
+    )
+    res.json({ data })
+  }),
+
+  getCreationRequest: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    if (!req.user) throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
+    const canReview = req.user.role === 'ADMIN' || req.user.modules.includes('fire_extinguisher_audits')
+    const data = await fireExtinguisherCreationRequestsService.findById(req.params.id, req.user.email, canReview)
+    res.json({ data })
+  }),
+
+  reviewCreationRequest: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    if (!req.user) throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
+    const data = await fireExtinguisherCreationRequestsService.review(req.params.id, req.body, req.user.email)
+    res.json({ data })
+  }),
   create: asyncHandler(async (req: Request, res: Response) => {
     if (!req.user) throw new AppError(401, 'No autenticado', 'UNAUTHORIZED')
     const scope = await resolveAuditScope(req.user, 'FIRE_EXTINGUISHER_AUDIT', [...COVERAGE_MODULES])
