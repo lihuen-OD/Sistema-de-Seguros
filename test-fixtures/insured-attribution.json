@@ -1,0 +1,81 @@
+{
+  "description": "R4-B — prorrateo de la suma asegurada vigente por asignaciones (allocations). Lo usan los tests del backend (insured-attribution.ts, summary de pólizas) y del frontend (insuredAttribution.ts, Dashboard de Seguros) para verificar que calculan lo mismo. Líneas ya vigentes hoy; ARS y USD a propósito no proporcionales, para detectar mezclas de moneda. Porcentajes en escala 0-100.",
+  "companies": {
+    "A": "70000000-0000-4000-8000-00000000000a",
+    "B": "70000000-0000-4000-8000-00000000000b"
+  },
+  "costCenters": {
+    "X": "71000000-0000-4000-8000-00000000000a",
+    "Y": "71000000-0000-4000-8000-00000000000b"
+  },
+  "assets": {
+    "S-compartido-A60-B40": [["A", "X", 60], ["B", "Y", 40]],
+    "AA-empresa-A": [["A", "X", 100]],
+    "BB-empresa-B": [["B", "Y", 100]],
+    "AY-empresa-A-centro-Y": [["A", "Y", 100]],
+    "U-sin-asignaciones": [],
+    "P-incompleto-50": [["A", "X", 50]],
+    "O-duplicado-120": [["A", "X", 80], ["A", "X", 40]]
+  },
+  "lines": [
+    { "id": "L1", "policyId": "P1", "insurer": "Aseguradora Norte", "assetId": "S-compartido-A60-B40", "company": null, "costCenter": null, "ars": 100000000, "usd": 100000 },
+    { "id": "L2", "policyId": "P2", "insurer": "Aseguradora Sur", "assetId": "AA-empresa-A", "company": null, "costCenter": null, "ars": 50000000, "usd": 40000 },
+    { "id": "L3", "policyId": "P2", "insurer": "Aseguradora Sur", "assetId": "BB-empresa-B", "company": null, "costCenter": null, "ars": 20000000, "usd": 10000 },
+    { "id": "L4", "policyId": "P3", "insurer": "Aseguradora Norte", "assetId": null, "company": "A", "costCenter": "X", "ars": 30000000, "usd": 0 },
+    { "id": "L5", "policyId": "P3", "insurer": "Aseguradora Norte", "assetId": null, "company": "B", "costCenter": "Y", "ars": 0, "usd": 5000 },
+    { "id": "L6", "policyId": "P4", "insurer": "Aseguradora Sur", "assetId": "AY-empresa-A-centro-Y", "company": null, "costCenter": null, "ars": 10000000, "usd": 8000 },
+    { "id": "L7", "policyId": "P5", "insurer": "Aseguradora Este", "assetId": "U-sin-asignaciones", "company": null, "costCenter": null, "ars": 7000000, "usd": 7000 },
+    { "id": "L8", "policyId": "P5", "insurer": "Aseguradora Este", "assetId": "P-incompleto-50", "company": null, "costCenter": null, "ars": 4000000, "usd": 2000 },
+    { "id": "L9", "policyId": "P6", "insurer": "Aseguradora Este", "assetId": "O-duplicado-120", "company": null, "costCenter": null, "ars": 1000000, "usd": 1000 },
+    { "id": "L10", "policyId": "P6", "insurer": "Aseguradora Este", "assetId": "S-compartido-A60-B40", "company": null, "costCenter": null, "ars": 2000000, "usd": 1500 }
+  ],
+  "cases": [
+    {
+      "name": "global sin filtros: cada línea una vez, importe contractual (el activo sin asignaciones y el incompleto suman completos)",
+      "filters": {},
+      "expected": { "ars": 224000000, "usd": 174500, "policies": 6, "assets": 7, "underAllocated": 0, "overAllocated": 0,
+        "byInsurer": { "Aseguradora Norte": [130000000, 105000], "Aseguradora Sur": [80000000, 58000], "Aseguradora Este": [14000000, 11500] } }
+    },
+    {
+      "name": "empresa A: 60 % del compartido, 50 % del incompleto (sin normalizar), tope 100 % del duplicado, línea sin activo de A completa",
+      "filters": { "companies": ["A"] },
+      "expected": { "ars": 154200000, "usd": 110900, "policies": 6, "assets": 5, "underAllocated": 1, "overAllocated": 1,
+        "byInsurer": { "Aseguradora Norte": [90000000, 60000], "Aseguradora Sur": [60000000, 48000], "Aseguradora Este": [4200000, 2900] } }
+    },
+    {
+      "name": "empresa B: 40 % del compartido (dos líneas), línea sin activo de B",
+      "filters": { "companies": ["B"] },
+      "expected": { "ars": 60800000, "usd": 55600, "policies": 4, "assets": 2, "underAllocated": 0, "overAllocated": 0,
+        "byInsurer": { "Aseguradora Norte": [40000000, 45000], "Aseguradora Sur": [20000000, 10000], "Aseguradora Este": [800000, 600] } }
+    },
+    {
+      "name": "empresas A y B: el compartido una sola vez (100 %); el activo sin asignaciones y el 50 % faltante quedan fuera",
+      "filters": { "companies": ["A", "B"] },
+      "expected": { "ars": 215000000, "usd": 166500, "policies": 6, "assets": 6, "underAllocated": 1, "overAllocated": 1,
+        "byInsurer": { "Aseguradora Norte": [130000000, 105000], "Aseguradora Sur": [80000000, 58000], "Aseguradora Este": [5000000, 3500] } }
+    },
+    {
+      "name": "solo centro de costo X",
+      "filters": { "costCenter": "X" },
+      "expected": { "ars": 144200000, "usd": 102900, "policies": 5, "assets": 4, "underAllocated": 1, "overAllocated": 1,
+        "byInsurer": { "Aseguradora Norte": [90000000, 60000], "Aseguradora Sur": [50000000, 40000], "Aseguradora Este": [4200000, 2900] } }
+    },
+    {
+      "name": "solo centro de costo Y",
+      "filters": { "costCenter": "Y" },
+      "expected": { "ars": 70800000, "usd": 63600, "policies": 5, "assets": 3, "underAllocated": 0, "overAllocated": 0,
+        "byInsurer": { "Aseguradora Norte": [40000000, 45000], "Aseguradora Sur": [30000000, 18000], "Aseguradora Este": [800000, 600] } }
+    },
+    {
+      "name": "empresa A + centro Y: solo las asignaciones que cumplen ambas",
+      "filters": { "companies": ["A"], "costCenter": "Y" },
+      "expected": { "ars": 10000000, "usd": 8000, "policies": 1, "assets": 1, "underAllocated": 0, "overAllocated": 0,
+        "byInsurer": { "Aseguradora Sur": [10000000, 8000] } }
+    },
+    {
+      "name": "empresa B + centro X: ninguna asignación cumple ambas",
+      "filters": { "companies": ["B"], "costCenter": "X" },
+      "expected": { "ars": 0, "usd": 0, "policies": 0, "assets": 0, "underAllocated": 0, "overAllocated": 0, "byInsurer": {} }
+    }
+  ]
+}

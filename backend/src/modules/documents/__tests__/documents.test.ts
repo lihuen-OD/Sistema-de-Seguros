@@ -1909,6 +1909,7 @@ describe('Documents API', () => {
         .set('Authorization', `Bearer ${adminToken()}`)
 
       expect(res.status).toBe(200)
+      expect(res.body).not.toHaveProperty('meta')
       expect(res.body.data[0].installments[0]).toMatchObject({
         paymentMethod: 'E-Cheq',
         paidAt: '2026-01-01',
@@ -2015,7 +2016,7 @@ describe('Documents API', () => {
       expect(findManyCall.include).not.toHaveProperty('installments')
     })
 
-    it('includeInstallments=false keeps take: 2000', async () => {
+    it('includeInstallments=false fetches one extra row to detect truncation while retaining the 2,000 response cap', async () => {
       db.accountingDocument.findMany.mockResolvedValue([])
 
       await request(app)
@@ -2023,7 +2024,38 @@ describe('Documents API', () => {
         .set('Authorization', `Bearer ${adminToken()}`)
 
       const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
-      expect(findManyCall.take).toBe(2000)
+      expect(findManyCall.take).toBe(2001)
+    })
+
+    it('includeMeta reports truncation and returns no more than 2,000 documents', async () => {
+      db.accountingDocument.findMany.mockResolvedValue(
+        Array.from({ length: 2001 }, (_, index) => ({
+          ...fakeDocument,
+          id: `document-${index}`,
+          allocations: [],
+        })),
+      )
+
+      const res = await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false&includeMeta=true')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(2000)
+      expect(res.body.meta).toEqual({ truncated: true, limit: 2000 })
+      expect(db.accountingDocument.findMany.mock.calls[0][0].take).toBe(2001)
+    })
+
+    it('includeMeta reports complete when the extra row is absent', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([{ ...fakeDocument, allocations: [] }])
+
+      const res = await request(app)
+        .get('/api/v1/documents/financial?includeInstallments=false&includeMeta=true')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      expect(res.body.meta).toEqual({ truncated: false, limit: 2000 })
     })
   })
 

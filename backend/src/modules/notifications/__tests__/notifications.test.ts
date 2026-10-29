@@ -500,3 +500,32 @@ describe('Notifications API', () => {
     })
   })
 })
+
+// R2 — las alertas de pólizas son las pendientes de gestión de renovación:
+// estado administrativo "próxima a vencer" (sin las Renovadas ni las dadas de
+// baja a mano), con el día de Argentina de los estados visibles.
+describe('Notifications API — pólizas pendientes de renovación', () => {
+  beforeEach(() => {
+    db.fireExtinguisher.findMany.mockResolvedValue([])
+    db.documentInstallment.findMany.mockResolvedValue([])
+    db.assetAttachment.findMany.mockResolvedValue([])
+  })
+
+  it('excludes renewed and manually de-baja policies and uses the Argentine day window', async () => {
+    db.policy.findMany.mockResolvedValue([fakePolicy('1')])
+    const { businessDateOffset } = jest.requireActual('../../../shared/utils/dates')
+
+    const res = await request(app).get('/api/v1/notifications').set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    const { where } = db.policy.findMany.mock.calls[0][0]
+    expect(where).toEqual({
+      isActive: true,
+      deactivatedAt: null,
+      endDate: { gte: businessDateOffset(0), lte: businessDateOffset(30) },
+      renewalLinksAsPrevious: { none: { revokedAt: null } },
+    })
+    const item = (res.body.data as { category: string; severity: string }[]).find((i) => i.category === 'policy')
+    expect(item?.severity).toBe('proximo_vencer')
+  })
+})

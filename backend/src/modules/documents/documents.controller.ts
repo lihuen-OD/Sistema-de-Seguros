@@ -53,8 +53,15 @@ export const documentsController = {
   }),
 
   getFinancial: asyncHandler(async (req: Request, res: Response) => {
-    const { from, to, includeInstallments } = req.query as unknown as FinancialQueryDTO
-    const docs = await documentsService.findAllForFinancial({ from, to, includeInstallments })
+    const { from, to, includeInstallments, includeMeta } = req.query as unknown as FinancialQueryDTO
+    const params = { from, to, includeInstallments }
+    if (includeMeta) {
+      const result = await documentsService.findAllForFinancialWithMeta(params)
+      res.json({ data: result.data, meta: { truncated: result.truncated, limit: result.limit } })
+      return
+    }
+
+    const docs = await documentsService.findAllForFinancial(params)
     res.json({ data: docs })
   }),
 
