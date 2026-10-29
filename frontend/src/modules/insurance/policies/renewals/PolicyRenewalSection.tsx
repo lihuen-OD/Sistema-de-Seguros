@@ -24,11 +24,11 @@ export function PolicyRenewalSection({ policyId, canManage }: PolicyRenewalSecti
 
   const active = renewals.filter((r) => r.status === 'ACTIVE')
   const renewedBy = active.find((r) => r.previousPolicy.id === policyId)
-  const renewalOf = active.filter((r) => r.renewalPolicy.id === policyId)
+  const renewalOf = active.filter((r) => r.renewalPolicy?.id === policyId)
   const revoked = renewals.filter((r) => r.status === 'REVOKED')
 
   return (
-    <SectionCard title="Renovación" subtitle="Vínculo administrativo con la póliza anterior o la nueva">
+    <SectionCard title="Renovación" subtitle="Marca administrativa e historial de renovaciones">
       {isLoading ? (
         <LoadingState rows={2} />
       ) : isError ? (
@@ -49,7 +49,7 @@ export function PolicyRenewalSection({ policyId, canManage }: PolicyRenewalSecti
         <div className="space-y-4">
           {renewedBy && (
             <RenewalEntry
-              label="Renovada por"
+              label={renewedBy.renewalPolicy ? 'Renovada por' : 'Marca administrativa de renovación'}
               counterpart={renewedBy.renewalPolicy}
               renewal={renewedBy}
               onRevoke={canManage ? () => setRevokeTarget(renewedBy) : undefined}
@@ -88,7 +88,9 @@ export function PolicyRenewalSection({ policyId, canManage }: PolicyRenewalSecti
                   {revoked.map((renewal) => (
                     <li key={renewal.id} className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
                       <p className="font-medium text-slate-700 break-words">
-                        {renewal.previousPolicy.policyNumber} → {renewal.renewalPolicy.policyNumber}
+                        {renewal.renewalPolicy
+                          ? `${renewal.previousPolicy.policyNumber} → ${renewal.renewalPolicy.policyNumber}`
+                          : `Marca administrativa — ${renewal.previousPolicy.policyNumber}`}
                       </p>
                       <p className="mt-1 break-words">
                         Registrada el {formatDate(renewal.createdAt)} por {renewal.createdBy} · Deshecha el{' '}
@@ -117,7 +119,7 @@ function RenewalEntry({
   onRevoke,
 }: {
   label: string
-  counterpart: RenewalPolicyRef
+  counterpart: RenewalPolicyRef | null
   renewal: PolicyRenewalRecord
   onRevoke?: () => void
 }) {
@@ -126,17 +128,23 @@ function RenewalEntry({
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0 space-y-1">
         <p className="text-xs font-medium uppercase tracking-wider text-slate-400">{label}</p>
-        <button
-          type="button"
-          onClick={() => navigate(`/insurance/policies/${counterpart.id}`)}
-          className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700 break-all text-left transition-colors"
-        >
-          {counterpart.policyNumber}
-          <ArrowUpRight size={12} className="flex-shrink-0 text-brand-400" />
-        </button>
-        <p className="text-xs text-slate-500">
-          {counterpart.insuredName} · {formatDate(counterpart.startDate)} — {formatDate(counterpart.endDate)}
-        </p>
+        {counterpart ? (
+          <>
+            <button
+              type="button"
+              onClick={() => navigate(`/insurance/policies/${counterpart.id}`)}
+              className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700 break-all text-left transition-colors"
+            >
+              {counterpart.policyNumber}
+              <ArrowUpRight size={12} className="flex-shrink-0 text-brand-400" />
+            </button>
+            <p className="text-xs text-slate-500">
+              {counterpart.insuredName} · {formatDate(counterpart.startDate)} — {formatDate(counterpart.endDate)}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm font-semibold text-slate-700">Sin póliza sucesora vinculada</p>
+        )}
         <p className="text-xs text-slate-500 break-words">
           Registrada el {formatDate(renewal.createdAt)} por {renewal.createdBy}
         </p>

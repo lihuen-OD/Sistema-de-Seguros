@@ -69,7 +69,6 @@ export const POLICY_EFFECTIVE_STATUS_LABELS: Record<PolicyEffectiveStatus, strin
   proximo_vencer: 'Próx. a Vencer',
   renovada: 'Renovada',
   vencida: 'Vencida',
-  vencida_renovada: 'Vencida (renovada)',
   de_baja: 'De Baja',
   desconocido: 'Sin clasificar',
 }
@@ -77,7 +76,7 @@ export const POLICY_EFFECTIVE_STATUS_LABELS: Record<PolicyEffectiveStatus, strin
 // Orden fijo de filtros, gráficos y tarjetas. 'desconocido' no se ofrece como
 // filtro: no es un estado de negocio, es un dato a revisar.
 export const POLICY_EFFECTIVE_STATUS_ORDER: Exclude<PolicyEffectiveStatus, 'desconocido'>[] = [
-  'vigente', 'proximo_vencer', 'renovada', 'vencida', 'vencida_renovada', 'de_baja',
+  'vigente', 'proximo_vencer', 'renovada', 'vencida', 'de_baja',
 ]
 
 // Colores de gráficos — validados con el validador de paletas (CVD y visión
@@ -88,7 +87,6 @@ export const POLICY_EFFECTIVE_STATUS_COLORS: Record<PolicyEffectiveStatus, strin
   proximo_vencer: '#f59e0b',
   renovada: '#0ea5e9',
   vencida: '#ef4444',
-  vencida_renovada: '#7c3aed',
   de_baja: '#64748b',
   desconocido: '#94a3b8',
 }

@@ -324,17 +324,14 @@ export default function DashboardPage() {
     totalInsuredArs,
   )
 
-  // Las 6 categorías administrativas, en orden fijo y con color por estado
-  // (nunca por posición): un filtro que deja una categoría en 0 no repinta
-  // las demás.
+  // Este gráfico resume solo los tres estados contractuales relevantes para
+  // la distribución actual. Renovada y De baja siguen existiendo en el dominio
+  // y en el resto del sistema, pero no forman parte de esta visualización.
   const policyStatusData = policyCounts
     ? ([
         ['vigente', policyCounts.vigente],
         ['proximo_vencer', policyCounts.proxima_a_vencer],
-        ['renovada', policyCounts.renovada],
         ['vencida', policyCounts.vencida],
-        ['vencida_renovada', policyCounts.vencida_renovada],
-        ['de_baja', policyCounts.de_baja],
       ] as const).map(([status, value]) => ({
         name: POLICY_EFFECTIVE_STATUS_LABELS[status],
         value,

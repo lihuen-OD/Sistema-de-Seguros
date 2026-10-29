@@ -36,7 +36,7 @@ function toSelectOption(policy: PolicySearchResult): SearchableSelectOption {
   const statusLabel = POLICY_EFFECTIVE_STATUS_LABELS[policy.effectiveStatus]
   // Las renovadas se marcan en la opción para no confundirlas con su
   // renovación al elegir una póliza.
-  const isRenewed = policy.effectiveStatus === 'renovada' || policy.effectiveStatus === 'vencida_renovada'
+  const isRenewed = policy.effectiveStatus === 'renovada'
   return {
     value: policy.id,
     label: policy.policyNumber,

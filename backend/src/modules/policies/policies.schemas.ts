@@ -91,9 +91,9 @@ export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema
     .enum(['vigente', 'proxima_a_vencer', 'proximo_vencer', 'vencida', 'de_baja'])
     .transform((s) => (s === 'proximo_vencer' ? 'proxima_a_vencer' : s))
     .optional(),
-  // Estado administrativo (incluye Renovada / Vencida (renovada)) — es el que
-  // usa la pantalla; `status` queda por compatibilidad con el criterio
-  // contractual anterior. Mismo alias 'proximo_vencer' que `status`.
+  // Estado administrativo — es el que usa la pantalla; `status` queda por
+  // compatibilidad con el criterio contractual anterior. Mismo alias
+  // 'proximo_vencer' que `status`.
   effectiveStatus: z
     .enum([...POLICY_EFFECTIVE_STATUSES, 'proximo_vencer'] as const)
     .transform((s) => (s === 'proximo_vencer' ? 'proxima_a_vencer' : s))
@@ -134,15 +134,15 @@ export const SearchPoliciesQuerySchema = z.object({
   activeOnly: booleanFromString.optional(),
 })
 
-// Renovación — vínculo administrativo póliza anterior (:id) → póliza nueva
-// (ver policy-renewals.service.ts). La póliza nueva ya existe: se crea por el
-// alta normal de pólizas, esto solo registra la relación.
+// Renovación — marca administrativa en la póliza anterior (:id), con una
+// póliza sucesora opcional para conservar compatibilidad con los vínculos
+// históricos (ver policy-renewals.service.ts).
 export const RenewalPreviewQuerySchema = z.object({
   renewalPolicyId: z.string().uuid('ID de póliza de renovación inválido'),
 })
 
 export const CreatePolicyRenewalSchema = z.object({
-  renewalPolicyId: z.string().uuid('ID de póliza de renovación inválido'),
+  renewalPolicyId: z.string().uuid('ID de póliza de renovación inválido').optional(),
   notes: z.string().trim().max(2000).optional(),
 })
 

@@ -123,16 +123,16 @@ describe('Policies API', () => {
 
     describe('summary (Fase 3B)', () => {
       // Cada count de estado se identifica por su filtro (ver
-      // buildPolicyStatusFilter y buildEffectivePolicyStatusFilter). Los
-      // administrativos llevan además la condición de renovación
-      // (renewalLinksAsPrevious some/none) y se cuentan aparte (prefijo eff:).
+      // buildPolicyStatusFilter y buildEffectivePolicyStatusFilter). Algunos
+      // estados administrativos llevan la condición de marca; vencida se
+      // comparte intencionalmente con el conteo contractual por fecha.
       function statusOf(where: { AND?: Record<string, unknown>[] }): string {
         const f = where.AND?.[1] ?? {}
         const renewal = f.renewalLinksAsPrevious as Record<string, unknown> | undefined
         const prefix = renewal ? 'eff:' : ''
         if (f.deactivatedAt && typeof f.deactivatedAt === 'object') return `${prefix}de_baja`
         const end = f.endDate as Record<string, unknown> | undefined
-        if (renewal?.some) return end?.lt ? 'eff:vencida_renovada' : 'eff:renovada'
+        if (renewal?.some) return 'eff:renovada'
         if (end?.gt) return `${prefix}vigente`
         if (end?.gte && end?.lte) return `${prefix}proxima_a_vencer`
         if (end?.lt) return `${prefix}vencida`
@@ -140,7 +140,7 @@ describe('Policies API', () => {
       }
       const COUNTS: Record<string, number> = {
         list: 7, vigente: 40, proxima_a_vencer: 6, vencida: 12, de_baja: 3,
-        'eff:vigente': 38, 'eff:proxima_a_vencer': 5, 'eff:renovada': 3, 'eff:vencida': 10, 'eff:vencida_renovada': 2, 'eff:de_baja': 3,
+        'eff:vigente': 38, 'eff:proxima_a_vencer': 5, 'eff:renovada': 3, 'eff:de_baja': 3,
       }
 
       beforeEach(() => {
@@ -168,7 +168,7 @@ describe('Policies API', () => {
         expect(res.body.summary).toEqual({
           total: 61,
           byStatus: { vigente: 40, proxima_a_vencer: 6, vencida: 12, de_baja: 3 },
-          byEffectiveStatus: { vigente: 38, proxima_a_vencer: 5, renovada: 3, vencida: 10, vencida_renovada: 2, de_baja: 3 },
+          byEffectiveStatus: { vigente: 38, proxima_a_vencer: 5, renovada: 3, vencida: 12, de_baja: 3 },
           insuredActiveArs: 5_000_000,
           insuredActiveUsd: 4_000,
         })
@@ -177,7 +177,7 @@ describe('Policies API', () => {
         const listWhere = db.policy.findMany.mock.calls[0][0].where
         expect(listWhere.endDate).toEqual({ gt: expect.any(Date) })
         const statusCounts = db.policy.count.mock.calls.map((c: [{ where: { AND?: unknown[] } }]) => c[0].where).filter((w: { AND?: unknown[] }) => w.AND)
-        expect(statusCounts).toHaveLength(4 + 6)
+        expect(statusCounts).toHaveLength(4 + 5)
         for (const w of statusCounts) {
           expect(w.AND[0]).toHaveProperty('OR')
           expect(w.AND[0]).not.toHaveProperty('endDate')

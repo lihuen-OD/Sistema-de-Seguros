@@ -91,12 +91,13 @@ describe('GET /api/v1/policies — estado administrativo', () => {
     expect(res.body.data.map((p: { status: string; effectiveStatus: string }) => [p.status, p.effectiveStatus])).toEqual([
       ['vigente', 'renovada'],
       ['vigente', 'vigente'],
-      ['vencida', 'vencida_renovada'],
+      ['vencida', 'vencida'],
       ['vencida', 'vencida'],
       ['de_baja', 'de_baja'],
     ])
-    expect(res.body.data[0].renewal).toEqual({ renewedBy: { id: NEW_ID, policyNumber: 'R-NEW' } })
-    expect(res.body.data[1].renewal).toEqual({ renewedBy: null })
+    expect(res.body.data[0].renewal).toEqual({ isMarked: true, renewedBy: { id: NEW_ID, policyNumber: 'R-NEW' } })
+    expect(res.body.data[1].renewal).toEqual({ isMarked: false, renewedBy: null })
+    expect(res.body.data[2].renewal.isMarked).toBe(true)
     expect(res.body.data[0]).not.toHaveProperty('renewalLinksAsPrevious')
     // Un único include acotado (Prisma lo resuelve en una consulta para toda la página).
     expect(db.policy.findMany.mock.calls[0][0].include.renewalLinksAsPrevious).toEqual({
@@ -123,16 +124,12 @@ describe('GET /api/v1/policies — estado administrativo', () => {
     expect(db.policy.count.mock.calls[0][0].where).toEqual(where)
   })
 
-  it('combines the contractual status and the administrative status without one overwriting the other', async () => {
-    await request(app).get('/api/v1/policies?status=vencida&effectiveStatus=vencida_renovada').set(auth)
+  it('combines the contractual and administrative expired states without requiring a renewal link', async () => {
+    await request(app).get('/api/v1/policies?status=vencida&effectiveStatus=vencida').set(auth)
 
     const { where } = db.policy.findMany.mock.calls[0][0]
     expect(where.AND[0]).toEqual({ endDate: { lt: expect.any(Date) }, deactivatedAt: null })
-    expect(where.AND[1]).toEqual({
-      deactivatedAt: null,
-      endDate: { lt: expect.any(Date) },
-      renewalLinksAsPrevious: { some: { revokedAt: null } },
-    })
+    expect(where.AND[1]).toEqual({ deactivatedAt: null, endDate: { lt: expect.any(Date) } })
   })
 
   it('keeps the legacy where shape when only the contractual status is sent', async () => {
@@ -195,15 +192,16 @@ describe('GET /api/v1/policies?includeSummary=true — byEffectiveStatus', () =>
   function effectiveStatusOf(where: { AND?: Record<string, unknown>[] }): string | null {
     const f = where.AND?.[1]
     const renewal = f?.renewalLinksAsPrevious as Record<string, unknown> | undefined
-    if (!f || !('renewalLinksAsPrevious' in f) && !(f.deactivatedAt && typeof f.deactivatedAt === 'object')) return null
+    if (!f) return null
     if (f.deactivatedAt && typeof f.deactivatedAt === 'object') return renewal === undefined ? 'de_baja' : null
     const end = f.endDate as Record<string, unknown>
-    if (renewal?.some) return end.lt ? 'vencida_renovada' : 'renovada'
-    if (end.lt) return 'vencida'
+    if (end?.lt) return 'vencida'
+    if (renewal?.some) return 'renovada'
+    if (!renewal && !end) return null
     if (end.gt) return 'vigente'
     return 'proxima_a_vencer'
   }
-  const COUNTS: Record<string, number> = { vigente: 50, proxima_a_vencer: 4, renovada: 6, vencida: 9, vencida_renovada: 2, de_baja: 1 }
+  const COUNTS: Record<string, number> = { vigente: 50, proxima_a_vencer: 4, renovada: 6, vencida: 11, de_baja: 1 }
 
   beforeEach(() => {
     db.policy.count.mockImplementation((args: { where: { AND?: Record<string, unknown>[] } }) => {
@@ -212,7 +210,7 @@ describe('GET /api/v1/policies?includeSummary=true — byEffectiveStatus', () =>
     })
   })
 
-  it('counts the six administrative states over the whole filtered set (scope included), ignoring only the state filters', async () => {
+  it('counts the five administrative states over the whole filtered set (scope included), ignoring only the state filters', async () => {
     const res = await request(app)
       .get('/api/v1/policies?includeSummary=true&effectiveStatus=renovada&status=vigente&scopeAssetType=vehiculo&limit=5')
       .set(auth)
@@ -224,7 +222,7 @@ describe('GET /api/v1/policies?includeSummary=true — byEffectiveStatus', () =>
     const summaryCounts = db.policy.count.mock.calls
       .map((c: [{ where: { AND: Record<string, unknown>[] } }]) => c[0].where)
       .filter((w: unknown) => JSON.stringify(w) !== tableWhere)
-    expect(summaryCounts).toHaveLength(4 + 6)
+    expect(summaryCounts).toHaveLength(4 + 5)
     for (const w of summaryCounts) {
       // baseWhere: con el alcance del dashboard, sin ningún filtro de estado.
       expect(w.AND[0].AND).toEqual([{ coverages: { some: { asset: { is: { assetType: 'vehiculo' } } } } }])
@@ -260,6 +258,7 @@ describe('Detalle, baja manual y búsqueda', () => {
     expect(res.body.data.effectiveStatus).toBe('renovada')
     expect(res.body.data.status).toBe('vigente')
     expect(res.body.data.renewal).toEqual({
+      isMarked: true,
       renewedBy: { id: NEW_ID, policyNumber: 'R-NEW' },
       renewalOf: [{ id: OLD_ID, policyNumber: 'R-OLDER-1' }, { id: 'x', policyNumber: 'R-OLDER-2' }],
     })
@@ -274,7 +273,7 @@ describe('Detalle, baja manual y búsqueda', () => {
     const res = await request(app).get(`/api/v1/policies/${POLICY_ID}`).set(auth)
 
     expect(res.body.data.effectiveStatus).toBe('vencida')
-    expect(res.body.data.renewal).toEqual({ renewedBy: null, renewalOf: [] })
+    expect(res.body.data.renewal).toEqual({ isMarked: false, renewedBy: null, renewalOf: [] })
   })
 
   it('manual baja on a renewed policy shows De baja but keeps the renewal visible', async () => {
@@ -296,7 +295,7 @@ describe('Detalle, baja manual y búsqueda', () => {
 
     const res = await request(app).get('/api/v1/policies/search?q=R-OLD').set(auth)
 
-    expect(res.body.data[0]).toMatchObject({ status: 'vencida', effectiveStatus: 'vencida_renovada' })
+    expect(res.body.data[0]).toMatchObject({ status: 'vencida', effectiveStatus: 'vencida' })
     expect(db.policy.findMany.mock.calls[0][0].select.renewalLinksAsPrevious).toEqual({ where: { revokedAt: null }, select: { id: true }, take: 1 })
   })
 })
@@ -321,6 +320,19 @@ describe('Invariancia económica: con y sin renovación', () => {
     expect(withoutAdministrativeFields(withRenewal)).toEqual(withoutAdministrativeFields(without))
     expect(withRenewal.totalInsuredAmountUsd).toBe(10000)
     expect(withRenewal.status).toBe(without.status)
+  })
+
+  it('a manual mark on an expired policy changes only administrative metadata', async () => {
+    db.policy.findMany.mockResolvedValueOnce([listRow({ endDate: PAST })])
+    const before = (await request(app).get('/api/v1/policies?includeCoverages=true').set(auth)).body.data[0]
+    db.policy.findMany.mockResolvedValueOnce([
+      listRow({ endDate: PAST, renewalLinksAsPrevious: [{ renewalPolicy: null }] }),
+    ])
+    const after = (await request(app).get('/api/v1/policies?includeCoverages=true').set(auth)).body.data[0]
+
+    expect(after.effectiveStatus).toBe('vencida')
+    expect(after.renewal).toEqual({ isMarked: true, renewedBy: null })
+    expect(withoutAdministrativeFields(after)).toEqual(withoutAdministrativeFields(before))
   })
 
   it.each(cases)('detail — %s: only effectiveStatus/renewal differ', async (_label, overrides) => {

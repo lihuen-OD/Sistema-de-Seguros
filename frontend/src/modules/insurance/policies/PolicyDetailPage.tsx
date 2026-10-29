@@ -335,11 +335,12 @@ export default function PolicyDetailPage() {
   const daysLeft = daysUntilBusinessDate(policy.endDate)
   const isExpired = daysLeft < 0
   const daysText = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`
+  const isRenewalMarked = policy.renewal?.isMarked ?? Boolean(policy.renewal?.renewedBy)
   const renewedBy = policy.renewal?.renewedBy ?? null
   const renewalOf = policy.renewal?.renewalOf ?? []
-  // Una baja manual no se puede renovar (De baja queda reservado a eso) y una
-  // póliza ya renovada primero hay que deshacerla.
-  const canMarkRenewed = canManageRenewals && policy.status !== 'de_baja' && !renewedBy
+  // Una baja manual no se puede marcar; la fecha de vencimiento no restringe
+  // esta acción administrativa.
+  const canMarkRenewed = canManageRenewals && policy.status !== 'de_baja' && !isRenewalMarked
 
   // Task columns
   const taskColumns: TableColumn<ProducerTask>[] = [

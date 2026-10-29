@@ -53,7 +53,7 @@ interface BackendPolicy {
   isActive: boolean; status: string; deactivatedAt: string | null
   // Opcional: un backend anterior a R2 no lo manda (despliegue escalonado).
   effectiveStatus?: string
-  renewal?: { renewedBy: PolicyRef | null; renewalOf?: PolicyRef[] }
+  renewal?: { isMarked?: boolean; renewedBy: PolicyRef | null; renewalOf?: PolicyRef[] }
   createdAt: string; updatedAt: string
   producer?: BackendProducer | null
   coverages?: BackendPolicyCoverage[]
@@ -126,7 +126,6 @@ const EFFECTIVE_STATUS_FROM_BACKEND: Record<string, Exclude<PolicyEffectiveStatu
   proxima_a_vencer: 'proximo_vencer',
   renovada: 'renovada',
   vencida: 'vencida',
-  vencida_renovada: 'vencida_renovada',
   de_baja: 'de_baja',
 }
 
@@ -215,7 +214,11 @@ function mapPolicy(b: BackendPolicy): Policy {
     description: b.description ?? '',
     status,
     effectiveStatus: mapEffectiveStatus(b.effectiveStatus, status),
-    renewal: b.renewal ? { renewedBy: b.renewal.renewedBy ?? null, renewalOf: b.renewal.renewalOf } : undefined,
+    renewal: b.renewal ? {
+      isMarked: b.renewal.isMarked ?? Boolean(b.renewal.renewedBy),
+      renewedBy: b.renewal.renewedBy ?? null,
+      renewalOf: b.renewal.renewalOf,
+    } : undefined,
     isActive: b.isActive,
     deactivatedAt: b.deactivatedAt,
     coverages: b.coverages ? b.coverages.map(mapCoverage) : undefined,
@@ -364,7 +367,7 @@ export interface PolicyRenewalRecord {
   revokedBy: string | null
   revokeReason: string | null
   previousPolicy: RenewalPolicyRef
-  renewalPolicy: RenewalPolicyRef
+  renewalPolicy: RenewalPolicyRef | null
 }
 
 export const policiesApi = {
@@ -492,7 +495,7 @@ export const policiesApi = {
     return res.data.data
   },
 
-  async createRenewal(previousPolicyId: string, input: { renewalPolicyId: string; notes?: string }): Promise<PolicyRenewalRecord> {
+  async createRenewal(previousPolicyId: string, input: { renewalPolicyId?: string; notes?: string } = {}): Promise<PolicyRenewalRecord> {
     const res = await apiClient.post<{ data: PolicyRenewalRecord }>(`/policies/${previousPolicyId}/renewal`, input)
     return res.data.data
   },
@@ -532,7 +535,7 @@ export type PolicyListFilters = PolicyFilters & ListSortParams & ListSummaryPara
 // (proxima_a_vencer) e ignoran solo los filtros de estado; la suma asegurada
 // es solo de líneas vigentes hoy y no depende de las renovaciones.
 export type PolicyEffectiveStatusCounts = {
-  vigente: number; proxima_a_vencer: number; renovada: number; vencida: number; vencida_renovada: number; de_baja: number
+  vigente: number; proxima_a_vencer: number; renovada: number; vencida: number; de_baja: number
 }
 // Desglose de la suma asegurada vigente (R4-B) — solo con
 // includeInsuredBreakdown=true (Dashboard general). Con filtro de empresa /

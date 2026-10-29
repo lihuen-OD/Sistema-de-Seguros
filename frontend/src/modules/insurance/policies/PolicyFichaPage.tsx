@@ -49,6 +49,7 @@ export default function PolicyFichaPage() {
 
   const statusLabel = POLICY_EFFECTIVE_STATUS_LABELS[policy.effectiveStatus]
   const renewedBy = policy.renewal?.renewedBy ?? null
+  const isRenewalMarked = policy.renewal?.isMarked ?? Boolean(renewedBy)
   const renewalOf = policy.renewal?.renewalOf ?? []
 
   return (
@@ -122,7 +123,9 @@ export default function PolicyFichaPage() {
                 <FichaRow label="Compañía aseguradora" value={policy.insuranceCompany} />
                 {producer && <FichaRow label="Productor asesor" value={producer.name} />}
                 <FichaRow label="Estado" value={statusLabel} />
-                {renewedBy && <FichaRow label="Renovada por" value={renewedBy.policyNumber} mono />}
+                {renewedBy
+                  ? <FichaRow label="Renovada por" value={renewedBy.policyNumber} mono />
+                  : isRenewalMarked && <FichaRow label="Marca administrativa" value="Renovada" />}
                 {renewalOf.length > 0 && <FichaRow label="Renovación de" value={renewalOf.map((p) => p.policyNumber).join(', ')} mono />}
               </div>
             </div>

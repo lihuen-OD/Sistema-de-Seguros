@@ -25,7 +25,7 @@ import type { Policy, ProducerTask, TableColumn } from '../../shared/types'
 // Orden por severidad al ordenar la columna "Estado" de pólizas — alfabético
 // dejaría "de_baja" antes que "vencida", que no refleja la urgencia real
 // (mismo criterio que STATUS_SORT_ORDER en FireExtinguishersPage).
-// Estado administrativo (incluye Renovada / Vencida (renovada)).
+// Estado administrativo de pólizas (Renovada aplica mientras sigue vigente).
 const POLICY_STATUS_SORT_ORDER: Record<string, number> = Object.fromEntries(
   POLICY_EFFECTIVE_STATUS_ORDER.map((key, idx) => [key, idx]),
 )

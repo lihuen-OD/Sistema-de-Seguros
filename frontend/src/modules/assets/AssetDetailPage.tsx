@@ -44,7 +44,7 @@ type Tab = (typeof TABS)[number]
 // alfabético mezclaría estados vigentes con vencidos sin ningún criterio útil.
 // Mismo orden que ya definen los labels canónicos de cada dominio.
 // Pólizas: por estado administrativo (Vigente, Próx. a vencer, Renovada,
-// Vencida, Vencida (renovada), De baja).
+// Vencida, De baja).
 const POLICY_STATUS_SORT_ORDER: Record<string, number> = Object.fromEntries(
   POLICY_EFFECTIVE_STATUS_ORDER.map((key, idx) => [key, idx]),
 )

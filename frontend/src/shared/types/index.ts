@@ -99,15 +99,14 @@ export type PolicyStatus =
   | 'de_baja'
   | 'desconocido'
 
-// Estado ADMINISTRATIVO (presentación, filtros, gráficos y alertas): suma
-// Renovada / Vencida (renovada) y usa el día de Argentina. Nunca usarlo para
-// calcular montos — una Renovada sigue contractualmente vigente.
+// Estado ADMINISTRATIVO (presentación, filtros, gráficos y alertas), con el
+// día de Argentina. Nunca usarlo para calcular montos: la marca Renovada no
+// modifica la vigencia contractual.
 export type PolicyEffectiveStatus =
   | 'vigente'
   | 'proximo_vencer'
   | 'renovada'
   | 'vencida'
-  | 'vencida_renovada'
   | 'de_baja'
   | 'desconocido'
 
@@ -457,9 +456,9 @@ export interface Policy {
   description: string
   status: PolicyStatus
   effectiveStatus: PolicyEffectiveStatus
-  // Vínculo de renovación activo: renewedBy = la póliza nueva que renovó a
-  // esta; renewalOf = las anteriores que esta renueva (solo en el detalle).
-  renewal?: { renewedBy: PolicyRef | null; renewalOf?: PolicyRef[] }
+  // Marca administrativa activa, con póliza sucesora opcional por
+  // compatibilidad con los vínculos históricos.
+  renewal?: { isMarked: boolean; renewedBy: PolicyRef | null; renewalOf?: PolicyRef[] }
   isActive?: boolean
   deactivatedAt?: string | null
   // Detalle completo — presente en findById/create/update.

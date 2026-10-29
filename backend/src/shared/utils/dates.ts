@@ -5,7 +5,7 @@ export type PolicyStatus = 'vigente' | 'proxima_a_vencer' | 'vencida' | 'de_baja
 // notificaciones). Nunca reemplaza a PolicyStatus en cálculos económicos:
 // una póliza Renovada sigue contractualmente vigente hasta su vencimiento.
 export const POLICY_EFFECTIVE_STATUSES = [
-  'vigente', 'proxima_a_vencer', 'renovada', 'vencida', 'vencida_renovada', 'de_baja',
+  'vigente', 'proxima_a_vencer', 'renovada', 'vencida', 'de_baja',
 ] as const
 export type PolicyEffectiveStatus = (typeof POLICY_EFFECTIVE_STATUSES)[number]
 
@@ -252,9 +252,8 @@ export function coverageLineInForceWhere(asOfDate: Date): Record<string, unknown
 }
 
 /**
- * Prioridad: baja manual > vencida (renovada) > vencida > renovada > próxima a
- * vencer > vigente. "Renovación activa" = vínculo en policy_renewals con esta
- * póliza como anterior y sin revertir.
+ * Prioridad: baja manual > vencida > renovada > próxima a vencer > vigente.
+ * La renovación activa es una marca administrativa, no altera la vigencia.
  */
 export function computeEffectivePolicyStatus(
   policy: { endDate: Date | string; deactivatedAt: Date | string | null; hasActiveRenewal: boolean },
@@ -263,14 +262,14 @@ export function computeEffectivePolicyStatus(
 ): PolicyEffectiveStatus {
   if (policy.deactivatedAt) return 'de_baja'
   const end = toDateStr(policy.endDate)
-  if (end < businessDateStr(now)) return policy.hasActiveRenewal ? 'vencida_renovada' : 'vencida'
+  if (end < businessDateStr(now)) return 'vencida'
   if (policy.hasActiveRenewal) return 'renovada'
   return end <= toDateStr(businessDateOffset(daysWarning, now)) ? 'proxima_a_vencer' : 'vigente'
 }
 
 /**
  * Filtro Prisma WHERE por estado administrativo — misma prioridad que
- * computeEffectivePolicyStatus, así que los 6 filtros son excluyentes y cubren
+ * computeEffectivePolicyStatus, así que los 5 filtros son excluyentes y cubren
  * todas las pólizas. La renovación se resuelve con un EXISTS sobre
  * policy_renewals (índice por previousPolicyId), sin traer filas.
  */
@@ -282,8 +281,7 @@ export function buildEffectivePolicyStatusFilter(status: PolicyEffectiveStatus, 
 
   switch (status) {
     case 'de_baja': return { deactivatedAt: { not: null } }
-    case 'vencida_renovada': return { deactivatedAt: null, endDate: { lt: today }, ...renewed }
-    case 'vencida': return { deactivatedAt: null, endDate: { lt: today }, ...notRenewed }
+    case 'vencida': return { deactivatedAt: null, endDate: { lt: today } }
     case 'renovada': return { deactivatedAt: null, endDate: { gte: today }, ...renewed }
     case 'proxima_a_vencer': return { deactivatedAt: null, endDate: { gte: today, lte: in30Days }, ...notRenewed }
     case 'vigente': return { deactivatedAt: null, endDate: { gt: in30Days }, ...notRenewed }

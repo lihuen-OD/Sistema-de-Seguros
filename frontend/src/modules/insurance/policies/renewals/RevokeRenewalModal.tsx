@@ -27,10 +27,10 @@ export function RevokeRenewalModal({ renewal, onClose }: RevokeRenewalModalProps
   const mutation = useMutation({
     mutationFn: () => policiesApi.revokeRenewal(previousPolicy.id, reason.trim()),
     onSuccess: () => {
-      toast.success(`Se deshizo la renovación de la póliza ${previousPolicy.policyNumber}`)
+      toast.success(`Se deshizo la marca de renovación de la póliza ${previousPolicy.policyNumber}`)
       onClose()
     },
-    onSettled: () => invalidateRenewalQueries(queryClient, [previousPolicy.id, renewalPolicy.id]),
+    onSettled: () => invalidateRenewalQueries(queryClient, [previousPolicy.id, ...(renewalPolicy ? [renewalPolicy.id] : [])]),
   })
 
   // Mismo resguardo contra doble clic que MarkRenewedModal.
@@ -49,9 +49,11 @@ export function RevokeRenewalModal({ renewal, onClose }: RevokeRenewalModalProps
   return (
     <ConfirmDialog
       open
-      title="Deshacer renovación"
-      description={`La póliza ${previousPolicy.policyNumber} dejará de figurar como renovada por la póliza ${renewalPolicy.policyNumber} y volverá a mostrarse según sus fechas. El vínculo queda en el historial como revertido.`}
-      confirmLabel="Deshacer renovación"
+      title="Deshacer marca de renovación"
+      description={renewalPolicy
+        ? `La póliza ${previousPolicy.policyNumber} dejará de figurar como renovada por la póliza ${renewalPolicy.policyNumber}. El vínculo histórico queda registrado como revertido.`
+        : `La póliza ${previousPolicy.policyNumber} dejará de figurar como renovada y volverá a mostrarse según sus fechas. La reversión queda registrada en el historial.`}
+      confirmLabel="Deshacer marca"
       danger
       loading={mutation.isPending}
       onConfirm={handleConfirm}

@@ -1,12 +1,9 @@
-// Tests unitarios del frontend SIN dependencias nuevas (R4-B): empaqueta cada
-// tests/unit/*.test.ts con el esbuild que ya trae Vite y los corre con el
-// runner nativo de Node (node:test). Solo para lógica pura (helpers y
-// cálculos) — no hay DOM ni React acá. Si se aprueba agregar vitest, estos
-// mismos tests migran casi sin cambios.
+// Compila tests/unit/*.test.ts con el esbuild existente y los ejecuta con el
+// runner nativo de Node. Los paquetes quedan externos para admitir módulos
+// nativos como jsdom sin intentar incluirlos en el bundle.
 import { build } from 'esbuild'
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -18,14 +15,16 @@ if (entries.length === 0) {
   process.exit(1)
 }
 
-const outdir = mkdtempSync(path.join(tmpdir(), 'frontend-unit-'))
+const outdir = mkdtempSync(path.join(root, '.frontend-unit-'))
 try {
   await build({
     entryPoints: entries,
     bundle: true,
+    packages: 'external',
     platform: 'node',
     format: 'esm',
     target: 'node20',
+    define: { 'import.meta.env': '{}' },
     outdir,
     outExtension: { '.js': '.mjs' },
     logLevel: 'warning',

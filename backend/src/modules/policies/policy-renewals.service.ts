@@ -170,7 +170,7 @@ async function reachesPolicy(client: DbClient, fromPolicyId: string, targetPolic
       where: { previousPolicyId: current, revokedAt: null },
       select: { renewalPolicyId: true },
     })
-    if (!next) return false
+    if (!next?.renewalPolicyId) return false
     current = next.renewalPolicyId
   }
   return true
@@ -201,7 +201,9 @@ async function findBlockers(client: DbClient, previous: PolicyCore, renewal: Pol
   if (activeLink) {
     blockers.push({
       code: 'ALREADY_RENEWED',
-      message: `La póliza ${previous.policyNumber} ya está registrada como renovada por la póliza ${activeLink.renewalPolicy.policyNumber}.`,
+      message: activeLink.renewalPolicy
+        ? `La póliza ${previous.policyNumber} ya está registrada como renovada por la póliza ${activeLink.renewalPolicy.policyNumber}.`
+        : `La póliza ${previous.policyNumber} ya tiene una marca administrativa de renovación activa.`,
     })
   }
 
@@ -392,7 +394,7 @@ function mapRenewal(row: RenewalRow) {
   return {
     ...row,
     previousPolicy: mapPolicyRef(row.previousPolicy),
-    renewalPolicy: mapPolicyRef(row.renewalPolicy),
+    renewalPolicy: row.renewalPolicy ? mapPolicyRef(row.renewalPolicy) : null,
     status: row.revokedAt ? ('REVOKED' as const) : ('ACTIVE' as const),
   }
 }
@@ -400,9 +402,13 @@ function mapRenewal(row: RenewalRow) {
 // Vínculos ACTIVOS de una póliza (como anterior o como renovación), con la
 // fecha de fin de cada extremo. Los revertidos son historial y no restringen
 // nada.
-function findActiveLinks(client: DbClient, policyId: string) {
-  return client.policyRenewal.findMany({
-    where: { revokedAt: null, OR: [{ previousPolicyId: policyId }, { renewalPolicyId: policyId }] },
+async function findActiveLinks(client: DbClient, policyId: string) {
+  const links = await client.policyRenewal.findMany({
+    where: {
+      revokedAt: null,
+      renewalPolicyId: { not: null },
+      OR: [{ previousPolicyId: policyId }, { renewalPolicyId: policyId }],
+    },
     select: {
       previousPolicyId: true,
       renewalPolicyId: true,
@@ -410,6 +416,10 @@ function findActiveLinks(client: DbClient, policyId: string) {
       renewalPolicy: { select: { policyNumber: true, endDate: true } },
     },
   })
+  return links.filter(
+    (link): link is typeof link & { renewalPolicyId: string; renewalPolicy: NonNullable<typeof link.renewalPolicy> } =>
+      link.renewalPolicyId !== null && link.renewalPolicy !== null,
+  )
 }
 
 type ActiveLink = Awaited<ReturnType<typeof findActiveLinks>>[number]
@@ -515,22 +525,35 @@ export const policyRenewalsService = {
   },
 
   async create(previousPolicyId: string, data: CreatePolicyRenewalDTO, createdBy: string) {
-    assertNotSelf(previousPolicyId, data.renewalPolicyId)
+    if (data.renewalPolicyId) assertNotSelf(previousPolicyId, data.renewalPolicyId)
     try {
       const row = await prisma.$transaction(async (tx) => {
-        // Se revalida todo adentro de la transacción — la vista previa pudo
-        // quedar desactualizada entre que se mostró y se confirmó — y con
-        // ambas pólizas bloqueadas ANTES de leer sus fechas, para que una
-        // edición de fechas concurrente no se cuele entre validar e insertar.
-        await lockPolicies(tx, [previousPolicyId, data.renewalPolicyId])
+        // Serializa marcas repetidas de una misma póliza; el índice único
+        // parcial sigue siendo la última defensa ante duplicados.
+        await lockPolicies(tx, [previousPolicyId, ...(data.renewalPolicyId ? [data.renewalPolicyId] : [])])
         const previous = await findCoreOrThrow(tx, previousPolicyId, 'Póliza no encontrada')
-        const renewal = await findCoreOrThrow(tx, data.renewalPolicyId, 'Póliza de renovación no encontrada')
-        const [blocker] = await findBlockers(tx, previous, renewal)
-        if (blocker) throw new AppError(409, blocker.message, blocker.code)
+        if (previous.deactivatedAt) {
+          throw new AppError(409, 'Una póliza dada de baja no puede marcarse como renovada.', 'PREVIOUS_POLICY_DE_BAJA')
+        }
+
+        if (data.renewalPolicyId) {
+          // Compatibilidad con los vínculos históricos póliza anterior →
+          // sucesora; el flujo nuevo no envía renewalPolicyId.
+          const renewal = await findCoreOrThrow(tx, data.renewalPolicyId, 'Póliza de renovación no encontrada')
+          const [blocker] = await findBlockers(tx, previous, renewal)
+          if (blocker) throw new AppError(409, blocker.message, blocker.code)
+        } else {
+          const active = await tx.policyRenewal.findFirst({
+            where: { previousPolicyId, revokedAt: null },
+            select: { id: true },
+          })
+          if (active) throw new AppError(409, ALREADY_RENEWED_MESSAGE, 'ALREADY_RENEWED')
+        }
+
         return tx.policyRenewal.create({
           data: {
             previousPolicyId,
-            renewalPolicyId: data.renewalPolicyId,
+            renewalPolicyId: data.renewalPolicyId ?? null,
             notes: data.notes || null,
             createdBy,
           },

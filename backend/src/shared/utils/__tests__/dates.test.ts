@@ -250,7 +250,7 @@ describe('computeEffectivePolicyStatus', () => {
     ['renovada', '2026-12-31', { renewed: true }],
     ['renovada', '2026-07-10', { renewed: true }],
     ['vencida', '2026-06-14', {}],
-    ['vencida_renovada', '2026-06-14', { renewed: true }],
+    ['vencida', '2026-06-14', { renewed: true }],
     ['de_baja', '2026-12-31', { deBaja: true }],
   ] as const)('returns %s for endDate %s %j', (expected, endDate, opts) => {
     expect(status(endDate, opts)).toBe(expected)
@@ -277,11 +277,11 @@ describe('computeEffectivePolicyStatus', () => {
     expect(status('2026-06-15', { renewed: true })).toBe('renovada')
   })
 
-  it('switches Renovada → Vencida (renovada) exactly at Argentine midnight, not at UTC midnight', () => {
+  it('switches Renovada → Vencida exactly at Argentine midnight, not at UTC midnight', () => {
     const policy = { endDate: '2026-11-30', deactivatedAt: null, hasActiveRenewal: true }
     expect(computeEffectivePolicyStatus(policy, new Date('2026-12-01T00:30:00Z'))).toBe('renovada') // 30/11 21:30 AR
     expect(computeEffectivePolicyStatus(policy, new Date('2026-12-01T02:59:59Z'))).toBe('renovada') // 30/11 23:59 AR
-    expect(computeEffectivePolicyStatus(policy, new Date('2026-12-01T03:00:00Z'))).toBe('vencida_renovada') // 01/12 00:00 AR
+    expect(computeEffectivePolicyStatus(policy, new Date('2026-12-01T03:00:00Z'))).toBe('vencida') // 01/12 00:00 AR
   })
 
   it('applies the same Argentine boundary to policies without renewal', () => {
@@ -306,8 +306,7 @@ describe('buildEffectivePolicyStatusFilter', () => {
 
   it.each([
     ['de_baja', { deactivatedAt: { not: null } }],
-    ['vencida_renovada', { deactivatedAt: null, endDate: { lt: today }, ...renewed }],
-    ['vencida', { deactivatedAt: null, endDate: { lt: today }, ...notRenewed }],
+    ['vencida', { deactivatedAt: null, endDate: { lt: today } }],
     ['renovada', { deactivatedAt: null, endDate: { gte: today }, ...renewed }],
     ['proxima_a_vencer', { deactivatedAt: null, endDate: { gte: today, lte: in30 }, ...notRenewed }],
     ['vigente', { deactivatedAt: null, endDate: { gt: in30 }, ...notRenewed }],
@@ -324,7 +323,7 @@ describe('buildEffectivePolicyStatusFilter', () => {
 
   // Misma prioridad que computeEffectivePolicyStatus: evaluar cada filtro en
   // memoria sobre una grilla de casos debe dar exactamente un estado, el mismo.
-  it('the six filters are mutually exclusive, cover every case and agree with computeEffectivePolicyStatus', () => {
+  it('the five filters are mutually exclusive, cover every case and agree with computeEffectivePolicyStatus', () => {
     type Filter = {
       deactivatedAt?: null | { not: null }
       endDate?: { lt?: Date; gt?: Date; gte?: Date; lte?: Date }
@@ -407,7 +406,7 @@ describe('isPolicyInForceOn / isCoverageLineInForceOn (R4-A)', () => {
   it('12. a registered renewal does not change, by itself, whether the lines are in force', () => {
     const renewed = { ...IN_FORCE, effectiveStatus: 'renovada', hasActiveRenewal: true }
     expect(isCoverageLineInForceOn(renewed, line('2026-01-01'), TODAY)).toBe(true)
-    const expiredRenewed = { ...policy('2025-11-15', '2026-11-14'), effectiveStatus: 'vencida_renovada', hasActiveRenewal: true }
+    const expiredRenewed = { ...policy('2025-11-15', '2026-11-14'), effectiveStatus: 'vencida', hasActiveRenewal: true }
     expect(isCoverageLineInForceOn(expiredRenewed, line('2025-11-15'), TODAY)).toBe(false)
     expect(JSON.stringify([policyInForceWhere(new Date()), coverageLineInForceWhere(new Date())])).not.toMatch(/renewal/i)
   })

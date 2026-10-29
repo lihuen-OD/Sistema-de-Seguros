@@ -232,7 +232,7 @@ export default function InsuranceDashboardPage() {
   // póliza nueva de una renovación puede estar fuera del filtro de empresa.
   const policiesById = useMemo(() => new Map(allPolicies.map((p) => [p.id, p])), [allPolicies])
   const renewedPolicyIds = useMemo(
-    () => new Set(policies.filter((p) => p.renewal?.renewedBy).map((p) => p.id)),
+    () => new Set(policies.filter((p) => p.renewal?.isMarked).map((p) => p.id)),
     [policies],
   )
   const insuranceTypeSummaries = useMemo(

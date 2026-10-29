@@ -462,8 +462,8 @@ model Policy {
   coverages    PolicyAssetCoverage[]
   endorsements AccountingDocument[]
   claims       Claim[]
-  // Vínculos de renovación (ver PolicyRenewal) — como póliza anterior que
-  // fue renovada, y como póliza nueva que renueva a otra(s).
+  // Registros de renovación (ver PolicyRenewal) — como póliza marcada
+  // administrativamente y, cuando existe, como póliza sucesora.
   renewalLinksAsPrevious PolicyRenewal[] @relation("PolicyRenewalPrevious")
   renewalLinksAsRenewal  PolicyRenewal[] @relation("PolicyRenewalNext")
 
@@ -472,16 +472,16 @@ model Policy {
   @@map("policies")
 }
 
-// Vínculo administrativo "la póliza anterior fue renovada por la nueva",
-// registrado a mano por un usuario autorizado. No modifica ninguna de las dos
-// pólizas (fechas, líneas, sumas aseguradas y documentos quedan como están).
+// Marca administrativa de renovación; renewalPolicyId es null cuando no se
+// registra una póliza sucesora. Nunca modifica fechas, coberturas, sumas ni
+// documentos de la póliza.
 // Historial append-only: revertir completa revokedAt/revokedBy/revokeReason
 // una sola vez y volver a vincular crea una fila nueva — ningún endpoint
 // borra filas.
 model PolicyRenewal {
   id               String    @id @default(uuid())
   previousPolicyId String
-  renewalPolicyId  String
+  renewalPolicyId  String?
   notes            String?
   createdBy        String
   createdAt        DateTime  @default(now())
@@ -494,13 +494,13 @@ model PolicyRenewal {
   // criterio que AssetPledge. policies.service.ts#hardDelete lo rechaza antes
   // con un 409 claro.
   previousPolicy Policy @relation("PolicyRenewalPrevious", fields: [previousPolicyId], references: [id], onDelete: Restrict)
-  renewalPolicy  Policy @relation("PolicyRenewalNext", fields: [renewalPolicyId], references: [id], onDelete: Restrict)
+  renewalPolicy  Policy? @relation("PolicyRenewalNext", fields: [renewalPolicyId], references: [id], onDelete: Restrict)
 
   // Además, creados a mano en la migración add_policy_renewals porque Prisma
   // no los representa en el schema (no usar db push — los borraría):
   // - policy_renewals_one_active_per_previous: único PARCIAL sobre
-  //   previousPolicyId WHERE revokedAt IS NULL (una sola renovación activa
-  //   por póliza anterior; una póliza nueva sí puede renovar a varias).
+  //   previousPolicyId WHERE revokedAt IS NULL (una sola marca activa por
+  //   póliza anterior; una póliza sucesora puede seguir vinculada a varias).
   // - policy_renewals_not_self / policy_renewals_revocation_complete: CHECKs.
   // Los dos índices simples cubren lo que el parcial no: el historial
   // (incluye revertidas) y el chequeo de la FK al borrar una póliza.

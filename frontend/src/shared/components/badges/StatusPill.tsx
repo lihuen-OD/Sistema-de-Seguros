@@ -13,7 +13,7 @@ import {
 
 type StatusType =
   | 'activo' | 'inactivo' | 'en_reparacion' | 'vendido' | 'dado_de_baja' | 'pendiente_documentacion'
-  | 'vigente' | 'proximo_vencer' | 'vencida' | 'de_baja' | 'renovada' | 'vencida_renovada' | 'desconocido'
+  | 'vigente' | 'proximo_vencer' | 'vencida' | 'de_baja' | 'renovada' | 'desconocido'
   | 'pendiente' | 'parcial' | 'pagado'
   | 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'NOT_APPLICABLE'
   | 'ISSUED' | 'APPLIED' | 'CANCELLED' | 'OBSERVED'
@@ -37,7 +37,6 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   // Policy — estado administrativo de renovación: informativo (gestión ya
   // hecha), nunca con el rojo/ámbar de alerta. Mismo tono que el gráfico.
   renovada:                { bg: 'bg-sky-50',     text: 'text-sky-700',     border: 'border-sky-200'    },
-  vencida_renovada:        { bg: 'bg-violet-50',  text: 'text-violet-700',  border: 'border-violet-200' },
   desconocido:             { bg: 'bg-white',      text: 'text-slate-500',   border: 'border-slate-300 border-dashed' },
   // Payment (legacy es-ES keys, kept for other modules)
   pendiente:               { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200' },

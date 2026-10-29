@@ -272,6 +272,43 @@ describe('Policy renewals API', () => {
       expectNoPolicyWrites()
     })
 
+    it('records a manual mark without a successor even when the policy is expired', async () => {
+      const expiredPrevious = policy({ endDate: day('2020-11-30') })
+      mockPolicies(expiredPrevious)
+      db.policyRenewal.create.mockResolvedValue(
+        renewalRow({ previousPolicy: { ...renewalRow().previousPolicy, endDate: day('2020-11-30') }, renewalPolicy: null }),
+      )
+
+      const res = await post(PREV_ID, {})
+
+      expect(res.status).toBe(201)
+      expect(lockedIds()).toEqual([PREV_ID])
+      expect(db.policyRenewal.create.mock.calls[0][0].data).toEqual({
+        previousPolicyId: PREV_ID,
+        renewalPolicyId: null,
+        notes: null,
+        createdBy: USER_EMAIL,
+      })
+      expect(res.body.data).toMatchObject({
+        status: 'ACTIVE',
+        createdBy: USER_EMAIL,
+        previousPolicy: { id: PREV_ID, endDate: '2020-11-30' },
+        renewalPolicy: null,
+      })
+      expect(res.body.data.createdAt).toBeTruthy()
+      expectNoPolicyWrites()
+    })
+
+    it('rejects a repeated manual mark while an active mark already exists', async () => {
+      db.policyRenewal.findFirst.mockResolvedValue({ id: LINK_ID })
+
+      const res = await post(PREV_ID, {})
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('ALREADY_RENEWED')
+      expect(db.policyRenewal.create).not.toHaveBeenCalled()
+    })
+
     it('stores empty notes as null', async () => {
       await post(PREV_ID, { renewalPolicyId: NEW_ID, notes: '   ' })
       expect(db.policyRenewal.create.mock.calls[0][0].data.notes).toBeNull()
@@ -710,6 +747,33 @@ describe('Policy renewals API', () => {
       expectNoPolicyWrites()
     })
 
+    it('reverts a manual mark and retains the audit record', async () => {
+      db.policyRenewal.findFirst.mockResolvedValue({ id: LINK_ID })
+      db.policyRenewal.updateMany.mockResolvedValue({ count: 1 })
+      db.policyRenewal.findUniqueOrThrow.mockResolvedValue(
+        renewalRow({
+          renewalPolicy: null,
+          revokedAt: new Date('2026-10-29T12:00:00.000Z'),
+          revokedBy: USER_EMAIL,
+          revokeReason: 'Marca incorrecta',
+        }),
+      )
+
+      const res = await revoke(PREV_ID, { reason: 'Marca incorrecta' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.data).toMatchObject({
+        status: 'REVOKED',
+        renewalPolicy: null,
+        revokedBy: USER_EMAIL,
+        revokeReason: 'Marca incorrecta',
+      })
+      expect(db.policyRenewal.updateMany).toHaveBeenCalledWith({
+        where: { id: LINK_ID, revokedAt: null },
+        data: { revokedAt: expect.any(Date), revokedBy: USER_EMAIL, revokeReason: 'Marca incorrecta' },
+      })
+    })
+
     it.each([{}, { reason: '   ' }])('returns 422 without a reason (%j)', async (body) => {
       const res = await revoke(PREV_ID, body)
       expect(res.status).toBe(422)
@@ -746,6 +810,7 @@ describe('Policy renewals API', () => {
     it('returns the full history (as previous and as renewal, including revoked links)', async () => {
       db.policyRenewal.findMany.mockResolvedValue([
         renewalRow(),
+        renewalRow({ id: 'manual-link', renewalPolicy: null }),
         renewalRow({ id: 'revoked-link', revokedAt: new Date(), revokedBy: USER_EMAIL, revokeReason: 'Error' }),
       ])
 
@@ -756,8 +821,9 @@ describe('Policy renewals API', () => {
         where: { OR: [{ previousPolicyId: PREV_ID }, { renewalPolicyId: PREV_ID }] },
         orderBy: { createdAt: 'desc' },
       })
-      expect(res.body.data.map((r: { status: string }) => r.status)).toEqual(['ACTIVE', 'REVOKED'])
+      expect(res.body.data.map((r: { status: string }) => r.status)).toEqual(['ACTIVE', 'ACTIVE', 'REVOKED'])
       expect(res.body.data[0].previousPolicy.endDate).toBe('2026-11-30')
+      expect(res.body.data[1].renewalPolicy).toBeNull()
     })
 
     it('returns 404 when the policy does not exist', async () => {
@@ -902,6 +968,7 @@ describe('Policy renewals API', () => {
       expect(res.status).toBe(200)
       expect(db.policyRenewal.findMany.mock.calls[0][0].where).toEqual({
         revokedAt: null,
+        renewalPolicyId: { not: null },
         OR: [{ previousPolicyId: PREV_ID }, { renewalPolicyId: PREV_ID }],
       })
     })

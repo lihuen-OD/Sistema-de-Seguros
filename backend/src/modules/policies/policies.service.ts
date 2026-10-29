@@ -130,10 +130,9 @@ const COVERAGE_LIST_SELECT = {
   _count: { select: { attachments: true } },
 }
 
-// Vínculo de renovación ACTIVO de la póliza como anterior (a lo sumo uno, ver
-// policy_renewals_one_active_per_previous) — alcanza para el estado
-// administrativo y para mostrar "Renovada por". Prisma lo resuelve en una
-// sola consulta extra para toda la página (WHERE previousPolicyId IN ...).
+// Marca de renovación ACTIVA de la póliza como anterior (a lo sumo una, ver
+// policy_renewals_one_active_per_previous). La relación sucesora es opcional;
+// Prisma la resuelve en una sola consulta extra para toda la página.
 const ACTIVE_RENEWAL_AS_PREVIOUS = {
   where: { revokedAt: null },
   select: { renewalPolicy: { select: { id: true, policyNumber: true } } },
@@ -162,17 +161,18 @@ type PolicyRef = { id: string; policyNumber: string }
 
 // `status` = estado contractual de siempre (UTC, sin renovaciones) — es el que
 // usan TODOS los cálculos económicos. `effectiveStatus` = estado
-// administrativo (Renovada / Vencida (renovada), día de Argentina) — solo
+// administrativo (día de Argentina) — solo
 // para mostrar, filtrar, contar y notificar. Nunca intercambiarlos.
 function withStatus<T extends {
   startDate: Date | string
   endDate: Date | string
   deactivatedAt: Date | string | null
-  renewalLinksAsPrevious?: { renewalPolicy: PolicyRef }[]
+  renewalLinksAsPrevious?: { renewalPolicy: PolicyRef | null }[]
   renewalLinksAsRenewal?: { previousPolicy: PolicyRef }[]
 }>(policy: T) {
   const { renewalLinksAsPrevious, renewalLinksAsRenewal, ...rest } = policy
-  const renewedBy = renewalLinksAsPrevious?.[0]?.renewalPolicy ?? null
+  const activeRenewal = renewalLinksAsPrevious?.[0]
+  const renewedBy = activeRenewal?.renewalPolicy ?? null
   return {
     ...rest,
     startDate: toDateStr(policy.startDate),
@@ -181,9 +181,10 @@ function withStatus<T extends {
     effectiveStatus: computeEffectivePolicyStatus({
       endDate: policy.endDate,
       deactivatedAt: policy.deactivatedAt,
-      hasActiveRenewal: renewedBy !== null,
+      hasActiveRenewal: activeRenewal !== undefined,
     }),
     renewal: {
+      isMarked: activeRenewal !== undefined,
       renewedBy,
       ...(renewalLinksAsRenewal && { renewalOf: renewalLinksAsRenewal.map((link) => link.previousPolicy) }),
     },
@@ -765,7 +766,7 @@ export const policiesService = {
   //   que la póliza entre por una línea de la Empresa A no suma sus líneas
   //   de la Empresa B.
   // - byEffectiveStatus: misma idea que byStatus con los 6 estados
-  //   administrativos (incluye Renovada / Vencida (renovada)), evaluados con
+  //   administrativos, evaluados con
   //   el mismo `now` que el filtro de la tabla para que no crucen medianoche
   //   entre un conteo y otro. No interviene en ningún monto.
   async summarize(
