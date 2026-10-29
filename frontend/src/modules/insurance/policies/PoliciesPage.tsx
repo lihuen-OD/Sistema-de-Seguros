@@ -26,14 +26,16 @@ import { documentKeys } from '../../../shared/api/documents.api'
 import { producerQueries } from '../../../shared/api/producers.api'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
-import { POLICY_STATUS_LABELS } from '../../../shared/constants'
+import { POLICY_EFFECTIVE_STATUS_LABELS, POLICY_EFFECTIVE_STATUS_ORDER } from '../../../shared/constants'
 import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
 import type { Policy, SortState, TableColumn } from '../../../shared/types'
 import { EXPORT_SCOPE_HINT, fetchRowsForExport } from '../../../shared/utils/export'
 
-const STATUS_OPTIONS = Object.entries(POLICY_STATUS_LABELS).map(([value, label]) => ({
+// Estado administrativo: distingue Renovada y Vencida (renovada) de las que
+// todavía hay que gestionar.
+const STATUS_OPTIONS = POLICY_EFFECTIVE_STATUS_ORDER.map((value) => ({
   value,
-  label,
+  label: POLICY_EFFECTIVE_STATUS_LABELS[value],
 }))
 
 const DEFAULT_PAGE_SIZE = 20
@@ -60,7 +62,7 @@ export default function PoliciesPage() {
   // el summary y para exportar (getExportRows).
   const listFilters = {
     search: search.trim() || undefined,
-    status: filterStatus ? filterStatus as Policy['status'] : undefined,
+    effectiveStatus: filterStatus ? filterStatus as (typeof POLICY_EFFECTIVE_STATUS_ORDER)[number] : undefined,
     ...toSortParams(sort),
   }
   const { data: result, isLoading, isFetching, isError } = useQuery(policyQueries.listPaginated({
@@ -82,6 +84,7 @@ export default function PoliciesPage() {
   // La distribución por estado ignora solo el filtro de estado; la suma
   // asegurada es solo de líneas de cobertura vigentes hoy.
   const summary = result?.summary
+  const byEffectiveStatus = summary?.byEffectiveStatus
   const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: allProducers = [] } = useQuery(producerQueries.list())
 
@@ -217,11 +220,14 @@ export default function PoliciesPage() {
       headerClassName: 'text-right',
     },
     {
+      // id 'status' se conserva: lo usan las columnas y presets de
+      // exportación guardados por cada usuario.
       id: 'status',
-      key: 'status',
+      key: 'effectiveStatus',
       label: 'Estado',
       defaultVisible: true,
       render: (v) => <StatusPill status={v as string} size="sm" />,
+      exportValue: (row) => POLICY_EFFECTIVE_STATUS_LABELS[row.effectiveStatus],
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
     {
@@ -345,9 +351,12 @@ export default function PoliciesPage() {
       />
 
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard label="Vigentes" value={summary?.byStatus.vigente ?? '—'} description={summary ? `de ${summary.total} pólizas` : summaryHint} icon={ShieldCheck} variant="success" />
-        <KpiCard label="Vencidas" value={summary?.byStatus.vencida ?? '—'} description={summary ? `de ${summary.total} pólizas` : summaryHint} icon={ShieldOff} variant="danger" />
-        <KpiCard label="Próximas a Vencer" value={summary?.byStatus.proxima_a_vencer ?? '—'} description={summary ? 'En los próximos 30 días' : summaryHint} icon={AlertTriangle} variant="warning" />
+        {/* Estado administrativo: Vigentes/Vencidas/Próximas cuentan solo las
+            que no tienen renovación registrada; las renovadas se informan en
+            la descripción para que las 6 categorías queden a la vista. */}
+        <KpiCard label="Vigentes" value={byEffectiveStatus?.vigente ?? '—'} description={byEffectiveStatus && summary ? `${byEffectiveStatus.renovada} renovadas · de ${summary.total} pólizas` : summaryHint} icon={ShieldCheck} variant="success" />
+        <KpiCard label="Vencidas" value={byEffectiveStatus?.vencida ?? '—'} description={byEffectiveStatus ? `${byEffectiveStatus.vencida_renovada} vencidas con renovación · ${byEffectiveStatus.de_baja} de baja` : summaryHint} icon={ShieldOff} variant="danger" />
+        <KpiCard label="Próximas a Vencer" value={byEffectiveStatus?.proxima_a_vencer ?? '—'} description={byEffectiveStatus ? 'Sin renovación, próximos 30 días' : summaryHint} icon={AlertTriangle} variant="warning" />
         <KpiCard label="Suma Asegurada" value={summary ? formatCurrencyCompact(summary.insuredActiveUsd, 'USD') : '—'} description={summary ? `${formatCurrencyCompact(summary.insuredActiveArs, 'ARS')} · coberturas vigentes` : summaryHint} icon={DollarSign} variant="info" />
       </MetricGrid>
 

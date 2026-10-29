@@ -12,9 +12,14 @@ import { SearchableSelect } from '../../../shared/components/forms/SearchableSel
 import { formatCurrencyCompact, formatDate } from '../../../shared/utils/format'
 import { ROUTES } from '../../../app/routes'
 import type { AssetInsuranceSummary } from '../../../shared/utils/insuranceDashboardCalc'
+import type { Policy } from '../../../shared/types'
+import { RenewalNote } from './RenewalNote'
 
 interface SingleAssetViewProps {
   summaries: AssetInsuranceSummary[]
+  // Para lo administrativo (estado visible, renovaciones) por id de póliza —
+  // los summaries solo traen el estado contractual de los cálculos.
+  policiesById: Map<string, Policy>
 }
 
 function severityFromCoverage(pct: number | null): 'success' | 'warning' | 'danger' | 'default' {
@@ -32,7 +37,7 @@ function severityFromLossRatio(pct: number | null): 'success' | 'warning' | 'dan
   return 'danger'
 }
 
-export function SingleAssetView({ summaries }: SingleAssetViewProps) {
+export function SingleAssetView({ summaries, policiesById }: SingleAssetViewProps) {
   const navigate = useNavigate()
   const [selectedId, setSelectedId] = useState(summaries[0]?.assetId ?? '')
   const summary = useMemo(
@@ -117,7 +122,7 @@ export function SingleAssetView({ summaries }: SingleAssetViewProps) {
       </MetricGrid>
 
       {summary.nextExpiration && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 bg-white border border-slate-200 rounded-xl">
           <CalendarClock size={16} className="text-slate-400 flex-shrink-0" />
           <p className="text-sm text-slate-600">
             Próximo vencimiento: <strong className="text-slate-800">{summary.nextExpiration.policyNumber}</strong>
@@ -127,6 +132,7 @@ export function SingleAssetView({ summaries }: SingleAssetViewProps) {
               {summary.nextExpiration.daysUntil >= 0 ? `en ${summary.nextExpiration.daysUntil} días` : `vencida hace ${Math.abs(summary.nextExpiration.daysUntil)} días`}
             </span>
           </p>
+          <RenewalNote policyId={summary.nextExpiration.policyId} assetId={summary.assetId} policiesById={policiesById} />
         </div>
       )}
 
@@ -176,7 +182,7 @@ export function SingleAssetView({ summaries }: SingleAssetViewProps) {
                         {p.insuranceCompany}
                         {p.isShared && <span className="text-slate-400" title="Póliza compartida con otros activos"> ⚭</span>}
                       </td>
-                      <td className="px-4 py-2.5"><StatusPill status={p.status} size="sm" /></td>
+                      <td className="px-4 py-2.5"><StatusPill status={policiesById.get(p.id)?.effectiveStatus ?? p.status} size="sm" /></td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{formatCurrencyCompact(p.invoicedTotalUsd, 'USD')}</td>
                     </tr>
                   ))}

@@ -1,3 +1,5 @@
+import { businessTodayStr } from './businessDate'
+
 export type ExpirationStatus = 'vencido' | 'proximo_vencer' | 'vigente'
 
 // Estado de vencimiento de un adjunto (Activos/Pólizas) — mismo criterio que
@@ -42,7 +44,7 @@ export function isCoverageActiveOn(
 // fue reincorporado con una línea nueva. Si ninguna línea que matchea está
 // vigente hoy, devuelve null en vez de caer a una histórica — el llamador ya
 // maneja "sin cobertura" (ej. "Sin tipo", sin chips) sin necesidad de un
-// mensaje nuevo.
+// mensaje nuevo. "Hoy" = día de Argentina, igual que el backend (R4-A).
 interface CoverageForAssetPick {
   assetId: string | null
   effectiveDate: string
@@ -51,7 +53,7 @@ interface CoverageForAssetPick {
 export function pickActiveCoverageForAsset<T extends CoverageForAssetPick>(
   coverages: T[] | undefined,
   assetId: string | null,
-  today: string = new Date().toISOString().slice(0, 10),
+  today: string = businessTodayStr(),
 ): T | null {
   if (!coverages) return null
   const matching = coverages.filter((c) => (assetId ? c.assetId === assetId : !c.assetId))

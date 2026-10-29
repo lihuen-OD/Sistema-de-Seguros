@@ -18,8 +18,14 @@ import { ChartCard } from '../../shared/components/cards/ChartCard'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { FilterBar } from '../../shared/components/filters/FilterBar'
 import { MultiSelectFilter } from '../../shared/components/filters/MultiSelectFilter'
+import { DataWarning } from '../../shared/components/feedback/DataWarning'
+import { FinancialDataWarning } from '../../shared/components/feedback/FinancialDataWarning'
 import { formatCurrencyCompact, formatCurrencyInteger, formatDate, daysUntil } from '../../shared/utils/format'
-import { ASSET_TYPES } from '../../shared/constants'
+import { ASSET_TYPES, POLICY_EFFECTIVE_STATUS_COLORS, POLICY_EFFECTIVE_STATUS_LABELS } from '../../shared/constants'
+import { isPendingRenewal } from '../../shared/utils/policyAdminStatus'
+import { daysUntilBusinessDate } from '../../shared/utils/businessDate'
+import { topInsurersWithOther } from '../../shared/utils/insuranceDashboardCalc'
+import { allocationIssueAssetLabels, lineAttributionShare } from '../../shared/utils/insuredAttribution'
 import { assetQueries } from '../../shared/api/assets.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { documentQueries } from '../../shared/api/documents.api'
@@ -60,15 +66,35 @@ export default function DashboardPage() {
   }
 
   // ── Data queries ──────────────────────────────────────────────────
-  const { data: allAssets = [], isError: assetsError } = useQuery(assetQueries.list())
-  // includeCoverages:true — el filtro de alcance (empresa/centro de costo/
-  // tipo de activo) más abajo necesita, por póliza, sus líneas de cobertura
-  // reales (cada una con su propio activo o su propia imputación empresa/
-  // centro de costo cuando es "sin activo").
-  const { data: allPolicies = [] } = useQuery(policyQueries.list({ includeCoverages: true }))
+  // Todas las páginas (no los primeros 200): el valor patrimonial y el
+  // alcance por activo son totales globales (R4-B, ver fetchAllPages).
+  const { data: assetList, isError: assetsError } = useQuery(assetQueries.listAll())
+  const allAssets = useMemo(() => assetList?.rows ?? [], [assetList])
+  // Todo lo de pólizas sale del backend sobre TODO el alcance (empresa /
+  // centro de costo / tipo de activo), sin una lista paginada en memoria:
+  // conteos por estado, suma asegurada vigente (prorrateada por asignaciones
+  // con filtro de imputación), su desglose por aseguradora, pólizas con
+  // cobertura y activos asegurados hoy, e ids de las pólizas en alcance.
+  const policyScope = {
+    scopeCompanyIds: filterCompanies.length > 0 ? [...filterCompanies].sort().join(',') : undefined,
+    scopeCostCenterId: filterCostCenter || undefined,
+    scopeAssetType: filterAssetType || undefined,
+  }
+  const { data: policyStatusSummary } = useQuery(policyQueries.statusSummary(policyScope))
+  const insuredBreakdown = policyStatusSummary?.insuredBreakdown
+  const allocationIssues = insuredBreakdown?.allocationIssues
+  const allocationIssueAssetIds = insuredBreakdown?.allocationIssueAssetIds
+  const underAllocatedAssetLabels = allocationIssueAssetLabels(allocationIssueAssetIds?.underAllocated ?? [], allAssets)
+  const overAllocatedAssetLabels = allocationIssueAssetLabels(allocationIssueAssetIds?.overAllocated ?? [], allAssets)
+  const hasAllocationIssues = Boolean(
+    insuredBreakdown?.attributed &&
+    ((allocationIssues?.underAllocatedAssets ?? 0) > 0 || (allocationIssues?.overAllocatedAssets ?? 0) > 0),
+  )
+  const { data: upcomingPendingPolicies = [] } = useQuery(policyQueries.upcomingPendingRenewals(policyScope))
+  const policyCounts = policyStatusSummary?.byEffectiveStatus
   const { data: allFireExtinguishers = [] } = useQuery(fireExtinguisherQueries.list())
-  const { data: allDocuments = [] } = useQuery(documentQueries.list())
-  const { data: financialDocs = [] } = useQuery(documentQueries.financial())
+  const { data: financialResult } = useQuery(documentQueries.financialWithMeta())
+  const financialDocs = useMemo(() => financialResult?.data ?? [], [financialResult])
   const { data: allCompanies = [] } = useQuery(companyQueries.list())
   const { data: allCostCenters = [] } = useQuery(costCenterQueries.list())
   // Reemplaza el fan-out anterior (1 GET /producers + 1 GET /producers/:id/tasks
@@ -79,16 +105,6 @@ export default function DashboardPage() {
   // useMemo (no `?? []` suelto) para que la referencia sea estable entre
   // renders y no invalide el useMemo de overdueTasks más abajo en cada render.
   const overdueTaskItems = useMemo(() => overdueTasksResult?.items ?? [], [overdueTasksResult])
-
-  const selectedCompanyIds = useMemo(
-    () => new Set(filterCompanies),
-    [filterCompanies],
-  )
-
-  const assetById = useMemo(
-    () => new Map(allAssets.map((a) => [a.id, a])),
-    [allAssets],
-  )
 
   const companyOptions = useMemo(
     () =>
@@ -129,22 +145,10 @@ export default function DashboardPage() {
         continue
       }
 
-      const allocations = asset.allocations?.length
-        ? asset.allocations
-        : [{
-            id: `legacy-${asset.id}`,
-            companyId: asset.companyId,
-            costCenterId: asset.costCenterId,
-            percentage: 100,
-          }]
-
-      const matchingPercentage = allocations.reduce((total, allocation) => {
-        if (filterCompanies.length > 0 && !selectedCompanyIds.has(allocation.companyId)) return total
-        if (filterCostCenter && allocation.costCenterId !== filterCostCenter) return total
-        return total + allocation.percentage
-      }, 0)
-
-      const ratio = Math.min(1, Math.max(0, matchingPercentage / 100))
+      const ratio = lineAttributionShare({ assetId: asset.id, companyId: asset.companyId, costCenterId: asset.costCenterId }, asset.allocations, {
+        companyIds: filterCompanies,
+        costCenterId: filterCostCenter || undefined,
+      })
       if (ratio > 0) ratios.set(asset.id, ratio)
     }
 
@@ -152,9 +156,8 @@ export default function DashboardPage() {
   }, [
     allAssets,
     filterAssetType,
-    filterCompanies.length,
+    filterCompanies,
     filterCostCenter,
-    selectedCompanyIds,
   ])
 
   const filteredAssets = useMemo(
@@ -162,72 +165,17 @@ export default function DashboardPage() {
     [allAssets, assetScopeRatioById],
   )
 
-  const filteredPolicies = useMemo(
-    () =>
-      allPolicies.filter((policy) => {
-        if (!hasScopeFilters) return true
-
-        // Cada línea de cobertura es o bien un activo (cuya empresa/centro de
-        // costo salen de las allocations de ESE activo) o bien "sin activo"
-        // (imputada directamente vía coverage.companyId/costCenterId).
-        const coverages = policy.coverages ?? []
-        const policyAssets = coverages
-          .map((c) => (c.assetId ? assetById.get(c.assetId) : undefined))
-          .filter((asset): asset is NonNullable<typeof asset> => asset !== undefined)
-
-        const allocationsOf = (asset: NonNullable<typeof policyAssets[number]>) =>
-          asset.allocations?.length ? asset.allocations : [{
-            companyId: asset.companyId,
-            costCenterId: asset.costCenterId,
-            percentage: 100,
-          }]
-
-        if (filterCompanies.length > 0) {
-          const companyMatches = coverages.some((coverage) => {
-            if (!coverage.assetId) {
-              return coverage.companyId != null && selectedCompanyIds.has(coverage.companyId)
-            }
-            const asset = assetById.get(coverage.assetId)
-            return asset != null && allocationsOf(asset).some((allocation) => selectedCompanyIds.has(allocation.companyId))
-          })
-          if (!companyMatches) return false
-        }
-
-        if (filterCostCenter) {
-          const costCenterMatches = coverages.some((coverage) => {
-            if (!coverage.assetId) return coverage.costCenterId === filterCostCenter
-            const asset = assetById.get(coverage.assetId)
-            return asset != null && allocationsOf(asset).some((allocation) =>
-              allocation.costCenterId === filterCostCenter &&
-              (filterCompanies.length === 0 || selectedCompanyIds.has(allocation.companyId)),
-            )
-          })
-          if (!costCenterMatches) return false
-        }
-
-        if (filterAssetType && !policyAssets.some((asset) => asset.assetType === filterAssetType)) return false
-        return true
-      }),
-    [
-      allPolicies,
-      assetById,
-      filterAssetType,
-      filterCompanies.length,
-      filterCostCenter,
-      hasScopeFilters,
-      selectedCompanyIds,
-    ],
-  )
-
   const filteredAssetIds = useMemo(
     () => new Set(filteredAssets.map((asset) => asset.id)),
     [filteredAssets],
   )
 
-  const filteredPolicyIds = useMemo(
-    () => new Set(filteredPolicies.map((policy) => policy.id)),
-    [filteredPolicies],
-  )
+  // Pólizas en alcance (cualquier estado), para atribuir documentos y tareas:
+  // las calcula el backend con el mismo criterio de alcance que los conteos
+  // (antes salían de una lista de 200 pólizas en memoria). Sin filtros no se
+  // usan — todo cuenta.
+  const scopePolicyIds = insuredBreakdown?.scopePolicyIds
+  const filteredPolicyIds = useMemo(() => new Set(scopePolicyIds ?? []), [scopePolicyIds])
 
   const filteredFireExtinguishers = useMemo(
     () =>
@@ -256,11 +204,15 @@ export default function DashboardPage() {
     0,
   )
 
-  const vigentePolicies = filteredPolicies.filter((p) => p.status === 'vigente')
-  const expiredPolicies = filteredPolicies.filter((p) => p.status === 'vencida')
-  const expiringSoon = filteredPolicies.filter((p) => p.status === 'proximo_vencer')
-  const totalInsuredArs = vigentePolicies.reduce((s, p) => s + (p.totalInsuredAmountArs ?? 0), 0)
-  const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + (p.totalInsuredAmountUsd ?? 0), 0)
+  // Suma asegurada vigente: la calcula el backend sobre TODO el alcance con la
+  // regla de vigencia efectiva (R4-A) y, con filtro de empresa / centro de
+  // costo, prorrateada por las asignaciones de cada activo (R4-B). No depende
+  // de las renovaciones.
+  const totalInsuredArs = policyStatusSummary?.insuredActiveArs ?? 0
+  const totalInsuredUsd = policyStatusSummary?.insuredActiveUsd ?? 0
+  const insuredScopeNote = insuredBreakdown?.attributed
+    ? hasAllocationIssues ? ' · imputaciones a revisar' : ' · atribuida por imputación'
+    : ''
 
   // Los documentos pueden distribuirse entre pólizas de distintas empresas.
   // El ratio evita atribuir el documento completo a cada empresa seleccionada.
@@ -299,10 +251,7 @@ export default function DashboardPage() {
     [documentScopeRatioById, financialDocs],
   )
 
-  // Sin filtros se mantiene exactamente la fuente histórica del dashboard.
-  // Con un alcance activo se usa la versión financiera, que trae allocations.
-  const pendingDocs = (hasScopeFilters ? filteredFinancialDocs : allDocuments)
-    .filter((document) => document.paymentStatus !== 'PAID')
+  const pendingDocs = filteredFinancialDocs.filter((document) => document.paymentStatus !== 'PAID')
   const pendingTotalArs = pendingDocs.reduce(
     (sum, document) =>
       sum +
@@ -367,21 +316,31 @@ export default function DashboardPage() {
   )
 
   // ── Chart data ────────────────────────────────────────────────────
-  const activePolicies = filteredPolicies.filter((p) => p.status !== 'vencida')
-  const costByInsurer = activePolicies.reduce<Record<string, number>>((acc, p) => {
-    acc[p.insuranceCompany] = (acc[p.insuranceCompany] || 0) + (p.totalInsuredAmountArs ?? 0)
-    return acc
-  }, {})
-  const insurerChartData = Object.entries(costByInsurer)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([name, value]) => ({ name, value }))
+  // Suma asegurada vigente por aseguradora (no es prima): mismo alcance y
+  // mismo prorrateo que el KPI — sale del mismo cálculo del backend, así las
+  // barras siempre suman lo que muestra la tarjeta.
+  const insurerChartData = topInsurersWithOther(
+    insuredBreakdown?.byInsurer ?? [],
+    totalInsuredArs,
+  )
 
-  const policyStatusData = [
-    { name: 'Vigentes', value: vigentePolicies.length, color: '#10b981' },
-    { name: 'Próx. Vencer', value: expiringSoon.length, color: '#f59e0b' },
-    { name: 'Vencidas', value: expiredPolicies.length, color: '#ef4444' },
-  ]
+  // Las 6 categorías administrativas, en orden fijo y con color por estado
+  // (nunca por posición): un filtro que deja una categoría en 0 no repinta
+  // las demás.
+  const policyStatusData = policyCounts
+    ? ([
+        ['vigente', policyCounts.vigente],
+        ['proximo_vencer', policyCounts.proxima_a_vencer],
+        ['renovada', policyCounts.renovada],
+        ['vencida', policyCounts.vencida],
+        ['vencida_renovada', policyCounts.vencida_renovada],
+        ['de_baja', policyCounts.de_baja],
+      ] as const).map(([status, value]) => ({
+        name: POLICY_EFFECTIVE_STATUS_LABELS[status],
+        value,
+        color: POLICY_EFFECTIVE_STATUS_COLORS[status],
+      }))
+    : []
 
   const fireStatusData = [
     { name: 'Vigentes', value: filteredFireExtinguishers.filter((f) => f.status === 'vigente').length, color: '#10b981' },
@@ -467,13 +426,15 @@ export default function DashboardPage() {
   const monthlyData = costMode === 'vencimientos' ? costByDueDate : costByIssueDate
 
   // ── Upcoming policy expirations ───────────────────────────────────
-  const upcomingPolicies = filteredPolicies
-    .filter((p) => {
-      const d = daysUntil(p.endDate)
-      return d >= 0 && d <= 90
-    })
-    .sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime())
-    .slice(0, 6)
+  // Solo las pendientes de gestión de renovación (Vigente / Próxima a vencer,
+  // ya ordenadas por vencimiento en el backend sobre TODO el alcance): una
+  // Renovada ya está gestionada y una dada de baja no se renueva. Días con el
+  // día de Argentina, igual que el estado visible.
+  const upcomingPolicies = upcomingPendingPolicies.filter((p) => {
+    if (!isPendingRenewal(p.effectiveStatus)) return false
+    const d = daysUntilBusinessDate(p.endDate)
+    return d >= 0 && d <= 90
+  })
 
   // ── Upcoming installments ─────────────────────────────────────────
   const upcomingInstallments = useMemo(
@@ -507,6 +468,24 @@ export default function DashboardPage() {
           </div>
         }
       />
+
+      {assetList?.truncated && (
+        <DataWarning>
+          Indicadores basados en activos parciales: se cargaron {assetList.rows.length.toLocaleString('es-AR')} de {assetList.total.toLocaleString('es-AR')} activos.
+          El valor patrimonial, el recuento de activos y los indicadores de matafuegos o tareas filtrados por activo pueden estar incompletos.
+          La suma asegurada y los estados de pólizas provienen de agregados del backend y no dependen de esta lista parcial.
+        </DataWarning>
+      )}
+      <FinancialDataWarning result={financialResult} />
+      {hasAllocationIssues && (
+        <DataWarning>
+          <strong>Imputaciones para revisar:</strong>{' '}
+          {allocationIssues?.underAllocatedAssets ? `${allocationIssues.underAllocatedAssets} activos tienen asignaciones por debajo del 100%${underAllocatedAssetLabels ? `: ${underAllocatedAssetLabels}` : ''}. ` : ''}
+          {allocationIssues?.overAllocatedAssets ? `${allocationIssues.overAllocatedAssets} activos superan el 100%${overAllocatedAssetLabels ? `: ${overAllocatedAssetLabels}` : ''}. ` : ''}
+          El backend conserva el tope técnico del 100% y no redistribuye diferencias; los importes atribuidos no son exactos y los filtros individuales o combinados pueden no reconciliar.
+          Revisá las asignaciones de esos activos en sus fichas.
+        </DataWarning>
+      )}
 
       {/* ─── Filter bar ───────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 flex-wrap mb-5 bg-white border border-slate-200 rounded-xl px-4 py-3">
@@ -572,17 +551,23 @@ export default function DashboardPage() {
         <KpiCard
           label="Suma Asegurada"
           currency={{ ars: totalInsuredArs, usd: totalInsuredUsd, primary: 'ars' }}
-          description={`${vigentePolicies.length} pólizas vigentes`}
+          description={insuredBreakdown
+            ? hasAllocationIssues
+              ? `${insuredBreakdown.insuredAssetCount} activos asegurados hoy · cifra sujeta a revisión`
+              : `${insuredBreakdown.insuredAssetCount} activos asegurados hoy${insuredScopeNote}`
+            : 'Coberturas vigentes hoy'}
           icon={ShieldCheck}
           variant="success"
           onClick={() => navigate('/insurance/policies')}
         />
+        {/* Vencidas SIN renovación (las que requieren atención) y próximas a
+            vencer sin renovación — sobre todo el conjunto filtrado. */}
         <KpiCard
           label="Pólizas Vencidas"
-          value={expiredPolicies.length}
-          description={`${expiringSoon.length} próximas a vencer`}
+          value={policyCounts?.vencida ?? '—'}
+          description={policyCounts ? `${policyCounts.proxima_a_vencer} próximas a vencer sin renovar` : 'Calculando…'}
           icon={AlertTriangle}
-          variant={expiredPolicies.length > 0 ? 'danger' : 'default'}
+          variant={(policyCounts?.vencida ?? 0) > 0 ? 'danger' : 'default'}
           onClick={() => navigate('/insurance/policies')}
         />
         <KpiCard
@@ -623,8 +608,10 @@ export default function DashboardPage() {
         />
         <KpiCard
           label="Pólizas Total"
-          value={filteredPolicies.length}
-          description={`${filterCompanies.length || allCompanies.length} empresas en alcance`}
+          value={policyStatusSummary?.total ?? '—'}
+          description={insuredBreakdown
+            ? `${insuredBreakdown.activeCoveragePolicyCount} con cobertura vigente hoy`
+            : `${filterCompanies.length || allCompanies.length} empresas en alcance`}
           icon={TrendingUp}
           variant="default"
           onClick={() => navigate('/insurance/policies')}
@@ -686,12 +673,19 @@ export default function DashboardPage() {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie data={policyStatusData} cx="50%" cy="45%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value">
-                {policyStatusData.map((entry, i) => (
-                  <Cell key={i} fill={entry.color} />
+                {policyStatusData.map((entry) => (
+                  <Cell key={entry.name} fill={entry.color} />
                 ))}
               </Pie>
               <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+              {/* Leyenda con la cantidad: la identidad nunca depende solo del
+                  color (algunos tonos tienen poco contraste sobre blanco). */}
+              <Legend
+                iconType="circle"
+                iconSize={8}
+                wrapperStyle={{ fontSize: 11 }}
+                formatter={(value, entry) => `${value} · ${(entry.payload as { value?: number } | undefined)?.value ?? 0}`}
+              />
             </PieChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -701,8 +695,8 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
         {/* Insurer distribution */}
         <ChartCard
-          title="Prima por Aseguradora"
-          subtitle="Pólizas activas"
+          title="Suma Asegurada por Aseguradora"
+          subtitle={`Coberturas vigentes hoy${insuredScopeNote}${hasAllocationIssues ? ' · importes sujetos a revisión' : ''}`}
           className="lg:col-span-2"
           height={240}
         >
@@ -727,8 +721,8 @@ export default function DashboardPage() {
                   contentStyle={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}
                 />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                  {insurerChartData.map((_, i) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  {insurerChartData.map((entry, i) => (
+                    <Cell key={entry.name} fill={entry.name === 'Otras' ? '#94a3b8' : CHART_COLORS[i % CHART_COLORS.length]} />
                   ))}
                 </Bar>
               </BarChart>
@@ -782,7 +776,7 @@ export default function DashboardPage() {
           ) : (
             <div className="divide-y divide-slate-100">
               {upcomingPolicies.map((p) => {
-                const days = daysUntil(p.endDate)
+                const days = daysUntilBusinessDate(p.endDate)
                 return (
                   <div
                     key={p.id}

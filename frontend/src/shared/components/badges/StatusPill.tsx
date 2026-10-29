@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import {
   ASSET_STATUS_LABELS,
   POLICY_STATUS_LABELS,
+  POLICY_EFFECTIVE_STATUS_LABELS,
   PAYMENT_STATUS_LABELS,
   DOCUMENT_STATUS_LABELS,
   FIRE_EXT_STATUS_LABELS,
@@ -12,7 +13,7 @@ import {
 
 type StatusType =
   | 'activo' | 'inactivo' | 'en_reparacion' | 'vendido' | 'dado_de_baja' | 'pendiente_documentacion'
-  | 'vigente' | 'proximo_vencer' | 'vencida' | 'de_baja'
+  | 'vigente' | 'proximo_vencer' | 'vencida' | 'de_baja' | 'renovada' | 'vencida_renovada' | 'desconocido'
   | 'pendiente' | 'parcial' | 'pagado'
   | 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'NOT_APPLICABLE'
   | 'ISSUED' | 'APPLIED' | 'CANCELLED' | 'OBSERVED'
@@ -33,6 +34,11 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   proximo_vencer:          { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
   vencida:                 { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'    },
   de_baja:                 { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
+  // Policy — estado administrativo de renovación: informativo (gestión ya
+  // hecha), nunca con el rojo/ámbar de alerta. Mismo tono que el gráfico.
+  renovada:                { bg: 'bg-sky-50',     text: 'text-sky-700',     border: 'border-sky-200'    },
+  vencida_renovada:        { bg: 'bg-violet-50',  text: 'text-violet-700',  border: 'border-violet-200' },
+  desconocido:             { bg: 'bg-white',      text: 'text-slate-500',   border: 'border-slate-300 border-dashed' },
   // Payment (legacy es-ES keys, kept for other modules)
   pendiente:               { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200' },
   parcial:                 { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
@@ -73,9 +79,10 @@ const statusConfig: Record<string, { bg: string; text: string; border: string }>
   'Cerrado':               { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200'  },
 }
 
-const allLabels = {
+const allLabels: Record<string, string> = {
   ...ASSET_STATUS_LABELS,
   ...POLICY_STATUS_LABELS,
+  ...POLICY_EFFECTIVE_STATUS_LABELS,
   ...PAYMENT_STATUS_LABELS,
   ...DOCUMENT_STATUS_LABELS,
   ...FIRE_EXT_STATUS_LABELS,

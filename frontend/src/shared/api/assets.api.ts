@@ -2,7 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import type { Asset, AssetAttachment, AssetPledge, AssetStatus, AssetStatusHistory, Building, Currency } from '../types'
-import type { ListSortParams, ListSummaryParams, PaginatedResult } from './pagination'
+import { fetchAllPages, type CompleteList, type ListSortParams, type ListSummaryParams, type PaginatedResult } from './pagination'
 import { assetInternalCode } from '../utils/assetCode'
 
 interface BackendCompany { id: string; name: string; cuit: string }
@@ -342,6 +342,21 @@ export const assetQueries = {
     queryOptions({
       queryKey: assetKeys.list(filters),
       queryFn: () => assetsApi.findAll(filters),
+      staleTime: 60 * 1000,
+    }),
+  // Todos los activos (todas las páginas) — para tableros con totales
+  // globales, que no pueden quedarse con los primeros 200 (ver fetchAllPages).
+  listAll: (filters?: { isActive?: boolean }) =>
+    queryOptions({
+      queryKey: [...assetKeys.all, 'all', filters ?? {}] as const,
+      queryFn: ({ signal }): Promise<CompleteList<Asset>> =>
+        fetchAllPages(async ({ page, limit, signal }) => {
+          const res = await apiClient.get<Paginated<BackendAsset>>('/assets', {
+            params: { ...filters, page, limit },
+            signal,
+          })
+          return { data: res.data.data.map(mapAsset), pagination: res.data.pagination }
+        }, signal),
       staleTime: 60 * 1000,
     }),
   listPaginated: (filters: AssetListFilters) =>

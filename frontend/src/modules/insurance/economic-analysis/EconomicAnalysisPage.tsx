@@ -8,6 +8,7 @@ import { TrendingUp, Building2, FileText, FileSpreadsheet, FileDown, Loader2 } f
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
+import { FinancialDataWarning } from '../../../shared/components/feedback/FinancialDataWarning'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -99,7 +100,8 @@ export default function EconomicAnalysisPage() {
   // includeInstallments:false (Fase D4, Performance & RateLimit): esta
   // pantalla nunca lee `.installments` (confirmado por auditoría), así que
   // pide la versión liviana para no traer cuotas que se descartarían igual.
-  const { data: financialDocs = [], isError: isErrorDocs } = useQuery(documentQueries.financial({ includeInstallments: false }))
+  const { data: financialResult, isError: isErrorDocs } = useQuery(documentQueries.financialWithMeta({ includeInstallments: false }))
+  const financialDocs = useMemo(() => financialResult?.data ?? [], [financialResult])
   // includeCoverages:true — buildDocumentAllocationContexts necesita, para las
   // asignaciones "sin activo", la empresa/centro de costo propios de esa línea.
   const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list({ includeCoverages: true }))
@@ -465,6 +467,7 @@ export default function EconomicAnalysisPage() {
         title="Análisis Económico"
         subtitle="Costos por fecha de factura/documento"
       />
+      <FinancialDataWarning result={financialResult} />
 
       {/* Controls */}
       <div className="space-y-3 mb-6">

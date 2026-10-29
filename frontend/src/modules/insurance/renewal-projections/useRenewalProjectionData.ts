@@ -65,7 +65,8 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
   // ─── Datos remotos ───────────────────────────────────────────────────────────
   // Sin filtro de fecha — la proyección necesita el historial completo de cada
   // activo, no un rango elegido, para poder detectar su ciclo real de renovación.
-  const { data: financialDocs = [], isError: isErrorDocs } = useQuery(documentQueries.financial())
+  const { data: financialResult, isError: isErrorDocs } = useQuery(documentQueries.financialWithMeta())
+  const financialDocs = useMemo(() => financialResult?.data ?? [], [financialResult])
   const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list({ includeCoverages: true }))
   const { data: allAssets = [], isError: isErrorAssets } = useQuery(assetQueries.list())
   const { data: exchangeRateData, isError: isErrorFx } = useQuery(exchangeRateQueries.current())
@@ -312,6 +313,7 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
 
   return {
     isError,
+    financialDocsResult: financialResult,
     currency, setCurrency,
     horizonYears, setHorizonYears,
     customEnd: safeCustomEnd, setCustomEnd,
