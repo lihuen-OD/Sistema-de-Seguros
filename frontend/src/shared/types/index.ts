@@ -6,10 +6,12 @@ export type Role = 'ADMIN' | 'USER'
 // → Perfiles de Acceso). Mismo listado que el backend
 // (backend/src/shared/types/index.ts) — se mantiene duplicado a propósito,
 // igual que ya pasaba con Role antes de este cambio.
+// `policy_renewals` no es una pantalla: habilita marcar/deshacer renovaciones
+// dentro del detalle de póliza y el backend lo exige junto con `policies`.
 export const MODULE_KEYS = [
   'dashboard',
   'assets',
-  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
+  'policies', 'policy_renewals', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
   'asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard',
@@ -24,6 +26,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   dashboard: 'Dashboard',
   assets: 'Activos',
   policies: 'Pólizas',
+  policy_renewals: 'Renovación de Pólizas',
   documents: 'Documentos',
   financial_analysis: 'Análisis Financiero',
   economic_analysis: 'Análisis Económico',
@@ -65,7 +68,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   // criterio que el sidebar (ver Sidebar.tsx).
   { label: 'Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard', 'asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard'] },
   { label: 'Auditoría de Seguros', modules: ['insurance_audits', 'insurance_audit_coverage', 'insurance_audit_dashboard'] },
-  { label: 'Seguros', modules: ['policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard', 'claims'] },
+  { label: 'Seguros', modules: ['policies', 'policy_renewals', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard', 'claims'] },
   { label: 'Operaciones', modules: ['producers', 'tasks'] },
   { label: 'Configuración', modules: ['companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config'] },
 ]
@@ -85,11 +88,33 @@ export interface UserAuditScopeItem {
 
 export type AssetStatus = 'activo' | 'baja' | 'vendido'
 
+// Estado CONTRACTUAL (por fechas, sin renovaciones) — el único que usan los
+// cálculos económicos (sumas aseguradas, gasto, cobertura, proyecciones).
+// 'desconocido' = el backend mandó un valor que el frontend no reconoce: nunca
+// se lo trata como vigente (ver mapStatus en policies.api.ts).
 export type PolicyStatus =
   | 'vigente'
   | 'proximo_vencer'
   | 'vencida'
   | 'de_baja'
+  | 'desconocido'
+
+// Estado ADMINISTRATIVO (presentación, filtros, gráficos y alertas): suma
+// Renovada / Vencida (renovada) y usa el día de Argentina. Nunca usarlo para
+// calcular montos — una Renovada sigue contractualmente vigente.
+export type PolicyEffectiveStatus =
+  | 'vigente'
+  | 'proximo_vencer'
+  | 'renovada'
+  | 'vencida'
+  | 'vencida_renovada'
+  | 'de_baja'
+  | 'desconocido'
+
+export interface PolicyRef {
+  id: string
+  policyNumber: string
+}
 
 export type DocumentType =
   | 'INVOICE'
@@ -431,6 +456,10 @@ export interface Policy {
   endDate: string
   description: string
   status: PolicyStatus
+  effectiveStatus: PolicyEffectiveStatus
+  // Vínculo de renovación activo: renewedBy = la póliza nueva que renovó a
+  // esta; renewalOf = las anteriores que esta renueva (solo en el detalle).
+  renewal?: { renewedBy: PolicyRef | null; renewalOf?: PolicyRef[] }
   isActive?: boolean
   deactivatedAt?: string | null
   // Detalle completo — presente en findById/create/update.

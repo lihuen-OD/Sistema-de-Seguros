@@ -94,7 +94,7 @@ export function InsuranceTypesView({ summaries }: InsuranceTypesViewProps) {
     {
       id: 'activePremiumUsd',
       key: 'activePremiumUsd',
-      label: 'Prima vigente',
+      label: 'Suma asegurada vigente',
       sortable: true,
       headerClassName: 'text-right',
       className: 'text-right tabular-nums',
@@ -199,7 +199,7 @@ export function InsuranceTypesView({ summaries }: InsuranceTypesViewProps) {
         <KpiCard
           label="Vencimientos próximos"
           value={metrics.upcomingExpirations30d}
-          description="Pólizas vigentes que vencen dentro de 30 días"
+          description="Vigentes sin renovación registrada que vencen en 30 días"
           icon={CalendarClock}
           variant={metrics.upcomingExpirations30d > 0 ? 'warning' : 'success'}
         />

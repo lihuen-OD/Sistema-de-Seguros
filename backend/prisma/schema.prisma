@@ -462,10 +462,51 @@ model Policy {
   coverages    PolicyAssetCoverage[]
   endorsements AccountingDocument[]
   claims       Claim[]
+  // Vínculos de renovación (ver PolicyRenewal) — como póliza anterior que
+  // fue renovada, y como póliza nueva que renueva a otra(s).
+  renewalLinksAsPrevious PolicyRenewal[] @relation("PolicyRenewalPrevious")
+  renewalLinksAsRenewal  PolicyRenewal[] @relation("PolicyRenewalNext")
 
   @@index([isActive, endDate])
   @@index([producerId])
   @@map("policies")
+}
+
+// Vínculo administrativo "la póliza anterior fue renovada por la nueva",
+// registrado a mano por un usuario autorizado. No modifica ninguna de las dos
+// pólizas (fechas, líneas, sumas aseguradas y documentos quedan como están).
+// Historial append-only: revertir completa revokedAt/revokedBy/revokeReason
+// una sola vez y volver a vincular crea una fila nueva — ningún endpoint
+// borra filas.
+model PolicyRenewal {
+  id               String    @id @default(uuid())
+  previousPolicyId String
+  renewalPolicyId  String
+  notes            String?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+  revokedBy        String?
+  revokeReason     String?
+
+  // Restrict en ambos lados preserva el historial: una póliza con vínculos de
+  // renovación (activos o revertidos) no puede borrarse físicamente — mismo
+  // criterio que AssetPledge. policies.service.ts#hardDelete lo rechaza antes
+  // con un 409 claro.
+  previousPolicy Policy @relation("PolicyRenewalPrevious", fields: [previousPolicyId], references: [id], onDelete: Restrict)
+  renewalPolicy  Policy @relation("PolicyRenewalNext", fields: [renewalPolicyId], references: [id], onDelete: Restrict)
+
+  // Además, creados a mano en la migración add_policy_renewals porque Prisma
+  // no los representa en el schema (no usar db push — los borraría):
+  // - policy_renewals_one_active_per_previous: único PARCIAL sobre
+  //   previousPolicyId WHERE revokedAt IS NULL (una sola renovación activa
+  //   por póliza anterior; una póliza nueva sí puede renovar a varias).
+  // - policy_renewals_not_self / policy_renewals_revocation_complete: CHECKs.
+  // Los dos índices simples cubren lo que el parcial no: el historial
+  // (incluye revertidas) y el chequeo de la FK al borrar una póliza.
+  @@index([previousPolicyId])
+  @@index([renewalPolicyId])
+  @@map("policy_renewals")
 }
 
 // Línea de cobertura dentro de una póliza — una póliza puede tener varias

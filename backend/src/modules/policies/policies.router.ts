@@ -13,6 +13,9 @@ import {
   AddPolicyAttachmentSchema,
   ListPoliciesQuerySchema,
   SearchPoliciesQuerySchema,
+  RenewalPreviewQuerySchema,
+  CreatePolicyRenewalSchema,
+  RevokePolicyRenewalSchema,
 } from './policies.schemas'
 import { policiesController } from './policies.controller'
 
@@ -39,6 +42,32 @@ policiesRouter.put(
 )
 policiesRouter.delete('/:id', requireModule('policies'), policiesController.remove)
 policiesRouter.post('/:id/de-baja', requireModule('policies'), policiesController.markAsDeBaja)
+
+// Renovación — historial append-only, sin edición ni borrado. Ver el
+// historial alcanza con `policies`; vista previa, marcar y revertir exigen
+// además `policy_renewals` (dos requireModule encadenados = ambos módulos).
+policiesRouter.get('/:id/renewals', requireModule('policies'), policiesController.getRenewals)
+policiesRouter.get(
+  '/:id/renewal-preview',
+  requireModule('policies'),
+  requireModule('policy_renewals'),
+  validateQuery(RenewalPreviewQuerySchema),
+  policiesController.getRenewalPreview,
+)
+policiesRouter.post(
+  '/:id/renewal',
+  requireModule('policies'),
+  requireModule('policy_renewals'),
+  validate(CreatePolicyRenewalSchema),
+  policiesController.createRenewal,
+)
+policiesRouter.post(
+  '/:id/renewal/revoke',
+  requireModule('policies'),
+  requireModule('policy_renewals'),
+  validate(RevokePolicyRenewalSchema),
+  policiesController.revokeRenewal,
+)
 
 // Tasks
 policiesRouter.get('/:id/tasks', requireModule('policies'), policiesController.getTasks)

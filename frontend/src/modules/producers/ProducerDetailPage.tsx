@@ -18,19 +18,17 @@ import { formatCurrencyCompact, formatDate, daysUntil } from '../../shared/utils
 import { producerQueries } from '../../shared/api/producers.api'
 import { policyQueries } from '../../shared/api/policies.api'
 import { OverflowCell } from '../../shared/components/data-table/OverflowCell'
-import { TASK_STATUS_LABELS } from '../../shared/constants'
+import { TASK_STATUS_LABELS, POLICY_EFFECTIVE_STATUS_ORDER } from '../../shared/constants'
 import { ROUTES } from '../../app/routes'
 import type { Policy, ProducerTask, TableColumn } from '../../shared/types'
 
 // Orden por severidad al ordenar la columna "Estado" de pólizas — alfabético
 // dejaría "de_baja" antes que "vencida", que no refleja la urgencia real
 // (mismo criterio que STATUS_SORT_ORDER en FireExtinguishersPage).
-const POLICY_STATUS_SORT_ORDER: Record<string, number> = {
-  vigente: 0,
-  proximo_vencer: 1,
-  vencida: 2,
-  de_baja: 3,
-}
+// Estado administrativo (incluye Renovada / Vencida (renovada)).
+const POLICY_STATUS_SORT_ORDER: Record<string, number> = Object.fromEntries(
+  POLICY_EFFECTIVE_STATUS_ORDER.map((key, idx) => [key, idx]),
+)
 
 function policyTypeLabel(p: Policy): string {
   if (p.insuranceTypeNames?.length) return p.insuranceTypeNames.join(', ')
@@ -153,10 +151,10 @@ export default function ProducerDetailPage() {
       },
     },
     {
-      key: 'status',
+      key: 'effectiveStatus',
       label: 'Estado',
       sortable: true,
-      sortValue: (row) => POLICY_STATUS_SORT_ORDER[row.status] ?? 99,
+      sortValue: (row) => POLICY_STATUS_SORT_ORDER[row.effectiveStatus] ?? 99,
       render: (v) => <StatusPill status={v as string} size="sm" />,
     },
     {
@@ -308,7 +306,7 @@ export default function ProducerDetailPage() {
           <KpiCard
             label="Pólizas Gestionadas"
             value={policies.length}
-            description={`${policies.filter((p) => p.status === 'vigente').length} vigentes`}
+            description={`${policies.filter((p) => p.effectiveStatus === 'vigente').length} vigentes · ${policies.filter((p) => p.effectiveStatus === 'renovada').length} renovadas`}
             icon={ShieldCheck}
             variant="info"
           />

@@ -182,6 +182,8 @@ export const FinancialQuerySchema = z.object({
   // pantallas que nunca los usan (Económico, Detalle de Póliza, Detalle de
   // Activo) — ver auditoría Performance & RateLimit Fase D4.
   includeInstallments: booleanFromString.optional(),
+  // Opt-in para informar si se alcanzó el límite técnico de documentos.
+  includeMeta: booleanFromString.optional(),
 })
 
 export type CreateDocumentDTO = z.infer<typeof CreateDocumentSchema>

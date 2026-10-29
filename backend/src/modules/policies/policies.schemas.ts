@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { PaginationSchema, ActiveFilterSchema, IncludeSummarySchema, booleanFromString } from '../../shared/schemas/common'
 import { sortQueryFields } from '../../shared/utils/sorting'
+import { POLICY_EFFECTIVE_STATUSES } from '../../shared/utils/dates'
 
 const ISODate = z
   .string()
@@ -90,6 +91,24 @@ export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema
     .enum(['vigente', 'proxima_a_vencer', 'proximo_vencer', 'vencida', 'de_baja'])
     .transform((s) => (s === 'proximo_vencer' ? 'proxima_a_vencer' : s))
     .optional(),
+  // Estado administrativo (incluye Renovada / Vencida (renovada)) — es el que
+  // usa la pantalla; `status` queda por compatibilidad con el criterio
+  // contractual anterior. Mismo alias 'proximo_vencer' que `status`.
+  effectiveStatus: z
+    .enum([...POLICY_EFFECTIVE_STATUSES, 'proximo_vencer'] as const)
+    .transform((s) => (s === 'proximo_vencer' ? 'proxima_a_vencer' : s))
+    .optional(),
+  // Alcance del Dashboard general (empresa/centro de costo/tipo de activo) —
+  // mismo criterio que su filtro en memoria, para que los conteos por estado
+  // salgan del backend sobre TODO el conjunto filtrado (ver policies.service.ts
+  // #buildScopeConditions). Las empresas llegan separadas por coma.
+  scopeCompanyIds: z
+    .string()
+    .transform((s) => [...new Set(s.split(',').map((id) => id.trim()).filter(Boolean))])
+    .pipe(z.array(z.string().uuid('ID de empresa inválido')).max(100))
+    .optional(),
+  scopeCostCenterId: z.string().uuid().optional(),
+  scopeAssetType: z.string().trim().min(1).max(100).optional(),
   insuranceTypeId: z.string().uuid().optional(),
   companyId: z.string().uuid().optional(),
   producerId: z.string().uuid().optional(),
@@ -99,6 +118,11 @@ export const ListPoliciesQuerySchema = PaginationSchema.merge(ActiveFilterSchema
   // seguro/aseguradora) — pedirlo acá evita un N+1 de GET /coverages por
   // póliza (que con cientos de pólizas sería inviable).
   includeCoverages: booleanFromString.optional(),
+  // Con includeSummary: agrega al summary el desglose de la suma asegurada
+  // vigente (por aseguradora, pólizas con cobertura, activos asegurados e ids
+  // de pólizas en alcance) — lo pide solo el Dashboard general (R4-B), así
+  // el resto de los listados no paga esas consultas.
+  includeInsuredBreakdown: booleanFromString.optional(),
 })
 
 export const SearchPoliciesQuerySchema = z.object({
@@ -108,6 +132,22 @@ export const SearchPoliciesQuerySchema = z.object({
   assetId: z.string().uuid('ID de activo inválido').optional(),
   insuranceCompany: z.string().trim().max(300).optional(),
   activeOnly: booleanFromString.optional(),
+})
+
+// Renovación — vínculo administrativo póliza anterior (:id) → póliza nueva
+// (ver policy-renewals.service.ts). La póliza nueva ya existe: se crea por el
+// alta normal de pólizas, esto solo registra la relación.
+export const RenewalPreviewQuerySchema = z.object({
+  renewalPolicyId: z.string().uuid('ID de póliza de renovación inválido'),
+})
+
+export const CreatePolicyRenewalSchema = z.object({
+  renewalPolicyId: z.string().uuid('ID de póliza de renovación inválido'),
+  notes: z.string().trim().max(2000).optional(),
+})
+
+export const RevokePolicyRenewalSchema = z.object({
+  reason: z.string().trim().min(1, 'El motivo de la reversión es obligatorio').max(1000),
 })
 
 export const AddPolicyAttachmentSchema = z.object({
@@ -128,3 +168,6 @@ export type DeactivateCoverageDTO = z.infer<typeof DeactivateCoverageSchema>
 export type ListPoliciesQueryDTO = z.infer<typeof ListPoliciesQuerySchema>
 export type SearchPoliciesQueryDTO = z.infer<typeof SearchPoliciesQuerySchema>
 export type AddPolicyAttachmentDTO = z.infer<typeof AddPolicyAttachmentSchema>
+export type RenewalPreviewQueryDTO = z.infer<typeof RenewalPreviewQuerySchema>
+export type CreatePolicyRenewalDTO = z.infer<typeof CreatePolicyRenewalSchema>
+export type RevokePolicyRenewalDTO = z.infer<typeof RevokePolicyRenewalSchema>

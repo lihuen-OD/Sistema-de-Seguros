@@ -1,8 +1,8 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
-import type { ListSortParams, ListSummaryParams, PaginatedResult } from './pagination'
+import { fetchAllPages, type CompleteList, type ListSortParams, type ListSummaryParams, type PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
-import type { Policy, PolicyStatus, PolicyCoverage, PolicyAsset, PolicyAttachment, ProducerTask, TaskPriority, Currency } from '../types'
+import type { Policy, PolicyStatus, PolicyEffectiveStatus, PolicyRef, PolicyCoverage, PolicyAsset, PolicyAttachment, ProducerTask, TaskPriority, Currency } from '../types'
 
 interface BackendInsuranceType { id: string; name: string; coverages?: { id: string; name: string; description: string | null }[] }
 interface BackendCompany { id: string; name: string }
@@ -51,6 +51,9 @@ interface BackendPolicy {
   insuredName: string; startDate: string; endDate: string
   description: string | null
   isActive: boolean; status: string; deactivatedAt: string | null
+  // Opcional: un backend anterior a R2 no lo manda (despliegue escalonado).
+  effectiveStatus?: string
+  renewal?: { renewedBy: PolicyRef | null; renewalOf?: PolicyRef[] }
   createdAt: string; updatedAt: string
   producer?: BackendProducer | null
   coverages?: BackendPolicyCoverage[]
@@ -64,7 +67,7 @@ interface BackendPolicy {
   attachmentsCount?: number
 }
 interface BackendPolicySearchResult {
-  id: string; policyNumber: string; insuranceCompany: string; status: string
+  id: string; policyNumber: string; insuranceCompany: string; status: string; effectiveStatus?: string
   startDate: string; endDate: string; producerName: string | null; insuranceTypeNames: string[]
 }
 interface BackendTask {
@@ -98,10 +101,43 @@ function mapTask(t: BackendTask): ProducerTask {
   }
 }
 
+// Un estado que el frontend no reconoce nunca se convierte en uno válido (antes
+// caía en 'vigente' y sumaba como cobertura activa): queda como 'desconocido'
+// ("Sin clasificar", fuera de toda categoría y de toda suma activa) y se
+// registra una vez por valor para que se pueda investigar.
+const reportedUnknownStatuses = new Set<string>()
+
+function reportUnknownStatus(field: 'status' | 'effectiveStatus', value: unknown) {
+  const key = `${field}:${String(value)}`
+  if (reportedUnknownStatuses.has(key)) return
+  reportedUnknownStatuses.add(key)
+  console.error(`[policies.api] ${field} desconocido recibido del backend: "${String(value)}" — se muestra como "Sin clasificar"`)
+}
+
 function mapStatus(s: string): PolicyStatus {
   if (s === 'proxima_a_vencer') return 'proximo_vencer'
-  if (s === 'vigente' || s === 'vencida' || s === 'de_baja') return s as PolicyStatus
-  return 'vigente'
+  if (s === 'vigente' || s === 'vencida' || s === 'de_baja') return s
+  reportUnknownStatus('status', s)
+  return 'desconocido'
+}
+
+const EFFECTIVE_STATUS_FROM_BACKEND: Record<string, Exclude<PolicyEffectiveStatus, 'desconocido'>> = {
+  vigente: 'vigente',
+  proxima_a_vencer: 'proximo_vencer',
+  renovada: 'renovada',
+  vencida: 'vencida',
+  vencida_renovada: 'vencida_renovada',
+  de_baja: 'de_baja',
+}
+
+function mapEffectiveStatus(s: string | undefined, contractual: PolicyStatus): PolicyEffectiveStatus {
+  // Backend anterior a R2: sin el campo, el estado contractual es exactamente
+  // el administrativo de una póliza sin renovación (no inventa ninguna).
+  if (s === undefined) return contractual
+  const mapped = EFFECTIVE_STATUS_FROM_BACKEND[s]
+  if (mapped) return mapped
+  reportUnknownStatus('effectiveStatus', s)
+  return 'desconocido'
 }
 
 function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
@@ -168,6 +204,7 @@ function mapCoverage(c: BackendPolicyCoverage): PolicyCoverage {
 }
 
 function mapPolicy(b: BackendPolicy): Policy {
+  const status = mapStatus(b.status)
   return {
     id: b.id,
     policyNumber: b.policyNumber,
@@ -176,7 +213,9 @@ function mapPolicy(b: BackendPolicy): Policy {
     startDate: b.startDate?.slice(0, 10) ?? '',
     endDate: b.endDate?.slice(0, 10) ?? '',
     description: b.description ?? '',
-    status: mapStatus(b.status),
+    status,
+    effectiveStatus: mapEffectiveStatus(b.effectiveStatus, status),
+    renewal: b.renewal ? { renewedBy: b.renewal.renewedBy ?? null, renewalOf: b.renewal.renewalOf } : undefined,
     isActive: b.isActive,
     deactivatedAt: b.deactivatedAt,
     coverages: b.coverages ? b.coverages.map(mapCoverage) : undefined,
@@ -239,6 +278,7 @@ export interface PolicySearchResult {
   policyNumber: string
   insuranceCompany: string
   status: PolicyStatus
+  effectiveStatus: PolicyEffectiveStatus
   startDate: string
   endDate: string
   producerName: string | null
@@ -267,10 +307,73 @@ export interface DeactivateCoverageInput {
   bajaReason: string
 }
 
+// ── Renovación (R1/R3) — mismos contratos que policy-renewals.service.ts ─────
+// Solo vínculo administrativo: nada de esto cambia fechas, líneas, sumas ni
+// documentos de ninguna de las dos pólizas.
+
+export interface RenewalNotice { code: string; message: string }
+
+export interface RenewalPolicySummary {
+  id: string; policyNumber: string; insuredName: string
+  producer: { id: string; name: string } | null
+  startDate: string; endDate: string
+  isDeBaja: boolean
+}
+
+export interface RenewalLineSummary {
+  id: string
+  insuranceType: { id: string; name: string }
+  coverages: { id: string; name: string }[]
+  insuredAmount: number
+  currency: string
+}
+
+export interface RenewalAssetRef { id: string; name: string; code: string | null }
+
+export type RenewalLineDifference = 'insuranceType' | 'coverages' | 'currency' | 'insuredAmount'
+
+export interface PolicyRenewalPreview {
+  previousPolicy: RenewalPolicySummary
+  renewalPolicy: RenewalPolicySummary
+  // false = hay al menos un bloqueo estructural; las advertencias nunca bloquean.
+  canRenew: boolean
+  blockers: RenewalNotice[]
+  warnings: RenewalNotice[]
+  comparison: {
+    overlapDays: number
+    gapDays: number
+    continuingAssets: { asset: RenewalAssetRef; previous: RenewalLineSummary; renewal: RenewalLineSummary; differences: RenewalLineDifference[] }[]
+    removedAssets: { asset: RenewalAssetRef; previous: RenewalLineSummary }[]
+    addedAssets: { asset: RenewalAssetRef; renewal: RenewalLineSummary }[]
+    previousLinesWithoutAsset: RenewalLineSummary[]
+    renewalLinesWithoutAsset: RenewalLineSummary[]
+  }
+}
+
+export interface RenewalPolicyRef { id: string; policyNumber: string; insuredName: string; startDate: string; endDate: string }
+
+// Una fila del historial append-only: revertir completa revokedAt/By/Reason,
+// nunca borra.
+export interface PolicyRenewalRecord {
+  id: string
+  status: 'ACTIVE' | 'REVOKED'
+  notes: string | null
+  createdBy: string
+  createdAt: string
+  revokedAt: string | null
+  revokedBy: string | null
+  revokeReason: string | null
+  previousPolicy: RenewalPolicyRef
+  renewalPolicy: RenewalPolicyRef
+}
+
 export const policiesApi = {
   async search(params: PolicySearchParams): Promise<PolicySearchResult[]> {
     const res = await apiClient.get<{ data: BackendPolicySearchResult[] }>('/policies/search', { params })
-    return res.data.data.map((policy) => ({ ...policy, status: mapStatus(policy.status) }))
+    return res.data.data.map((policy) => {
+      const status = mapStatus(policy.status)
+      return { ...policy, status, effectiveStatus: mapEffectiveStatus(policy.effectiveStatus, status) }
+    })
   },
 
   async findAll(filters?: { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }): Promise<Policy[]> {
@@ -375,6 +478,29 @@ export const policiesApi = {
     const res = await apiClient.get<{ data: BackendTask[] }>(`/policies/${policyId}/tasks`)
     return res.data.data.map(mapTask)
   },
+
+  // Historial completo (como anterior y como renovación), incluidas revertidas.
+  async findRenewals(policyId: string): Promise<PolicyRenewalRecord[]> {
+    const res = await apiClient.get<{ data: PolicyRenewalRecord[] }>(`/policies/${policyId}/renewals`)
+    return res.data.data
+  },
+
+  async getRenewalPreview(previousPolicyId: string, renewalPolicyId: string): Promise<PolicyRenewalPreview> {
+    const res = await apiClient.get<{ data: PolicyRenewalPreview }>(`/policies/${previousPolicyId}/renewal-preview`, {
+      params: { renewalPolicyId },
+    })
+    return res.data.data
+  },
+
+  async createRenewal(previousPolicyId: string, input: { renewalPolicyId: string; notes?: string }): Promise<PolicyRenewalRecord> {
+    const res = await apiClient.post<{ data: PolicyRenewalRecord }>(`/policies/${previousPolicyId}/renewal`, input)
+    return res.data.data
+  },
+
+  async revokeRenewal(previousPolicyId: string, reason: string): Promise<PolicyRenewalRecord> {
+    const res = await apiClient.post<{ data: PolicyRenewalRecord }>(`/policies/${previousPolicyId}/renewal/revoke`, { reason })
+    return res.data.data
+  },
 }
 
 // ── Query keys / query options (categoría B — semi-dinámico) ────────────────────
@@ -383,16 +509,60 @@ export const policiesApi = {
 // mantiene así a propósito para no fragmentar cache con lo ya existente.
 
 type PolicyFilters = { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }
-export type PolicyListFilters = PolicyFilters & ListSortParams & ListSummaryParams & { page?: number; search?: string; status?: PolicyStatus }
+
+// Alcance del Dashboard general — el backend aplica el mismo criterio que su
+// filtro en memoria (ver policies.service.ts#buildScopeConditions). Las
+// empresas viajan separadas por coma.
+export interface PolicyScopeFilters {
+  scopeCompanyIds?: string
+  scopeCostCenterId?: string
+  scopeAssetType?: string
+}
+
+export type PolicyListFilters = PolicyFilters & ListSortParams & ListSummaryParams & PolicyScopeFilters & {
+  page?: number
+  search?: string
+  // Estado administrativo — el filtro de las pantallas desde R2. `status`
+  // (contractual) queda solo por compatibilidad.
+  effectiveStatus?: Exclude<PolicyEffectiveStatus, 'desconocido'>
+}
 
 // GET /policies?includeSummary=true — sobre todo el resultado filtrado.
-// byStatus usa el vocabulario del backend (proxima_a_vencer) e ignora solo el
-// filtro de estado; la suma asegurada es solo de líneas vigentes hoy.
+// byStatus/byEffectiveStatus usan el vocabulario del backend
+// (proxima_a_vencer) e ignoran solo los filtros de estado; la suma asegurada
+// es solo de líneas vigentes hoy y no depende de las renovaciones.
+export type PolicyEffectiveStatusCounts = {
+  vigente: number; proxima_a_vencer: number; renovada: number; vencida: number; vencida_renovada: number; de_baja: number
+}
+// Desglose de la suma asegurada vigente (R4-B) — solo con
+// includeInsuredBreakdown=true (Dashboard general). Con filtro de empresa /
+// centro de costo los importes vienen prorrateados por las asignaciones de
+// cada activo (`attributed`); sin esos filtros son los contractuales.
+export interface PolicyInsuredBreakdown {
+  attributed: boolean
+  byInsurer: { insurer: string; insuredActiveArs: number; insuredActiveUsd: number; policyCount: number }[]
+  /** Pólizas con al menos una línea en vigencia efectiva hoy (dentro del alcance). */
+  activeCoveragePolicyCount: number
+  /** Activos con al menos una línea en vigencia efectiva hoy (dentro del alcance). */
+  insuredAssetCount: number
+  /** Activos en alcance cuyas asignaciones no suman 100 % (dato a revisar; no se normaliza). */
+  allocationIssues: { underAllocatedAssets: number; overAllocatedAssets: number }
+  /** IDs para identificar las fichas afectadas sin duplicar la regla del backend. */
+  allocationIssueAssetIds?: { underAllocated: string[]; overAllocated: string[] }
+  /** Ids de todas las pólizas del alcance (cualquier estado); null sin filtros de alcance. */
+  scopePolicyIds: string[] | null
+}
+
 export interface PolicyListSummary {
   total: number
   byStatus: { vigente: number; proxima_a_vencer: number; vencida: number; de_baja: number }
+  // Opcional: un backend anterior a R2 no lo manda.
+  byEffectiveStatus?: PolicyEffectiveStatusCounts
+  // Suma asegurada vigente hoy: contractual, o prorrateada si hay filtro de
+  // empresa / centro de costo (R4-B).
   insuredActiveArs: number
   insuredActiveUsd: number
+  insuredBreakdown?: PolicyInsuredBreakdown
 }
 
 export const policyKeys = {
@@ -402,6 +572,8 @@ export const policyKeys = {
   coverages: (id: string) => [...policyKeys.all, id, 'coverages'] as const,
   attachments: (id: string, coverageId: string) => [...policyKeys.all, id, 'coverages', coverageId, 'attachments'] as const,
   tasks: (id: string) => [...policyKeys.all, id, 'tasks'] as const,
+  renewals: (id: string) => [...policyKeys.all, id, 'renewals'] as const,
+  renewalPreview: (id: string, renewalPolicyId: string) => [...policyKeys.all, id, 'renewal-preview', renewalPolicyId] as const,
 }
 
 export const policyQueries = {
@@ -423,6 +595,51 @@ export const policyQueries = {
       queryFn: async (): Promise<PaginatedResult<Policy, PolicyListSummary>> => {
         const res = await apiClient.get<Paginated<BackendPolicy> & { summary?: PolicyListSummary }>('/policies', { params: filters })
         return { data: res.data.data.map(mapPolicy), pagination: res.data.pagination, summary: res.data.summary }
+      },
+      staleTime: 60 * 1000,
+    }),
+  // Conteos por estado y suma asegurada vigente (con su desglose) sobre todo
+  // el conjunto filtrado (Dashboard general): pide una página de 1 fila y usa
+  // el summary del backend — nada depende de una lista paginada.
+  statusSummary: (scope: PolicyScopeFilters) =>
+    queryOptions({
+      queryKey: [...policyKeys.all, 'status-summary', scope] as const,
+      queryFn: async (): Promise<PolicyListSummary | undefined> => {
+        const res = await apiClient.get<{ summary?: PolicyListSummary }>('/policies', {
+          params: { ...scope, limit: 1, includeSummary: true, includeInsuredBreakdown: true },
+        })
+        return res.data.summary
+      },
+      staleTime: 60 * 1000,
+    }),
+  // Todas las pólizas (todas las páginas) — para tableros con totales globales
+  // (Dashboard de Seguros), que no pueden quedarse con las primeras 500.
+  listAll: (filters?: { includeCoverages?: boolean }) =>
+    queryOptions({
+      queryKey: [...policyKeys.all, 'all', filters ?? {}] as const,
+      queryFn: ({ signal }): Promise<CompleteList<Policy>> =>
+        fetchAllPages(async ({ page, limit, signal }) => {
+          const res = await apiClient.get<Paginated<BackendPolicy>>('/policies', {
+            params: { ...filters, page, limit },
+            signal,
+          })
+          return { data: res.data.data.map(mapPolicy), pagination: res.data.pagination }
+        }, signal),
+      staleTime: 60 * 1000,
+    }),
+  // Próximos vencimientos pendientes de gestión de renovación (Vigente o
+  // Próxima a vencer, sin renovación registrada), ordenados por vencimiento —
+  // dos páginas chicas del servidor en vez de filtrar una lista con tope.
+  upcomingPendingRenewals: (scope: PolicyScopeFilters, limit = 6) =>
+    queryOptions({
+      queryKey: [...policyKeys.all, 'upcoming-pending-renewals', scope, limit] as const,
+      queryFn: async (): Promise<Policy[]> => {
+        const page = (effectiveStatus: 'proxima_a_vencer' | 'vigente') =>
+          apiClient.get<Paginated<BackendPolicy>>('/policies', {
+            params: { ...scope, effectiveStatus, sortBy: 'endDate', sortDir: 'asc', limit, page: 1 },
+          })
+        const [soon, later] = await Promise.all([page('proxima_a_vencer'), page('vigente')])
+        return [...soon.data.data, ...later.data.data].map(mapPolicy).slice(0, limit)
       },
       staleTime: 60 * 1000,
     }),
@@ -453,5 +670,23 @@ export const policyQueries = {
       queryFn: () => policiesApi.findTasks(id),
       staleTime: 60 * 1000,
       enabled: !!id,
+    }),
+  renewals: (id: string) =>
+    queryOptions({
+      queryKey: policyKeys.renewals(id),
+      queryFn: () => policiesApi.findRenewals(id),
+      staleTime: 60 * 1000,
+      enabled: !!id,
+    }),
+  // Sin cache: la vista previa tiene que reflejar el estado actual al
+  // momento de confirmar (el backend igual revalida todo al registrar).
+  renewalPreview: (id: string, renewalPolicyId: string) =>
+    queryOptions({
+      queryKey: policyKeys.renewalPreview(id, renewalPolicyId),
+      queryFn: () => policiesApi.getRenewalPreview(id, renewalPolicyId),
+      staleTime: 0,
+      gcTime: 0,
+      retry: false,
+      enabled: !!id && !!renewalPolicyId,
     }),
 }

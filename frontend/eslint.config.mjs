@@ -36,5 +36,26 @@ export default tseslint.config(
       'react-hooks/set-state-in-effect': 'warn',
     },
   },
+  {
+    // Los cálculos económicos (sumas aseguradas, gasto, cobertura,
+    // proyecciones) trabajan SOLO con el estado contractual `status`. El
+    // estado administrativo (Renovada / Vencida (renovada)) y los vínculos de
+    // renovación son de presentación: si un cálculo los leyera, registrar una
+    // renovación cambiaría montos en silencio. Error, no warning.
+    files: [
+      'src/shared/utils/insuranceDashboardCalc.ts',
+      'src/shared/utils/renewalProjectionCalc.ts',
+      'src/shared/utils/economicAnalysisCalc.ts',
+      'src/shared/utils/financialAnalysisCalc.ts',
+      'src/shared/utils/coverageInForce.ts',
+      'src/shared/utils/insuredAttribution.ts',
+    ],
+    rules: {
+      'no-restricted-properties': ['error',
+        { property: 'effectiveStatus', message: 'Los cálculos económicos usan `status` (contractual), nunca `effectiveStatus`.' },
+        { property: 'renewal', message: 'Los cálculos económicos no pueden depender de los vínculos de renovación.' },
+      ],
+    },
+  },
   prettierConfig,
 )

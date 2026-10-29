@@ -12,10 +12,14 @@ import type { Role } from '@prisma/client'
 // protegido por su propio módulo. Notificaciones NO es un módulo otorgable —
 // agrega datos de todos los módulos sin filtrar por permisos, así que queda
 // exclusivo del ADMIN (requireRole en su router).
+// `policy_renewals` no es una pantalla sino una acción dentro del detalle de
+// póliza (marcar/revertir una renovación) — siempre se exige junto con
+// `policies` (ver policies.router.ts), mismo criterio que crear/auditar vs.
+// revisar en las auditorías.
 export const MODULE_KEYS = [
   'dashboard',
   'assets',
-  'policies', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
+  'policies', 'policy_renewals', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
   'asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard',

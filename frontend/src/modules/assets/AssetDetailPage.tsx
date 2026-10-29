@@ -12,6 +12,7 @@ import { AssetPhotoGallery } from '../../shared/components/photos/AssetPhotoGall
 import { FileViewDownloadButtons } from '../../shared/components/file-viewer/FileViewDownloadButtons'
 import { PageContent } from '../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../shared/components/page-header/PageHeader'
+import { FinancialDataWarning } from '../../shared/components/feedback/FinancialDataWarning'
 import { StatusPill } from '../../shared/components/badges/StatusPill'
 import { SectionCard } from '../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../shared/components/cards/KpiCard'
@@ -27,13 +28,14 @@ import { companyQueries } from '../../shared/api/companies.api'
 import { costCenterQueries } from '../../shared/api/cost-centers.api'
 import { claimQueries } from '../../shared/api/claims.api'
 import { documentQueries } from '../../shared/api/documents.api'
-import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS, POLICY_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '../../shared/constants'
+import { ASSET_STATUS_LABELS, DOCUMENT_TYPE_LABELS, POLICY_EFFECTIVE_STATUS_ORDER, PAYMENT_STATUS_LABELS } from '../../shared/constants'
 import type { Policy, FireExtinguisher, TableColumn, AssetValueEntry, AccountingDocument } from '../../shared/types'
 import { AssetAttachmentsTab } from './AssetAttachmentsTab'
 import { AssetClaimsTab } from './AssetClaimsTab'
 import { AssociateFireExtinguisherModal } from './AssociateFireExtinguisherModal'
 import { AddValuationModal } from './AddValuationModal'
 import { AssetPledgeSection } from './components/AssetPledgeSection'
+import { coverageAsOfToday, isCoverageLineInForceOn } from '../../shared/utils/coverageInForce'
 
 const TABS = ['Pólizas', 'Doc. Contables', 'Matafuegos', 'Siniestros', 'Valuaciones', 'Adjuntos'] as const
 type Tab = (typeof TABS)[number]
@@ -41,8 +43,10 @@ type Tab = (typeof TABS)[number]
 // Orden por severidad al ordenar la columna "Estado" de cada sub-tabla —
 // alfabético mezclaría estados vigentes con vencidos sin ningún criterio útil.
 // Mismo orden que ya definen los labels canónicos de cada dominio.
+// Pólizas: por estado administrativo (Vigente, Próx. a vencer, Renovada,
+// Vencida, Vencida (renovada), De baja).
 const POLICY_STATUS_SORT_ORDER: Record<string, number> = Object.fromEntries(
-  Object.keys(POLICY_STATUS_LABELS).map((key, idx) => [key, idx]),
+  POLICY_EFFECTIVE_STATUS_ORDER.map((key, idx) => [key, idx]),
 )
 const FE_STATUS_SORT_ORDER: Record<string, number> = { vigente: 0, proximo_vencer: 1, vencido: 2, sin_fecha: 3 }
 const PAYMENT_STATUS_SORT_ORDER: Record<string, number> = Object.fromEntries(
@@ -209,10 +213,11 @@ export default function AssetDetailPage() {
   // diferencia de documentQueries.list(), que solo trae policyIds sin monto.
   // Se usa exclusivamente para prorratear la columna "P/SA".
   // includeInstallments:false (Fase D4) — esta página nunca lee `.installments`.
-  const { data: financialDocs = [] } = useQuery({
-    ...documentQueries.financial({ includeInstallments: false }),
+  const { data: financialResult } = useQuery({
+    ...documentQueries.financialWithMeta({ includeInstallments: false }),
     enabled: !!id && canFinancial,
   })
+  const financialDocs = financialResult?.data ?? []
 
   // Gateado por `documents` en el backend (GET /documents/types) — solo hace
   // falta para la columna P/SA, que ya requiere canDocuments.
@@ -389,7 +394,14 @@ export default function AssetDetailPage() {
   // policyQueries.list({ assetId: id }) trae, para cada póliza, la línea de
   // cobertura específica de ESTE activo en `assetCoverage` — nunca el total
   // agregado de la póliza (que podría incluir otros activos cubiertos).
-  const vigentePolicies = policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer')
+  // Vigencia efectiva (R4-A): solo pólizas ya iniciadas, no vencidas y sin
+  // baja manual, y solo si la línea de ESTE activo está vigente hoy —
+  // assetCoverage puede ser un antecedente histórico dado de baja. Nunca
+  // depende de las renovaciones: una Renovada sigue sumando hasta vencer.
+  const coverageToday = coverageAsOfToday()
+  const vigentePolicies = policies.filter(
+    (p) => p.assetCoverage != null && isCoverageLineInForceOn(p, p.assetCoverage, coverageToday),
+  )
   const totalInsuredUsd = vigentePolicies.reduce((s, p) => s + (p.assetCoverage?.insuredAmountUsd ?? 0), 0)
   // Solo cuenta como ARS puro si la línea no tiene conversión (exchangeRate = 1)
   const totalInsuredArs = vigentePolicies.reduce(
@@ -460,8 +472,8 @@ export default function AssetDetailPage() {
       key: 'status',
       label: 'Estado',
       sortable: true,
-      sortValue: (row) => POLICY_STATUS_SORT_ORDER[row.status] ?? 99,
-      render: (v, row) => {
+      sortValue: (row) => POLICY_STATUS_SORT_ORDER[row.effectiveStatus] ?? 99,
+      render: (_, row) => {
         const circulationCard = row.assetCoverage?.circulationCardAttachment
         const coverageId = row.assetCoverage?.id
         // Si esta línea de cobertura del activo no está vigente hoy (no hay
@@ -472,7 +484,7 @@ export default function AssetDetailPage() {
         const isHistoricalCoverage = !!coverageBajaDate && isExpired(coverageBajaDate)
         return (
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            <StatusPill status={v as string} size="sm" />
+            <StatusPill status={row.effectiveStatus} size="sm" />
             {isHistoricalCoverage && (
               <span
                 title="Esta línea de cobertura del activo está dada de baja — se muestra como antecedente"
@@ -574,6 +586,7 @@ export default function AssetDetailPage() {
           </>
         }
       />
+      {canFinancial && <FinancialDataWarning result={financialResult} />}
 
       {/* Summary bar */}
       <div className="card mb-5 overflow-hidden">
@@ -889,7 +902,7 @@ export default function AssetDetailPage() {
                 : hasUsdCoverage ? formatCurrencyFull(totalInsuredUsd, 'USD')
                 : formatCurrencyFull(totalInsuredArs, 'ARS')
               }
-              description={`${vigentePolicies.length} póliza${vigentePolicies.length !== 1 ? 's' : ''} vigente${vigentePolicies.length !== 1 ? 's' : ''}${hasArsCoverage && !hasUsdCoverage ? ' · Cobertura en ARS' : ''}`}
+              description={`${vigentePolicies.length} póliza${vigentePolicies.length !== 1 ? 's' : ''} con cobertura vigente hoy${hasArsCoverage && !hasUsdCoverage ? ' · Cobertura en ARS' : ''}`}
               variant={hasUsdCoverage || hasArsCoverage ? 'success' : 'danger'}
             />
           )}
@@ -918,7 +931,8 @@ export default function AssetDetailPage() {
                 {canPolicies && (
                   <>
                     <SummaryRow label="Pólizas asociadas" value={String(policies.length)} />
-                    <SummaryRow label="Pólizas vigentes" value={String(policies.filter((p) => p.status === 'vigente' || p.status === 'proximo_vencer').length)} />
+                    {/* Mismo criterio que el KPI "Valor Asegurado" (vigencia efectiva): una póliza futura o una línea dada de baja no cubren hoy. */}
+                    <SummaryRow label="Pólizas con cobertura vigente" value={String(vigentePolicies.length)} />
                   </>
                 )}
                 {canDocuments && <SummaryRow label="Doc. Contables" value={String(documents.length)} />}

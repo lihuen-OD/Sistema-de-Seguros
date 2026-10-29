@@ -50,6 +50,17 @@ function buildErrorMessage(error: {
   )
 }
 
+// Error que rechaza el interceptor: el mensaje ya es apto para el usuario y,
+// cuando hubo respuesta, conserva el status HTTP y el `code` del backend
+// (ej. CONCURRENT_UPDATE) para que una pantalla pueda reaccionar al caso.
+export type ApiRequestError = Error & { status?: number; code?: string }
+
+export function apiErrorCode(err: unknown): string | undefined {
+  return (err as ApiRequestError | null)?.code
+}
+
+const CONNECTION_ERROR_MESSAGE = 'No se pudo conectar con el servidor. Revisá tu conexión e intentá nuevamente.'
+
 apiClient.interceptors.response.use(
   (res) => {
     // Sesión deslizante: si el backend firmó un token nuevo (porque el
@@ -84,6 +95,13 @@ apiClient.interceptors.response.use(
       return Promise.reject(rateLimitError)
     }
 
+    // Sin respuesta (servidor caído, sin red, CORS): axios solo trae
+    // "Network Error", que no le dice nada al usuario.
+    if (!error.response && !axios.isCancel(error)) {
+      toast.error(CONNECTION_ERROR_MESSAGE)
+      return Promise.reject(new Error(CONNECTION_ERROR_MESSAGE))
+    }
+
     const message = buildErrorMessage(error)
     const details = error.response?.data?.error?.details
     // Token inválido/expirado: limpiar la sesión y mandar a /login. Un
@@ -100,6 +118,9 @@ apiClient.interceptors.response.use(
     // Más tiempo en pantalla cuando hay varios campos a leer — 4s por defecto
     // se queda corto para un mensaje con dos o tres campos listados.
     toast.error(message, details && details.length > 1 ? { duration: 8000 } : undefined)
-    return Promise.reject(new Error(message))
+    const apiError: ApiRequestError = new Error(message)
+    apiError.status = error.response?.status
+    apiError.code = error.response?.data?.error?.code
+    return Promise.reject(apiError)
   },
 )

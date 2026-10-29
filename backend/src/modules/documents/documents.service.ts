@@ -134,6 +134,7 @@ const DOCUMENT_FINANCIAL_INCLUDE = {
 const DOCUMENT_FINANCIAL_INCLUDE_LIGHT = {
   allocations: { select: FINANCIAL_ALLOCATIONS_SELECT },
 }
+const FINANCIAL_DOCUMENT_LIMIT = 2000
 
 // Compartido por ambas ramas de findAllForFinancial — mismo aplanado que ya
 // usa DOCUMENT_LIST_INCLUDE/findAll, evita repetirlo en las dos ramas.
@@ -228,6 +229,52 @@ function mapDocumentDetail<T extends {
     installments: doc.installments.map((i) => mapInstallment(i)),
     allocations: doc.allocations.map((a) => mapAllocation(a)),
   }
+}
+
+async function loadFinancialDocuments(params?: { from?: string; to?: string; includeInstallments?: boolean }) {
+  // Excluye documentos anulados — un documento CANCELLED nunca debe impactar
+  // los análisis financieros/económicos.
+  const where: Record<string, unknown> = { documentStatus: { not: 'CANCELLED' } }
+  if (params?.from || params?.to) {
+    const range = {
+      ...(params.from && { gte: new Date(`${params.from}-01T00:00:00.000Z`) }),
+      ...(params.to && (() => {
+        const [year, month] = params.to.split('-').map(Number)
+        return { lt: new Date(Date.UTC(year, month, 1)) }
+      })()),
+    }
+    where.installments = { some: { dueDate: range } }
+  }
+
+  if (params?.includeInstallments === false) {
+    const docs = await prisma.accountingDocument.findMany({
+        where,
+        orderBy: { issueDate: 'asc' },
+        include: DOCUMENT_FINANCIAL_INCLUDE_LIGHT,
+        take: FINANCIAL_DOCUMENT_LIMIT + 1,
+      })
+    const truncated = docs.length > FINANCIAL_DOCUMENT_LIMIT
+    const data = docs.slice(0, FINANCIAL_DOCUMENT_LIMIT).map((doc) => ({
+      ...withTotalAmount(doc),
+      installments: [] as ReturnType<typeof mapInstallment>[],
+      allocations: mapFinancialAllocations(doc.allocations),
+    }))
+    return { data, truncated, limit: FINANCIAL_DOCUMENT_LIMIT }
+  }
+
+  const docs = await prisma.accountingDocument.findMany({
+    where,
+    orderBy: { issueDate: 'asc' },
+    include: DOCUMENT_FINANCIAL_INCLUDE,
+    take: FINANCIAL_DOCUMENT_LIMIT + 1,
+  })
+  const truncated = docs.length > FINANCIAL_DOCUMENT_LIMIT
+  const data = docs.slice(0, FINANCIAL_DOCUMENT_LIMIT).map((doc) => ({
+    ...withTotalAmount(doc),
+    installments: doc.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
+    allocations: mapFinancialAllocations(doc.allocations),
+  }))
+  return { data, truncated, limit: FINANCIAL_DOCUMENT_LIMIT }
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -477,54 +524,11 @@ export const documentsService = {
   },
 
   async findAllForFinancial(params?: { from?: string; to?: string; includeInstallments?: boolean }) {
-    // Excluye documentos anulados — este endpoint solo lo consumen Análisis
-    // Financiero y Análisis Económico, y un documento CANCELLED nunca debe
-    // impactar esos reportes.
-    const where: Record<string, unknown> = { documentStatus: { not: 'CANCELLED' } }
-    if (params?.from || params?.to) {
-      const range = {
-        ...(params.from && { gte: new Date(`${params.from}-01T00:00:00.000Z`) }),
-        ...(params.to && (() => {
-          const [year, month] = params.to.split('-').map(Number)
-          return { lt: new Date(Date.UTC(year, month, 1)) }
-        })()),
-      }
-      // Siempre por fecha de vencimiento de la cuota, esté pagada o no — el
-      // Análisis Financiero posiciona cada cuota por cuándo correspondía
-      // vencer, nunca por cuándo se terminó pagando (ver
-      // getInstallmentEffectiveDate en FinancialAnalysisPage.tsx). Este
-      // filtro se mantiene idéntico sin importar includeInstallments: sigue
-      // decidiendo QUÉ documentos entran, aunque no se devuelvan sus cuotas.
-      where.installments = { some: { dueDate: range } }
-    }
+    return (await loadFinancialDocuments(params)).data
+  },
 
-    // Default true — sin este parámetro, comportamiento idéntico al de
-    // siempre (ver Fase D4 de Performance & RateLimit).
-    if (params?.includeInstallments === false) {
-      const docs = await prisma.accountingDocument.findMany({
-        where,
-        orderBy: { issueDate: 'asc' },
-        include: DOCUMENT_FINANCIAL_INCLUDE_LIGHT,
-        take: 2000,
-      })
-      return docs.map((doc) => ({
-        ...withTotalAmount(doc),
-        installments: [] as ReturnType<typeof mapInstallment>[],
-        allocations: mapFinancialAllocations(doc.allocations),
-      }))
-    }
-
-    const docs = await prisma.accountingDocument.findMany({
-      where,
-      orderBy: { issueDate: 'asc' },
-      include: DOCUMENT_FINANCIAL_INCLUDE,
-      take: 2000,
-    })
-    return docs.map((doc) => ({
-      ...withTotalAmount(doc),
-      installments: doc.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
-      allocations: mapFinancialAllocations(doc.allocations),
-    }))
+  async findAllForFinancialWithMeta(params?: { from?: string; to?: string; includeInstallments?: boolean }) {
+    return loadFinancialDocuments(params)
   },
 
   async findById(id: string) {
