@@ -66,7 +66,7 @@ interface BackendPolicy {
   assetCoverage?: BackendAssetCoverageSummary | null
   attachmentsCount?: number
 }
-interface BackendPolicySearchResult {
+export interface BackendPolicySearchResult {
   id: string; policyNumber: string; insuranceCompany: string; status: string; effectiveStatus?: string
   startDate: string; endDate: string; producerName: string | null; insuranceTypeNames: string[]
 }
@@ -137,6 +137,13 @@ function mapEffectiveStatus(s: string | undefined, contractual: PolicyStatus): P
   if (mapped) return mapped
   reportUnknownStatus('effectiveStatus', s)
   return 'desconocido'
+}
+
+// Resultado liviano de /policies/search — también lo devuelve el buscador
+// global (/search), por eso se exporta en vez de mapearlo de nuevo allá.
+export function mapPolicySearchResult(policy: BackendPolicySearchResult): PolicySearchResult {
+  const status = mapStatus(policy.status)
+  return { ...policy, status, effectiveStatus: mapEffectiveStatus(policy.effectiveStatus, status) }
 }
 
 function mapPolicyAsset(a: BackendPolicyAsset): PolicyAsset {
@@ -373,10 +380,7 @@ export interface PolicyRenewalRecord {
 export const policiesApi = {
   async search(params: PolicySearchParams): Promise<PolicySearchResult[]> {
     const res = await apiClient.get<{ data: BackendPolicySearchResult[] }>('/policies/search', { params })
-    return res.data.data.map((policy) => {
-      const status = mapStatus(policy.status)
-      return { ...policy, status, effectiveStatus: mapEffectiveStatus(policy.effectiveStatus, status) }
-    })
+    return res.data.data.map(mapPolicySearchResult)
   },
 
   async findAll(filters?: { assetId?: string; companyId?: string; producerId?: string; insuranceTypeId?: string; limit?: number; includeCoverages?: boolean }): Promise<Policy[]> {

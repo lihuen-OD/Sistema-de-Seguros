@@ -19,6 +19,7 @@ import {
   type DocumentTypeDef,
 } from './document-types'
 import { computeTotalAmount } from './document-amounts'
+import { DOCUMENT_SEARCH_SELECT, buildDocumentSearchWhere, mapDocumentSearchResult } from './document-search'
 import { computeDualAmounts } from '../../shared/utils/currency'
 import { documentsBalanceService } from './documents-balance.service'
 import { emailService } from '../email/email.service'
@@ -321,33 +322,12 @@ export const documentsService = {
     // (d.insuranceCompany === form.insuranceCompany) al filtrar en el cliente.
     if (query.insuranceCompany) conditions.push({ insuranceCompany: query.insuranceCompany })
     if (query.policyId) conditions.push(this.belongsToPolicy(query.policyId))
-    if (q) {
-      conditions.push({
-        OR: [
-          { documentNumber: { contains: q, mode: 'insensitive' } },
-          { insuranceCompany: { contains: q, mode: 'insensitive' } },
-          { description: { contains: q, mode: 'insensitive' } },
-        ],
-      })
-    }
+    if (q) conditions.push(buildDocumentSearchWhere(q))
     const where: Prisma.AccountingDocumentWhereInput = conditions.length > 0 ? { AND: conditions } : {}
-    const select = {
-      id: true,
-      documentNumber: true,
-      documentType: true,
-      issueDate: true,
-      insuranceCompany: true,
-      currency: true,
-      netAmount: true,
-      vatAmount: true,
-      otherTaxesAmount: true,
-      paymentStatus: true,
-      paymentMethod: true,
-    } satisfies Prisma.AccountingDocumentSelect
 
     const results = await prisma.accountingDocument.findMany({
       where,
-      select,
+      select: DOCUMENT_SEARCH_SELECT,
       orderBy: { createdAt: 'desc' },
       take: query.limit,
     })
@@ -365,22 +345,12 @@ export const documentsService = {
           id: query.selectedId,
           ...(query.policyId && this.belongsToPolicy(query.policyId)),
         },
-        select,
+        select: DOCUMENT_SEARCH_SELECT,
       })
       if (selected) results.unshift(selected)
     }
 
-    const mapped = results.slice(0, query.limit).map((doc) => ({
-      id: doc.id,
-      documentNumber: doc.documentNumber,
-      type: doc.documentType,
-      issueDate: toDateStr(doc.issueDate),
-      insuranceCompany: doc.insuranceCompany,
-      currency: doc.currency,
-      totalAmount: computeTotalAmount(doc),
-      paymentStatus: doc.paymentStatus,
-      paymentMethod: doc.paymentMethod,
-    }))
+    const mapped = results.slice(0, query.limit).map(mapDocumentSearchResult)
 
     if (!query.withAvailableBalance) return mapped
 

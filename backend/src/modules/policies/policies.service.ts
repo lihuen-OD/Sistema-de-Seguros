@@ -23,6 +23,7 @@ import { deleteFromCloudinary } from '../../config/cloudinary'
 import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
 import { updateEndDateKeepingRenewalOrder } from './policy-renewals.service'
 import { buildScopeConditions, buildScopeLineConditions } from './policy-scope'
+import { POLICY_SEARCH_ORDER_BY, POLICY_SEARCH_SELECT, buildPolicySearchWhere, mapPolicySearchResult } from './policy-search'
 import {
   attributeInsured,
   hasAllocationFilters,
@@ -561,34 +562,10 @@ export const policiesService = {
         endDate: { gte: todayDate() },
       }),
     }
-    const searchWhere: Prisma.PolicyWhereInput = q
-      ? {
-          OR: [
-            { policyNumber: { contains: q, mode: 'insensitive' } },
-            { insuredName: { contains: q, mode: 'insensitive' } },
-            { producer: { is: { name: { contains: q, mode: 'insensitive' } } } },
-            { coverages: { some: { insuranceType: { name: { contains: q, mode: 'insensitive' } } } } },
-            { coverages: { some: { asset: { is: { name: { contains: q, mode: 'insensitive' } } } } } },
-            { coverages: { some: { asset: { is: { code: { contains: q, mode: 'insensitive' } } } } } },
-          ],
-        }
-      : {}
-    const select = {
-      id: true,
-      policyNumber: true,
-      insuredName: true,
-      startDate: true,
-      endDate: true,
-      deactivatedAt: true,
-      producer: { select: { name: true } },
-      coverages: { select: { insuranceType: { select: { name: true } } } },
-      renewalLinksAsPrevious: { where: { revokedAt: null }, select: { id: true }, take: 1 },
-    } satisfies Prisma.PolicySelect
-
     const results = await prisma.policy.findMany({
-      where: { AND: [contextualWhere, searchWhere] },
-      select,
-      orderBy: [{ endDate: 'desc' }, { policyNumber: 'asc' }],
+      where: { AND: [contextualWhere, buildPolicySearchWhere(q)] },
+      select: POLICY_SEARCH_SELECT,
+      orderBy: POLICY_SEARCH_ORDER_BY,
       take: query.limit,
     })
 
@@ -599,26 +576,12 @@ export const policiesService = {
     if (query.selectedId && !results.some((policy) => policy.id === query.selectedId)) {
       const selected = await prisma.policy.findFirst({
         where: { id: query.selectedId },
-        select,
+        select: POLICY_SEARCH_SELECT,
       })
       if (selected) results.unshift(selected)
     }
 
-    return results.slice(0, query.limit).map((policy) => ({
-      id: policy.id,
-      policyNumber: policy.policyNumber,
-      insuranceCompany: policy.insuredName,
-      status: policy.deactivatedAt ? 'de_baja' : computePolicyStatus(policy.endDate),
-      effectiveStatus: computeEffectivePolicyStatus({
-        endDate: policy.endDate,
-        deactivatedAt: policy.deactivatedAt,
-        hasActiveRenewal: (policy.renewalLinksAsPrevious?.length ?? 0) > 0,
-      }),
-      startDate: toDateStr(policy.startDate),
-      endDate: toDateStr(policy.endDate),
-      producerName: policy.producer?.name ?? null,
-      insuranceTypeNames: [...new Set(policy.coverages.map((coverage) => coverage.insuranceType.name))],
-    }))
+    return results.slice(0, query.limit).map(mapPolicySearchResult)
   },
 
   async findAll(query: ListPoliciesQueryDTO) {

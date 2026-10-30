@@ -72,6 +72,12 @@ apiClient.interceptors.response.use(
     return res
   },
   (error) => {
+    // Cancelación propia, no una falla: React Query aborta el request de una
+    // query que dejó de usarse (ej. el buscador global cuando se sigue
+    // tipeando, o un tablero que se cierra a mitad de carga). Sin toast — se
+    // propaga tal cual para que React Query lo reconozca como cancelación.
+    if (axios.isCancel(error)) return Promise.reject(error)
+
     // Timeout de Axios: detectar por código o por mensaje para no mostrar
     // "timeout of 15000ms exceeded" al usuario.
     const isTimeout = error.code === 'ECONNABORTED' || error.message?.includes('timeout')
@@ -97,7 +103,7 @@ apiClient.interceptors.response.use(
 
     // Sin respuesta (servidor caído, sin red, CORS): axios solo trae
     // "Network Error", que no le dice nada al usuario.
-    if (!error.response && !axios.isCancel(error)) {
+    if (!error.response) {
       toast.error(CONNECTION_ERROR_MESSAGE)
       return Promise.reject(new Error(CONNECTION_ERROR_MESSAGE))
     }
