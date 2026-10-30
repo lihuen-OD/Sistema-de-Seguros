@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
-import type { ListSortParams, ListSummaryParams, PaginatedResult } from './pagination'
+import { fetchAllPages, type CompleteList, type ListSortParams, type ListSummaryParams, type PaginatedResult } from './pagination'
 import { triggerBlobDownload } from '../utils/downloadFile'
 import { assetInternalCode } from '../utils/assetCode'
 import type { Claim, ClaimEvent, ClaimEventType, ClaimAttachment, ClaimExpense, ClaimExpenseAttachment, Currency } from '../types'
@@ -257,6 +257,21 @@ export const claimQueries = {
     queryOptions({
       queryKey: claimKeys.list(filters),
       queryFn: () => claimsApi.findAll(filters),
+      staleTime: 60 * 1000,
+    }),
+  // Todos los siniestros (todas las páginas) — para tableros con totales
+  // globales (ver fetchAllPages).
+  listAll: () =>
+    queryOptions({
+      queryKey: [...claimKeys.all, 'all'] as const,
+      queryFn: ({ signal }): Promise<CompleteList<Claim>> =>
+        fetchAllPages(async ({ page, limit, signal }) => {
+          const res = await apiClient.get<Paginated<BackendClaim>>('/claims', {
+            params: { page, limit },
+            signal,
+          })
+          return { data: res.data.data.map(mapClaim), pagination: res.data.pagination }
+        }, signal),
       staleTime: 60 * 1000,
     }),
   listPaginated: (filters: ClaimListFilters) =>

@@ -32,6 +32,8 @@ interface Paginated<T> { data: T[]; pagination: { total: number; page: number; l
 
 export const fireExtinguisherKeys = {
   all: ['fire-extinguishers'] as const,
+  paginated: ['fire-extinguishers', 'paginated'] as const,
+  dashboardSummary: ['fire-extinguishers', 'dashboard-summary'] as const,
   list: (filters?: { assetId?: string; isActive?: boolean | null }) =>
     filters ? ([...fireExtinguisherKeys.all, filters] as const) : fireExtinguisherKeys.all,
   detail: (id: string) => [...fireExtinguisherKeys.all, id] as const,
@@ -168,7 +170,7 @@ export const fireExtinguisherQueries = {
     }),
   listPaginated: (filters: FireExtinguisherListFilters) =>
     queryOptions({
-      queryKey: [...fireExtinguisherKeys.all, 'paginated', filters] as const,
+      queryKey: [...fireExtinguisherKeys.paginated, filters] as const,
       queryFn: async (): Promise<PaginatedResult<FireExtinguisher, FireExtinguisherListSummary>> => {
         const res = await apiClient.get<Paginated<BackendExtinguisher> & { summary?: FireExtinguisherListSummary }>('/fire-extinguishers', { params: filters })
         return { data: res.data.data.map(mapExtinguisher), pagination: res.data.pagination, summary: res.data.summary }
@@ -191,7 +193,7 @@ export const fireExtinguisherQueries = {
     }),
   dashboardSummary: () =>
     queryOptions({
-      queryKey: [...fireExtinguisherKeys.all, 'dashboard-summary'] as const,
+      queryKey: fireExtinguisherKeys.dashboardSummary,
       queryFn: () => fireExtinguishersApi.getDashboardSummary(),
       staleTime: 30 * 1000,
       gcTime: 5 * 60 * 1000,

@@ -131,6 +131,39 @@ La empresa posee activos físicos de alto valor (tractores, cosechadoras, camion
 | `pendiente_documentacion` | Falta documentación adjunta |
 | `sin_factura` | No tiene ningún `AccountingDocument` asociado |
 
+**Dos estados por póliza (desde la renovación de pólizas, R2):**
+
+- `status` — **contractual**: `vigente` / `proxima_a_vencer` / `vencida` por fechas (día UTC), o `de_baja` si tiene baja manual. Es el único que usan los cálculos económicos (sumas aseguradas, gasto, cobertura, proyecciones). No conoce las renovaciones.
+- `effectiveStatus` — **administrativo**: el que ven pantallas, filtros, gráficos y notificaciones. Usa el día calendario de Argentina (`America/Argentina/Buenos_Aires`): una póliza que vence el 30/11 cambia de estado a las 00:00 del 01/12 de Buenos Aires.
+
+Prioridad del estado administrativo:
+
+| # | Condición | `effectiveStatus` |
+|---|-----------|-------------------|
+| 1 | Baja manual (`deactivatedAt`) | `de_baja` |
+| 2 | La fecha de fin ya pasó | `vencida` |
+| 3 | No vencida y con marca de renovación activa | `renovada` |
+| 4 | Vence dentro de 30 días, sin marca de renovación | `proxima_a_vencer` |
+| 5 | Resto | `vigente` |
+
+La renovación es una marca administrativa auditable (`policy_renewals`): no modifica fechas, líneas, sumas ni documentos de ninguna póliza. Las marcas nuevas no necesitan una póliza sucesora; los vínculos históricos entre póliza anterior y sucesora se conservan y siguen visibles en el historial. Una póliza Renovada sigue contractualmente vigente hasta su vencimiento, así que sigue sumando en los indicadores económicos. Al pasar la fecha de fin, su estado visible pasa automáticamente a `vencida`, aunque la marca siga en el historial. Las pendientes de gestión de renovación son solo las `vigente` / `proxima_a_vencer` administrativas (notificaciones y "próximos vencimientos" excluyen las Renovadas y las dadas de baja). Las alertas de vencimiento **por activo** del Dashboard de Seguros no excluyen las Renovadas: una renovación parcial puede dejar un activo sin cobertura.
+
+**Cómo se registra:** desde el listado o detalle de la póliza, "Marcar como renovada" solicita confirmación y registra el usuario y la fecha. No exige crear ni seleccionar una sucesora y no altera la póliza, sus coberturas ni sus documentos. Una póliza dada de baja manualmente o con una marca activa no puede marcarse nuevamente. "Deshacer renovación" exige un motivo y conserva el registro en el historial, junto con quién y cuándo lo revirtió. Ambas acciones requieren el permiso **Renovación de Pólizas** (`policy_renewals`) además de **Pólizas**; ver el historial solo requiere Pólizas.
+
+**Cobertura activa — vigencia efectiva (R4-A):** una póliza aporta suma asegurada en un día solo si `startDate ≤ día ≤ endDate` (ambas inclusivas) y no tiene baja manual. Cada línea aporta si, además, `effectiveDate ≤ día` y `bajaDate` es nula o `≥ día`: la baja es inclusiva, así que el día de la baja todavía cubre y deja de aportar desde el día siguiente. Para la cobertura actual, "hoy" es el día calendario de Argentina. Una póliza cargada por anticipado figura en el listado como "Vigente" (el estado mira solo el vencimiento), pero no suma hasta que empieza. La regla no mira el estado administrativo ni las renovaciones. Si dos pólizas están realmente vigentes el mismo día sobre el mismo activo, ambas suman: la deduplicación queda para R4-C. Los totales por póliza (`totalInsuredAmount*`) siguen sumando todas sus líneas, también las dadas de baja: son el importe contratado, no la cobertura activa. Implementación única: `isPolicyInForceOn` / `isCoverageLineInForceOn` y sus filtros Prisma en `backend/src/shared/utils/dates.ts`, con su espejo en `frontend/src/shared/utils/coverageInForce.ts`.
+
+**Suma asegurada contractual y atribuida (R4-B):** la suma **contractual** es el importe de cada línea, que no se modifica nunca. La suma **atribuida** es la parte de esa línea que corresponde a un alcance de empresa o centro de costo.
+- Sin filtro de empresa ni de centro de costo, cada línea vigente cuenta una sola vez, por su importe contractual.
+- Con esos filtros, una línea con activo aporta la suma de los porcentajes de las asignaciones del activo (`AssetAllocation.percentage`, escala 0-100) que cumplen **todos** los filtros. Ejemplo: activo 60 % A / 40 % B y línea de 100 M → A = 60 M, B = 40 M, A + B = 100 M.
+- Una línea sin activo aporta completa si su propia empresa y centro de costo cumplen el filtro.
+- Un activo sin asignaciones queda en el global y no se atribuye a ninguna empresa.
+- Los porcentajes incompletos no se normalizan. Si los que coinciden suman más de 100 (dato inválido: el alta exige 100 %), se topea en el importe contratado y se informa en `allocationIssues`.
+- El filtro de tipo de activo solo decide qué líneas entran; no prorratea.
+- ARS y USD se suman por separado, sin conversión.
+- Implementación: `backend/src/modules/policies/insured-attribution.ts` y su espejo `frontend/src/shared/utils/insuredAttribution.ts`, probados con el mismo fixture (`test-fixtures/insured-attribution.json`).
+
+**Indicadores de situación actual (R4-B):** pólizas y activos "vigentes" o "cubiertos", costo mensual vigente y próximo vencimiento usan la vigencia efectiva. Una póliza futura o una línea dada de baja no aseguran un activo hoy, no generan costo vigente ni un próximo vencimiento. El gasto facturado, los siniestros y el historial de pólizas siguen siendo históricos. Las proyecciones de renovación conservan su criterio anterior hasta que se apruebe cambiarlo. Los totales globales de los tableros no dependen de una página de 200/500: el Dashboard general los toma del summary del backend y el Dashboard de Seguros recorre todas las páginas, con un tope explícito y un aviso visible.
+
 ---
 
 ### 5. AccountingDocument (Documento Contable)

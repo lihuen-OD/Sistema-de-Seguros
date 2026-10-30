@@ -63,12 +63,12 @@ export function InsurersView({ summaries }: InsurersViewProps) {
     { id: 'activePolicyCount', key: 'activePolicyCount', label: 'Pólizas vigentes', sortable: true, headerClassName: 'text-right', className: 'text-right tabular-nums' },
     { id: 'assetsCoveredCount', key: 'assetsCoveredCount', label: 'Activos cubiertos', sortable: true, headerClassName: 'text-right', className: 'text-right tabular-nums' },
     {
-      id: 'primaVigenteUsd', key: 'primaVigenteUsd', label: 'Prima vigente', sortable: true,
+      id: 'primaVigenteUsd', key: 'primaVigenteUsd', label: 'Suma asegurada vigente', sortable: true,
       headerClassName: 'text-right', className: 'text-right tabular-nums',
       render: (v) => formatCurrencyCompact(v as number, 'USD'),
     },
     {
-      id: 'facturadoVigenteUsd', key: 'facturadoVigenteUsd', label: 'Facturado', sortable: true,
+      id: 'facturadoVigenteUsd', key: 'facturadoVigenteUsd', label: 'Facturado (pólizas vigentes)', sortable: true,
       headerClassName: 'text-right', className: 'text-right tabular-nums',
       render: (v) => formatCurrencyCompact(v as number, 'USD'),
     },
@@ -102,7 +102,7 @@ export function InsurersView({ summaries }: InsurersViewProps) {
         <KpiCard
           label="Aseguradoras"
           value={summaries.length}
-          description={`Prima vigente total: ${formatCurrencyCompact(totals.primaTotal, 'USD')}`}
+          description={`Suma asegurada vigente total: ${formatCurrencyCompact(totals.primaTotal, 'USD')}`}
           icon={Building2}
           variant="default"
         />

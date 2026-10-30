@@ -27,6 +27,13 @@ export interface DocumentForFinancial extends AccountingDocument {
   allocations: Pick<DocumentPolicyAllocation, 'id' | 'accountingDocumentId' | 'policyAssetCoverageId' | 'policyId' | 'assetId' | 'allocatedAmount' | 'allocationPercentage'>[]
 }
 
+export interface FinancialDocumentResult {
+  data: DocumentForFinancial[]
+  truncated: boolean
+  limit?: number
+  truncationKnown: boolean
+}
+
 interface BackendDocument {
   id: string; documentNumber: string; documentType: string; documentStatus: string; issueDate: string
   netAmount: number; vatAmount: number; otherTaxesAmount: number; totalAmount: number
@@ -135,6 +142,39 @@ function mapDocument(b: BackendDocument): AccountingDocument {
     attachmentsCount: b._count?.attachments ?? 0,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
+  }
+}
+
+type BackendFinancialDocument = Omit<BackendDocument, 'allocations'> & {
+  installments: BackendInstallment[]
+  allocations: BackendAllocation[]
+}
+
+function mapFinancialDocument(b: BackendFinancialDocument): DocumentForFinancial {
+  return {
+    ...mapDocument(b),
+    installments: b.installments.map((i) => ({
+      id: i.id,
+      accountingDocumentId: i.accountingDocumentId,
+      installmentNumber: i.installmentNumber,
+      dueDate: i.dueDate?.slice(0, 10) ?? '',
+      amount: i.amount,
+      currency: i.currency as Installment['currency'],
+      amountArs: i.amountArs,
+      amountUsd: i.amountUsd,
+      paymentStatus: i.paymentStatus as Installment['paymentStatus'],
+      paidAt: i.paidAt,
+      paymentMethod: i.paymentMethod,
+    })),
+    allocations: b.allocations.map((a) => ({
+      id: a.id,
+      accountingDocumentId: a.accountingDocumentId,
+      policyAssetCoverageId: a.policyAssetCoverageId,
+      policyId: a.policyId,
+      assetId: a.assetId,
+      allocatedAmount: a.allocatedAmount,
+      allocationPercentage: a.allocationPercentage,
+    })),
   }
 }
 
@@ -251,35 +291,23 @@ export const documentsApi = {
   },
 
   async findAllForFinancial(params?: { from?: string; to?: string; includeInstallments?: boolean }): Promise<DocumentForFinancial[]> {
-    const res = await apiClient.get<{ data: (Omit<BackendDocument, 'allocations'> & {
-      installments: BackendInstallment[]
-      allocations: BackendAllocation[]
-    })[] }>('/documents/financial', { params, timeout: 60_000 })
-    return res.data.data.map((b) => ({
-      ...mapDocument(b),
-      installments: b.installments.map((i) => ({
-        id: i.id,
-        accountingDocumentId: i.accountingDocumentId,
-        installmentNumber: i.installmentNumber,
-        dueDate: i.dueDate?.slice(0, 10) ?? '',
-        amount: i.amount,
-        currency: i.currency as Installment['currency'],
-        amountArs: i.amountArs,
-        amountUsd: i.amountUsd,
-        paymentStatus: i.paymentStatus as Installment['paymentStatus'],
-        paidAt: i.paidAt,
-        paymentMethod: i.paymentMethod,
-      })),
-      allocations: b.allocations.map((a) => ({
-        id: a.id,
-        accountingDocumentId: a.accountingDocumentId,
-        policyAssetCoverageId: a.policyAssetCoverageId,
-        policyId: a.policyId,
-        assetId: a.assetId,
-        allocatedAmount: a.allocatedAmount,
-        allocationPercentage: a.allocationPercentage,
-      })),
-    }))
+    const res = await apiClient.get<{ data: BackendFinancialDocument[] }>('/documents/financial', { params, timeout: 60_000 })
+    return res.data.data.map(mapFinancialDocument)
+  },
+
+  async findAllForFinancialWithMeta(
+    params?: { from?: string; to?: string; includeInstallments?: boolean },
+  ): Promise<FinancialDocumentResult> {
+    const res = await apiClient.get<{
+      data: BackendFinancialDocument[]
+      meta?: { truncated: boolean; limit: number }
+    }>('/documents/financial', { params: { ...params, includeMeta: true }, timeout: 60_000 })
+    return {
+      data: res.data.data.map(mapFinancialDocument),
+      truncated: res.data.meta?.truncated ?? false,
+      limit: res.data.meta?.limit,
+      truncationKnown: res.data.meta !== undefined,
+    }
   },
 
   async findById(id: string): Promise<AccountingDocument> {
@@ -463,6 +491,8 @@ export const documentKeys = {
         ? ([...documentKeys.all, 'financial', filters.from, filters.to, 'light'] as const)
         : ([...documentKeys.all, 'financial', filters.from, filters.to] as const)
       : ([...documentKeys.all, 'financial'] as const),
+  financialWithMeta: (filters?: FinancialFilters) =>
+    [...documentKeys.all, 'financial', 'with-meta', filters?.from, filters?.to, filters?.includeInstallments === false ? 'light' : 'full'] as const,
 }
 
 export const documentQueries = {
@@ -546,6 +576,13 @@ export const documentQueries = {
     queryOptions({
       queryKey: documentKeys.financial(filters),
       queryFn: () => documentsApi.findAllForFinancial(filters),
+      staleTime: 15 * 1000,
+      refetchOnWindowFocus: true,
+    }),
+  financialWithMeta: (filters?: FinancialFilters) =>
+    queryOptions({
+      queryKey: documentKeys.financialWithMeta(filters),
+      queryFn: () => documentsApi.findAllForFinancialWithMeta(filters),
       staleTime: 15 * 1000,
       refetchOnWindowFocus: true,
     }),

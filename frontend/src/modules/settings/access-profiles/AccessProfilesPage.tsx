@@ -105,6 +105,14 @@ function AccessProfileModal({ profile, onClose, onSave }: AccessProfileModalProp
           </div>
         </FormField>
 
+        {/* No bloquea el guardado: sin Pólizas el permiso no tiene efecto (el
+            backend exige ambos), pero conviene avisarlo al armar el perfil. */}
+        {modules.includes('policy_renewals') && !modules.includes('policies') && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            «{MODULE_LABELS.policy_renewals}» solo funciona junto con «{MODULE_LABELS.policies}»: habilitá también ese módulo.
+          </p>
+        )}
+
         {apiError && (
           <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
             {apiError}

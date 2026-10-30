@@ -1,3 +1,5 @@
+import type { PolicyEffectiveStatus } from '../types'
+
 export const ASSET_TYPES = [
   'Vehículo',
   'Camioneta',
@@ -58,6 +60,35 @@ export const POLICY_STATUS_LABELS: Record<string, string> = {
   proximo_vencer: 'Próx. a Vencer',
   vencida: 'Vencida',
   de_baja: 'De Baja',
+  desconocido: 'Sin clasificar',
+}
+
+// Estado administrativo de pólizas (ver PolicyEffectiveStatus).
+export const POLICY_EFFECTIVE_STATUS_LABELS: Record<PolicyEffectiveStatus, string> = {
+  vigente: 'Vigente',
+  proximo_vencer: 'Próx. a Vencer',
+  renovada: 'Renovada',
+  vencida: 'Vencida',
+  de_baja: 'De Baja',
+  desconocido: 'Sin clasificar',
+}
+
+// Orden fijo de filtros, gráficos y tarjetas. 'desconocido' no se ofrece como
+// filtro: no es un estado de negocio, es un dato a revisar.
+export const POLICY_EFFECTIVE_STATUS_ORDER: Exclude<PolicyEffectiveStatus, 'desconocido'>[] = [
+  'vigente', 'proximo_vencer', 'renovada', 'vencida', 'de_baja',
+]
+
+// Colores de gráficos — validados con el validador de paletas (CVD y visión
+// normal, todos los pares) sobre fondo claro. Los tres primeros son los que ya
+// usaba el gráfico; De Baja es neutro a propósito (estado informativo).
+export const POLICY_EFFECTIVE_STATUS_COLORS: Record<PolicyEffectiveStatus, string> = {
+  vigente: '#10b981',
+  proximo_vencer: '#f59e0b',
+  renovada: '#0ea5e9',
+  vencida: '#ef4444',
+  de_baja: '#64748b',
+  desconocido: '#94a3b8',
 }
 
 export const ASSET_STATUS_LABELS: Record<string, string> = {

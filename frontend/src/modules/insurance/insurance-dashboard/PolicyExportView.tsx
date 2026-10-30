@@ -13,27 +13,39 @@ import { MultiSelectFilter } from '../../../shared/components/filters/MultiSelec
 import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { StatusPill } from '../../../shared/components/badges/StatusPill'
 import { formatCurrencyCompact, formatDate } from '../../../shared/utils/format'
-import { DOCUMENT_TYPE_LABELS, DOCUMENT_STATUS_LABELS, POLICY_STATUS_LABELS, ASSET_TYPES } from '../../../shared/constants'
+import {
+  DOCUMENT_TYPE_LABELS,
+  DOCUMENT_STATUS_LABELS,
+  POLICY_EFFECTIVE_STATUS_LABELS,
+  POLICY_EFFECTIVE_STATUS_ORDER,
+  ASSET_TYPES,
+} from '../../../shared/constants'
 import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
 import {
   UNASSIGNED_FIXED_ASSET_LABEL,
   UNASSIGNED_COST_CENTER_LABEL,
   type PolicyExportRow,
 } from '../../../shared/utils/insuranceDashboardCalc'
-import type { TableColumn, PolicyStatus } from '../../../shared/types'
+import type { TableColumn, Policy, PolicyEffectiveStatus } from '../../../shared/types'
 
 interface PolicyExportViewProps {
   rows: PolicyExportRow[]
+  // Estado administrativo por id de póliza — las filas del cálculo solo
+  // traen el estado contractual.
+  policiesById: Map<string, Policy>
 }
+
+type ExportViewRow = PolicyExportRow & { effectiveStatus: PolicyEffectiveStatus }
 
 const NO_ASSET_LABEL = 'Sin activo asociado'
 const NO_COMPANY_LABEL = 'Sin empresa asignada'
 const NO_DOCUMENT_LABEL = 'Sin documentos'
 const NO_INSURANCE_TYPE_LABEL = 'Sin cobertura'
 
-const POLICY_STATUS_OPTIONS = (['vigente', 'proximo_vencer', 'vencida'] as PolicyStatus[]).map((s) => ({
+// El dashboard ya excluye las dadas de baja, así que no se ofrece ese estado.
+const POLICY_STATUS_OPTIONS = POLICY_EFFECTIVE_STATUS_ORDER.filter((s) => s !== 'de_baja').map((s) => ({
   value: s,
-  label: POLICY_STATUS_LABELS[s] ?? s,
+  label: POLICY_EFFECTIVE_STATUS_LABELS[s],
 }))
 const ASSET_TYPE_OPTIONS = [...ASSET_TYPES.map((t) => ({ value: t, label: t })), { value: NO_ASSET_LABEL, label: NO_ASSET_LABEL }]
 
@@ -69,14 +81,16 @@ function distinctOptions(values: string[]): { value: string; label: string }[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b, 'es')).map((v) => ({ value: v, label: v }))
 }
 
-const ALL_COLUMNS: TableColumn<PolicyExportRow>[] = [
+const ALL_COLUMNS: TableColumn<ExportViewRow>[] = [
   {
     id: 'policyNumber', key: 'policyNumber', label: 'Póliza', sortable: true, defaultVisible: true,
     className: 'font-mono text-slate-600',
   },
   {
-    id: 'status', key: 'status', label: 'Estado', sortable: true, defaultVisible: true,
+    // id 'status' se conserva por las columnas/presets guardados.
+    id: 'status', key: 'effectiveStatus', label: 'Estado', sortable: true, defaultVisible: true,
     render: (v) => <StatusPill status={v as string} size="sm" />,
+    exportValue: (row) => POLICY_EFFECTIVE_STATUS_LABELS[row.effectiveStatus],
   },
   {
     id: 'endDate', key: 'endDate', label: 'Vigencia hasta', sortable: true, defaultVisible: true,
@@ -205,7 +219,11 @@ function overlapsMonthRange(startDate: string, endDate: string, from: string, to
   return true
 }
 
-export function PolicyExportView({ rows }: PolicyExportViewProps) {
+export function PolicyExportView({ rows: sourceRows, policiesById }: PolicyExportViewProps) {
+  const rows = useMemo<ExportViewRow[]>(
+    () => sourceRows.map((row) => ({ ...row, effectiveStatus: policiesById.get(row.policyId)?.effectiveStatus ?? row.status })),
+    [sourceRows, policiesById],
+  )
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string[]>([])
@@ -244,7 +262,7 @@ export function PolicyExportView({ rows }: PolicyExportViewProps) {
     () =>
       rows.filter((row) =>
         (!search.trim() || matchesSearch(row, search)) &&
-        matchesOneOf(filterStatus, row.status) &&
+        matchesOneOf(filterStatus, row.effectiveStatus) &&
         overlapsMonthRange(row.startDate, row.endDate, vigenciaFrom, vigenciaTo) &&
         matchesOneOf(filterAssetType, assetTypeBucket(row)) &&
         matchesOneOf(filterInsuranceType, insuranceTypeBucket(row)) &&

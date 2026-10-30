@@ -1,9 +1,16 @@
 import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { policiesService } from './policies.service'
+import { policyRenewalsService } from './policy-renewals.service'
 import { AppError } from '../../shared/errors/AppError'
 import { sendAttachmentDownload } from '../../shared/utils/attachment-download'
-import type { ListPoliciesQueryDTO, SearchPoliciesQueryDTO } from './policies.schemas'
+import type {
+  CreatePolicyRenewalDTO,
+  ListPoliciesQueryDTO,
+  RenewalPreviewQueryDTO,
+  RevokePolicyRenewalDTO,
+  SearchPoliciesQueryDTO,
+} from './policies.schemas'
 
 type IdParam = { id: string }
 type CoverageParam = { id: string; coverageId: string }
@@ -43,6 +50,28 @@ export const policiesController = {
   markAsDeBaja: asyncHandler(async (req: Request<IdParam>, res: Response) => {
     const policy = await policiesService.markAsDeBaja(req.params.id)
     res.json({ data: policy })
+  }),
+
+  // Renovación (vínculo administrativo póliza anterior → póliza nueva)
+  getRenewals: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const renewals = await policyRenewalsService.findAll(req.params.id)
+    res.json({ data: renewals })
+  }),
+
+  getRenewalPreview: asyncHandler(async (req: Request<IdParam>, res: Response) => {
+    const { renewalPolicyId } = req.query as unknown as RenewalPreviewQueryDTO
+    const preview = await policyRenewalsService.preview(req.params.id, renewalPolicyId)
+    res.json({ data: preview })
+  }),
+
+  createRenewal: asyncHandler(async (req: Request<IdParam, unknown, CreatePolicyRenewalDTO>, res: Response) => {
+    const renewal = await policyRenewalsService.create(req.params.id, req.body, req.user?.email ?? 'sistema')
+    res.status(201).json({ data: renewal })
+  }),
+
+  revokeRenewal: asyncHandler(async (req: Request<IdParam, unknown, RevokePolicyRenewalDTO>, res: Response) => {
+    const renewal = await policyRenewalsService.revoke(req.params.id, req.body, req.user?.email ?? 'sistema')
+    res.json({ data: renewal })
   }),
 
   // Tasks

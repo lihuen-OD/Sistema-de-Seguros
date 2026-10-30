@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, ShieldCheck, ShieldOff, AlertTriangle, DollarSign, Eye, Trash2, Archive } from 'lucide-react'
+import { useCurrentUser } from '../../../app/auth/AuthContext'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
@@ -26,14 +27,17 @@ import { documentKeys } from '../../../shared/api/documents.api'
 import { producerQueries } from '../../../shared/api/producers.api'
 import { ConfirmDialog } from '../../../shared/components/dialogs/ConfirmDialog'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
-import { POLICY_STATUS_LABELS } from '../../../shared/constants'
+import { POLICY_EFFECTIVE_STATUS_LABELS, POLICY_EFFECTIVE_STATUS_ORDER } from '../../../shared/constants'
 import { useColumnConfig } from '../../../shared/hooks/useColumnConfig'
 import type { Policy, SortState, TableColumn } from '../../../shared/types'
 import { EXPORT_SCOPE_HINT, fetchRowsForExport } from '../../../shared/utils/export'
+import { MarkRenewedModal } from './renewals/MarkRenewedModal'
+import { PolicyRenewalAction, type RenewablePolicy } from './renewals/PolicyRenewalAction'
 
-const STATUS_OPTIONS = Object.entries(POLICY_STATUS_LABELS).map(([value, label]) => ({
+// Estado administrativo: distingue Renovada de las que todavía hay que gestionar.
+const STATUS_OPTIONS = POLICY_EFFECTIVE_STATUS_ORDER.map((value) => ({
   value,
-  label,
+  label: POLICY_EFFECTIVE_STATUS_LABELS[value],
 }))
 
 const DEFAULT_PAGE_SIZE = 20
@@ -41,6 +45,7 @@ const DEFAULT_PAGE_SIZE = 20
 export default function PoliciesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useCurrentUser()
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [page, setPage] = useState(1)
@@ -48,6 +53,7 @@ export default function PoliciesPage() {
   const [sort, setSort] = useState<SortState | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deBajaId, setDeBajaId] = useState<string | null>(null)
+  const [renewalTarget, setRenewalTarget] = useState<RenewablePolicy | null>(null)
   // En vuelo (no "cuál fila tiene el diálogo abierto", eso ya es deleteId/
   // deBajaId) — gatea el botón "Confirmar" del ConfirmDialog para que un
   // doble click no dispare dos DELETE/POST seguidos para el mismo id (el
@@ -60,7 +66,7 @@ export default function PoliciesPage() {
   // el summary y para exportar (getExportRows).
   const listFilters = {
     search: search.trim() || undefined,
-    status: filterStatus ? filterStatus as Policy['status'] : undefined,
+    effectiveStatus: filterStatus ? filterStatus as (typeof POLICY_EFFECTIVE_STATUS_ORDER)[number] : undefined,
     ...toSortParams(sort),
   }
   const { data: result, isLoading, isFetching, isError } = useQuery(policyQueries.listPaginated({
@@ -82,6 +88,7 @@ export default function PoliciesPage() {
   // La distribución por estado ignora solo el filtro de estado; la suma
   // asegurada es solo de líneas de cobertura vigentes hoy.
   const summary = result?.summary
+  const byEffectiveStatus = summary?.byEffectiveStatus
   const summaryHint = isFetching ? 'Calculando…' : 'No disponible'
   const { data: allProducers = [] } = useQuery(producerQueries.list())
 
@@ -217,11 +224,14 @@ export default function PoliciesPage() {
       headerClassName: 'text-right',
     },
     {
+      // id 'status' se conserva: lo usan las columnas y presets de
+      // exportación guardados por cada usuario.
       id: 'status',
-      key: 'status',
+      key: 'effectiveStatus',
       label: 'Estado',
       defaultVisible: true,
       render: (v) => <StatusPill status={v as string} size="sm" />,
+      exportValue: (row) => POLICY_EFFECTIVE_STATUS_LABELS[row.effectiveStatus],
     },
     // ── Columnas opcionales ────────────────────────────────────────────────────
     {
@@ -300,6 +310,11 @@ export default function PoliciesPage() {
           >
             <Eye size={15} />
           </button>
+          <PolicyRenewalAction
+            policy={row}
+            user={user}
+            onOpen={setRenewalTarget}
+          />
           {row.status !== 'de_baja' && (
             <button
               onClick={(e) => { e.stopPropagation(); setDeBajaId(row.id) }}
@@ -320,9 +335,9 @@ export default function PoliciesPage() {
           </button>
         </div>
       ),
-      className: 'w-28',
+      className: 'w-36',
     },
-  ], [allProducers, navigate])
+  ], [allProducers, navigate, user])
 
   const { visibleColumns, columnConfigs, toggle, reorder, reset, applyPreset } = useColumnConfig('policies', ALL_COLUMNS)
 
@@ -345,9 +360,10 @@ export default function PoliciesPage() {
       />
 
       <MetricGrid cols={4} className="mb-6">
-        <KpiCard label="Vigentes" value={summary?.byStatus.vigente ?? '—'} description={summary ? `de ${summary.total} pólizas` : summaryHint} icon={ShieldCheck} variant="success" />
-        <KpiCard label="Vencidas" value={summary?.byStatus.vencida ?? '—'} description={summary ? `de ${summary.total} pólizas` : summaryHint} icon={ShieldOff} variant="danger" />
-        <KpiCard label="Próximas a Vencer" value={summary?.byStatus.proxima_a_vencer ?? '—'} description={summary ? 'En los próximos 30 días' : summaryHint} icon={AlertTriangle} variant="warning" />
+        {/* Los conteos administrativos no alteran la suma asegurada vigente. */}
+        <KpiCard label="Vigentes" value={byEffectiveStatus?.vigente ?? '—'} description={byEffectiveStatus && summary ? `${byEffectiveStatus.renovada} renovadas · de ${summary.total} pólizas` : summaryHint} icon={ShieldCheck} variant="success" />
+        <KpiCard label="Vencidas" value={byEffectiveStatus?.vencida ?? '—'} description={byEffectiveStatus ? `${byEffectiveStatus.de_baja} de baja` : summaryHint} icon={ShieldOff} variant="danger" />
+        <KpiCard label="Próximas a Vencer" value={byEffectiveStatus?.proxima_a_vencer ?? '—'} description={byEffectiveStatus ? 'Sin renovación, próximos 30 días' : summaryHint} icon={AlertTriangle} variant="warning" />
         <KpiCard label="Suma Asegurada" value={summary ? formatCurrencyCompact(summary.insuredActiveUsd, 'USD') : '—'} description={summary ? `${formatCurrencyCompact(summary.insuredActiveArs, 'ARS')} · coberturas vigentes` : summaryHint} icon={DollarSign} variant="info" />
       </MetricGrid>
 
@@ -428,6 +444,12 @@ export default function PoliciesPage() {
         onConfirm={() => deBajaId && handleDeBaja(deBajaId)}
         onCancel={() => setDeBajaId(null)}
       />
+      {renewalTarget && (
+        <MarkRenewedModal
+          policy={renewalTarget}
+          onClose={() => setRenewalTarget(null)}
+        />
+      )}
     </PageContent>
   )
 }

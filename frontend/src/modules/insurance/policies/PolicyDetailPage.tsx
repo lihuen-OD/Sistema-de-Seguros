@@ -5,10 +5,11 @@ import clsx from 'clsx'
 import {
   FileDown, Edit2, ShieldCheck, FileText, Building2, User, Calendar, Hash, Link2,
   Plus, ChevronDown, ChevronUp, ArrowUpRight, Archive,
-  Paperclip, IdCard, ShieldOff, Clock, History, PlusCircle,
+  Paperclip, IdCard, ShieldOff, Clock, History, PlusCircle, RefreshCw,
 } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
+import { FinancialDataWarning } from '../../../shared/components/feedback/FinancialDataWarning'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SummaryRow } from '../../../shared/components/cards/SummaryRow'
@@ -22,11 +23,11 @@ import {
   formatCurrencyCompact,
   formatPercent,
   formatDate,
-  daysUntil,
   // Alias: esta página ya tiene un `isExpired` local (si la póliza entera
   // venció) — este es el de shared/utils/format.ts, para líneas de cobertura.
   isExpired as isCoverageBajaEffective,
 } from '../../../shared/utils/format'
+import { daysUntilBusinessDate } from '../../../shared/utils/businessDate'
 import {
   computePolicyInvoicedTotal,
   computePsaPercentage,
@@ -41,6 +42,8 @@ import { ROUTES } from '../../../app/routes'
 import { PolicyAttachmentsSection } from './PolicyAttachmentsSection'
 import { DeactivateCoverageModal } from './DeactivateCoverageModal'
 import { ReAddCoverageModal } from './ReAddCoverageModal'
+import { MarkRenewedModal } from './renewals/MarkRenewedModal'
+import { PolicyRenewalSection } from './renewals/PolicyRenewalSection'
 import { FacturaCard } from './components/FacturaCard'
 import { StandaloneDocCard } from './components/StandaloneDocCard'
 import { EndorsementCard } from './components/EndorsementCard'
@@ -64,6 +67,9 @@ export default function PolicyDetailPage() {
   // necesitan además Análisis Financiero (financialDocs) para el prorrateo.
   const canDocuments = hasModule(user, 'documents')
   const canFinancial = hasModule(user, 'financial_analysis')
+  // Marcar/deshacer renovaciones: esta pantalla ya exige `policies`; el
+  // backend exige ambos módulos de todos modos.
+  const canManageRenewals = hasModule(user, 'policy_renewals')
 
   const { data: policy, isLoading: loadingPolicy } = useQuery(policyQueries.detail(id!))
 
@@ -76,7 +82,8 @@ export default function PolicyDetailPage() {
   // Se usa exclusivamente para prorratear "Total facturado"/P/SA.
   // includeInstallments:false (Fase D4) — esta página nunca lee `.installments`
   // de financialDocs (las cuotas visibles vienen de la bulk query de Fase D3).
-  const { data: financialDocs = [] } = useQuery({ ...documentQueries.financial({ includeInstallments: false }), enabled: canFinancial })
+  const { data: financialResult } = useQuery({ ...documentQueries.financialWithMeta({ includeInstallments: false }), enabled: canFinancial })
+  const financialDocs = useMemo(() => financialResult?.data ?? [], [financialResult])
 
   const { data: documentTypesData } = useQuery({ ...documentQueries.types(), enabled: canDocuments })
   // Mapa por key para saber, de un NC/ND/Ajuste/Refacturación vinculado,
@@ -143,6 +150,7 @@ export default function PolicyDetailPage() {
   )
 
   const [showDeBajaConfirm, setShowDeBajaConfirm] = useState(false)
+  const [showMarkRenewed, setShowMarkRenewed] = useState(false)
   // Línea de cobertura con el desglose de documentos abierto — una sola a la
   // vez, mismo criterio que el resto de los acordeones de esta página.
   const [expandedCoverageId, setExpandedCoverageId] = useState<string | null>(null)
@@ -322,8 +330,17 @@ export default function PolicyDetailPage() {
   )
   const endorsements = documents.filter((d) => d.documentType === 'ENDORSEMENT' && !hasEconomicImpact(d))
 
-  const daysLeft = daysUntil(policy.endDate)
+  // Día de Argentina, igual que el estado visible (effectiveStatus): no
+  // depende del huso horario del navegador.
+  const daysLeft = daysUntilBusinessDate(policy.endDate)
   const isExpired = daysLeft < 0
+  const daysText = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`
+  const isRenewalMarked = policy.renewal?.isMarked ?? Boolean(policy.renewal?.renewedBy)
+  const renewedBy = policy.renewal?.renewedBy ?? null
+  const renewalOf = policy.renewal?.renewalOf ?? []
+  // Una baja manual no se puede marcar; la fecha de vencimiento no restringe
+  // esta acción administrativa.
+  const canMarkRenewed = canManageRenewals && policy.status !== 'de_baja' && !isRenewalMarked
 
   // Task columns
   const taskColumns: TableColumn<ProducerTask>[] = [
@@ -364,17 +381,30 @@ export default function PolicyDetailPage() {
     <PageContent>
       <PageHeader
         title={policy.policyNumber}
-        subtitle={`${policy.insuranceCompany} · ${(policy.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'} · ${formatDate(policy.startDate)} — ${formatDate(policy.endDate)}${!isExpired ? ` · ${daysLeft === 0 ? 'Vence hoy' : `${daysLeft} días restantes`}` : ''}`}
+        subtitle={`${policy.insuranceCompany} · ${(policy.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'} · ${formatDate(policy.startDate)} — ${formatDate(policy.endDate)}${!isExpired ? ` · ${daysLeft === 0 ? 'Vence hoy' : `${daysText(daysLeft)} ${daysLeft === 1 ? 'restante' : 'restantes'}`}` : ''}`}
         category="Póliza"
+        responsiveActions
         backTo="/insurance/policies"
         backLabel="Volver a pólizas"
-        badge={<StatusPill status={policy.status} />}
+        badge={<StatusPill status={policy.effectiveStatus} />}
         actions={
-          <div className="flex items-center gap-2">
+          // Mismo criterio que el detalle de documento: debajo de xl las
+          // acciones pasan bajo el título en vez de comprimirlo (en mobile,
+          // grilla de botones a todo el ancho).
+          <div className="grid w-full grid-cols-1 gap-2 min-[480px]:grid-cols-2 md:flex md:flex-wrap xl:w-auto xl:justify-end [&>button]:w-full md:[&>button]:w-auto">
+            {canMarkRenewed && (
+              <button
+                onClick={() => setShowMarkRenewed(true)}
+                className="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+              >
+                <RefreshCw size={15} />
+                Marcar como renovada
+              </button>
+            )}
             {policy.status !== 'de_baja' && (
               <button
                 onClick={() => setShowDeBajaConfirm(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
               >
                 <Archive size={15} />
                 Dar de baja
@@ -382,14 +412,14 @@ export default function PolicyDetailPage() {
             )}
             <button
               onClick={() => navigate(`/insurance/policies/${policy.id}/ficha`)}
-              className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
             >
               <FileDown size={15} />
               Ficha PDF
             </button>
             <button
               onClick={() => navigate(ROUTES.POLICIES_EDIT(policy.id))}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Edit2 size={15} />
               Editar
@@ -397,6 +427,7 @@ export default function PolicyDetailPage() {
           </div>
         }
       />
+      {canFinancial && <FinancialDataWarning result={financialResult} />}
 
       <ConfirmDialog
         open={showDeBajaConfirm}
@@ -406,6 +437,10 @@ export default function PolicyDetailPage() {
         onConfirm={handleDeBaja}
         onCancel={() => setShowDeBajaConfirm(false)}
       />
+
+      {showMarkRenewed && (
+        <MarkRenewedModal policy={policy} onClose={() => setShowMarkRenewed(false)} />
+      )}
 
       {deactivateTarget && (
         <DeactivateCoverageModal
@@ -445,7 +480,23 @@ export default function PolicyDetailPage() {
                 icon={User}
                 link={producer ? `/producers/${producer.id}` : undefined}
               />
-              <InfoRow label="Estado" value={policy.status} isStatus />
+              <InfoRow label="Estado" value={policy.effectiveStatus} isStatus />
+              {renewedBy && (
+                <InfoRow
+                  label="Renovada por"
+                  value={renewedBy.policyNumber}
+                  icon={Hash}
+                  link={`/insurance/policies/${renewedBy.id}`}
+                />
+              )}
+              {renewalOf.length > 0 && (
+                <InfoRow
+                  label="Renovación de"
+                  value={renewalOf.map((p) => p.policyNumber).join(', ')}
+                  icon={Hash}
+                  link={renewalOf.length === 1 ? `/insurance/policies/${renewalOf[0].id}` : undefined}
+                />
+              )}
             </div>
           </SectionCard>
 
@@ -456,7 +507,7 @@ export default function PolicyDetailPage() {
               <InfoRow label="Fecha de Vencimiento" value={formatDate(policy.endDate)} icon={Calendar} />
               <InfoRow
                 label="Días Restantes"
-                value={isExpired ? `Vencida hace ${Math.abs(daysLeft)} días` : daysLeft === 0 ? 'Vence hoy' : `${daysLeft} días`}
+                value={isExpired ? `Vencida hace ${daysText(Math.abs(daysLeft))}` : daysLeft === 0 ? 'Vence hoy' : daysText(daysLeft)}
               />
             </div>
             {policy.description && (
@@ -468,6 +519,8 @@ export default function PolicyDetailPage() {
               </div>
             )}
           </SectionCard>
+
+          <PolicyRenewalSection policyId={policy.id} canManage={canManageRenewals} />
 
           {/* Líneas de cobertura — cada una es un activo (o "sin activo") con su
               propio tipo de seguro, coberturas y suma asegurada. Separadas en

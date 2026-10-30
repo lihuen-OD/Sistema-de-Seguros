@@ -1,6 +1,7 @@
 import { queryOptions, keepPreviousData } from '@tanstack/react-query'
 import { apiClient } from './client'
 import { fireExtinguisherLabel } from '../utils/format'
+import type { FireExtinguisherCreateInput } from './fire-extinguishers.api'
 
 // ── Contrato (ver plan de Fase 3 — reconciliado entre backend y frontend) ──────
 
@@ -155,6 +156,25 @@ export interface FireExtinguisherCoverageItem {
   auditId: string | null
   auditStatus: FireExtinguisherAuditStatus | null
   auditDate: string | null
+}
+
+export type FireExtinguisherCreationRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+export interface FireExtinguisherCreationRequest extends FireExtinguisherCreateInput {
+  id: string
+  status: FireExtinguisherCreationRequestStatus
+  auditPeriod: string
+  cylinderNumberNormalized: string
+  requestedBy: string
+  requestedAt: string
+  reviewedBy: string | null
+  reviewedAt: string | null
+  rejectionReason: string | null
+  createdFireExtinguisherId: string | null
+  associatedAssetCode: string | null
+  associatedAssetName: string | null
+  associatedAssetType: string | null
+  associatedAsset: { id: string; code: string | null; name: string; assetType: string } | null
+  createdFireExtinguisher: { id: string; code: string } | null
 }
 
 // ── Informe de auditoría por establecimiento/sector ─────────────────────────────
@@ -357,12 +377,36 @@ export interface FireExtinguisherAuditCommentItem {
 
 export const fireExtinguisherAuditKeys = {
   all: ['fire-extinguisher-audits'] as const,
+  coverage: ['fire-extinguisher-audits', 'coverage'] as const,
+  auditDashboard: ['fire-extinguisher-audits', 'audit-dashboard'] as const,
   list: (filters?: FireExtinguisherAuditListFilters) =>
     filters ? ([...fireExtinguisherAuditKeys.all, filters] as const) : fireExtinguisherAuditKeys.all,
   detail: (id: string) => [...fireExtinguisherAuditKeys.all, id] as const,
+  creationRequests: ['fire-extinguisher-creation-requests'] as const,
+  creationRequestLists: ['fire-extinguisher-creation-requests', 'list'] as const,
+  creationRequest: (id: string) => ['fire-extinguisher-creation-requests', 'detail', id] as const,
 }
 
 export const fireExtinguisherAuditsApi = {
+  async createCreationRequest(input: FireExtinguisherCreateInput): Promise<FireExtinguisherCreationRequest> {
+    const res = await apiClient.post<{ data: FireExtinguisherCreationRequest }>('/fire-extinguisher-audits/creation-requests', input)
+    return res.data.data
+  },
+
+  async listCreationRequests(status?: FireExtinguisherCreationRequestStatus): Promise<FireExtinguisherCreationRequest[]> {
+    const res = await apiClient.get<{ data: FireExtinguisherCreationRequest[] }>('/fire-extinguisher-audits/creation-requests', { params: { status } })
+    return res.data.data
+  },
+
+  async getCreationRequest(id: string): Promise<FireExtinguisherCreationRequest> {
+    const res = await apiClient.get<{ data: FireExtinguisherCreationRequest }>(`/fire-extinguisher-audits/creation-requests/${id}`)
+    return res.data.data
+  },
+
+  async reviewCreationRequest(id: string, input: { decision: 'APPROVE' } | { decision: 'REJECT'; reason: string }): Promise<FireExtinguisherCreationRequest> {
+    const res = await apiClient.post<{ data: FireExtinguisherCreationRequest }>(`/fire-extinguisher-audits/creation-requests/${id}/review`, input)
+    return res.data.data
+  },
   async create(input: FireExtinguisherAuditCreateInput): Promise<FireExtinguisherAudit> {
     const res = await apiClient.post<{ data: FireExtinguisherAudit }>('/fire-extinguisher-audits', input)
     return res.data.data
@@ -489,6 +533,18 @@ export const fireExtinguisherAuditsApi = {
 // ── Query options (categoría B — semi-dinámico) ──────────────────────────────────
 
 export const fireExtinguisherAuditQueries = {
+  creationRequests: (status?: FireExtinguisherCreationRequestStatus) =>
+    queryOptions({
+      queryKey: [...fireExtinguisherAuditKeys.creationRequestLists, status ?? 'ALL'] as const,
+      queryFn: () => fireExtinguisherAuditsApi.listCreationRequests(status),
+      staleTime: 30 * 1000,
+    }),
+  creationRequest: (id: string) =>
+    queryOptions({
+      queryKey: fireExtinguisherAuditKeys.creationRequest(id),
+      queryFn: () => fireExtinguisherAuditsApi.getCreationRequest(id),
+      enabled: !!id,
+    }),
   list: (filters?: FireExtinguisherAuditListFilters) =>
     queryOptions({
       queryKey: fireExtinguisherAuditKeys.list(filters),
@@ -517,13 +573,13 @@ export const fireExtinguisherAuditQueries = {
     }),
   coverage: (period: string) =>
     queryOptions({
-      queryKey: [...fireExtinguisherAuditKeys.all, 'coverage', period] as const,
+      queryKey: [...fireExtinguisherAuditKeys.coverage, period] as const,
       queryFn: () => fireExtinguisherAuditsApi.getCoverage(period),
       staleTime: 60 * 1000,
     }),
   auditDashboard: (period: string, establishment?: string) =>
     queryOptions({
-      queryKey: [...fireExtinguisherAuditKeys.all, 'audit-dashboard', period, establishment ?? null] as const,
+      queryKey: [...fireExtinguisherAuditKeys.auditDashboard, period, establishment ?? null] as const,
       queryFn: () => fireExtinguisherAuditsApi.getAuditDashboard(period, establishment),
       staleTime: 60 * 1000,
     }),

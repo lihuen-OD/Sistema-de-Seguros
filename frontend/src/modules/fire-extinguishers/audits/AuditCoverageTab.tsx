@@ -88,6 +88,7 @@ function locationTypeKey(establishment: string, locationType: string): string {
 }
 
 export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canAudit }: AuditCoverageTabProps) {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user } = useCurrentUser()
   const [search, setSearch] = useState('')
@@ -149,6 +150,15 @@ export function AuditCoverageTab({ period, onPeriodChange, data, isLoading, canA
             placeholder="Buscar por cilindro, código, ubicación o detalle…"
             className="w-full sm:w-80"
           />
+          {canAudit && (
+            <button
+              type="button"
+              onClick={() => navigate(ROUTES.FIRE_EXTINGUISHERS_CREATION_REQUEST_NEW)}
+              className="px-3.5 py-2 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors whitespace-nowrap"
+            >
+              Solicitar nuevo matafuego
+            </button>
+          )}
           <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
             {totalAudited} de {filtered.length} matafuegos auditados en {period}
           </span>

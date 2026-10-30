@@ -9,7 +9,7 @@ const FOCUSABLE_SELECTOR =
 export interface ModalProps {
   open: boolean
   onClose: () => void
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   icon?: React.ElementType
   iconClassName?: string
   title?: ReactNode
@@ -25,6 +25,8 @@ const SIZE_CLASSES: Record<NonNullable<ModalProps['size']>, string> = {
   sm: 'max-w-sm',
   md: 'max-w-lg',
   lg: 'max-w-2xl',
+  // Comparaciones lado a lado (ej. vista previa de una renovación).
+  xl: 'max-w-4xl',
 }
 
 export function Modal({

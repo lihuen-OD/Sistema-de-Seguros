@@ -145,6 +145,7 @@ model Asset {
   pledges                   AssetPledge[]
   attachments               AssetAttachment[]
   fireExtinguishers         FireExtinguisher[]
+  fireExtinguisherCreationRequests FireExtinguisherCreationRequest[]
   claims                    Claim[]
   policyCoverages           PolicyAssetCoverage[]
   fixedAsset                 FixedAsset?                      @relation(fields: [fixedAssetId], references: [id])
@@ -462,10 +463,51 @@ model Policy {
   coverages    PolicyAssetCoverage[]
   endorsements AccountingDocument[]
   claims       Claim[]
+  // Registros de renovación (ver PolicyRenewal) — como póliza marcada
+  // administrativamente y, cuando existe, como póliza sucesora.
+  renewalLinksAsPrevious PolicyRenewal[] @relation("PolicyRenewalPrevious")
+  renewalLinksAsRenewal  PolicyRenewal[] @relation("PolicyRenewalNext")
 
   @@index([isActive, endDate])
   @@index([producerId])
   @@map("policies")
+}
+
+// Marca administrativa de renovación; renewalPolicyId es null cuando no se
+// registra una póliza sucesora. Nunca modifica fechas, coberturas, sumas ni
+// documentos de la póliza.
+// Historial append-only: revertir completa revokedAt/revokedBy/revokeReason
+// una sola vez y volver a vincular crea una fila nueva — ningún endpoint
+// borra filas.
+model PolicyRenewal {
+  id               String    @id @default(uuid())
+  previousPolicyId String
+  renewalPolicyId  String?
+  notes            String?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+  revokedBy        String?
+  revokeReason     String?
+
+  // Restrict en ambos lados preserva el historial: una póliza con vínculos de
+  // renovación (activos o revertidos) no puede borrarse físicamente — mismo
+  // criterio que AssetPledge. policies.service.ts#hardDelete lo rechaza antes
+  // con un 409 claro.
+  previousPolicy Policy @relation("PolicyRenewalPrevious", fields: [previousPolicyId], references: [id], onDelete: Restrict)
+  renewalPolicy  Policy? @relation("PolicyRenewalNext", fields: [renewalPolicyId], references: [id], onDelete: Restrict)
+
+  // Además, creados a mano en la migración add_policy_renewals porque Prisma
+  // no los representa en el schema (no usar db push — los borraría):
+  // - policy_renewals_one_active_per_previous: único PARCIAL sobre
+  //   previousPolicyId WHERE revokedAt IS NULL (una sola marca activa por
+  //   póliza anterior; una póliza sucesora puede seguir vinculada a varias).
+  // - policy_renewals_not_self / policy_renewals_revocation_complete: CHECKs.
+  // Los dos índices simples cubren lo que el parcial no: el historial
+  // (incluye revertidas) y el chequeo de la FK al borrar una póliza.
+  @@index([previousPolicyId])
+  @@index([renewalPolicyId])
+  @@map("policy_renewals")
 }
 
 // Línea de cobertura dentro de una póliza — una póliza puede tener varias
@@ -737,10 +779,54 @@ model FireExtinguisher {
   audits          FireExtinguisherAudit[]
   proposedChanges FireExtinguisherAuditProposedChange[]
   attachments     FireExtinguisherAttachment[]
+  creationRequest FireExtinguisherCreationRequest?
 
   @@index([isActive, expirationDate])
   @@index([assetId])
   @@map("fire_extinguishers")
+}
+
+// Solicitud de alta creada desde la cobertura de auditoría. El snapshot es
+// deliberadamente independiente del maestro: PENDING/REJECTED nunca forman
+// parte del inventario ni de sus indicadores.
+model FireExtinguisherCreationRequest {
+  id                          String    @id @default(uuid())
+  status                      String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  auditPeriod                 String
+  type                        String
+  capacity                    String
+  expirationDate              DateTime? @db.Date
+  chargeDate                  DateTime? @db.Date
+  hydraulicTestExpirationDate DateTime? @db.Date
+  associatedAssetId           String?
+  associatedAssetCode         String?
+  associatedAssetName         String?
+  associatedAssetType         String?
+  associatedLocationType      String
+  location                    String?
+  establishment               String
+  brand                       String?
+  cylinderNumber              String
+  cylinderNumberNormalized    String
+  iramCertificateNumber       String?
+  manufacturingYear           Int
+  observations                String?
+  requestedBy                 String
+  requestedAt                 DateTime  @default(now())
+  reviewedBy                  String?
+  reviewedAt                  DateTime?
+  rejectionReason             String?
+  createdFireExtinguisherId   String?   @unique
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  associatedAsset         Asset?            @relation(fields: [associatedAssetId], references: [id], onDelete: SetNull)
+  createdFireExtinguisher FireExtinguisher? @relation(fields: [createdFireExtinguisherId], references: [id], onDelete: Restrict)
+
+  @@index([status, requestedAt])
+  @@index([requestedBy, requestedAt])
+  @@index([associatedAssetId])
+  @@map("fire_extinguisher_creation_requests")
 }
 
 // nextDueDate/previousExpirationDate: columnas específicas de recarga (sin cambios).

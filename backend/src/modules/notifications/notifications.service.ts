@@ -1,5 +1,5 @@
 import { prisma } from '../../config/database'
-import { toDateStr, dateOffset, todayDate, computeExpirationStatus, computePolicyStatus } from '../../shared/utils/dates'
+import { toDateStr, dateOffset, todayDate, computeExpirationStatus, buildEffectivePolicyStatusFilter } from '../../shared/utils/dates'
 import {
   buildFireExtinguisherAtRiskFilter,
   computeFireExtinguisherStatus,
@@ -89,7 +89,11 @@ export const notificationsService = {
     const [policies, extinguishers, overdueInstallments, nearInstallments, assetAttachments, pendingCardAudits, dismissals] =
       await Promise.all([
         prisma.policy.findMany({
-          where: { isActive: true, endDate: { gte: today, lte: in30Days } },
+          // Pendientes de gestión de renovación = estado administrativo
+          // "próxima a vencer": deja afuera las ya Renovadas y las dadas de
+          // baja a mano, y usa el mismo día de Argentina que el resto de los
+          // estados visibles (ver buildEffectivePolicyStatusFilter).
+          where: { isActive: true, ...buildEffectivePolicyStatusFilter('proxima_a_vencer') },
           // La empresa ya no es un campo único de la póliza — se resuelve por
           // línea (companyId directo en las "sin activo", o la empresa
           // principal del activo en las que sí tienen uno).
@@ -164,7 +168,9 @@ export const notificationsService = {
         return {
           id: `policy:${p.id}`,
           category: 'policy',
-          severity: computePolicyStatus(p.endDate) === 'vencida' ? 'vencido' : 'proximo_vencer',
+          // El where solo trae pólizas "próxima a vencer" (todavía no vencidas
+          // en el día de Argentina) — nunca una vencida.
+          severity: 'proximo_vencer',
           title: `${p.policyNumber} — ${p.insuredName}`,
           subtitle: companyNames.join(', '),
           dueDate: toDateStr(p.endDate),

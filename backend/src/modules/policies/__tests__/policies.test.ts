@@ -122,17 +122,26 @@ describe('Policies API', () => {
     )
 
     describe('summary (Fase 3B)', () => {
-      // Cada count de estado se identifica por su filtro (ver buildPolicyStatusFilter).
+      // Cada count de estado se identifica por su filtro (ver
+      // buildPolicyStatusFilter y buildEffectivePolicyStatusFilter). Algunos
+      // estados administrativos llevan la condición de marca; vencida se
+      // comparte intencionalmente con el conteo contractual por fecha.
       function statusOf(where: { AND?: Record<string, unknown>[] }): string {
         const f = where.AND?.[1] ?? {}
-        if (f.deactivatedAt && typeof f.deactivatedAt === 'object') return 'de_baja'
+        const renewal = f.renewalLinksAsPrevious as Record<string, unknown> | undefined
+        const prefix = renewal ? 'eff:' : ''
+        if (f.deactivatedAt && typeof f.deactivatedAt === 'object') return `${prefix}de_baja`
         const end = f.endDate as Record<string, unknown> | undefined
-        if (end?.gt) return 'vigente'
-        if (end?.gte && end?.lte) return 'proxima_a_vencer'
-        if (end?.lt) return 'vencida'
+        if (renewal?.some) return 'eff:renovada'
+        if (end?.gt) return `${prefix}vigente`
+        if (end?.gte && end?.lte) return `${prefix}proxima_a_vencer`
+        if (end?.lt) return `${prefix}vencida`
         return 'list'
       }
-      const COUNTS: Record<string, number> = { list: 7, vigente: 40, proxima_a_vencer: 6, vencida: 12, de_baja: 3 }
+      const COUNTS: Record<string, number> = {
+        list: 7, vigente: 40, proxima_a_vencer: 6, vencida: 12, de_baja: 3,
+        'eff:vigente': 38, 'eff:proxima_a_vencer': 5, 'eff:renovada': 3, 'eff:de_baja': 3,
+      }
 
       beforeEach(() => {
         db.policy.findMany.mockResolvedValue([])
@@ -159,6 +168,7 @@ describe('Policies API', () => {
         expect(res.body.summary).toEqual({
           total: 61,
           byStatus: { vigente: 40, proxima_a_vencer: 6, vencida: 12, de_baja: 3 },
+          byEffectiveStatus: { vigente: 38, proxima_a_vencer: 5, renovada: 3, vencida: 12, de_baja: 3 },
           insuredActiveArs: 5_000_000,
           insuredActiveUsd: 4_000,
         })
@@ -167,7 +177,7 @@ describe('Policies API', () => {
         const listWhere = db.policy.findMany.mock.calls[0][0].where
         expect(listWhere.endDate).toEqual({ gt: expect.any(Date) })
         const statusCounts = db.policy.count.mock.calls.map((c: [{ where: { AND?: unknown[] } }]) => c[0].where).filter((w: { AND?: unknown[] }) => w.AND)
-        expect(statusCounts).toHaveLength(4)
+        expect(statusCounts).toHaveLength(4 + 5)
         for (const w of statusCounts) {
           expect(w.AND[0]).toHaveProperty('OR')
           expect(w.AND[0]).not.toHaveProperty('endDate')
@@ -181,7 +191,8 @@ describe('Policies API', () => {
         expect(where.effectiveDate).toEqual({ lte: expect.any(Date) })
         expect(where.OR).toEqual([{ bajaDate: null }, { bajaDate: { gte: expect.any(Date) } }])
         expect(where.policy.AND[0]).toEqual(db.policy.findMany.mock.calls[0][0].where)
-        expect(where.policy.AND[1]).toEqual({ deactivatedAt: null, endDate: { gte: expect.any(Date) } })
+        // Vigencia efectiva (R4-A): además de no vencida y sin baja, la póliza tiene que haber empezado.
+        expect(where.policy.AND[1]).toEqual({ deactivatedAt: null, startDate: { lte: expect.any(Date) }, endDate: { gte: expect.any(Date) } })
       })
     })
 
@@ -410,6 +421,7 @@ describe('Policies API', () => {
         policyNumber: 'POL-SEARCH-001',
         insuranceCompany: 'La Segunda',
         status: 'vigente',
+        effectiveStatus: 'vigente',
         startDate: '2026-01-01',
         endDate: '2026-12-31',
         producerName: 'Productor Demo',

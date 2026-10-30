@@ -10,7 +10,7 @@ import { downloadAsPdf } from '../../../shared/utils/downloadAsPdf'
 import { policyQueries } from '../../../shared/api/policies.api'
 import { producerQueries } from '../../../shared/api/producers.api'
 import { documentQueries } from '../../../shared/api/documents.api'
-import { POLICY_STATUS_LABELS, PAYMENT_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
+import { POLICY_EFFECTIVE_STATUS_LABELS, PAYMENT_STATUS_LABELS, DOCUMENT_TYPE_LABELS } from '../../../shared/constants'
 
 const EMISSION_DATE = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
@@ -47,7 +47,10 @@ export default function PolicyFichaPage() {
     }
   }
 
-  const statusLabel = POLICY_STATUS_LABELS[policy.status] ?? policy.status
+  const statusLabel = POLICY_EFFECTIVE_STATUS_LABELS[policy.effectiveStatus]
+  const renewedBy = policy.renewal?.renewedBy ?? null
+  const isRenewalMarked = policy.renewal?.isMarked ?? Boolean(renewedBy)
+  const renewalOf = policy.renewal?.renewalOf ?? []
 
   return (
     <PageContent>
@@ -92,7 +95,7 @@ export default function PolicyFichaPage() {
               <span className="text-xs font-bold text-slate-400 font-mono tracking-wider">
                 {policy.policyNumber}
               </span>
-              <StatusPill status={policy.status} />
+              <StatusPill status={policy.effectiveStatus} />
             </div>
             <h1 className="text-2xl font-bold text-slate-900 leading-tight">{policy.insuranceCompany}</h1>
             <p className="text-sm text-slate-500 mt-1">{(policy.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'}</p>
@@ -120,6 +123,10 @@ export default function PolicyFichaPage() {
                 <FichaRow label="Compañía aseguradora" value={policy.insuranceCompany} />
                 {producer && <FichaRow label="Productor asesor" value={producer.name} />}
                 <FichaRow label="Estado" value={statusLabel} />
+                {renewedBy
+                  ? <FichaRow label="Renovada por" value={renewedBy.policyNumber} mono />
+                  : isRenewalMarked && <FichaRow label="Marca administrativa" value="Renovada" />}
+                {renewalOf.length > 0 && <FichaRow label="Renovación de" value={renewalOf.map((p) => p.policyNumber).join(', ')} mono />}
               </div>
             </div>
 

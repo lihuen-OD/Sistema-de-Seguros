@@ -3,11 +3,34 @@ import { prisma } from '../../config/database'
 import { AppError } from '../../shared/errors/AppError'
 import { getPaginationParams, buildPaginatedResponse } from '../../shared/utils/pagination'
 import { buildOrderBy, nullsLast, type SortMap } from '../../shared/utils/sorting'
-import { computePolicyStatus, buildPolicyStatusFilter, toDateStr, isCoverageActiveOn, todayDate } from '../../shared/utils/dates'
+import {
+  computePolicyStatus,
+  buildPolicyStatusFilter,
+  computeEffectivePolicyStatus,
+  buildEffectivePolicyStatusFilter,
+  POLICY_EFFECTIVE_STATUSES,
+  toDateStr,
+  isCoverageActiveOn,
+  todayDate,
+  coverageAsOfDate,
+  policyInForceWhere,
+  coverageLineInForceWhere,
+  type PolicyEffectiveStatus,
+} from '../../shared/utils/dates'
 import { computeDualAmounts } from '../../shared/utils/currency'
 import { detectFileType, formatFileSize, sanitizeFileName } from '../../shared/utils/files'
 import { deleteFromCloudinary } from '../../config/cloudinary'
 import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
+import { updateEndDateKeepingRenewalOrder } from './policy-renewals.service'
+import { buildScopeConditions, buildScopeLineConditions } from './policy-scope'
+import { POLICY_SEARCH_ORDER_BY, POLICY_SEARCH_SELECT, buildPolicySearchWhere, mapPolicySearchResult } from './policy-search'
+import {
+  attributeInsured,
+  hasAllocationFilters,
+  type AllocationShare,
+  type AttributionFilters,
+  type InsuredAttribution,
+} from './insured-attribution'
 import type {
   CreatePolicyDTO,
   UpdatePolicyDTO,
@@ -46,6 +69,9 @@ function isPrismaKnownError(err: unknown, code: string): boolean {
 
 const COVERAGE_ASSET_CHANGE_WITH_ATTACHMENTS_MESSAGE =
   'No se puede cambiar el activo de esta cobertura porque ya tiene adjuntos cargados. Para cambiar el activo, eliminá primero los adjuntos de esta cobertura o creá una nueva línea de cobertura.'
+
+const POLICY_HAS_RENEWAL_HISTORY_MESSAGE =
+  'No se puede eliminar una póliza que tiene historial de renovación. Si ya no está vigente, podés darla de baja.'
 
 const POLICY_ASSOCIABLE_ASSET_STATUSES = ['activo', 'vendido'] as const
 
@@ -105,26 +131,67 @@ const COVERAGE_LIST_SELECT = {
   _count: { select: { attachments: true } },
 }
 
+// Marca de renovación ACTIVA de la póliza como anterior (a lo sumo una, ver
+// policy_renewals_one_active_per_previous). La relación sucesora es opcional;
+// Prisma la resuelve en una sola consulta extra para toda la página.
+const ACTIVE_RENEWAL_AS_PREVIOUS = {
+  where: { revokedAt: null },
+  select: { renewalPolicy: { select: { id: true, policyNumber: true } } },
+  take: 1,
+}
+
+// Pólizas que esta renueva (consolidación: puede ser más de una) — solo en
+// las respuestas de detalle.
+const ACTIVE_RENEWALS_AS_RENEWAL = {
+  where: { revokedAt: null },
+  select: { previousPolicy: { select: { id: true, policyNumber: true } } },
+  orderBy: { createdAt: 'asc' as const },
+}
+
 const POLICY_DETAIL_INCLUDE = {
   producer: true,
   coverages: {
     include: COVERAGE_DETAIL_INCLUDE,
     orderBy: { createdAt: 'asc' as const },
   },
+  renewalLinksAsPrevious: ACTIVE_RENEWAL_AS_PREVIOUS,
+  renewalLinksAsRenewal: ACTIVE_RENEWALS_AS_RENEWAL,
 }
 
+type PolicyRef = { id: string; policyNumber: string }
+
+// `status` = estado contractual de siempre (UTC, sin renovaciones) — es el que
+// usan TODOS los cálculos económicos. `effectiveStatus` = estado
+// administrativo (día de Argentina) — solo
+// para mostrar, filtrar, contar y notificar. Nunca intercambiarlos.
 function withStatus<T extends {
   startDate: Date | string
   endDate: Date | string
   deactivatedAt: Date | string | null
+  renewalLinksAsPrevious?: { renewalPolicy: PolicyRef | null }[]
+  renewalLinksAsRenewal?: { previousPolicy: PolicyRef }[]
 }>(policy: T) {
+  const { renewalLinksAsPrevious, renewalLinksAsRenewal, ...rest } = policy
+  const activeRenewal = renewalLinksAsPrevious?.[0]
+  const renewedBy = activeRenewal?.renewalPolicy ?? null
   return {
-    ...policy,
+    ...rest,
     startDate: toDateStr(policy.startDate),
     endDate: toDateStr(policy.endDate),
     status: policy.deactivatedAt ? 'de_baja' : computePolicyStatus(policy.endDate),
+    effectiveStatus: computeEffectivePolicyStatus({
+      endDate: policy.endDate,
+      deactivatedAt: policy.deactivatedAt,
+      hasActiveRenewal: activeRenewal !== undefined,
+    }),
+    renewal: {
+      isMarked: activeRenewal !== undefined,
+      renewedBy,
+      ...(renewalLinksAsRenewal && { renewalOf: renewalLinksAsRenewal.map((link) => link.previousPolicy) }),
+    },
   }
 }
+
 
 function withSelectedCoverages<T extends { insuranceType: { coverages: { id: string; name: string }[] }; coverageIds: string[] }>(
   coverage: T,
@@ -172,6 +239,59 @@ function withPolicyAggregates<T extends {
   }
 }
 
+// Suma asegurada vigente con prorrateo por imputación y desglose (R4-B). Tres
+// consultas en paralelo, todas con el MISMO where de líneas que el agregado
+// simple — ninguna trae pólizas ni líneas completas:
+// 1. groupBy de las líneas vigentes en alcance por póliza / activo /
+//    imputación directa (filas ≈ líneas vigentes en alcance, solo ids y sumas);
+// 2. asignaciones de los activos de esas líneas (solo con filtros de
+//    imputación — sin ellos no hay nada que prorratear);
+// 3. aseguradora de cada póliza vigente en alcance (solo para el desglose).
+// El cálculo en sí es puro y está probado aparte (insured-attribution.ts).
+async function loadInsuredAttribution(
+  inForceLineWhere: Prisma.PolicyAssetCoverageWhereInput,
+  inForcePolicyWhere: Prisma.PolicyWhereInput,
+  filters: AttributionFilters,
+  withInsurers: boolean,
+): Promise<InsuredAttribution> {
+  const [groups, allocations, insurers] = await Promise.all([
+    prisma.policyAssetCoverage.groupBy({
+      by: ['policyId', 'assetId', 'companyId', 'costCenterId'],
+      where: inForceLineWhere,
+      _sum: { insuredAmountArs: true, insuredAmountUsd: true },
+    }),
+    hasAllocationFilters(filters)
+      ? prisma.assetAllocation.findMany({
+          where: { asset: { policyCoverages: { some: inForceLineWhere } } },
+          select: { assetId: true, companyId: true, costCenterId: true, percentage: true },
+        })
+      : Promise.resolve([]),
+    withInsurers
+      ? prisma.policy.findMany({ where: inForcePolicyWhere, select: { id: true, insuredName: true } })
+      : Promise.resolve([]),
+  ])
+
+  const allocationsByAsset = new Map<string, AllocationShare[]>()
+  for (const { assetId, ...allocation } of allocations) {
+    const list = allocationsByAsset.get(assetId) ?? []
+    list.push(allocation)
+    allocationsByAsset.set(assetId, list)
+  }
+  return attributeInsured(
+    groups.map((group) => ({
+      policyId: group.policyId,
+      assetId: group.assetId,
+      companyId: group.companyId,
+      costCenterId: group.costCenterId,
+      insuredAmountArs: group._sum.insuredAmountArs ?? 0,
+      insuredAmountUsd: group._sum.insuredAmountUsd ?? 0,
+    })),
+    allocationsByAsset,
+    filters,
+    new Map(insurers.map((policy) => [policy.id, policy.insuredName])),
+  )
+}
+
 async function assertPolicyExists(id: string) {
   const exists = await prisma.policy.findUnique({ where: { id }, select: { id: true } })
   if (!exists) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
@@ -185,9 +305,10 @@ async function assertCoverageBelongsToPolicy(policyId: string, coverageId: strin
 // Un activo puede tener más de una PolicyAssetCoverage en la misma póliza
 // (dado de baja + reincorporado más adelante) — al filtrar findAll() por
 // assetId hay que elegir UNA para representarlo, y tiene que ser la vigente
-// hoy (isCoverageActiveOn), no la primera que aparezca en el array. Si
-// ninguna está vigente (activo sin cobertura actual), cae a la más reciente
-// por effectiveDate como antecedente histórico.
+// hoy (isCoverageActiveOn, día de Argentina), no la primera que aparezca en
+// el array. Si ninguna está vigente (activo sin cobertura actual), cae a la
+// más reciente por effectiveDate como antecedente histórico — por eso quien
+// sume montos con esta línea tiene que volver a chequear su vigencia.
 function pickCurrentAssetCoverage<T extends { assetId: string | null; effectiveDate: Date; bajaDate: Date | null }>(
   coverages: T[],
   assetId: string,
@@ -196,7 +317,8 @@ function pickCurrentAssetCoverage<T extends { assetId: string | null; effectiveD
     .filter((c) => c.assetId === assetId)
     .sort((a, b) => toDateStr(b.effectiveDate).localeCompare(toDateStr(a.effectiveDate)))
 
-  return matching.find((c) => isCoverageActiveOn(c, todayDate())) ?? matching[0]
+  const today = coverageAsOfDate()
+  return matching.find((c) => isCoverageActiveOn(c, today)) ?? matching[0]
 }
 
 // Valida referencias (tipo de seguro activo, coberturas pertenecen a ese
@@ -440,33 +562,10 @@ export const policiesService = {
         endDate: { gte: todayDate() },
       }),
     }
-    const searchWhere: Prisma.PolicyWhereInput = q
-      ? {
-          OR: [
-            { policyNumber: { contains: q, mode: 'insensitive' } },
-            { insuredName: { contains: q, mode: 'insensitive' } },
-            { producer: { is: { name: { contains: q, mode: 'insensitive' } } } },
-            { coverages: { some: { insuranceType: { name: { contains: q, mode: 'insensitive' } } } } },
-            { coverages: { some: { asset: { is: { name: { contains: q, mode: 'insensitive' } } } } } },
-            { coverages: { some: { asset: { is: { code: { contains: q, mode: 'insensitive' } } } } } },
-          ],
-        }
-      : {}
-    const select = {
-      id: true,
-      policyNumber: true,
-      insuredName: true,
-      startDate: true,
-      endDate: true,
-      deactivatedAt: true,
-      producer: { select: { name: true } },
-      coverages: { select: { insuranceType: { select: { name: true } } } },
-    } satisfies Prisma.PolicySelect
-
     const results = await prisma.policy.findMany({
-      where: { AND: [contextualWhere, searchWhere] },
-      select,
-      orderBy: [{ endDate: 'desc' }, { policyNumber: 'asc' }],
+      where: { AND: [contextualWhere, buildPolicySearchWhere(q)] },
+      select: POLICY_SEARCH_SELECT,
+      orderBy: POLICY_SEARCH_ORDER_BY,
       take: query.limit,
     })
 
@@ -477,21 +576,12 @@ export const policiesService = {
     if (query.selectedId && !results.some((policy) => policy.id === query.selectedId)) {
       const selected = await prisma.policy.findFirst({
         where: { id: query.selectedId },
-        select,
+        select: POLICY_SEARCH_SELECT,
       })
       if (selected) results.unshift(selected)
     }
 
-    return results.slice(0, query.limit).map((policy) => ({
-      id: policy.id,
-      policyNumber: policy.policyNumber,
-      insuranceCompany: policy.insuredName,
-      status: policy.deactivatedAt ? 'de_baja' : computePolicyStatus(policy.endDate),
-      startDate: toDateStr(policy.startDate),
-      endDate: toDateStr(policy.endDate),
-      producerName: policy.producer?.name ?? null,
-      insuranceTypeNames: [...new Set(policy.coverages.map((coverage) => coverage.insuranceType.name))],
-    }))
+    return results.slice(0, query.limit).map(mapPolicySearchResult)
   },
 
   async findAll(query: ListPoliciesQueryDTO) {
@@ -521,10 +611,20 @@ export const policiesService = {
         ],
       }),
     }
-    const where: Prisma.PolicyWhereInput = {
+    const scopeConditions = buildScopeConditions(query)
+    if (scopeConditions.length > 0) baseWhere.AND = scopeConditions
+    const statusWhere: Prisma.PolicyWhereInput = {
       ...baseWhere,
       ...(query.status && (buildPolicyStatusFilter(query.status) as Prisma.PolicyWhereInput)),
     }
+    // El estado administrativo se agrega con AND sobre todo lo anterior (nunca
+    // esparcido): sus claves (deactivatedAt/endDate/renewalLinksAsPrevious)
+    // podrían pisar las del filtro contractual, y el OR de la búsqueda queda
+    // intacto como condición propia.
+    const now = new Date()
+    const where: Prisma.PolicyWhereInput = query.effectiveStatus
+      ? { AND: [statusWhere, buildEffectivePolicyStatusFilter(query.effectiveStatus, now) as Prisma.PolicyWhereInput] }
+      : statusWhere
 
     const [rawData, total, summary] = await Promise.all([
       prisma.policy.findMany({
@@ -536,10 +636,22 @@ export const policiesService = {
           producer: { select: { id: true, name: true } },
           coverages: { select: COVERAGE_LIST_SELECT },
           _count: { select: { coverages: true } },
+          renewalLinksAsPrevious: ACTIVE_RENEWAL_AS_PREVIOUS,
         },
       }),
       prisma.policy.count({ where }),
-      query.includeSummary ? policiesService.summarize(baseWhere, where) : undefined,
+      query.includeSummary
+        ? policiesService.summarize(
+            baseWhere,
+            where,
+            now,
+            {
+              lines: buildScopeLineConditions(query),
+              filters: { companyIds: query.scopeCompanyIds, costCenterId: query.scopeCostCenterId },
+            },
+            { breakdown: query.includeInsuredBreakdown },
+          )
+        : undefined,
     ])
 
     const response = buildPaginatedResponse(
@@ -607,28 +719,71 @@ export const policiesService = {
   // - byStatus: distribución por estado con todos los filtros salvo el de
   //   estado (baseWhere), así las cards no quedan en 0 al filtrar uno. Usa
   //   el mismo buildPolicyStatusFilter que el filtro de la tabla.
-  // - insuredActiveArs/Usd: suma asegurada solo de líneas de cobertura
-  //   vigentes hoy (mismo criterio que isCoverageActiveOn: effectiveDate <=
-  //   hoy y sin bajaDate o bajaDate >= hoy) de pólizas con cobertura activa
-  //   (vigente o próxima a vencer), sobre el resultado de la tabla (where).
-  async summarize(baseWhere: Prisma.PolicyWhereInput, where: Prisma.PolicyWhereInput) {
-    const today = todayDate()
+  // - insuredActiveArs/Usd: suma asegurada de las líneas que aportan
+  //   cobertura HOY (regla de vigencia efectiva, ver dates.ts: póliza
+  //   iniciada, no vencida y sin baja manual; línea con effectiveDate <= hoy
+  //   y bajaDate null o >= hoy), con el día de Argentina, sobre el resultado
+  //   de la tabla (where). Una póliza cargada por anticipado figura en el
+  //   listado pero no suma hasta que empiece. Con filtros de alcance
+  //   (scopeLines, ver policy-scope.ts) suman solo las líneas en alcance:
+  //   que la póliza entre por una línea de la Empresa A no suma sus líneas
+  //   de la Empresa B.
+  // - byEffectiveStatus: misma idea que byStatus con los 6 estados
+  //   administrativos, evaluados con
+  //   el mismo `now` que el filtro de la tabla para que no crucen medianoche
+  //   entre un conteo y otro. No interviene en ningún monto.
+  async summarize(
+    baseWhere: Prisma.PolicyWhereInput,
+    where: Prisma.PolicyWhereInput,
+    now: Date = new Date(),
+    scope: { lines: Prisma.PolicyAssetCoverageWhereInput[]; filters: AttributionFilters } = { lines: [], filters: {} },
+    options: { breakdown?: boolean } = {},
+  ) {
+    const asOf = coverageAsOfDate(now)
     const countByStatus = (status: string) =>
       prisma.policy.count({ where: { AND: [baseWhere, buildPolicyStatusFilter(status) as Prisma.PolicyWhereInput] } })
+    const countByEffectiveStatus = (status: PolicyEffectiveStatus) =>
+      prisma.policy.count({ where: { AND: [baseWhere, buildEffectivePolicyStatusFilter(status, now) as Prisma.PolicyWhereInput] } })
 
-    const [vigente, proximaAVencer, vencida, deBaja, insured] = await Promise.all([
+    // Líneas que aportan HOY dentro del resultado de la tabla y del alcance.
+    const scopedLineInForce: Prisma.PolicyAssetCoverageWhereInput = {
+      ...(coverageLineInForceWhere(asOf) as Prisma.PolicyAssetCoverageWhereInput),
+      // AND propio: las condiciones de alcance traen su OR y no pueden
+      // pisar el OR de bajaDate.
+      ...(scope.lines.length > 0 && { AND: scope.lines }),
+    }
+    const inForceLineWhere: Prisma.PolicyAssetCoverageWhereInput = {
+      policy: { AND: [where, policyInForceWhere(asOf) as Prisma.PolicyWhereInput] },
+      ...scopedLineInForce,
+    }
+    // Sin prorrateo ni desglose alcanza con el agregado de R4-A (1 query).
+    const needsAttribution = hasAllocationFilters(scope.filters) || Boolean(options.breakdown)
+
+    const [effectiveCounts, vigente, proximaAVencer, vencida, deBaja, insured, scopePolicyIds] = await Promise.all([
+      Promise.all(POLICY_EFFECTIVE_STATUSES.map(countByEffectiveStatus)),
       countByStatus('vigente'),
       countByStatus('proxima_a_vencer'),
       countByStatus('vencida'),
       countByStatus('de_baja'),
-      prisma.policyAssetCoverage.aggregate({
-        where: {
-          policy: { AND: [where, { deactivatedAt: null, endDate: { gte: today } }] },
-          effectiveDate: { lte: today },
-          OR: [{ bajaDate: null }, { bajaDate: { gte: today } }],
-        },
-        _sum: { insuredAmountArs: true, insuredAmountUsd: true },
-      }),
+      needsAttribution
+        ? loadInsuredAttribution(
+            inForceLineWhere,
+            { AND: [where, policyInForceWhere(asOf) as Prisma.PolicyWhereInput, { coverages: { some: scopedLineInForce } }] },
+            scope.filters,
+            Boolean(options.breakdown),
+          )
+        : prisma.policyAssetCoverage
+            .aggregate({ where: inForceLineWhere, _sum: { insuredAmountArs: true, insuredAmountUsd: true } })
+            .then((r): Pick<InsuredAttribution, 'insuredActiveArs' | 'insuredActiveUsd'> & Partial<InsuredAttribution> => ({
+              insuredActiveArs: r._sum.insuredAmountArs ?? 0,
+              insuredActiveUsd: r._sum.insuredAmountUsd ?? 0,
+            })),
+      // Ids de TODAS las pólizas en alcance (cualquier estado) — el Dashboard
+      // general los usa para atribuir documentos y tareas sin depender de una
+      // lista paginada. Solo con alcance: sin filtros no hacen falta.
+      options.breakdown && scope.lines.length > 0
+        ? prisma.policy.findMany({ where: baseWhere, select: { id: true } }).then((rows) => rows.map((row) => row.id))
+        : Promise.resolve(null),
     ])
 
     return {
@@ -636,8 +791,24 @@ export const policiesService = {
       // deactivatedAt; el resto por rangos de endDate), así que suman el total.
       total: vigente + proximaAVencer + vencida + deBaja,
       byStatus: { vigente, proxima_a_vencer: proximaAVencer, vencida, de_baja: deBaja },
-      insuredActiveArs: insured._sum.insuredAmountArs ?? 0,
-      insuredActiveUsd: insured._sum.insuredAmountUsd ?? 0,
+      byEffectiveStatus: Object.fromEntries(
+        POLICY_EFFECTIVE_STATUSES.map((status, i) => [status, effectiveCounts[i]]),
+      ) as Record<PolicyEffectiveStatus, number>,
+      // Contractual sin filtros de imputación; prorrateado por asignaciones con
+      // filtro de empresa / centro de costo (R4-B, ver insured-attribution.ts).
+      insuredActiveArs: insured.insuredActiveArs,
+      insuredActiveUsd: insured.insuredActiveUsd,
+      ...(options.breakdown && insured.byInsurer && {
+        insuredBreakdown: {
+          attributed: insured.attributed ?? false,
+          byInsurer: insured.byInsurer,
+          activeCoveragePolicyCount: insured.activeCoveragePolicyCount ?? 0,
+          insuredAssetCount: insured.insuredAssetCount ?? 0,
+          allocationIssues: insured.allocationIssues ?? { underAllocatedAssets: 0, overAllocatedAssets: 0 },
+          allocationIssueAssetIds: insured.allocationIssueAssetIds ?? { underAllocated: [], overAllocated: [] },
+          scopePolicyIds,
+        },
+      }),
     }
   },
 
@@ -687,11 +858,19 @@ export const policiesService = {
       if (!producer) throw new AppError(400, 'Productor no encontrado o inactivo', 'INVALID_REFERENCE')
     }
 
-    const updated = await prisma.policy.update({
-      where: { id },
-      data,
-      include: POLICY_DETAIL_INCLUDE,
-    })
+    const write = (client: Prisma.TransactionClient) =>
+      client.policy.update({
+        where: { id },
+        data,
+        include: POLICY_DETAIL_INCLUDE,
+      })
+    // Cambiar la fecha de fin compite con el registro de renovaciones: se
+    // valida contra los vínculos activos y se escribe con las pólizas
+    // involucradas bloqueadas (ver policy-renewals.service.ts). Sin cambio de
+    // fecha de fin, la escritura es la misma de siempre.
+    const updated = data.endDate
+      ? await updateEndDateKeepingRenewalOrder(id, data.endDate, write)
+      : await write(prisma)
 
     return withStatus(withPolicyAggregates({ ...updated, coverages: updated.coverages.map(withSelectedCoverages) }))
   },
@@ -710,15 +889,22 @@ export const policiesService = {
   // - ProducerTask.policyId no tiene una FK real en la base (es un id
   //   suelto) — si no se limpia a mano, queda apuntando para siempre a una
   //   póliza que ya no existe.
+  // PolicyRenewal usa RESTRICT para preservar el historial de renovaciones
+  // (activas o revertidas), por eso se rechaza antes con un AppError claro —
+  // mismo criterio que assets.service.ts#hardDelete con las prendas.
   async hardDelete(id: string) {
     const policy = await prisma.policy.findUnique({
       where: { id },
       select: {
         id: true,
         coverages: { select: { id: true, attachments: { select: { cloudinaryPublicId: true } } } },
+        _count: { select: { renewalLinksAsPrevious: true, renewalLinksAsRenewal: true } },
       },
     })
     if (!policy) throw new AppError(404, 'Póliza no encontrada', 'NOT_FOUND')
+    if ((policy._count?.renewalLinksAsPrevious ?? 0) + (policy._count?.renewalLinksAsRenewal ?? 0) > 0) {
+      throw new AppError(409, POLICY_HAS_RENEWAL_HISTORY_MESSAGE, 'POLICY_HAS_RENEWAL_HISTORY')
+    }
 
     const coverageIds = policy.coverages.map((c) => c.id)
     const cloudinaryIds = policy.coverages
@@ -726,16 +912,32 @@ export const policiesService = {
       .map((a) => a.cloudinaryPublicId)
       .filter((cid): cid is string => !!cid)
 
-    // Cloudinary vive fuera de la transacción de Postgres — se limpia antes,
-    // best-effort, mismo criterio que ya usa deleteAttachment() para un
-    // adjunto suelto.
-    await Promise.all(cloudinaryIds.map((cid) => deleteFromCloudinary(cid).catch(() => undefined)))
+    try {
+      await prisma.$transaction([
+        prisma.documentPolicyAllocation.deleteMany({ where: { policyAssetCoverageId: { in: coverageIds } } }),
+        prisma.producerTask.updateMany({ where: { policyId: id }, data: { policyId: null } }),
+        prisma.policy.delete({ where: { id } }),
+      ])
+    } catch (err) {
+      // Una FK RESTRICT (ej. un vínculo de renovación registrado entre el
+      // chequeo de arriba y el borrado) frena la transacción entera — no se
+      // borra nada. Se traduce a un 409 en vez del 500 genérico.
+      if (isPrismaKnownError(err, 'P2003')) {
+        throw new AppError(
+          409,
+          'No se pudo eliminar la póliza porque se vincularon otros registros mientras se eliminaba. Volvé a intentarlo.',
+          'CONFLICT',
+        )
+      }
+      throw err
+    }
 
-    await prisma.$transaction([
-      prisma.documentPolicyAllocation.deleteMany({ where: { policyAssetCoverageId: { in: coverageIds } } }),
-      prisma.producerTask.updateMany({ where: { policyId: id }, data: { policyId: null } }),
-      prisma.policy.delete({ where: { id } }),
-    ])
+    // Cloudinary vive fuera de la transacción de Postgres — se limpia recién
+    // DESPUÉS de que la base confirmó el borrado, best-effort. Si la base lo
+    // rechaza (arriba), la póliza y sus adjuntos quedan intactos y sus
+    // archivos también. Si Cloudinary falla acá, quedan archivos huérfanos en
+    // Cloudinary (costo de almacenamiento), nunca adjuntos sin archivo.
+    await Promise.all(cloudinaryIds.map((cid) => deleteFromCloudinary(cid).catch(() => undefined)))
   },
 
   // Acción manual del admin — permitida para cualquier estado excepto ya dada de baja.

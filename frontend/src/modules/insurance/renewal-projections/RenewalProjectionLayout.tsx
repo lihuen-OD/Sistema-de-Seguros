@@ -5,6 +5,7 @@ import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
+import { FinancialDataWarning } from '../../../shared/components/feedback/FinancialDataWarning'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
 import type { Currency } from '../../../shared/types'
 import { RenewalProjectionTable } from './RenewalProjectionTable'
@@ -34,6 +35,7 @@ export function RenewalProjectionLayout({
   exportFilenamePrefix,
   showInstallmentsColumn,
   isError,
+  financialDocsResult,
   currency, setCurrency,
   horizonYears, setHorizonYears,
   customEnd, setCustomEnd,
@@ -59,6 +61,7 @@ export function RenewalProjectionLayout({
   return (
     <PageContent>
       <PageHeader title={title} subtitle={subtitle} />
+      <FinancialDataWarning result={financialDocsResult} />
 
       {filteredAbsurdDates > 0 && (
         <div className="mb-4 flex items-start gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg">

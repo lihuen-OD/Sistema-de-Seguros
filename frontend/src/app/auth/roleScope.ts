@@ -41,6 +41,8 @@ const PATH_TO_MODULE: Array<{ prefix: string; modules: ModuleKey[]; landable?: b
   // en cada componente (FireExtinguisherAuditsQueuePage/DetailPage), que
   // filtra más fino según cuál de los dos módulos tenga el usuario.
   { prefix: '/fire-extinguishers/audits/new', modules: ['fire_extinguisher_audit_coverage'], landable: false },
+  { prefix: '/fire-extinguishers/audits/creation-requests/new', modules: ['fire_extinguisher_audit_coverage'], landable: false },
+  { prefix: '/fire-extinguishers/audits/creation-requests', modules: ['fire_extinguisher_audits', 'fire_extinguisher_audit_coverage'], landable: false },
   { prefix: '/fire-extinguishers/audits/findings-report', modules: ['fire_extinguisher_audits'], landable: false },
   { prefix: '/fire-extinguishers/audits/cleanliness-history', modules: ['fire_extinguisher_audits'], landable: false },
   { prefix: '/fire-extinguishers/audits', modules: ['fire_extinguisher_audits', 'fire_extinguisher_audit_coverage'] },

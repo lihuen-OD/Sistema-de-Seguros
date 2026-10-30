@@ -5,6 +5,7 @@ import {
   type PolicySearchResult,
 } from '../../api/policies.api'
 import { SearchableSelect, type SearchableSelectOption } from './SearchableSelect'
+import { POLICY_EFFECTIVE_STATUS_LABELS } from '../../constants'
 
 interface InitialPolicyOption {
   id: string
@@ -21,6 +22,9 @@ interface PolicyRemoteSelectProps {
   assetId?: string
   insuranceCompany?: string
   activeOnly?: boolean
+  // Pólizas que no tienen sentido como opción (ej. la propia póliza al elegir
+  // su renovación) — se filtran del lote ya traído, sin otra consulta.
+  excludeIds?: string[]
   disabled?: boolean
   placeholder?: string
   emptyOptionLabel?: string
@@ -29,11 +33,15 @@ interface PolicyRemoteSelectProps {
 
 function toSelectOption(policy: PolicySearchResult): SearchableSelectOption {
   const types = policy.insuranceTypeNames.join(', ') || 'Sin tipo'
+  const statusLabel = POLICY_EFFECTIVE_STATUS_LABELS[policy.effectiveStatus]
+  // Las renovadas se marcan en la opción para no confundirlas con su
+  // renovación al elegir una póliza.
+  const isRenewed = policy.effectiveStatus === 'renovada'
   return {
     value: policy.id,
     label: policy.policyNumber,
-    sublabel: `${types} · ${policy.insuranceCompany}`,
-    keywords: [policy.producerName, policy.startDate, policy.endDate, policy.status].filter(Boolean).join(' '),
+    sublabel: `${types} · ${policy.insuranceCompany}${isRenewed ? ` · ${statusLabel}` : ''}`,
+    keywords: [policy.producerName, policy.startDate, policy.endDate, statusLabel].filter(Boolean).join(' '),
   }
 }
 
@@ -54,6 +62,7 @@ export function PolicyRemoteSelect({
   assetId,
   insuranceCompany,
   activeOnly,
+  excludeIds,
   disabled,
   placeholder = 'Sin póliza asociada',
   emptyOptionLabel = 'Sin póliza asociada',
@@ -79,10 +88,10 @@ export function PolicyRemoteSelect({
   })
 
   const options = useMemo(() => {
-    const remoteOptions = policies.map(toSelectOption)
+    const remoteOptions = policies.filter((policy) => !excludeIds?.includes(policy.id)).map(toSelectOption)
     if (!value || remoteOptions.some((option) => option.value === value)) return remoteOptions
     return selectedOption?.value === value ? [selectedOption, ...remoteOptions] : remoteOptions
-  }, [policies, selectedOption, value])
+  }, [policies, selectedOption, value, excludeIds])
 
   return (
     <SearchableSelect

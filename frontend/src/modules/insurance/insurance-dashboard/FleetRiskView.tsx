@@ -10,9 +10,15 @@ import { formatCurrencyCompact, formatDate } from '../../../shared/utils/format'
 import { ROUTES } from '../../../app/routes'
 import { CATEGORY_GROUPS } from '../../../shared/constants/asset-categories'
 import type { AssetInsuranceSummary } from '../../../shared/utils/insuranceDashboardCalc'
+import type { Policy } from '../../../shared/types'
+import { RenewalNote } from './RenewalNote'
 
 interface FleetRiskViewProps {
   summaries: AssetInsuranceSummary[]
+  // Para identificar vencimientos de pólizas ya renovadas. El conteo "vencen
+  // en 30 días" NO las excluye: es por activo, y una renovación parcial puede
+  // dejar al activo sin cobertura.
+  policiesById: Map<string, Policy>
 }
 
 const UNDER_INSURED_THRESHOLD = 80
@@ -24,7 +30,7 @@ function severityColor(pct: number): string {
   return '#C0392B'
 }
 
-export function FleetRiskView({ summaries }: FleetRiskViewProps) {
+export function FleetRiskView({ summaries, policiesById }: FleetRiskViewProps) {
   const navigate = useNavigate()
 
   // Solo se ofrecen como pestaña los grupos que realmente tienen algún activo
@@ -99,7 +105,7 @@ export function FleetRiskView({ summaries }: FleetRiskViewProps) {
 
       <MetricGrid cols={4}>
         <KpiCard
-          label="Prima total"
+          label="Suma asegurada vigente"
           value={formatCurrencyCompact(totals.primaTotal, 'USD')}
           description={`${scoped.length} activo${scoped.length !== 1 ? 's' : ''}${selectedGroup ? ` en ${selectedGroup}` : ''}`}
           icon={Sigma}
@@ -193,7 +199,12 @@ export function FleetRiskView({ summaries }: FleetRiskViewProps) {
                           className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 cursor-pointer transition-colors"
                         >
                           <td className="px-4 py-2.5 font-medium text-slate-800">{a.name}</td>
-                          <td className="px-4 py-2.5 text-slate-500">{exp.insuranceCompany}</td>
+                          <td className="px-4 py-2.5 text-slate-500">
+                            <span className="inline-flex flex-col items-start gap-1">
+                              <span>{exp.insuranceCompany}</span>
+                              <RenewalNote policyId={exp.policyId} assetId={a.assetId} policiesById={policiesById} />
+                            </span>
+                          </td>
                           <td className="px-4 py-2.5 text-right">
                             <span
                               className={

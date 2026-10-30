@@ -1,10 +1,19 @@
 import type { Asset, Claim, Policy } from '../types'
+import { lineAttributionShare } from './insuredAttribution'
 
 export interface InsuranceDashboardScope {
   assets: Asset[]
   policies: Policy[]
   claims: Claim[]
+  /**
+   * Parte de cada línea de cobertura (por id) que corresponde a las empresas
+   * elegidas, según las asignaciones de su activo (R4-B) — 1 sin filtro. Solo
+   * para sumas aseguradas: las pólizas se conservan enteras para el gasto.
+   */
+  lineShare: (coverageId: string) => number
 }
+
+const FULL_SHARE = () => 1
 
 function scaleAmount(
   value: number | null | undefined,
@@ -58,28 +67,17 @@ export function buildInsuranceDashboardScope(
   claims: Claim[],
   companyIds: string[],
 ): InsuranceDashboardScope {
-  if (companyIds.length === 0) return { assets, policies, claims }
+  if (companyIds.length === 0) return { assets, policies, claims, lineShare: FULL_SHARE }
 
   const selectedCompanyIds = new Set(companyIds)
   const assetRatioById = new Map<string, number>()
 
   for (const asset of assets) {
-    const allocations = asset.allocations?.length
-      ? asset.allocations
-      : [{
-          id: `legacy-${asset.id}`,
-          companyId: asset.companyId,
-          costCenterId: asset.costCenterId,
-          percentage: 100,
-        }]
-    const selectedPercentage = allocations.reduce(
-      (total, allocation) =>
-        selectedCompanyIds.has(allocation.companyId)
-          ? total + allocation.percentage
-          : total,
-      0,
+    const ratio = lineAttributionShare(
+      { assetId: asset.id, companyId: asset.companyId, costCenterId: asset.costCenterId },
+      asset.allocations,
+      { companyIds },
     )
-    const ratio = Math.min(1, Math.max(0, selectedPercentage / 100))
     if (ratio > 0) assetRatioById.set(asset.id, ratio)
   }
 
@@ -114,9 +112,22 @@ export function buildInsuranceDashboardScope(
     return ratio ? [scaleClaimAmounts(claim, ratio)] : []
   })
 
+  // Prorrateo de la suma asegurada por línea (mismo criterio que el backend):
+  // un activo 60/40 aporta 60 % a la empresa A; una línea sin activo, completa
+  // si su empresa directa está elegida; un activo sin asignaciones, nada.
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]))
+  const shareByLineId = new Map<string, number>()
+  for (const policy of scopedPolicies) {
+    for (const coverage of policy.coverages ?? []) {
+      const allocations = coverage.assetId ? assetById.get(coverage.assetId)?.allocations : undefined
+      shareByLineId.set(coverage.id, lineAttributionShare(coverage, allocations, { companyIds }))
+    }
+  }
+
   return {
     assets: scopedAssets,
     policies: scopedPolicies,
     claims: scopedClaims,
+    lineShare: (coverageId) => shareByLineId.get(coverageId) ?? 0,
   }
 }

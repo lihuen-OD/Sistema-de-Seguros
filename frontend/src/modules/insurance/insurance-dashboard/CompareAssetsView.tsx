@@ -8,9 +8,13 @@ import { MultiSelectFilter } from '../../../shared/components/filters/MultiSelec
 import { formatCurrencyCompact } from '../../../shared/utils/format'
 import type { TableColumn } from '../../../shared/types'
 import type { AssetInsuranceSummary } from '../../../shared/utils/insuranceDashboardCalc'
+import type { Policy } from '../../../shared/types'
+import { RenewalNote } from './RenewalNote'
 
 interface CompareAssetsViewProps {
   summaries: AssetInsuranceSummary[]
+  // Para marcar el próximo vencimiento cuando la póliza ya fue renovada.
+  policiesById: Map<string, Policy>
 }
 
 function pct(v: number | null, digits = 1): string {
@@ -24,7 +28,7 @@ function coverageColor(v: number | null): string {
   return 'text-red-600'
 }
 
-export function CompareAssetsView({ summaries }: CompareAssetsViewProps) {
+export function CompareAssetsView({ summaries, policiesById }: CompareAssetsViewProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [typeFilters, setTypeFilters] = useState<string[]>([])
@@ -111,7 +115,7 @@ export function CompareAssetsView({ summaries }: CompareAssetsViewProps) {
       render: (v, row) => <span className={coverageColor(row.coveragePct)}>{pct(v as number | null)}</span>,
     },
     {
-      id: 'primaPctValor', key: 'primaPctValor', label: 'Prima / valor', sortable: true,
+      id: 'primaPctValor', key: 'primaPctValor', label: 'Suma aseg. / valor', sortable: true,
       headerClassName: 'text-right', className: 'text-right tabular-nums',
       render: (v) => pct(v as number | null, 2),
     },
@@ -121,7 +125,7 @@ export function CompareAssetsView({ summaries }: CompareAssetsViewProps) {
       render: (v) => formatCurrencyCompact(v as number, 'USD'),
     },
     {
-      id: 'costoMensualUsd', key: 'costoMensualUsd', label: 'Costo mensual', sortable: true,
+      id: 'costoMensualUsd', key: 'costoMensualUsd', label: 'Costo mensual vigente', sortable: true,
       headerClassName: 'text-right', className: 'text-right tabular-nums',
       render: (v, row) => {
         if (v == null) return '—'
@@ -150,7 +154,15 @@ export function CompareAssetsView({ summaries }: CompareAssetsViewProps) {
       id: 'nextExpiration', key: 'nextExpiration', label: 'Próx. vencimiento', sortable: true,
       headerClassName: 'text-right', className: 'text-right tabular-nums',
       sortValue: (row) => row.nextExpiration?.daysUntil ?? Number.POSITIVE_INFINITY,
-      render: (_, row) => (row.nextExpiration ? `${row.nextExpiration.daysUntil} días` : 'Sin pólizas activas'),
+      render: (_, row) =>
+        row.nextExpiration ? (
+          <span className="inline-flex flex-col items-end gap-1">
+            <span>{row.nextExpiration.daysUntil} días</span>
+            <RenewalNote policyId={row.nextExpiration.policyId} assetId={row.assetId} policiesById={policiesById} />
+          </span>
+        ) : (
+          'Sin pólizas activas'
+        ),
     },
   ]
 
@@ -197,7 +209,7 @@ export function CompareAssetsView({ summaries }: CompareAssetsViewProps) {
 
       {selected.length > 0 && (
         <ChartCard
-          title="Prima como % del valor del activo"
+          title="Suma asegurada vigente como % del valor del activo"
           subtitle="Normaliza por valor — así se compara un tractor con una camioneta sin que el tamaño distorsione la lectura"
           height={Math.max(140, 44 * selected.length + 20)}
         >
