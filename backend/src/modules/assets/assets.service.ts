@@ -10,6 +10,7 @@ import { computeDualAmounts } from '../../shared/utils/currency'
 import { validateAndUploadAttachment, withAttachmentRollback } from '../../shared/services/attachment-upload.service'
 import { isPledgeEligibleAssetType } from './asset-pledge-eligibility'
 import { normalizeLicensePlate } from '../../shared/utils/normalize'
+import { ASSET_SEARCH_SELECT, buildAssetSearchWhere, mapAssetSearchResult } from './asset-search'
 import type {
   CreateAssetDTO,
   UpdateAssetDTO,
@@ -202,46 +203,14 @@ async function syncAssetCurrentValueIfLatest(
 export const assetsService = {
   async search(query: SearchAssetsQueryDTO) {
     const q = query.q.trim()
-    const normalizedPlate = normalizeLicensePlate(q)
-    const metadataSearchTerms = [...new Set([q, q.toUpperCase(), q.toLowerCase()])]
     const associableWhere: Prisma.AssetWhereInput = {
       isActive: true,
       status: { in: ['activo', 'vendido'] },
     }
-    const searchWhere: Prisma.AssetWhereInput = q
-      ? {
-          OR: [
-            { name: { contains: q, mode: 'insensitive' } },
-            { code: { contains: q, mode: 'insensitive' } },
-            { brand: { contains: q, mode: 'insensitive' } },
-            { model: { contains: q, mode: 'insensitive' } },
-            { serialNumber: { contains: q, mode: 'insensitive' } },
-            ...(normalizedPlate ? [{ licensePlateNormalized: { contains: normalizedPlate } }] : []),
-            ...metadataSearchTerms.flatMap((term) => [
-              { metadata: { path: ['plate'], string_contains: term } },
-              { metadata: { path: ['chassisNumber'], string_contains: term } },
-              { metadata: { path: ['engineNumber'], string_contains: term } },
-            ]),
-            { fixedAssetCode: { contains: q, mode: 'insensitive' } },
-            { fixedAsset: { is: { code: { contains: q, mode: 'insensitive' } } } },
-            { fixedAsset: { is: { name: { contains: q, mode: 'insensitive' } } } },
-          ],
-        }
-      : {}
-    const select = {
-      id: true,
-      code: true,
-      name: true,
-      assetType: true,
-      status: true,
-      metadata: true,
-      fixedAssetCode: true,
-      fixedAsset: { select: { code: true, name: true } },
-    } satisfies Prisma.AssetSelect
 
     const results = await prisma.asset.findMany({
-      where: { AND: [associableWhere, searchWhere] },
-      select,
+      where: { AND: [associableWhere, buildAssetSearchWhere(q)] },
+      select: ASSET_SEARCH_SELECT,
       orderBy: [{ name: 'asc' }, { code: 'asc' }],
       take: query.limit,
     })
@@ -249,26 +218,12 @@ export const assetsService = {
     if (query.selectedId && !results.some((asset) => asset.id === query.selectedId)) {
       const selected = await prisma.asset.findFirst({
         where: { AND: [associableWhere, { id: query.selectedId }] },
-        select,
+        select: ASSET_SEARCH_SELECT,
       })
       if (selected) results.unshift(selected)
     }
 
-    return results.slice(0, query.limit).map((asset) => {
-      const metadata = asset.metadata && typeof asset.metadata === 'object' && !Array.isArray(asset.metadata)
-        ? asset.metadata as Record<string, unknown>
-        : {}
-      return {
-        id: asset.id,
-        name: asset.name,
-        code: asset.code,
-        status: asset.status,
-        assetType: asset.assetType,
-        plate: typeof metadata.plate === 'string' ? metadata.plate : null,
-        fixedAssetCode: asset.fixedAsset?.code ?? asset.fixedAssetCode,
-        fixedAssetName: asset.fixedAsset?.name ?? null,
-      }
-    })
+    return results.slice(0, query.limit).map(mapAssetSearchResult)
   },
 
   async findAll(query: ListAssetsQueryDTO) {

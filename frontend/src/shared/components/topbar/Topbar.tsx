@@ -1,8 +1,9 @@
-import { Menu, Search, Settings } from 'lucide-react'
+import { Menu, Settings } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
 import { NotificationBell } from '../notifications/NotificationBell'
+import { GlobalSearch } from './GlobalSearch'
 import { useCurrentUser } from '../../../app/auth/AuthContext'
+import { globalSearchCategoriesFor } from '../../utils/globalSearch'
 
 interface TopbarProps {
   onMenuClick: () => void
@@ -49,8 +50,8 @@ export function Topbar({ onMenuClick }: TopbarProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user } = useCurrentUser()
-  const [searchQuery, setSearchQuery] = useState('')
   const title = getPageTitle(location.pathname)
+  const searchCategories = globalSearchCategoriesFor(user)
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 flex items-center gap-4 px-4 lg:px-6 flex-shrink-0 sticky top-0 z-10">
@@ -71,19 +72,8 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       {/* Divider */}
       <div className="hidden sm:block w-px h-5 bg-slate-200" />
 
-      {/* Search */}
-      <div className="flex-1 max-w-md">
-        <div className="relative">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar activos, pólizas, documentos…"
-            className="w-full pl-9 pr-4 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all"
-          />
-        </div>
-      </div>
+      {/* Search — oculto si el usuario no puede abrir ninguno de los tres detalles */}
+      {searchCategories.length > 0 && <GlobalSearch categories={searchCategories} />}
 
       <div className="flex items-center gap-1 ml-auto">
         {/* Notifications — el backend ya filtra el contenido por los módulos del usuario */}

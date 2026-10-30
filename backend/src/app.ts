@@ -30,6 +30,7 @@ import { exchangeRateRouter } from './modules/exchange-rate/exchange-rate.router
 import { dashboardRouter } from './modules/dashboard/dashboard.router'
 import { notificationsRouter } from './modules/notifications/notifications.router'
 import { renewalProjectionsRouter } from './modules/renewal-projections/renewal-projections.router'
+import { searchRouter } from './modules/search/search.router'
 
 const app = express()
 
@@ -179,6 +180,8 @@ app.use('/api/v1/dashboard', dashboardRouter)
 app.use('/api/v1/notifications', notificationsRouter)
 // Fase 12 — Proyección de Renovaciones
 app.use('/api/v1/renewal-projections', renewalProjectionsRouter)
+// Buscador global del Topbar — activos, pólizas y documentos en un solo request
+app.use('/api/v1/search', searchRouter)
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
