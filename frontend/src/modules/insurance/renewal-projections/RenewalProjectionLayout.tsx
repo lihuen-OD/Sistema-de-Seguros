@@ -59,7 +59,7 @@ export function RenewalProjectionLayout({
   matrix,
   rowTotals,
   axis,
-  lastRealMonthKey,
+  currentMonthKey,
   maxMonthKey,
   horizonEndMonthKey,
   kpis,
@@ -128,6 +128,24 @@ export function RenewalProjectionLayout({
             sin tipo de cambio histórico confiable en {currency}:
           </strong>{' '}
           se muestran en su moneda original y no se suman. Los totales marcados con * están incompletos.
+        </DataWarning>
+      )}
+
+      {warnings.outOfTermAssets.length > 0 && (
+        <DataWarning>
+          <strong>
+            {warnings.outOfTermAssets.length} activo{warnings.outOfTermAssets.length !== 1 ? 's' : ''} con cuotas o emisiones fuera de la vigencia de la póliza:
+          </strong>{' '}
+          {nameList(warnings.outOfTermAssets)}. Se proyectan igual, dentro del ciclo y sin perder importe; revisá las fechas de esos comprobantes.
+        </DataWarning>
+      )}
+
+      {warnings.concurrentExcludedAssets.length > 0 && (
+        <DataWarning>
+          <strong>
+            {warnings.concurrentExcludedAssets.length} activo{warnings.concurrentExcludedAssets.length !== 1 ? 's' : ''} con pólizas paralelas de distinto plazo:
+          </strong>{' '}
+          {nameList(warnings.concurrentExcludedAssets)}. La póliza paralela no se suma a la base proyectada; ajustala a mano si corresponde.
         </DataWarning>
       )}
 
@@ -216,7 +234,7 @@ export function RenewalProjectionLayout({
           <RenewalHorizonPicker
             horizonYears={horizonYears}
             customEndMonthKey={customEnd}
-            lastRealMonthKey={lastRealMonthKey}
+            lastRealMonthKey={currentMonthKey}
             maxMonthKey={maxMonthKey}
             onSelectPreset={(years) => {
               setHorizonYears(years)
@@ -290,7 +308,7 @@ export function RenewalProjectionLayout({
             matrix={matrix}
             rowTotals={rowTotals}
             axis={axis}
-            lastRealMonthKey={lastRealMonthKey}
+            projectionFromMonthKey={currentMonthKey}
             currency={currency}
             projectionRate={projectionRate}
             breakdownFields={breakdownFields}

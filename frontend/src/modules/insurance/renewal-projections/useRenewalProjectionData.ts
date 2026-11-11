@@ -24,7 +24,7 @@ import {
   parseManualRate,
   todayMonthKey,
   addMonthsToKey,
-  nextMonthKey,
+  projectionStartMonthKey,
   buildMonthRange,
   isReasonableMonthKey,
 } from '../../../shared/utils/renewalProjectionCalc'
@@ -177,10 +177,15 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
   // maxMonthKey: el mes más lejano permitido para proyectar (hoy + 10 años).
   const maxMonthKey = useMemo(() => addMonthsToKey(today, 120), [today])
 
-  // Si customEnd viene fuera de rango, ignorarlo y usar el preset.
+  // Si customEnd viene fuera de rango, ignorarlo y usar el preset. El
+  // horizonte se mide desde HOY ("proyectado a N años"), no desde el último
+  // dato real de toda la tabla: un vencimiento anómalo muy a futuro de un
+  // activo no debe estirar ni correr la proyección de los demás. El eje
+  // igual llega hasta el último mes real, para no ocultar datos reales.
   const safeCustomEnd = customEnd && customEnd > today && customEnd <= maxMonthKey ? customEnd : null
-  const horizonEndMonthKey = safeCustomEnd ?? addMonthsToKey(lastRealMonthKey > today ? lastRealMonthKey : today, horizonYears * 12)
-  const axis = useMemo(() => buildMonthRange(firstRealMonthKey, horizonEndMonthKey), [firstRealMonthKey, horizonEndMonthKey])
+  const horizonEndMonthKey = safeCustomEnd ?? addMonthsToKey(today, horizonYears * 12)
+  const axisEnd = lastRealMonthKey > horizonEndMonthKey ? lastRealMonthKey : horizonEndMonthKey
+  const axis = useMemo(() => buildMonthRange(firstRealMonthKey, axisEnd), [firstRealMonthKey, axisEnd])
 
   // ─── Filas (base USD efectiva + proyección USD) ─────────────────────────────
   // No dependen de la moneda de vista: cambiar ARS/USD no recalcula esto.
@@ -200,9 +205,11 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
           override?.startMonthOverride ?? null,
         )
         // Sin base USD confiable no se proyecta (ni se inventa una base).
+        // Cada fila proyecta desde SU último mes real (inicio individual).
+        const projectionFrom = projectionStartMonthKey(realTimeline, today)
         const projectedList = base.projectionBlocked
           ? []
-          : projectAssetRow(effectiveCycle, nextMonthKey(lastRealMonthKey), horizonEndMonthKey, base.netUsd ?? 0, base.vatUsd ?? 0, base.otherUsd ?? 0, base.pct)
+          : projectAssetRow(effectiveCycle, projectionFrom, horizonEndMonthKey, base.netUsd ?? 0, base.vatUsd ?? 0, base.otherUsd ?? 0, base.pct)
         return {
           assetId: asset.id,
           name: asset.name,
@@ -218,13 +225,16 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
           startMonthKey: effectiveCycle.lastRenewalStartMonthKey,
           baseStatus: cycle.baseStatus,
           projectionBlocked: base.projectionBlocked,
+          periodInvoiceCount: cycle.periodInvoiceCount,
+          outOfTermCount: cycle.outOfTermCount,
+          concurrentPeriodsExcluded: cycle.concurrentPeriodsExcluded,
           isOverridden: hasCurrentOverrides(override),
           hasLegacy: hasLegacyValues(override),
           legacyPendingFields: convertibleLegacyFields(override),
           override,
         }
       }),
-    [perAssetData, overridesByAssetId, lastRealMonthKey, horizonEndMonthKey],
+    [perAssetData, overridesByAssetId, today, horizonEndMonthKey],
   )
 
   // ─── Matriz de presentación (única fuente de tabla, KPIs y Excel) ──────────
@@ -240,9 +250,10 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
     const projectedCells: (DisplayCell | null)[] = []
     let incompleteRealCells = 0
     matrix.forEach((cells) =>
-      cells.forEach((cell, i) => {
+      cells.forEach((cell) => {
         if (!cell) return
-        if (axis[i] > lastRealMonthKey && !cell.isReal) projectedCells.push(cell)
+        // Con inicio individual, toda celda no real es proyectada (nunca se superponen).
+        if (!cell.isReal) projectedCells.push(cell)
         if (cell.isReal && cell.incomplete) incompleteRealCells += 1
       }),
     )
@@ -255,12 +266,14 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
       withoutHistory: rows.length - withHistory,
       incompleteRealCells,
     }
-  }, [matrix, axis, lastRealMonthKey, rows, currency, projectionRate])
+  }, [matrix, rows, currency, projectionRate])
 
   const warnings = useMemo(
     () => ({
       blockedAssets: rows.filter((r) => r.projectionBlocked).map((r) => r.name),
       legacyPendingAssets: rows.filter((r) => r.legacyPendingFields.length > 0).map((r) => r.name),
+      outOfTermAssets: rows.filter((r) => r.outOfTermCount > 0).map((r) => r.name),
+      concurrentExcludedAssets: rows.filter((r) => r.concurrentPeriodsExcluded > 0).map((r) => r.name),
     }),
     [rows],
   )
@@ -315,6 +328,8 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
     rowTotals,
     axis,
     lastRealMonthKey,
+    // Mes actual: frontera visual de la zona proyectada y mínimo del horizonte personalizado.
+    currentMonthKey: today,
     maxMonthKey,
     horizonEndMonthKey,
     kpis,

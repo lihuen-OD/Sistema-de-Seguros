@@ -95,6 +95,8 @@ export function buildRenewalProjectionExport(input: RenewalProjectionExportInput
       const months = axis.filter((_, i) => cells[i]?.isReal && cells[i]?.incomplete).map(monthLabel)
       if (months.length > 0) notes.push(`Meses con importes sin TC confiable: ${months.join(', ')}`)
     }
+    if (row.outOfTermCount > 0) notes.push(`${row.outOfTermCount} cuota(s)/emisión(es) fuera de la vigencia de la póliza (proyectadas dentro del ciclo)`)
+    if (row.concurrentPeriodsExcluded > 0) notes.push('Póliza paralela de distinto plazo no sumada a la base')
     if (row.projectionBlocked) notes.push('Sin proyección: la última renovación no tiene TC histórico confiable (cargar Neto en USD)')
     if (row.legacyPendingFields.length > 0) {
       const legacy = row.legacyPendingFields

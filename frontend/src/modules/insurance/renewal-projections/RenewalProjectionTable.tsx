@@ -30,6 +30,12 @@ export interface AssetRowData extends RowProjectionInputs {
   baseStatus: RenewalBaseStatus
   /** Sin base USD confiable (y sin Neto USD manual): la fila no se proyecta. */
   projectionBlocked: boolean
+  /** Facturas que forman el último período de cobertura. */
+  periodInvoiceCount: number
+  /** Cuotas/emisiones fuera de la vigencia del período (se proyectan igual, sin perder importe). */
+  outOfTermCount: number
+  /** Coberturas concurrentes con otro plazo que no se suman a la base. */
+  concurrentPeriodsExcluded: number
   /** Tiene configuración vigente que "Volver al automático" puede limpiar. */
   isOverridden: boolean
   /** Tiene importes ARS / % anteriores (o su trazabilidad) — histórico protegido. */
@@ -45,7 +51,8 @@ interface RenewalProjectionTableProps {
   matrix: (DisplayCell | null)[][]
   rowTotals: DisplayTotals[]
   axis: string[]
-  lastRealMonthKey: string
+  /** Mes actual: desde acá (inclusive) las columnas se marcan como zona de proyección. */
+  projectionFromMonthKey: string
   currency: Currency
   /** TC manual de la pantalla (null = lo futuro en ARS se muestra «Sin TC»). */
   projectionRate: number | null
@@ -159,7 +166,7 @@ export function RenewalProjectionTable({
   matrix,
   rowTotals,
   axis,
-  lastRealMonthKey,
+  projectionFromMonthKey,
   currency,
   projectionRate,
   breakdownFields,
@@ -224,7 +231,7 @@ export function RenewalProjectionTable({
               <th
                 key={monthKey}
                 colSpan={showBreakdown ? fields.length : 1}
-                className={`text-center whitespace-nowrap ${monthKey > lastRealMonthKey ? 'border-l-2 border-dashed border-slate-300' : ''}`}
+                className={`text-center whitespace-nowrap ${monthKey >= projectionFromMonthKey ? 'border-l-2 border-dashed border-slate-300' : ''}`}
               >
                 {monthLabel(monthKey)}
               </th>
@@ -239,7 +246,7 @@ export function RenewalProjectionTable({
                 fields.map((f, fi) => (
                   <th
                     key={`${monthKey}-${f.key}`}
-                    className={`text-right text-[10px] whitespace-nowrap ${monthKey > lastRealMonthKey && fi === 0 ? 'border-l-2 border-dashed border-slate-300' : ''}`}
+                    className={`text-right text-[10px] whitespace-nowrap ${monthKey >= projectionFromMonthKey && fi === 0 ? 'border-l-2 border-dashed border-slate-300' : ''}`}
                   >
                     {f.label}
                   </th>
@@ -320,7 +327,7 @@ export function RenewalProjectionTable({
                   <div className="min-w-0">
                     <span className="text-sm font-medium text-slate-800 block truncate" title={row.name}>{row.name}</span>
                     <span className="text-xs text-slate-400 block truncate" title={row.code}>{row.code}</span>
-                    {(row.projectionBlocked || row.hasLegacy) && (
+                    {(row.projectionBlocked || row.hasLegacy || row.outOfTermCount > 0 || row.concurrentPeriodsExcluded > 0) && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {row.projectionBlocked && (
                           <span
@@ -329,6 +336,24 @@ export function RenewalProjectionTable({
                           >
                             <AlertTriangle size={10} />
                             Sin TC confiable
+                          </span>
+                        )}
+                        {row.outOfTermCount > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5 text-amber-800 bg-amber-50 border border-amber-200"
+                            title={`${row.outOfTermCount} cuota${row.outOfTermCount !== 1 ? 's' : ''}/emisión(es) del último período caen fuera de la vigencia de la póliza. Se proyectan igual (sin perder importe), dentro del ciclo — revisá las fechas de los comprobantes.`}
+                          >
+                            <AlertTriangle size={10} />
+                            Fuera de vigencia
+                          </span>
+                        )}
+                        {row.concurrentPeriodsExcluded > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5 text-amber-800 bg-amber-50 border border-amber-200"
+                            title="El activo tiene otra póliza vigente en paralelo con un plazo distinto: no se puede proyectar en el mismo ciclo y no se suma a la base. Ajustá la base a mano si corresponde."
+                          >
+                            <AlertTriangle size={10} />
+                            Póliza paralela no sumada
                           </span>
                         )}
                         {row.hasLegacy && (
@@ -467,7 +492,7 @@ export function RenewalProjectionTable({
 
                 {axis.map((monthKey, monthIndex) => {
                   const cell = cells[monthIndex] ?? null
-                  const startsProj = monthKey > lastRealMonthKey
+                  const startsProj = monthKey >= projectionFromMonthKey
                   if (!showBreakdown) {
                     return (
                       <td key={monthKey} className={`text-right align-top p-0 ${startsProj ? 'border-l-2 border-dashed border-slate-300' : ''}`}>

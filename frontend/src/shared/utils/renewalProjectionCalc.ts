@@ -298,29 +298,79 @@ export function buildAssetRealTimelineByDocument(assetId: string, documents: Doc
   return acc
 }
 
-// ── Detección de ciclo de renovación + base USD ──────────────────────────────
-// Una "renovación" es una factura (INVOICE) asignada al activo — NC/ND/Endosos
-// son ajustes de una renovación existente, no una nueva. La base de la
-// proyección es la ÚLTIMA renovación, en USD con SU cierre histórico. Ya no
-// se calcula un % automático: la proyección parte de 0 % (misma base USD en
-// cada ciclo) salvo que el usuario cargue uno.
+// ── Renovaciones = PERÍODOS de cobertura (no facturas sueltas) ──────────────
+// Una renovación es un período contractual de una póliza, no una factura:
+// un mismo período puede tener varias facturas (complementarias, divididas o
+// consolidadas de flota) y todas forman UNA renovación. NC/ND/endosos nunca
+// son renovaciones (siguen siendo ajustes, con su tratamiento de siempre).
+//
+// Identificación del período de cada factura de renovación (INVOICE):
+// - Por la póliza de cada asignación al activo (allocation → línea → póliza).
+//   Una factura consolidada aporta a cada activo solo lo que le asignó, en la
+//   póliza de esa asignación — nunca se duplica entre activos ni pólizas.
+// - Dentro de una póliza, por ventana de vigencia: las fechas de una póliza
+//   pueden editarse, así que no se asume que policyId alcanza para un único
+//   período. Ventana k = floor((díasDesdeInicio + ¼·vigencia) / vigencia):
+//   una factura emitida hasta ¼ de vigencia ANTES del inicio (renovación
+//   facturada por adelantado) o en cualquier momento de los primeros ¾ cae
+//   en el período; más tarde, en el siguiente.
+// - Ciclo = duración contractual de la póliza (1, 3, 6, 12… meses, sin forzar
+//   12). Solo sin póliza conocida se usa el plazo de la póliza vigente del
+//   activo o, en último caso, 12.
+// La base es la del ÚLTIMO período (el de inicio más reciente) más los
+// períodos de OTRAS pólizas concurrentes con el mismo plazo que se superponen
+// con él al menos media vigencia (coberturas paralelas del mismo activo).
+// Un período concurrente con OTRO plazo no puede proyectarse en el mismo ciclo:
+// se excluye y se informa (concurrentPeriodsExcluded), sin ocultarlo.
 
 export type RenewalBaseStatus = 'OK' | 'NO_HISTORY' | 'UNRELIABLE_FX'
 
 export interface RenewalCycle {
   cycleLengthMonths: number
-  /** posición dentro del ciclo → fracción del total de la última renovación real. */
+  /** posición dentro del ciclo (0..ciclo-1) → fracción de la renovación. Siempre suma 1. */
   originalShare: Record<number, number>
+  /** Mes de inicio del último período de cobertura (ancla de la proyección). */
   lastRenewalStartMonthKey: string
   /**
-   * 'UNRELIABLE_FX': la última renovación no tiene un cierre USD confiable —
-   * la base queda en null y la fila no se proyecta hasta que se cargue una
-   * base USD a mano. Nunca se reemplaza por una renovación anterior.
+   * 'UNRELIABLE_FX': alguna factura del último período no tiene un cierre USD
+   * confiable — la base queda en null y la fila no se proyecta hasta que se
+   * cargue una base USD a mano. Nunca se reemplaza por un período anterior.
    */
   baseStatus: RenewalBaseStatus
   defaultNetUsd: number | null
   defaultVatUsd: number | null
   defaultOtherUsd: number | null
+  /** Facturas que forman el último período (para auditoría/avisos). */
+  periodInvoiceCount: number
+  /** Cuotas (Financiero) o emisiones (Económico) fuera de la vigencia del período — se proyectan igual, sin perder importe. */
+  outOfTermCount: number
+  /** Períodos concurrentes con otro plazo que no pudieron sumarse a la base. */
+  concurrentPeriodsExcluded: number
+}
+
+interface RenewalInvoicePart {
+  doc: DocumentForFinancial
+  /** Porción de la factura que corresponde al activo en esta póliza (Financiero: % de asignación; Económico: allocated/total). */
+  assetShare: number
+}
+
+interface RenewalPeriod {
+  policyId: string | null
+  startDate: string
+  endDate: string
+  termMonths: number
+  termDays: number
+  parts: RenewalInvoicePart[]
+}
+
+const DAY_MS = 86_400_000
+
+function dayNumber(dateStr: string): number {
+  return Math.round(Date.UTC(Number(dateStr.slice(0, 4)), Number(dateStr.slice(5, 7)) - 1, Number(dateStr.slice(8, 10))) / DAY_MS)
+}
+
+function dateOfDay(day: number): string {
+  return new Date(day * DAY_MS).toISOString().slice(0, 10)
 }
 
 function fallbackCycleLengthFor(assetId: string, policies: Policy[]): number {
@@ -328,17 +378,6 @@ function fallbackCycleLengthFor(assetId: string, policies: Policy[]): number {
     (p) => ACTIVE_POLICY_STATUSES.includes(p.status) && (p.coverages ?? []).some((c) => c.assetId === assetId),
   )
   return activeCoveragePolicy ? policyTermMonths(activeCoveragePolicy.startDate, activeCoveragePolicy.endDate) : 12
-}
-
-function avgCycleLength(renewalDocs: DocumentForFinancial[], fallback: number): number {
-  if (renewalDocs.length < 2) return fallback
-  return Math.max(
-    1,
-    Math.round(
-      renewalDocs.slice(1).reduce((sum, doc, idx) => sum + policyTermMonths(renewalDocs[idx].issueDate, doc.issueDate), 0) /
-        (renewalDocs.length - 1),
-    ),
-  )
 }
 
 function noHistoryCycle(cycleLengthMonths: number, nowMonthKey: string): RenewalCycle {
@@ -350,85 +389,236 @@ function noHistoryCycle(cycleLengthMonths: number, nowMonthKey: string): Renewal
     defaultNetUsd: 0,
     defaultVatUsd: 0,
     defaultOtherUsd: 0,
+    periodInvoiceCount: 0,
+    outOfTermCount: 0,
+    concurrentPeriodsExcluded: 0,
   }
 }
 
-// Neto/IVA/Otros de la renovación base × la porción del activo, en USD con
-// el cierre histórico del documento.
-function usdBaseOf(doc: DocumentForFinancial, assetShare: number): Pick<RenewalCycle, 'baseStatus' | 'defaultNetUsd' | 'defaultVatUsd' | 'defaultOtherUsd'> {
-  const net = docPortionIn(doc, doc.netAmount * assetShare, 'USD')
-  const vat = docPortionIn(doc, doc.vatAmount * assetShare, 'USD')
-  const other = docPortionIn(doc, doc.otherTaxesAmount * assetShare, 'USD')
-  if (net === null || vat === null || other === null) {
-    return { baseStatus: 'UNRELIABLE_FX', defaultNetUsd: null, defaultVatUsd: null, defaultOtherUsd: null }
+/**
+ * Agrupa las facturas de renovación del activo en períodos de cobertura.
+ * `shareByPolicy(doc)` devuelve la porción del activo por póliza (una factura
+ * puede asignar al mismo activo en más de una póliza).
+ */
+function buildRenewalPeriods(
+  renewalDocs: DocumentForFinancial[],
+  shareByPolicy: (doc: DocumentForFinancial) => Map<string | null, number>,
+  policies: Policy[],
+  fallbackTermMonths: number,
+): RenewalPeriod[] {
+  const policyById = new Map(policies.map((p) => [p.id, p]))
+  const periods = new Map<string, RenewalPeriod>()
+
+  for (const doc of renewalDocs) {
+    for (const [policyId, assetShare] of shareByPolicy(doc)) {
+      if (assetShare === 0) continue
+      const policy = policyId ? policyById.get(policyId) : undefined
+      const pStart = policy?.startDate?.slice(0, 10)
+      const pEnd = policy?.endDate?.slice(0, 10)
+      let key: string
+      let period: Omit<RenewalPeriod, 'parts'>
+      if (policy && pStart && pEnd && dayNumber(pEnd) > dayNumber(pStart)) {
+        const termDays = dayNumber(pEnd) - dayNumber(pStart)
+        const k = Math.floor((dayNumber(doc.issueDate) - dayNumber(pStart) + termDays / 4) / termDays)
+        const startDay = dayNumber(pStart) + k * termDays
+        key = `${policy.id}#${k}`
+        period = {
+          policyId: policy.id,
+          startDate: dateOfDay(startDay),
+          endDate: dateOfDay(startDay + termDays),
+          termMonths: policyTermMonths(pStart, pEnd),
+          termDays,
+        }
+      } else {
+        // Sin póliza conocida (o sin fechas válidas): la factura es su propio período.
+        const termDays = Math.round(fallbackTermMonths * 30.4375)
+        key = `doc:${doc.id}:${policyId ?? '-'}`
+        period = {
+          policyId: policyId ?? null,
+          startDate: doc.issueDate.slice(0, 10),
+          endDate: dateOfDay(dayNumber(doc.issueDate) + termDays),
+          termMonths: fallbackTermMonths,
+          termDays,
+        }
+      }
+      const existing = periods.get(key) ?? { ...period, parts: [] }
+      existing.parts.push({ doc, assetShare })
+      periods.set(key, existing)
+    }
+  }
+  return [...periods.values()]
+}
+
+function overlapDays(a: RenewalPeriod, b: RenewalPeriod): number {
+  return Math.min(dayNumber(a.endDate), dayNumber(b.endDate)) - Math.max(dayNumber(a.startDate), dayNumber(b.startDate))
+}
+
+/** Último período + concurrentes del mismo plazo (ver comentario de la sección). */
+function selectLastRenewal(periods: RenewalPeriod[]): { last: RenewalPeriod; group: RenewalPeriod[]; excluded: number } {
+  const sorted = periods.slice().sort((a, b) => a.startDate.localeCompare(b.startDate) || a.termDays - b.termDays)
+  const last = sorted[sorted.length - 1]
+  const group = [last]
+  let excluded = 0
+  for (const p of sorted) {
+    if (p === last || p.policyId === last.policyId) continue
+    if (overlapDays(p, last) < Math.min(p.termDays, last.termDays) / 2) continue
+    if (p.termMonths === last.termMonths) group.push(p)
+    else excluded += 1
+  }
+  return { last, group, excluded }
+}
+
+// Neto/IVA/Otros del período = suma de cada factura × porción del activo, en
+// USD con el cierre histórico de CADA factura. Una sola factura sin cierre
+// confiable deja toda la base en null (no se proyecta una base parcial).
+function usdBaseOfPeriod(group: RenewalPeriod[]): Pick<RenewalCycle, 'baseStatus' | 'defaultNetUsd' | 'defaultVatUsd' | 'defaultOtherUsd'> {
+  let net = 0
+  let vat = 0
+  let other = 0
+  for (const { parts } of group) {
+    for (const { doc, assetShare } of parts) {
+      const n = docPortionIn(doc, doc.netAmount * assetShare, 'USD')
+      const v = docPortionIn(doc, doc.vatAmount * assetShare, 'USD')
+      const o = docPortionIn(doc, doc.otherTaxesAmount * assetShare, 'USD')
+      if (n === null || v === null || o === null) {
+        return { baseStatus: 'UNRELIABLE_FX', defaultNetUsd: null, defaultVatUsd: null, defaultOtherUsd: null }
+      }
+      net += n
+      vat += v
+      other += o
+    }
   }
   return { baseStatus: 'OK', defaultNetUsd: net, defaultVatUsd: vat, defaultOtherUsd: other }
 }
 
+// Peso de cada factura dentro del período para repartir la renovación entre
+// meses: su porción en USD si todas tienen cierre USD confiable; si no, en
+// ARS; si no, en moneda nativa (solo si todas comparten moneda); si no, igual.
+function partWeights(parts: RenewalInvoicePart[]): number[] {
+  for (const currency of ['USD', 'ARS'] as Currency[]) {
+    const values = parts.map(({ doc, assetShare }) => docPortionIn(doc, doc.totalAmount * assetShare, currency))
+    if (values.every((v) => v !== null)) return values as number[]
+  }
+  if (new Set(parts.map((p) => p.doc.currency)).size === 1) return parts.map(({ doc, assetShare }) => doc.totalAmount * assetShare)
+  return parts.map(() => 1)
+}
+
+/**
+ * Reparto de la renovación entre posiciones del ciclo, anclado al inicio del
+ * último período. `events(doc)` da, por factura, los meses en que impacta
+ * (vencimiento de cada cuota, o la emisión) y su fracción dentro de la factura.
+ * Las posiciones fuera de 0..ciclo-1 se pliegan (módulo ciclo) en vez de
+ * descartarse: ningún importe se pierde. Lo que cae fuera de la vigencia del
+ * período se cuenta en outOfTermCount para mostrar el aviso.
+ */
+function distributeOverCycle(
+  group: RenewalPeriod[],
+  anchorMonthKey: string,
+  cycleLengthMonths: number,
+  events: (doc: DocumentForFinancial) => { date: string; fraction: number }[],
+): { originalShare: Record<number, number>; outOfTermCount: number } {
+  const entries = group.flatMap((period) => period.parts.map((part) => ({ part, period })))
+  const weights = partWeights(entries.map((e) => e.part))
+  const totalWeight = weights.reduce((a, b) => a + b, 0)
+  const raw: Record<number, number> = {}
+  let outOfTermCount = 0
+
+  entries.forEach(({ part, period }, idx) => {
+    const partShare = totalWeight !== 0 ? weights[idx] / totalWeight : 1 / entries.length
+    for (const { date, fraction } of events(part.doc)) {
+      const day = dayNumber(date)
+      if (day < dayNumber(period.startDate) || day > dayNumber(period.endDate)) outOfTermCount += 1
+      const pos = ((monthsBetweenKeys(anchorMonthKey, monthKeyOf(date)) % cycleLengthMonths) + cycleLengthMonths) % cycleLengthMonths
+      raw[pos] = (raw[pos] ?? 0) + partShare * fraction
+    }
+  })
+
+  // Normaliza para que el ciclo sume exactamente 1 (redondeos / pesos negativos de ajustes).
+  const sum = Object.values(raw).reduce((a, b) => a + b, 0)
+  const originalShare: Record<number, number> = {}
+  if (sum > 0) for (const [k, v] of Object.entries(raw)) originalShare[Number(k)] = v / sum
+  else originalShare[0] = 1
+  return { originalShare, outOfTermCount }
+}
+
+function detectRenewalCycle(
+  assetId: string,
+  documents: DocumentForFinancial[],
+  policies: Policy[],
+  nowMonthKey: string,
+  isRenewalDoc: (doc: DocumentForFinancial) => boolean,
+  shareByPolicy: (doc: DocumentForFinancial) => Map<string | null, number>,
+  events: (doc: DocumentForFinancial) => { date: string; fraction: number }[],
+): RenewalCycle {
+  const fallbackCycleLength = fallbackCycleLengthFor(assetId, policies)
+  const renewalDocs = documents.filter(isRenewalDoc)
+  const periods = buildRenewalPeriods(renewalDocs, shareByPolicy, policies, fallbackCycleLength)
+  if (periods.length === 0) return noHistoryCycle(fallbackCycleLength, nowMonthKey)
+
+  const { last, group, excluded } = selectLastRenewal(periods)
+  const anchorMonthKey = monthKeyOf(last.startDate)
+  const cycleLengthMonths = Math.max(1, last.termMonths)
+  const { originalShare, outOfTermCount } = distributeOverCycle(group, anchorMonthKey, cycleLengthMonths, events)
+
+  return {
+    cycleLengthMonths,
+    originalShare,
+    lastRenewalStartMonthKey: anchorMonthKey,
+    ...usdBaseOfPeriod(group),
+    periodInvoiceCount: new Set(group.flatMap((p) => p.parts.map((x) => x.doc.id))).size,
+    outOfTermCount,
+    concurrentPeriodsExcluded: excluded,
+  }
+}
+
+function sharesByPolicy(doc: DocumentForFinancial, assetId: string, value: (a: DocumentForFinancial['allocations'][number]) => number) {
+  const out = new Map<string | null, number>()
+  for (const a of doc.allocations) {
+    if (a.assetId !== assetId) continue
+    out.set(a.policyId ?? null, (out.get(a.policyId ?? null) ?? 0) + value(a))
+  }
+  return out
+}
+
+// Financiero: renovación = factura con cuotas; reparto por vencimiento de cada
+// cuota (importe nativo de la cuota dentro de su factura).
 export function detectRenewalCycleByCuota(
   assetId: string,
   documents: DocumentForFinancial[],
   policies: Policy[],
   nowMonthKey: string = todayMonthKey(),
 ): RenewalCycle {
-  const renewalDocs = documents
-    .filter((d) => d.documentType === 'INVOICE' && d.installments.length > 0 && docAssetShareByPercentage(d, assetId) > 0)
-    .slice()
-    .sort((a, b) => a.issueDate.localeCompare(b.issueDate))
-
-  const fallbackCycleLength = fallbackCycleLengthFor(assetId, policies)
-  if (renewalDocs.length === 0) return noHistoryCycle(fallbackCycleLength, nowMonthKey)
-
-  const lastDoc = renewalDocs[renewalDocs.length - 1]
-  const lastShare = docAssetShareByPercentage(lastDoc, assetId)
-  const anchorKey = lastDoc.installments.map((i) => monthKeyOf(i.dueDate)).reduce((a, b) => (a < b ? a : b))
-
-  // Reparto proporcional del ÚLTIMO ciclo real entre sus meses, con el
-  // importe NATIVO de cada cuota — es el reparto real de la factura y no
-  // depende de ningún TC (las cuotas pagadas tienen cierres con el TC del
-  // pago, que deformarían las proporciones). Se usa tal cual para cada ciclo
-  // futuro, nunca se recalcula desde lo editado.
-  const nativeSum = lastDoc.installments.reduce((sum, i) => sum + i.amount, 0)
-  const originalShare: Record<number, number> = {}
-  for (const inst of lastDoc.installments) {
-    const pos = monthsBetweenKeys(anchorKey, monthKeyOf(inst.dueDate))
-    const share = nativeSum > 0 ? inst.amount / nativeSum : 1 / lastDoc.installments.length
-    originalShare[pos] = (originalShare[pos] ?? 0) + share
-  }
-
-  return {
-    cycleLengthMonths: avgCycleLength(renewalDocs, fallbackCycleLength),
-    originalShare,
-    lastRenewalStartMonthKey: anchorKey,
-    ...usdBaseOf(lastDoc, lastShare),
-  }
+  return detectRenewalCycle(
+    assetId,
+    documents,
+    policies,
+    nowMonthKey,
+    (d) => d.documentType === 'INVOICE' && d.installments.length > 0 && docAssetShareByPercentage(d, assetId) > 0,
+    (d) => sharesByPolicy(d, assetId, (a) => a.allocationPercentage / 100),
+    (d) => {
+      const sum = d.installments.reduce((s, i) => s + i.amount, 0)
+      return d.installments.map((i) => ({ date: i.dueDate, fraction: sum > 0 ? i.amount / sum : 1 / d.installments.length }))
+    },
+  )
 }
 
-// Sin cuotas que repartir: toda la renovación cae en un solo mes (el de
-// emisión), así que originalShare siempre es {0: 1}.
+// Económico: renovación = factura con asignación al activo; reconocida en el
+// mes de EMISIÓN (sin cuotas).
 export function detectRenewalCycleByDocument(
   assetId: string,
   documents: DocumentForFinancial[],
   policies: Policy[],
   nowMonthKey: string = todayMonthKey(),
 ): RenewalCycle {
-  const renewalDocs = documents
-    .filter((d) => d.documentType === 'INVOICE' && docAllocatedAmountForAsset(d, assetId) > 0)
-    .slice()
-    .sort((a, b) => a.issueDate.localeCompare(b.issueDate))
-
-  const fallbackCycleLength = fallbackCycleLengthFor(assetId, policies)
-  if (renewalDocs.length === 0) return noHistoryCycle(fallbackCycleLength, nowMonthKey)
-
-  const lastDoc = renewalDocs[renewalDocs.length - 1]
-  const lastFraction = lastDoc.totalAmount ? docAllocatedAmountForAsset(lastDoc, assetId) / lastDoc.totalAmount : 0
-
-  return {
-    cycleLengthMonths: avgCycleLength(renewalDocs, fallbackCycleLength),
-    originalShare: { 0: 1 },
-    lastRenewalStartMonthKey: monthKeyOf(lastDoc.issueDate),
-    ...usdBaseOf(lastDoc, lastFraction),
-  }
+  return detectRenewalCycle(
+    assetId,
+    documents,
+    policies,
+    nowMonthKey,
+    (d) => d.documentType === 'INVOICE' && docAllocatedAmountForAsset(d, assetId) > 0,
+    (d) => sharesByPolicy(d, assetId, (a) => (d.totalAmount ? a.allocatedAmount / d.totalAmount : 0)),
+    (d) => [{ date: d.issueDate, fraction: 1 }],
+  )
 }
 
 // ── Override manual de ciclo/cuotas/inicio (jugar con la proyección) ────────
@@ -576,6 +766,22 @@ export function baseTotalUsd(base: { netUsd: number | null; vatUsd: number | nul
 // borde de los 12, y anclar contra "el último mes real" correría la fase).
 // Crecimiento compuesto por CICLO: total × (1 + pct/100)^nºCiclo — con 0 % la
 // misma base USD se repite en cada renovación.
+
+/**
+ * Mes desde el que se proyecta UNA fila: el siguiente a su propio último mes
+ * real (nunca se superpone con lo real de esa fila) y nunca antes del mes
+ * actual (no se "proyecta" el pasado). Es individual por activo: un
+ * vencimiento anómalo muy a futuro de un activo ya no corre el inicio de los
+ * demás. Ignora meses fuera de rango razonable (datos con fechas absurdas).
+ */
+export function projectionStartMonthKey(realTimeline: Map<string, unknown>, nowMonthKey: string = todayMonthKey()): string {
+  let last: string | null = null
+  for (const key of realTimeline.keys()) {
+    if (isReasonableMonthKey(key) && (!last || key > last)) last = key
+  }
+  const afterReal = last ? nextMonthKey(last) : nowMonthKey
+  return afterReal > nowMonthKey ? afterReal : nowMonthKey
+}
 
 export interface ProjectedMonthCell {
   monthKey: string
