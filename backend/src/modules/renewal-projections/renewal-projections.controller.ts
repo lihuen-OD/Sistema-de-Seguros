@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import { asyncHandler } from '../../shared/utils/async-handler'
 import { renewalProjectionsService } from './renewal-projections.service'
-import type { UpsertRenewalProjectionOverrideDTO } from './renewal-projections.schemas'
+import type { ConvertLegacyOverridesDTO, UpsertRenewalProjectionOverrideDTO } from './renewal-projections.schemas'
 
 export const renewalProjectionsController = {
   list: asyncHandler(async (req: Request<{ mode: string }>, res: Response) => {
@@ -17,5 +17,10 @@ export const renewalProjectionsController = {
   reset: asyncHandler(async (req: Request<{ mode: string; assetId: string }>, res: Response) => {
     await renewalProjectionsService.reset(req.params.assetId, req.params.mode)
     res.json({ data: { message: 'Override eliminado, vuelve al valor automático' } })
+  }),
+
+  convertLegacy: asyncHandler(async (req: Request<{ mode: string; assetId: string }, unknown, ConvertLegacyOverridesDTO>, res: Response) => {
+    const override = await renewalProjectionsService.convertLegacy(req.params.assetId, req.params.mode, req.body, req.user?.email)
+    res.json({ data: override })
   }),
 }

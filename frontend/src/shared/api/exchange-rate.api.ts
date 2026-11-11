@@ -5,6 +5,8 @@ export interface ExchangeRateCurrent {
   rate: number | null
   updatedBy: string | null
   updatedAt: string | null
+  /** true si la fila vigente es todavía el valor de ejemplo sembrado por la migración (nunca se actualizó). */
+  isPlaceholder?: boolean
 }
 
 export interface ExchangeRateEntry {

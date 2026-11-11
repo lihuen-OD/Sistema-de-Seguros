@@ -1,21 +1,54 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiClient } from './client'
+import type { LegacyAmountField } from '../utils/renewalProjectionCalc'
 
 export type RenewalProjectionMode = 'FINANCIAL' | 'ECONOMIC'
 
 export interface RenewalProjectionOverride {
   assetId: string
   mode: RenewalProjectionMode
+  /** HISTÓRICO (solo lectura): Neto/IVA/Otros editados antes de la base USD, en ARS. Nunca se aplican a la proyección USD. */
   netOverride: number | null
   vatOverride: number | null
   otherOverride: number | null
+  /** HISTÓRICO (solo lectura): % pensado para crecimiento en pesos. Nunca se aplica a la proyección USD. */
   growthPercentOverride: number | null
+  /** Base USD vigente — null = valor automático (cierre USD histórico de la última factura). */
+  netOverrideUsd: number | null
+  vatOverrideUsd: number | null
+  otherOverrideUsd: number | null
+  /** % por ciclo sobre la base USD — null = 0 %. */
+  growthPercentUsdOverride: number | null
   cycleLengthMonthsOverride: number | null
   installmentsCountOverride: number | null
   startMonthOverride: string | null
+  /** Trazabilidad de la conversión confirmada ARS → USD de los importes históricos. */
+  legacyConvertedRate: number | null
+  legacyConvertedAt: string | null
+  legacyConvertedBy: string | null
+  updatedAt: string
 }
 
-export type RenewalProjectionOverrideInput = Partial<Omit<RenewalProjectionOverride, 'assetId' | 'mode'>>
+/** Solo los campos vigentes — el backend rechaza (422) los históricos y la trazabilidad. */
+export type RenewalProjectionOverrideInput = Partial<
+  Pick<
+    RenewalProjectionOverride,
+    | 'netOverrideUsd'
+    | 'vatOverrideUsd'
+    | 'otherOverrideUsd'
+    | 'growthPercentUsdOverride'
+    | 'cycleLengthMonthsOverride'
+    | 'installmentsCountOverride'
+    | 'startMonthOverride'
+  >
+>
+
+export interface ConvertLegacyOverridesInput {
+  /** TC actual que el usuario vio en la vista previa — el backend rechaza si cambió. */
+  expectedRate: number
+  /** Campos exactos de la vista previa — el backend rechaza si ya no coinciden. */
+  fields: LegacyAmountField[]
+}
 
 export const renewalProjectionsApi = {
   async findAll(mode: RenewalProjectionMode): Promise<RenewalProjectionOverride[]> {
@@ -30,6 +63,11 @@ export const renewalProjectionsApi = {
 
   async reset(assetId: string, mode: RenewalProjectionMode): Promise<void> {
     await apiClient.delete(`/renewal-projections/overrides/${mode}/${assetId}`)
+  },
+
+  async convertLegacy(assetId: string, mode: RenewalProjectionMode, data: ConvertLegacyOverridesInput): Promise<RenewalProjectionOverride> {
+    const res = await apiClient.post<{ data: RenewalProjectionOverride }>(`/renewal-projections/overrides/${mode}/${assetId}/convert-legacy`, data)
+    return res.data.data
   },
 }
 
