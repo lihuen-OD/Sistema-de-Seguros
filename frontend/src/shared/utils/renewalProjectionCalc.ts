@@ -1,6 +1,8 @@
 import type { Currency, Installment, Policy } from '../types'
 import type { DocumentForFinancial } from '../api/documents.api'
 import { ACTIVE_POLICY_STATUSES, policyTermMonths } from './insuranceDashboardCalc'
+import { getDocumentEconomicDirection } from './documentEconomicEffect'
+import { adjustmentInstallmentIssue } from './adjustmentInstallments'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Proyección de renovaciones — base USD
@@ -235,6 +237,8 @@ export function buildAssetRealTimelineByCuota(assetId: string, documents: Docume
 
   for (const doc of documents) {
     if (doc.installments.length === 0) continue
+    // Cuotas propias de un ajuste ya volcado en su factura: contarlas lo duplicaría (ver adjustmentInstallments).
+    if (adjustmentInstallmentIssue(doc)?.excluded) continue
     const assetShare = docAssetShareByPercentage(doc, assetId)
     if (assetShare <= 0) continue
     const ratios = docComposition(doc)
@@ -267,7 +271,11 @@ export function buildAssetRealTimelineByCuota(assetId: string, documents: Docume
 // prorrateado sobre `doc.totalAmount` (no allocationPercentage) — así una NC
 // con allocatedAmount negativo compensa correctamente a la factura que
 // ajusta, igual que en Económico. Sin pagado/pendiente: un documento emitido
-// ya está reconocido, sin importar si se cobró.
+// ya está reconocido, sin importar si se cobró. El SIGNO sale del documento
+// (getDocumentEconomicDirection, misma regla que el KPI de Análisis
+// Económico): cada asignación aporta |asignado| × sentido — una NC aplicada
+// resta aunque su distribución se haya cargado en positivo, y una NC sin
+// aplicar no impacta.
 
 function docAllocatedAmountForAsset(doc: DocumentForFinancial, assetId: string): number {
   return doc.allocations.filter((a) => a.assetId === assetId).reduce((sum, a) => sum + a.allocatedAmount, 0)
@@ -277,7 +285,10 @@ export function buildAssetRealTimelineByDocument(assetId: string, documents: Doc
   const acc = new Map<string, RealMonthCell>()
 
   for (const doc of documents) {
-    const allocatedAmount = docAllocatedAmountForAsset(doc, assetId)
+    const direction = getDocumentEconomicDirection(doc)
+    const allocatedAmount = doc.allocations
+      .filter((a) => a.assetId === assetId)
+      .reduce((sum, a) => sum + Math.abs(a.allocatedAmount), 0) * direction
     if (!doc.totalAmount || allocatedAmount === 0) continue
     const ratios = docComposition(doc)
 

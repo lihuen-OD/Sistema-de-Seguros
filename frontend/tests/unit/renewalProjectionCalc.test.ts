@@ -61,6 +61,7 @@ function inst(p: { dueDate: string; amount: number; currency?: Currency; amountA
 
 interface DocInput {
   type?: string
+  status?: string
   issueDate: string
   currency: Currency
   net: number
@@ -85,7 +86,8 @@ function doc(p: DocInput): DocumentForFinancial {
   return {
     id: `doc-${seq}`,
     documentType: p.type ?? 'INVOICE',
-    documentStatus: 'ISSUED',
+    // Los ajustes (NC/ND/Endoso) impactan aplicados — regla del KPI económico.
+    documentStatus: p.status ?? (p.type && p.type !== 'INVOICE' ? 'APPLIED' : 'ISSUED'),
     documentNumber: `N-${seq}`,
     issueDate: p.issueDate,
     currency: p.currency,

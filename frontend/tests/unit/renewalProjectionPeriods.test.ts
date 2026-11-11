@@ -71,7 +71,7 @@ function doc(p: DocIn): DocumentForFinancial {
   const rate = p.rate ?? 1500
   const total = p.net + (p.vat ?? 0)
   return {
-    id: `doc-${seq}`, documentType: p.type ?? 'INVOICE', documentStatus: 'ISSUED', documentNumber: p.number ?? `N-${seq}`,
+    id: `doc-${seq}`, documentType: p.type ?? 'INVOICE', documentStatus: p.type && p.type !== 'INVOICE' ? 'APPLIED' : 'ISSUED', documentNumber: p.number ?? `N-${seq}`,
     issueDate: p.issueDate, currency, exchangeRate: rate,
     netAmount: p.net, vatAmount: p.vat ?? 0, otherTaxesAmount: 0, totalAmount: total,
     totalAmountArs: currency === 'ARS' ? total : total * rate,

@@ -4,6 +4,7 @@ import { buildMatrixData, getRows as getFinancialRows, type RowGrouping as Finan
 import { buildEconomicMatrix, getRows as getEconomicRows, type RowGrouping as EconomicGrouping } from '../../src/shared/utils/economicAnalysisCalc'
 import { NO_ASSET_LINE_ROW_ID, NO_FIXED_ASSET_ROW_ID, fixedAssetRows } from '../../src/shared/utils/fixedAssetGrouping'
 import { UNASSIGNED_FIXED_ASSET_LABEL } from '../../src/shared/utils/insuranceDashboardCalc'
+import { completeRows } from '../../src/shared/utils/analysisGrouping'
 import type { AccountingDocument, Asset, Company, CostCenter, DocumentPolicyAllocation, Installment, Policy } from '../../src/shared/types'
 
 // Agrupación «Bien de uso» de los Análisis Financiero (cuotas por vencimiento,
@@ -45,7 +46,7 @@ function alloc(docId: string, assetId: string | null, amount: number, pct: numbe
 
 function document(id: string, issueDate: string, total: number, documentType = 'INVOICE'): AccountingDocument {
   return {
-    id, documentNumber: id, documentType, issueDate, currency: 'ARS', exchangeRate: 1000,
+    id, documentNumber: id, documentType, documentStatus: documentType === 'INVOICE' ? 'ISSUED' : 'APPLIED', issueDate, currency: 'ARS', exchangeRate: 1000,
     netAmount: total, vatAmount: 0, otherTaxesAmount: 0, totalAmount: total,
     totalAmountArs: total, totalAmountUsd: total / 1000, paymentMethod: 'Transferencia', linkedDocumentId: null,
   } as unknown as AccountingDocument
@@ -84,9 +85,12 @@ function ecoMatrix(grouping: EconomicGrouping, granularity: 'week' | 'month' = '
 }
 const finRowTotal = (m: ReturnType<typeof finMatrix>, id: string) => [...(m.get(id)?.values() ?? [])].reduce((s, c) => s + c.paid + c.pending, 0)
 const ecoRowTotal = (m: ReturnType<typeof ecoMatrix>, id: string) => [...(m.get(id)?.values() ?? [])].reduce((s, v) => s + v, 0)
-/** Total de la tabla tal como lo arma la página: Σ de las filas listadas. */
-const finTableTotal = (g: FinancialGrouping, m = finMatrix(g)) => getFinancialRows(g, companies, costCenters, assets, policies).reduce((s, r) => s + finRowTotal(m, r.id), 0)
-const ecoTableTotal = (g: EconomicGrouping, m = ecoMatrix(g)) => getEconomicRows(g, companies, costCenters, assets, policies).reduce((s, r) => s + ecoRowTotal(m, r.id), 0)
+/** Total de la tabla tal como lo arma la página: Σ de las filas listadas (base + filas con movimientos). */
+const lookups = { companies, costCenters, assets, policies }
+const finTableTotal = (g: FinancialGrouping, m = finMatrix(g)) =>
+  completeRows(g, getFinancialRows(g, companies, costCenters, assets, policies), m.keys(), lookups).reduce((s, r) => s + finRowTotal(m, r.id), 0)
+const ecoTableTotal = (g: EconomicGrouping, m = ecoMatrix(g)) =>
+  completeRows(g, getEconomicRows(g, companies, costCenters, assets, policies), m.keys(), lookups).reduce((s, r) => s + ecoRowTotal(m, r.id), 0)
 
 describe('filas «Bien de uso»', () => {
   test('un fila por bien de uso (por código), más «Sin Bien de Uso asignado» y «Líneas sin activo» al final', () => {
@@ -138,8 +142,8 @@ describe('Financiero — cuotas por vencimiento, reparto por %', () => {
     }
   })
 
-  test('agregar «Bien de uso» no cambia las demás agrupaciones', () => {
-    close(finTableTotal('activo'), 1500, 'Activo sigue sin la línea sin activo (comportamiento existente)')
+  test('todas las agrupaciones suman lo mismo (Activo incluye «Líneas sin activo»)', () => {
+    close(finTableTotal('activo'), 1600)
     close(finTableTotal('empresa'), 1600)
     close(finTableTotal('centro_costo'), 1600)
     for (const g of FIN_GROUPINGS) assert.ok(getFinancialRows(g, companies, costCenters, assets, policies).length > 0, g)

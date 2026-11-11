@@ -3,10 +3,20 @@ import {
   normalizePaymentMethod,
   resolveDocumentPaymentMethod,
 } from './documentPaymentMethod'
-import { fixedAssetRowIdOf, fixedAssetRows } from './fixedAssetGrouping'
+import {
+  UNASSIGNED_ROW_ID,
+  buildDocumentAllocationContexts,
+  getAnalysisRows,
+  rowIdFor,
+  type MatrixRow,
+} from './analysisGrouping'
+import { adjustmentInstallmentIssue, type AdjustmentInstallmentIssue } from './adjustmentInstallments'
+import type { DocumentForFinancial } from '../api/documents.api'
 import type { Currency, Policy, Asset, Company, CostCenter, Installment, DocumentPolicyAllocation, AccountingDocument } from '../types'
 
+// Financiero no agrupa por aseguradora (solo Económico).
 export type RowGrouping = 'empresa' | 'centro_costo' | 'activo' | 'bien_de_uso' | 'poliza'
+export type { MatrixRow }
 
 // Cada cuota ya llega cerrada en ambas monedas (amountArs/amountUsd, calculadas
 // server-side al crearla o al marcarla como pagada — ver computeDualAmounts).
@@ -23,54 +33,67 @@ export function getInstallmentEffectiveDate(inst: Installment): string {
   return inst.dueDate
 }
 
-// Cada allocation ya apunta a una línea de cobertura puntual (assetId directo
-// si tiene activo; empresa/centro de costo propios de la línea si es "sin
-// activo") — se resuelve por allocation, no por póliza, porque una póliza de
-// flota puede tener varias allocations del mismo documento repartidas entre
-// distintos activos (ver seed.ts: factura de flota 60/40 entre 2 camiones).
-interface AllocationContext {
-  policyId: string
-  companyId: string
-  costCenterId: string
-  assetId: string | null
-  /** Fila de la agrupación "Bien de uso" (ver fixedAssetGrouping). */
-  fixedAssetRowId: string
-  allocationPercentage: number
+// ── Movimientos del período (fuente única de KPI, gráfico, tabla y exportes) ──
+// Una cuota entra si su VENCIMIENTO cae en un mes del rango [from, to]
+// (YYYY-MM). Filtrar acá — antes de armar KPI, gráfico o matriz — es lo que
+// garantiza que una semana, trimestre o año que cruza el borde del rango no
+// sume días o meses de afuera. Se excluyen las cuotas propias de un ajuste
+// ya volcado en su factura (ver adjustmentInstallments), sin tocar los datos.
+
+export interface FinancialSelection {
+  installments: Installment[]
+  /** NC/ND/Ajustes/Endosos aplicados con cuotas propias (excluidas o solo avisadas). */
+  adjustmentIssues: AdjustmentInstallmentIssue[]
 }
 
-function buildDocumentAllocationContexts(
-  allocations: DocumentPolicyAllocation[],
-  policies: Policy[],
-  assets: Asset[],
-): Map<string, AllocationContext[]> {
-  const policyById = new Map(policies.map((p) => [p.id, p]))
-  const assetById = new Map(assets.map((a) => [a.id, a]))
-  const map = new Map<string, AllocationContext[]>()
-
-  allocations.forEach((alloc) => {
-    let companyId: string
-    let costCenterId: string
-    if (alloc.assetId) {
-      const asset = assetById.get(alloc.assetId)
-      companyId = asset?.companyId ?? ''
-      costCenterId = asset?.costCenterId ?? ''
-    } else {
-      const coverage = policyById.get(alloc.policyId)?.coverages?.find((c) => c.id === alloc.policyAssetCoverageId)
-      companyId = coverage?.companyId ?? ''
-      costCenterId = coverage?.costCenterId ?? ''
-    }
-    const existing = map.get(alloc.accountingDocumentId) ?? []
-    existing.push({
-      policyId: alloc.policyId, companyId, costCenterId, assetId: alloc.assetId,
-      fixedAssetRowId: fixedAssetRowIdOf(alloc.assetId, assetById),
-      allocationPercentage: alloc.allocationPercentage,
+export function selectFinancialInstallments(documents: DocumentForFinancial[], from: string, to: string): FinancialSelection {
+  const installments: Installment[] = []
+  const adjustmentIssues: AdjustmentInstallmentIssue[] = []
+  for (const doc of documents) {
+    const inRange = doc.installments.filter((inst) => {
+      const monthKey = getInstallmentEffectiveDate(inst).substring(0, 7)
+      return monthKey >= from && monthKey <= to
     })
-    map.set(alloc.accountingDocumentId, existing)
-  })
-  return map
+    if (inRange.length === 0) continue
+    const issue = adjustmentInstallmentIssue(doc)
+    if (issue) adjustmentIssues.push(issue)
+    if (issue?.excluded) continue
+    installments.push(...inRange)
+  }
+  return { installments, adjustmentIssues }
 }
 
-export interface MatrixRow { id: string; label: string; sublabel?: string }
+/** Vencida = no pagada y con vencimiento ANTERIOR a hoy (día de negocio, YYYY-MM-DD). */
+export function isInstallmentOverdue(inst: Installment, todayStr: string): boolean {
+  return inst.paymentStatus !== 'PAID' && inst.dueDate.slice(0, 10) < todayStr
+}
+
+export interface FinancialKpis { totalPaid: number; totalPending: number; total: number; overdueCount: number }
+
+export function computeFinancialKpis(installments: Installment[], currency: Currency, todayStr: string): FinancialKpis {
+  let totalPaid = 0
+  let totalPending = 0
+  let overdueCount = 0
+  for (const inst of installments) {
+    const amount = pickAmount(inst, currency)
+    if (inst.paymentStatus === 'PAID') totalPaid += amount
+    else totalPending += amount
+    if (isInstallmentOverdue(inst, todayStr)) overdueCount++
+  }
+  return { totalPaid, totalPending, total: totalPaid + totalPending, overdueCount }
+}
+
+/** Serie mensual del gráfico (pagado / pendiente por mes de vencimiento). */
+export function financialMonthlySeries(installments: Installment[], monthKeys: string[], currency: Currency): { key: string; paid: number; pending: number }[] {
+  const byMonth = new Map(monthKeys.map((key) => [key, { key, paid: 0, pending: 0 }]))
+  for (const inst of installments) {
+    const bucket = byMonth.get(getInstallmentEffectiveDate(inst).substring(0, 7))
+    if (!bucket) continue
+    if (inst.paymentStatus === 'PAID') bucket.paid += pickAmount(inst, currency)
+    else bucket.pending += pickAmount(inst, currency)
+  }
+  return [...byMonth.values()]
+}
 
 export function getRows(
   grouping: RowGrouping,
@@ -79,22 +102,7 @@ export function getRows(
   assets: Asset[],
   policies: Policy[],
 ): MatrixRow[] {
-  switch (grouping) {
-    case 'empresa':
-      return companies.filter((c) => c.status === 'activo').map((c) => ({ id: c.id, label: c.name }))
-    case 'centro_costo':
-      return costCenters.filter((cc) => cc.status === 'activo').map((cc) => ({
-        id: cc.id, label: cc.name, sublabel: cc.description || undefined,
-      }))
-    case 'activo':
-      return assets.map((a) => ({ id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}` }))
-    case 'bien_de_uso':
-      return fixedAssetRows(assets)
-    case 'poliza':
-      return policies.filter((p) => p.status !== 'vencida').map((p) => ({
-        id: p.id, label: p.policyNumber, sublabel: `${(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'} · ${p.insuranceCompany}`,
-      }))
-  }
+  return getAnalysisRows(grouping, companies, costCenters, assets, policies)
 }
 
 export interface CellData { paid: number; pending: number }
@@ -106,6 +114,13 @@ export interface FinancialMatrixResult {
   paymentMethods: PaymentMethodMatrix
 }
 
+/**
+ * `installments` = las del período (selectFinancialInstallments). Cada cuota
+ * se reparte UNA vez por línea de asignación según su porcentaje real
+ * (allocationPercentage); la parte no cubierta por las asignaciones (documento
+ * sin asignar, o asignaciones < 100 %) va a «Sin asignar». Así la suma de las
+ * filas de cualquier agrupación es la de las cuotas, sin duplicar.
+ */
 export function buildMatrixData(
   grouping: RowGrouping,
   displayCurrency: Currency,
@@ -124,6 +139,26 @@ export function buildMatrixData(
   const matrix: MatrixData = new Map()
   const paymentMethods: PaymentMethodMatrix = new Map()
 
+  function add(rowId: string, key: string, amount: number, isPaid: boolean, paymentMethod: string) {
+    if (!matrix.has(rowId)) matrix.set(rowId, new Map())
+    const rowMap = matrix.get(rowId)!
+    if (!rowMap.has(key)) rowMap.set(key, { paid: 0, pending: 0 })
+    const cell = rowMap.get(key)!
+    if (isPaid) cell.paid += amount
+    else cell.pending += amount
+
+    if (grouping === 'empresa') {
+      if (!paymentMethods.has(rowId)) paymentMethods.set(rowId, new Map())
+      const companyMethods = paymentMethods.get(rowId)!
+      if (!companyMethods.has(paymentMethod)) companyMethods.set(paymentMethod, new Map())
+      const methodPeriods = companyMethods.get(paymentMethod)!
+      const methodCell = methodPeriods.get(key) ?? { paid: 0, pending: 0 }
+      if (isPaid) methodCell.paid += amount
+      else methodCell.pending += amount
+      methodPeriods.set(key, methodCell)
+    }
+  }
+
   installments.forEach((inst) => {
     const effectiveDate = getInstallmentEffectiveDate(inst)
     const key = granularity === 'week'
@@ -138,41 +173,15 @@ export function buildMatrixData(
     )
     const contexts = allocationContexts.get(inst.accountingDocumentId) ?? []
 
-    // Se acumula una vez POR LÍNEA DE ASIGNACIÓN (no por fila deduplicada) —
-    // si una póliza de flota reparte el mismo documento entre varios activos,
-    // cada línea aporta su porción REAL (allocationPercentage), no un
-    // promedio parejo, para que el total de la matriz coincida con la suma
-    // real de cuotas del período.
+    let allocatedShare = 0
     contexts.forEach((ctx) => {
-      const splitAmount = amount * (ctx.allocationPercentage / 100)
-      let rowId: string | null = null
-      switch (grouping) {
-        case 'empresa':      rowId = ctx.companyId || null; break
-        case 'centro_costo': rowId = ctx.costCenterId || null; break
-        case 'activo':       rowId = ctx.assetId; break
-        case 'bien_de_uso':  rowId = ctx.fixedAssetRowId; break
-        case 'poliza':       rowId = ctx.policyId; break
-      }
-      if (!rowId) return
-
-      if (!matrix.has(rowId)) matrix.set(rowId, new Map())
-      const rowMap = matrix.get(rowId)!
-      if (!rowMap.has(key)) rowMap.set(key, { paid: 0, pending: 0 })
-      const cell = rowMap.get(key)!
-      if (isPaid) cell.paid += splitAmount
-      else cell.pending += splitAmount
-
-      if (grouping === 'empresa') {
-        if (!paymentMethods.has(rowId)) paymentMethods.set(rowId, new Map())
-        const companyMethods = paymentMethods.get(rowId)!
-        if (!companyMethods.has(paymentMethod)) companyMethods.set(paymentMethod, new Map())
-        const methodPeriods = companyMethods.get(paymentMethod)!
-        const methodCell = methodPeriods.get(key) ?? { paid: 0, pending: 0 }
-        if (isPaid) methodCell.paid += splitAmount
-        else methodCell.pending += splitAmount
-        methodPeriods.set(key, methodCell)
-      }
+      const share = ctx.allocationPercentage / 100
+      allocatedShare += share
+      add(rowIdFor(grouping, ctx), key, amount * share, isPaid, paymentMethod)
     })
+    // Parte no distribuida (nunca negativa: una sobre-asignación no se compensa acá).
+    const unassignedShare = 1 - allocatedShare
+    if (unassignedShare > 1e-9) add(UNASSIGNED_ROW_ID, key, amount * unassignedShare, isPaid, paymentMethod)
   })
 
   return { matrix, paymentMethods }

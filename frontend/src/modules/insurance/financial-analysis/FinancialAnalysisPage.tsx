@@ -10,6 +10,7 @@ import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { FinancialDataWarning } from '../../../shared/components/feedback/FinancialDataWarning'
+import { DataWarning } from '../../../shared/components/feedback/DataWarning'
 import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -20,9 +21,11 @@ import {
 } from '../../../shared/utils/export'
 import type { ExportCell } from '../../../shared/utils/export'
 import {
-  getRows, buildMatrixData, pickAmount, getInstallmentEffectiveDate,
+  getRows, buildMatrixData, selectFinancialInstallments, computeFinancialKpis, financialMonthlySeries,
   type RowGrouping, type CellData,
 } from '../../../shared/utils/financialAnalysisCalc'
+import { completeRows } from '../../../shared/utils/analysisGrouping'
+import { businessTodayStr } from '../../../shared/utils/businessDate'
 import { documentQueries } from '../../../shared/api/documents.api'
 import { policyQueries } from '../../../shared/api/policies.api'
 import { assetQueries } from '../../../shared/api/assets.api'
@@ -86,7 +89,14 @@ export default function FinancialAnalysisPage() {
 
   // Derivados de la misma fuente — memoizados para que los useMemo downstream se actualicen
   const allDocuments = financialDocs
-  const allInstallments = useMemo(() => financialDocs.flatMap((d) => d.installments), [financialDocs])
+  // Fuente única del período para KPI, gráfico, tabla y exportes: solo cuotas
+  // con vencimiento dentro del rango (una semana o trimestre que cruza el
+  // borde no suma días de afuera) y sin las cuotas propias de un ajuste ya
+  // volcado en su factura (ver adjustmentInstallments).
+  const { installments: periodInstallments, adjustmentIssues } = useMemo(
+    () => selectFinancialInstallments(financialDocs, dateFrom, dateTo),
+    [financialDocs, dateFrom, dateTo],
+  )
   const allAllocations = useMemo(
     () => financialDocs.flatMap((d) => d.allocations) as DocumentPolicyAllocation[],
     [financialDocs],
@@ -119,50 +129,33 @@ export default function FinancialAnalysisPage() {
   // Matrix granularity depends on period: weeks use week keys, the rest use month keys
   const matrixGranularity: 'week' | 'month' = colPeriod === 'semana' ? 'week' : 'month'
   const { matrix: matrixData, paymentMethods: companyPaymentMatrix } = useMemo(
-    () => buildMatrixData(grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allInstallments, allAllocations),
-    [grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allInstallments, allAllocations],
+    () => buildMatrixData(grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, periodInstallments, allAllocations),
+    [grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, periodInstallments, allAllocations],
   )
+  // Filas base + las que tienen movimientos y la lista base no muestra
+  // (póliza vencida, «Sin asignar», «Líneas sin activo», …): nada se pierde.
   const rows = useMemo(
-    () => getRows(grouping, allCompanies, allCostCenters, allAssets, allPolicies),
-    [grouping, allCompanies, allCostCenters, allAssets, allPolicies],
+    () => completeRows(grouping, getRows(grouping, allCompanies, allCostCenters, allAssets, allPolicies), matrixData.keys(), {
+      companies: allCompanies, costCenters: allCostCenters, assets: allAssets, policies: allPolicies,
+    }),
+    [grouping, allCompanies, allCostCenters, allAssets, allPolicies, matrixData],
   )
 
   // ─── KPIs (always month-level, unaffected by colPeriod) ──────────────────────
 
-  const kpis = useMemo(() => {
-    let totalPaid = 0
-    let totalPending = 0
-    let overdueCount = 0
-    const today = new Date(2026, 5, 10)
-    allInstallments.forEach((inst) => {
-      const monthKey = getInstallmentEffectiveDate(inst).substring(0, 7)
-      if (monthKey < dateFrom || monthKey > dateTo) return
-      const amount = pickAmount(inst, currency)
-      if (inst.paymentStatus === 'PAID') {
-        totalPaid += amount
-      } else {
-        totalPending += amount
-        if (new Date(inst.dueDate) < today) overdueCount++
-      }
-    })
-    return { totalPaid, totalPending, total: totalPaid + totalPending, overdueCount }
-  }, [currency, dateFrom, dateTo, allInstallments])
+  // «Vencida» se mide contra HOY en Argentina (día de negocio), no una fecha fija.
+  const todayStr = businessTodayStr()
+  const kpis = useMemo(
+    () => computeFinancialKpis(periodInstallments, currency, todayStr),
+    [periodInstallments, currency, todayStr],
+  )
 
   // ─── Chart data (always monthly, for readability) ────────────────────────────
 
   const chartData = useMemo(() => {
-    return months.map(({ key, label }) => {
-      let paid = 0
-      let pending = 0
-      allInstallments.forEach((inst) => {
-        if (getInstallmentEffectiveDate(inst).substring(0, 7) !== key) return
-        const amount = pickAmount(inst, currency)
-        if (inst.paymentStatus === 'PAID') paid += amount
-        else pending += amount
-      })
-      return { label, paid, pending }
-    })
-  }, [months, currency, allInstallments])
+    const series = financialMonthlySeries(periodInstallments, months.map((m) => m.key), currency)
+    return months.map(({ label }, i) => ({ label, paid: series[i].paid, pending: series[i].pending }))
+  }, [months, currency, periodInstallments])
 
   // ─── Column definitions ───────────────────────────────────────────────────────
 
@@ -244,6 +237,18 @@ export default function FinancialAnalysisPage() {
       { paid: 0, pending: 0 },
     )
   }
+
+  // Total general de la tabla = Σ de sus filas (todas las agrupaciones cubren
+  // todos los movimientos, así que coincide con el KPI).
+  function getGrandTotals(): CellData {
+    return rows.reduce<CellData>((total, row) => {
+      const t = getRowTotals(row.id)
+      total.paid += t.paid
+      total.pending += t.pending
+      return total
+    }, { paid: 0, pending: 0 })
+  }
+  const grandTotals = getGrandTotals()
 
   function fmtCell(value: number): string {
     return value === 0 ? '—' : formatCurrencyCompact(value, currency)
@@ -341,7 +346,7 @@ export default function FinancialAnalysisPage() {
       rows.reduce((sum, row) => sum + getCellValue(row.id, col.key).paid, 0))
     const pendingTotals = columns.map((col) =>
       rows.reduce((sum, row) => sum + getCellValue(row.id, col.key).pending, 0))
-    dataRows.push(['TOTAL', ...paidTotals, ...pendingTotals, kpis.totalPaid, kpis.totalPending])
+    dataRows.push(['TOTAL', ...paidTotals, ...pendingTotals, grandTotals.paid, grandTotals.pending])
 
     await downloadXLSX(
       [header, ...dataRows],
@@ -415,7 +420,7 @@ export default function FinancialAnalysisPage() {
               })
               return fmtNumber(paid + pending)
             }),
-            fmtNumber(kpis.totalPaid + kpis.totalPending),
+            fmtNumber(grandTotals.paid + grandTotals.pending),
           ],
           isTotal: true,
         })
@@ -456,7 +461,7 @@ export default function FinancialAnalysisPage() {
               if (!paid && !pending) return '—'
               return `${fmtNumber(paid)} / ${fmtNumber(pending)}`
             }),
-            `${fmtNumber(kpis.totalPaid)} / ${fmtNumber(kpis.totalPending)}`,
+            `${fmtNumber(grandTotals.paid)} / ${fmtNumber(grandTotals.pending)}`,
           ],
           isTotal: true,
         })
@@ -487,6 +492,21 @@ export default function FinancialAnalysisPage() {
         subtitle="Flujo de cuotas y vencimientos por período"
       />
       <FinancialDataWarning result={financialResult} />
+      {adjustmentIssues.length > 0 && (
+        <DataWarning>
+          <strong>Cuotas propias en ajustes aplicados:</strong>{' '}
+          {adjustmentIssues.map((issue, i) => (
+            <span key={issue.documentId}>
+              {i > 0 && '; '}
+              {issue.documentNumber} ({formatCurrencyFull(issue.ownInstallmentsAmount, issue.currency as Currency)}){' '}
+              {issue.excluded
+                ? '— el ajuste ya está volcado en las cuotas de su factura: sus cuotas propias se excluyen para no contarlo dos veces'
+                : '— no se pudo confirmar que esté volcado en su factura: se cuenta, revisá el comprobante'}
+            </span>
+          ))}
+          . Los registros no se modifican.
+        </DataWarning>
+      )}
 
       {/* Controls */}
       <div className="space-y-3 mb-6">
@@ -888,10 +908,10 @@ export default function FinancialAnalysisPage() {
                 <td className="text-right bg-slate-100 align-top p-0">
                   <div className="flex flex-col gap-px py-2 px-3">
                     <span className="block text-xs font-bold text-emerald-700 tabular-nums">
-                      {fmtCell(kpis.totalPaid)}
+                      {fmtCell(grandTotals.paid)}
                     </span>
                     <span className="block text-xs font-bold text-red-600 tabular-nums">
-                      {fmtCell(kpis.totalPending)}
+                      {fmtCell(grandTotals.pending)}
                     </span>
                   </div>
                 </td>
