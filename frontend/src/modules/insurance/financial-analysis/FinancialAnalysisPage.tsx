@@ -259,6 +259,7 @@ export default function FinancialAnalysisPage() {
     { value: 'empresa', label: 'Empresa' },
     { value: 'centro_costo', label: 'Centro de Costo' },
     { value: 'activo', label: 'Activo' },
+    { value: 'bien_de_uso', label: 'Bien de uso' },
     { value: 'poliza', label: 'Póliza' },
   ]
 

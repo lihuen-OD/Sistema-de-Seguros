@@ -3,9 +3,10 @@ import {
   normalizePaymentMethod,
   resolveDocumentPaymentMethod,
 } from './documentPaymentMethod'
+import { fixedAssetRowIdOf, fixedAssetRows } from './fixedAssetGrouping'
 import type { Currency, Policy, Asset, Company, CostCenter, Installment, DocumentPolicyAllocation, AccountingDocument } from '../types'
 
-export type RowGrouping = 'empresa' | 'centro_costo' | 'activo' | 'poliza'
+export type RowGrouping = 'empresa' | 'centro_costo' | 'activo' | 'bien_de_uso' | 'poliza'
 
 // Cada cuota ya llega cerrada en ambas monedas (amountArs/amountUsd, calculadas
 // server-side al crearla o al marcarla como pagada — ver computeDualAmounts).
@@ -32,6 +33,8 @@ interface AllocationContext {
   companyId: string
   costCenterId: string
   assetId: string | null
+  /** Fila de la agrupación "Bien de uso" (ver fixedAssetGrouping). */
+  fixedAssetRowId: string
   allocationPercentage: number
 }
 
@@ -57,7 +60,11 @@ function buildDocumentAllocationContexts(
       costCenterId = coverage?.costCenterId ?? ''
     }
     const existing = map.get(alloc.accountingDocumentId) ?? []
-    existing.push({ policyId: alloc.policyId, companyId, costCenterId, assetId: alloc.assetId, allocationPercentage: alloc.allocationPercentage })
+    existing.push({
+      policyId: alloc.policyId, companyId, costCenterId, assetId: alloc.assetId,
+      fixedAssetRowId: fixedAssetRowIdOf(alloc.assetId, assetById),
+      allocationPercentage: alloc.allocationPercentage,
+    })
     map.set(alloc.accountingDocumentId, existing)
   })
   return map
@@ -81,6 +88,8 @@ export function getRows(
       }))
     case 'activo':
       return assets.map((a) => ({ id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}` }))
+    case 'bien_de_uso':
+      return fixedAssetRows(assets)
     case 'poliza':
       return policies.filter((p) => p.status !== 'vencida').map((p) => ({
         id: p.id, label: p.policyNumber, sublabel: `${(p.insuranceTypeNames ?? []).join(', ') || 'Sin tipo'} · ${p.insuranceCompany}`,
@@ -141,6 +150,7 @@ export function buildMatrixData(
         case 'empresa':      rowId = ctx.companyId || null; break
         case 'centro_costo': rowId = ctx.costCenterId || null; break
         case 'activo':       rowId = ctx.assetId; break
+        case 'bien_de_uso':  rowId = ctx.fixedAssetRowId; break
         case 'poliza':       rowId = ctx.policyId; break
       }
       if (!rowId) return

@@ -296,6 +296,7 @@ export default function EconomicAnalysisPage() {
     { value: 'aseguradora', label: 'Aseguradora' },
     { value: 'poliza', label: 'Póliza' },
     { value: 'activo', label: 'Activo' },
+    { value: 'bien_de_uso', label: 'Bien de uso' },
   ]
 
   const periodButtons: { value: ColPeriod; label: string }[] = [

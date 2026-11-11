@@ -1,8 +1,9 @@
 import { getISOWeekKey } from './export'
 import { resolveDocumentPaymentMethod } from './documentPaymentMethod'
+import { fixedAssetRowIdOf, fixedAssetRows } from './fixedAssetGrouping'
 import type { Currency, Policy, Asset, Company, CostCenter, AccountingDocument, DocumentPolicyAllocation } from '../types'
 
-export type RowGrouping = 'empresa' | 'centro_costo' | 'aseguradora' | 'poliza' | 'activo'
+export type RowGrouping = 'empresa' | 'centro_costo' | 'aseguradora' | 'poliza' | 'activo' | 'bien_de_uso'
 
 // El documento ya llega cerrado en ambas monedas (totalAmountArs/totalAmountUsd,
 // calculadas server-side al crearlo/editarlo — ver computeDualAmounts). Elegir
@@ -33,6 +34,8 @@ export interface AllocationContext {
   companyId: string
   costCenterId: string
   assetId: string | null
+  /** Fila de la agrupación "Bien de uso" (ver fixedAssetGrouping). */
+  fixedAssetRowId: string
   insuranceCompany: string
   allocatedAmount: number
 }
@@ -65,6 +68,7 @@ export function buildDocumentAllocationContexts(
       companyId,
       costCenterId,
       assetId: alloc.assetId,
+      fixedAssetRowId: fixedAssetRowIdOf(alloc.assetId, assetById),
       insuranceCompany: policy?.insuranceCompany ?? '',
       allocatedAmount: alloc.allocatedAmount,
     })
@@ -101,6 +105,8 @@ export function getRows(
       return assets.map((a) => ({
         id: a.id, label: a.name, sublabel: `${a.internalCode} · ${a.assetType}`,
       }))
+    case 'bien_de_uso':
+      return fixedAssetRows(assets)
   }
 }
 
@@ -144,6 +150,7 @@ export function buildEconomicMatrix(
         case 'aseguradora':  if (ctx.insuranceCompany) rowIds.push(ctx.insuranceCompany); break
         case 'poliza':       rowIds.push(ctx.policyId); break
         case 'activo':       if (ctx.assetId) rowIds.push(ctx.assetId); break
+        case 'bien_de_uso':  rowIds.push(ctx.fixedAssetRowId); break
       }
 
       rowIds.forEach((rowId) => {
