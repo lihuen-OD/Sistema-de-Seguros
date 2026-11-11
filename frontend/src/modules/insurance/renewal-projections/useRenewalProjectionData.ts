@@ -21,14 +21,15 @@ import {
   hasCurrentOverrides,
   buildDisplayMatrix,
   sumDisplayCells,
+  sumRowTotals,
   parseManualRate,
   todayMonthKey,
   addMonthsToKey,
-  projectionStartMonthKey,
+  inconsistentAllocationsForAsset,
   buildMonthRange,
   isReasonableMonthKey,
 } from '../../../shared/utils/renewalProjectionCalc'
-import type { DisplayCell, LegacyAmountField } from '../../../shared/utils/renewalProjectionCalc'
+import type { LegacyAmountField } from '../../../shared/utils/renewalProjectionCalc'
 import type { AssetRowData } from './RenewalProjectionTable'
 import type { BreakdownFieldKey } from './RenewalFieldSelectorPopover'
 import { buildRenewalProjectionExport } from './renewalProjectionExport'
@@ -152,6 +153,7 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
         asset,
         realTimeline: buildTimeline(asset.id, financialDocs),
         cycle: detectCycle(asset.id, financialDocs, allPolicies),
+        allocationIssues: inconsistentAllocationsForAsset(asset.id, financialDocs),
       })),
     [relevantAssets, financialDocs, allPolicies, buildTimeline, detectCycle],
   )
@@ -192,7 +194,7 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
 
   const rows: AssetRowData[] = useMemo(
     () =>
-      perAssetData.map(({ asset, realTimeline, cycle }) => {
+      perAssetData.map(({ asset, realTimeline, cycle, allocationIssues }) => {
         const override = overridesByAssetId.get(asset.id) ?? null
         const base = resolveRowBase(cycle, override)
         // "Cada cuántos meses renueva", "cuántas cuotas" y "en qué mes arranca"
@@ -205,11 +207,11 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
           override?.startMonthOverride ?? null,
         )
         // Sin base USD confiable no se proyecta (ni se inventa una base).
-        // Cada fila proyecta desde SU último mes real (inicio individual).
-        const projectionFrom = projectionStartMonthKey(realTimeline, today)
+        // Se proyecta por período desde el mes actual: un mes puede tener lo
+        // real y lo proyectado a la vez (partes separadas en la matriz).
         const projectedList = base.projectionBlocked
           ? []
-          : projectAssetRow(effectiveCycle, projectionFrom, horizonEndMonthKey, base.netUsd ?? 0, base.vatUsd ?? 0, base.otherUsd ?? 0, base.pct)
+          : projectAssetRow(effectiveCycle, today, horizonEndMonthKey, base.netUsd ?? 0, base.vatUsd ?? 0, base.otherUsd ?? 0, base.pct)
         return {
           assetId: asset.id,
           name: asset.name,
@@ -227,6 +229,9 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
           projectionBlocked: base.projectionBlocked,
           periodInvoiceCount: cycle.periodInvoiceCount,
           outOfTermCount: cycle.outOfTermCount,
+          outOfTermItems: cycle.outOfTermItems,
+          ambiguousPeriodItems: cycle.ambiguousPeriodItems,
+          allocationIssues,
           concurrentPeriodsExcluded: cycle.concurrentPeriodsExcluded,
           isOverridden: hasCurrentOverrides(override),
           hasLegacy: hasLegacyValues(override),
@@ -242,24 +247,24 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
   // O(activos × meses), sin consultas ni escrituras.
 
   const matrix = useMemo(() => buildDisplayMatrix(rows, axis, currency, projectionRate), [rows, axis, currency, projectionRate])
-  const rowTotals = useMemo(() => matrix.map((cells) => sumDisplayCells(cells)), [matrix])
+  const rowTotals = useMemo(() => matrix.map((cells) => sumRowTotals(cells)), [matrix])
 
   // ─── KPIs + avisos ───────────────────────────────────────────────────────────
 
   const kpis = useMemo(() => {
-    const projectedCells: (DisplayCell | null)[] = []
     let incompleteRealCells = 0
+    let mixedCells = 0
     matrix.forEach((cells) =>
       cells.forEach((cell) => {
-        if (!cell) return
-        // Con inicio individual, toda celda no real es proyectada (nunca se superponen).
-        if (!cell.isReal) projectedCells.push(cell)
-        if (cell.isReal && cell.incomplete) incompleteRealCells += 1
+        if (cell?.real?.incomplete) incompleteRealCells += 1
+        if (cell?.real && cell.projected) mixedCells += 1
       }),
     )
     const withHistory = rows.filter((r) => r.realTimeline.size > 0).length
     return {
-      projected: sumDisplayCells(projectedCells),
+      // Solo la parte proyectada de cada celda (un mes mixto aporta solo lo proyectado).
+      projected: sumDisplayCells(matrix.flat(), 'projected'),
+      mixedCells,
       // En ARS sin TC manual válido no hay total proyectado que mostrar.
       projectedAvailable: currency === 'USD' || projectionRate !== null,
       withHistory,
@@ -273,6 +278,8 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
       blockedAssets: rows.filter((r) => r.projectionBlocked).map((r) => r.name),
       legacyPendingAssets: rows.filter((r) => r.legacyPendingFields.length > 0).map((r) => r.name),
       outOfTermAssets: rows.filter((r) => r.outOfTermCount > 0).map((r) => r.name),
+      ambiguousPeriodAssets: rows.filter((r) => r.ambiguousPeriodItems.length > 0).map((r) => r.name),
+      allocationIssueAssets: rows.filter((r) => r.allocationIssues.length > 0).map((r) => r.name),
       concurrentExcludedAssets: rows.filter((r) => r.concurrentPeriodsExcluded > 0).map((r) => r.name),
     }),
     [rows],

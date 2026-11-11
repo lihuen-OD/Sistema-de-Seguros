@@ -15,6 +15,7 @@ import {
   buildDisplayMatrix,
   resolveDisplayCell,
   sumDisplayCells,
+  sumRowTotals,
   currentRateIssue,
   usableCurrentRate,
   usdIn,
@@ -122,11 +123,18 @@ function annualCycle(start = '2026-01'): RenewalCycle {
   return {
     cycleLengthMonths: 12,
     originalShare: { 0: 1 },
+    offsetShare: { 0: 1 },
     lastRenewalStartMonthKey: start,
+    realLastRenewalStartMonthKey: start,
     baseStatus: 'OK',
     defaultNetUsd: 1000,
     defaultVatUsd: 0,
     defaultOtherUsd: 0,
+    periodInvoiceCount: 1,
+    outOfTermCount: 0,
+    outOfTermItems: [],
+    ambiguousPeriodItems: [],
+    concurrentPeriodsExcluded: 0,
   }
 }
 
@@ -227,14 +235,16 @@ describe('cierres no confiables', () => {
 
       const row: RowProjectionInputs = { realTimeline: timeline, projectedByMonth: new Map(), netUsd: null, vatUsd: null, otherUsd: null }
       // 16. En USD se muestra en moneda nativa, marcado incompleto — nunca convertido.
-      const usd = resolveDisplayCell(row, '2026-01', 'USD', 1400)!
+      const usdCell = resolveDisplayCell(row, '2026-01', 'USD', 1400)!
+      assert.equal(usdCell.projected, null)
+      const usd = usdCell.real!
       assert.equal(usd.amounts, null)
       assert.equal(usd.incomplete, true)
       close(usd.excludedNative.ARS, 1_210_000)
-      const ars = resolveDisplayCell(row, '2026-01', 'ARS', 1400)!
+      const ars = resolveDisplayCell(row, '2026-01', 'ARS', 1400)!.real!
       close(ars.amounts!.total, 1_210_000)
       assert.equal(ars.incomplete, false)
-      const totals = sumDisplayCells([usd])
+      const totals = sumDisplayCells([usdCell])
       assert.equal(totals.total, 0)
       assert.equal(totals.incomplete, true)
       close(totals.excludedNative.ARS, 1_210_000)
@@ -286,11 +296,13 @@ describe('proyección USD con % por ciclo', () => {
     ;[900, 810, 729].forEach((v, i) => close(down[i], v))
   })
 
-  test('7. cuotas editadas: el crecimiento es compuesto por CICLO, no por mes', () => {
+  test('7. cuotas editadas: el crecimiento es compuesto por CICLO, no por mes — y el período real no se vuelve a proyectar', () => {
     const cycle = resolveEffectiveCycle(annualCycle(), null, 2, null)
     assert.deepEqual(cycle.originalShare, { 0: 0.5, 6: 0.5 })
+    assert.deepEqual(cycle.offsetShare, { 0: 0.5, 6: 0.5 })
     const p = projectedValues(projectAssetRow(cycle, '2026-02', '2028-12', 1000, 0, 0, 10), ['2026-07', '2027-01', '2027-07', '2028-01', '2028-07'])
-    ;[500, 550, 550, 605, 605].forEach((v, i) => close(p[i], v))
+    // 2026-07 es la 2ª cuota del período REAL (2026-01): ya está registrado, no se proyecta (antes se sumaba 500 de más).
+    ;[0, 550, 550, 605, 605].forEach((v, i) => close(p[i], v))
   })
 
   test('el % vigente es growthPercentUsdOverride ?? 0 — el % anterior (pesos) nunca se aplica', () => {
@@ -336,8 +348,8 @@ describe('Financiero vs Económico', () => {
     close(t.get('2026-05')!.byCurrency.USD.net, 300 * 0.8)
 
     const row: RowProjectionInputs = { realTimeline: t, projectedByMonth: new Map(), netUsd: 800, vatUsd: 168, otherUsd: 32 }
-    assert.equal(resolveDisplayCell(row, '2026-01', 'USD', null)!.status, 'paid')
-    assert.equal(resolveDisplayCell(row, '2026-05', 'USD', null)!.status, 'pending')
+    assert.equal(resolveDisplayCell(row, '2026-01', 'USD', null)!.real!.status, 'paid')
+    assert.equal(resolveDisplayCell(row, '2026-05', 'USD', null)!.real!.status, 'pending')
   })
 
   test('9. Económico: reconocido en el mes de emisión, sin estado de cobro', () => {
@@ -349,7 +361,7 @@ describe('Financiero vs Económico', () => {
     close(cell.byCurrency.USD.total, 1210)
     close(cell.byCurrency.ARS.total, 1_210_000)
     const row: RowProjectionInputs = { realTimeline: t, projectedByMonth: new Map(), netUsd: 1000, vatUsd: 210, otherUsd: 0 }
-    assert.equal(resolveDisplayCell(row, '2026-04', 'ARS', null)!.status, 'recognized')
+    assert.equal(resolveDisplayCell(row, '2026-04', 'ARS', null)!.real!.status, 'recognized')
   })
 
   test('10. NC negativa compensa en Económico; la ND suma; la base sigue siendo la factura', () => {
@@ -428,11 +440,11 @@ describe('presentación ARS/USD', () => {
     assert.equal(JSON.stringify([...row.realTimeline.entries()]), snapshot)
 
     // Real: TC histórico; proyectado: USD × TC actual.
-    close(ars1[0][1]!.amounts!.total, 1_210_000)
-    close(usd[0][1]!.amounts!.total, 1210)
-    close(usd[0][2]!.amounts!.total, 1210)
-    close(ars1[0][2]!.amounts!.total, 1210 * 1400)
-    close(ars1[0][2]!.amounts!.vat, 210 * 1400)
+    close(ars1[0][1]!.real!.amounts!.total, 1_210_000)
+    close(usd[0][1]!.real!.amounts!.total, 1210)
+    close(usd[0][2]!.projected!.amounts!.total, 1210)
+    close(ars1[0][2]!.projected!.amounts!.total, 1210 * 1400)
+    close(ars1[0][2]!.projected!.amounts!.vat, 210 * 1400)
   })
 
   test('14. los totales salen de la misma matriz; en ARS sin TC actual lo proyectado es null (nunca USD × 1)', () => {
@@ -446,8 +458,8 @@ describe('presentación ARS/USD', () => {
     close(totals.excludedNative.ARS, 500_000)
 
     const [noRate] = buildDisplayMatrix([row], axis, 'ARS', null)
-    assert.equal(noRate[2]!.amounts, null)
-    assert.equal(noRate[2]!.incomplete, true)
+    assert.equal(noRate[2]!.projected!.amounts, null)
+    assert.equal(noRate[2]!.projected!.incomplete, true)
     const arsTotals = sumDisplayCells(noRate)
     close(arsTotals.total, 500_000 + 1_210_000) // solo lo real, con su TC histórico
     assert.equal(arsTotals.projected, 0)
@@ -487,6 +499,7 @@ describe('exportación Excel', () => {
       netUsd: 1000, vatUsd: 210, otherUsd: 0, pct: 0,
       cycleLengthMonths: 12, installmentsCount: 1, startMonthKey: '2026-01',
       baseStatus: 'OK', projectionBlocked: false, isOverridden: false,
+      periodInvoiceCount: 1, outOfTermCount: 0, outOfTermItems: [], ambiguousPeriodItems: [], allocationIssues: [], concurrentPeriodsExcluded: 0,
       hasLegacy: true, legacyPendingFields: ['net'],
       override: { ...noOverride(), assetId: A, mode: 'ECONOMIC', netOverride: 1_500_000, growthPercentOverride: 85, legacyConvertedRate: null, legacyConvertedBy: null, updatedAt: '2026-08-01T00:00:00Z' },
       ...overrides,
@@ -498,7 +511,7 @@ describe('exportación Excel', () => {
     const matrix = buildDisplayMatrix([row], axis, currency, projectionRate)
     return loadExport().then(({ buildRenewalProjectionExport }) =>
       buildRenewalProjectionExport({
-        rows: [row], matrix, rowTotals: matrix.map((c) => sumDisplayCells(c)), axis, currency, projectionRate,
+        rows: [row], matrix, rowTotals: matrix.map((c) => sumRowTotals(c)), axis, currency, projectionRate,
         breakdownFields: [], hideAssetPanel: false, horizonEndMonthKey: '2027-12', filenamePrefix: 'proy',
       }),
     )
@@ -506,44 +519,57 @@ describe('exportación Excel', () => {
 
   test('USD: base y meses en USD; la celda con TC 1 va como texto nativo; total marcado incompleto', async () => {
     const xlsx = await build('USD', 1400)
-    const [header, data] = xlsx.rows
+    const [header, data, projectedRow] = xlsx.rows
+    assert.equal(xlsx.rows.length, 3, 'encabezado + fila Real + fila Proyectado')
     assert.equal(xlsx.filename, 'proy-USD-2027-12.xlsx')
-    assert.equal(header[1], 'Neto (USD)')
+    assert.equal(header[1], 'Tipo')
+    assert.equal(header[2], 'Neto (USD)')
+    assert.equal(data[1], 'Real')
+    assert.equal(projectedRow[1], 'Proyectado')
     assert.equal(header[header.length - 2], 'Total (USD)')
     const col = (label: string) => header.indexOf(label)
-    assert.equal(data[col('Neto (USD)')], 1000)
-    assert.equal(data[col('Total (USD)')], 1210)
-    assert.equal(data[col('% renov. (USD)')], 0)
-    assert.equal(data[col('% anterior (hist.)')], 85)
+    for (const r of [data, projectedRow]) {
+      assert.equal(r[col('Neto (USD)')], 1000)
+      assert.equal(r[col('Total (USD)')], 1210)
+      assert.equal(r[col('% renov. (USD)')], 0)
+      assert.equal(r[col('% anterior (hist.)')], 85)
+      assert.match(String(r[header.length - 1]), /Valores anteriores en ARS sin convertir \(no aplicados\): Neto AR\$/)
+    }
+    // Fila Real: lo real (con su TC histórico) y nada proyectado.
     assert.match(String(data[col('2025-06')]), /^AR\$ .*\(sin TC\)$/)
     close(data[col('2026-01')] as number, 1210)
-    close(data[col('2027-01')] as number, 1210)
-    close(data[header.length - 2] as number, 2420)
-    const obs = String(data[header.length - 1])
-    assert.match(obs, /^TOTAL INCOMPLETO — excluye AR\$/)
-    assert.match(obs, /Valores anteriores en ARS sin convertir \(no aplicados\): Neto AR\$/)
+    assert.equal(data[col('2027-01')], 0)
+    close(data[header.length - 2] as number, 1210)
+    assert.match(String(data[header.length - 1]), /^TOTAL INCOMPLETO — excluye AR\$/)
+    // Fila Proyectado: solo lo proyectado.
+    assert.equal(projectedRow[col('2025-06')], 0)
+    assert.equal(projectedRow[col('2026-01')], 0)
+    close(projectedRow[col('2027-01')] as number, 1210)
+    close(projectedRow[header.length - 2] as number, 1210)
+    assert.doesNotMatch(String(projectedRow[header.length - 1]), /TOTAL INCOMPLETO/)
     // Las columnas de texto no se declaran numéricas.
     assert.ok(!xlsx.options.numericColumnIndexes!.includes(header.length - 1))
+    assert.ok(!xlsx.options.numericColumnIndexes!.includes(1))
   })
 
   test('ARS con TC manual: real a TC histórico, proyectado al TC ingresado, y el TC queda en el encabezado', async () => {
     const xlsx = await build('ARS', 1400)
-    const [header, data] = xlsx.rows
+    const [header, data, projectedRow] = xlsx.rows
     assert.equal(xlsx.filename, 'proy-ARS-2027-12.xlsx')
     assert.equal(data[header.indexOf('Neto (ARS)')], 1_400_000)
     close(data[header.indexOf('2025-06')] as number, 500_000)
     close(data[header.indexOf('2026-01')] as number, 1_210_000)
-    close(data[header.indexOf('2027-01')] as number, 1210 * 1400)
+    close(projectedRow[header.indexOf('2027-01')] as number, 1210 * 1400)
     assert.match(String(header[header.length - 2]), /^Total \(ARS · proy\. TC manual AR\$ 1\.400/)
   })
 
   test('ARS sin TC manual: base vacía y proyectado "Sin TC", nunca USD × 1', async () => {
     const xlsx = await build('ARS', null)
-    const [header, data] = xlsx.rows
+    const [header, data, projectedRow] = xlsx.rows
     assert.equal(data[header.indexOf('Neto (ARS)')], null)
-    assert.equal(data[header.indexOf('2027-01')], 'Sin TC')
+    assert.equal(projectedRow[header.indexOf('2027-01')], 'Sin TC')
     close(data[header.indexOf('2026-01')] as number, 1_210_000)
-    assert.match(String(data[header.length - 1]), /TOTAL INCOMPLETO.*proyectado en ARS sin TC/)
+    assert.match(String(projectedRow[header.length - 1]), /TOTAL INCOMPLETO.*proyectado en ARS sin TC/)
     assert.equal(header[header.length - 2], 'Total (ARS)')
   })
 })
@@ -579,17 +605,17 @@ describe('TC manual (ARS por USD) para ver lo proyectado en ARS', () => {
     for (const rate of [parseManualRate('1500'), parseManualRate('0.5'), parseManualRate('abc')]) {
       assert.deepEqual(buildDisplayMatrix([r], axis, 'USD', rate), base)
     }
-    close(base[0][1]!.amounts!.total, 1210)
+    close(base[0][1]!.projected!.amounts!.total, 1210)
   })
 
   test('ARS: lo proyectado es base USD × TC ingresado; lo real usa su ARS registrado aunque cambie el TC', () => {
     const r = row()
     for (const rate of [1500, 2000]) {
       const [cells] = buildDisplayMatrix([r], axis, 'ARS', rate)
-      close(cells[0]!.amounts!.total, 1_210_000) // real: no se recalcula
-      close(cells[1]!.amounts!.total, 1210 * rate)
-      close(cells[1]!.amounts!.net, 1000 * rate)
-      close(cells[1]!.amounts!.vat, 210 * rate)
+      close(cells[0]!.real!.amounts!.total, 1_210_000) // real: no se recalcula
+      close(cells[1]!.projected!.amounts!.total, 1210 * rate)
+      close(cells[1]!.projected!.amounts!.net, 1000 * rate)
+      close(cells[1]!.projected!.amounts!.vat, 210 * rate)
       const totals = sumDisplayCells(cells)
       close(totals.total, 1_210_000 + 1210 * rate)
       close(totals.projected, 1210 * rate)
@@ -597,8 +623,8 @@ describe('TC manual (ARS por USD) para ver lo proyectado en ARS', () => {
     }
     // Sin TC válido: el futuro en ARS no tiene importe (se muestra «Sin TC»).
     const [noRate] = buildDisplayMatrix([r], axis, 'ARS', parseManualRate('-3'))
-    assert.equal(noRate[1]!.amounts, null)
-    assert.equal(noRate[1]!.incomplete, true)
-    close(noRate[0]!.amounts!.total, 1_210_000)
+    assert.equal(noRate[1]!.projected!.amounts, null)
+    assert.equal(noRate[1]!.projected!.incomplete, true)
+    close(noRate[0]!.real!.amounts!.total, 1_210_000)
   })
 })

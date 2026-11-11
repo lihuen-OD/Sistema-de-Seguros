@@ -1,5 +1,5 @@
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
-import type { NativeAmounts } from '../../../shared/utils/renewalProjectionCalc'
+import type { AllocationInconsistency, NativeAmounts, RenewalTraceItem } from '../../../shared/utils/renewalProjectionCalc'
 
 // Formatos compartidos por la tabla, el layout y el Excel de las
 // proyecciones — en un archivo propio (no en un componente) para no romper
@@ -26,4 +26,34 @@ export function formatNativeAmountsCompact(n: NativeAmounts): string {
   if (n.ARS !== 0) parts.push(formatCurrencyCompact(n.ARS, 'ARS'))
   if (n.USD !== 0) parts.push(formatCurrencyCompact(n.USD, 'USD'))
   return parts.join(' + ')
+}
+
+function dayLabel(date: string): string {
+  const [y, m, d] = date.slice(0, 10).split('-')
+  return `${d}/${m}/${y}`
+}
+
+const TRACE_KIND_LABELS: Record<RenewalTraceItem['kind'], string> = {
+  cuota: 'cuota vence',
+  'emisión': 'emitido',
+  factura: 'emitida',
+}
+
+/** Comprobantes detrás de un aviso, ej. "N-0101 · cuota vence 31/08/2027; FAC-9 · emitida 15/10/2026". */
+export function formatTraceItems(items: RenewalTraceItem[]): string {
+  return items.map((i) => `${i.documentNumber} · ${TRACE_KIND_LABELS[i.kind]} ${dayLabel(i.date)}`).join('; ')
+}
+
+function percentLabel(value: number): string {
+  return `${value.toLocaleString('es-AR', { maximumFractionDigits: 2 })} %`
+}
+
+/** Asignaciones donde el % guardado no corresponde al importe asignado. */
+export function formatAllocationIssues(issues: AllocationInconsistency[]): string {
+  return issues
+    .map(
+      (i) =>
+        `${i.documentNumber}: ${percentLabel(i.storedPercentage)} guardado vs ${percentLabel(i.impliedPercentage)} según el importe asignado (${formatCurrencyFull(i.allocatedAmount, i.currency)} de ${formatCurrencyFull(i.documentTotal, i.currency)})`,
+    )
+    .join('; ')
 }

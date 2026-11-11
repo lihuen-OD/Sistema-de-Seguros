@@ -2,13 +2,17 @@ import { AlertTriangle, History, RotateCcw } from 'lucide-react'
 import { formatCurrencyCompact, formatCurrencyFull, formatCurrencyInteger } from '../../../shared/utils/format'
 import {
   baseTotalUsd,
+  cellParts,
   hasExcludedNative,
   usdIn,
+  type AllocationInconsistency,
   type DisplayCell,
-  type DisplayTotals,
+  type DisplayCellPart,
+  type RowTotals,
   type LegacyAmountField,
   type NativeAmounts,
   type RenewalBaseStatus,
+  type RenewalTraceItem,
   type RowProjectionInputs,
 } from '../../../shared/utils/renewalProjectionCalc'
 import type { RenewalProjectionOverride } from '../../../shared/api/renewal-projections.api'
@@ -16,7 +20,7 @@ import type { Currency } from '../../../shared/types'
 import type { RenewalOverrideField } from './useRenewalProjectionData'
 import type { BreakdownFieldKey } from './RenewalFieldSelectorPopover'
 import { BREAKDOWN_FIELD_DEFS } from './RenewalFieldSelectorPopover'
-import { monthLabel, formatNativeAmounts, formatNativeAmountsCompact } from './renewalProjectionFormat'
+import { monthLabel, formatAllocationIssues, formatNativeAmounts, formatNativeAmountsCompact, formatTraceItems } from './renewalProjectionFormat'
 
 export interface AssetRowData extends RowProjectionInputs {
   assetId: string
@@ -32,8 +36,14 @@ export interface AssetRowData extends RowProjectionInputs {
   projectionBlocked: boolean
   /** Facturas que forman el último período de cobertura. */
   periodInvoiceCount: number
-  /** Cuotas/emisiones fuera de la vigencia del período (se proyectan igual, sin perder importe). */
+  /** Cuotas/emisiones del último período fuera de su vigencia (= outOfTermItems.length). */
   outOfTermCount: number
+  /** Cuáles (comprobante + fecha): las renovaciones proyectadas repiten esas fechas tal cual. */
+  outOfTermItems: RenewalTraceItem[]
+  /** Facturas del último período cuyo período no se pudo determinar sin ambigüedad. */
+  ambiguousPeriodItems: RenewalTraceItem[]
+  /** Asignaciones del activo cuyo % no corresponde al importe asignado (se informan, no se corrigen). */
+  allocationIssues: AllocationInconsistency[]
   /** Coberturas concurrentes con otro plazo que no se suman a la base. */
   concurrentPeriodsExcluded: number
   /** Tiene configuración vigente que "Volver al automático" puede limpiar. */
@@ -49,7 +59,7 @@ interface RenewalProjectionTableProps {
   rows: AssetRowData[]
   /** matrix[fila][mes] — misma fuente que KPIs y Excel. */
   matrix: (DisplayCell | null)[][]
-  rowTotals: DisplayTotals[]
+  rowTotals: RowTotals[]
   axis: string[]
   /** Mes actual: desde acá (inclusive) las columnas se marcan como zona de proyección. */
   projectionFromMonthKey: string
@@ -86,12 +96,27 @@ function docColumns(showInstallmentsColumn: boolean) {
   ] as const
 }
 
-function fieldValue(cell: DisplayCell, key: BreakdownFieldKey): number | null {
-  if (!cell.amounts) return null
-  if (key === 'net') return cell.amounts.net
-  if (key === 'vat') return cell.amounts.vat
-  if (key === 'other') return cell.amounts.other
-  return cell.amounts.total
+function fieldValue(part: DisplayCellPart, key: BreakdownFieldKey): number | null {
+  if (!part.amounts) return null
+  if (key === 'net') return part.amounts.net
+  if (key === 'vat') return part.amounts.vat
+  if (key === 'other') return part.amounts.other
+  return part.amounts.total
+}
+
+const PART_LABEL = { real: 'Real', projected: 'Proyectado' } as const
+
+/** Tooltip de un mes con lo real y lo proyectado a la vez. */
+function mixedCellTitle(cell: DisplayCell, currency: Currency): string {
+  const describe = (part: DisplayCellPart | null, label: string) =>
+    !part ? null : `${label}: ${part.amounts ? formatCurrencyFull(part.amounts.total, currency) : part.isReal ? `${formatNativeAmounts(part.excludedNative)} sin TC` : 'Sin TC'}`
+  return [
+    'Mes con importes reales y proyectados — se muestran y suman por separado',
+    describe(cell.real, PART_LABEL.real),
+    describe(cell.projected, PART_LABEL.projected),
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 // Las columnas del panel miden 104px: hasta ~13 caracteres ("AR$ 3.000.000")
@@ -144,8 +169,8 @@ function IncompleteMark({ title }: { title: string }) {
   )
 }
 
-/** Celda sin importe expresable en la moneda elegida: lo real se ve en su moneda nativa, lo proyectado en ARS sin TC manual como «Sin TC». */
-function UnconvertibleCellContent({ cell }: { cell: DisplayCell }) {
+/** Parte sin importe expresable en la moneda elegida: lo real se ve en su moneda nativa, lo proyectado en ARS sin TC manual como «Sin TC». */
+function UnconvertibleCellContent({ cell }: { cell: DisplayCellPart }) {
   if (cell.isReal) {
     const title = `Sin tipo de cambio histórico confiable — se muestra en su moneda original (${formatNativeAmounts(cell.excludedNative)}) y no se suma a los totales`
     return (
@@ -263,14 +288,15 @@ export function RenewalProjectionTable({
         <tbody>
           {rows.map((row, rowIndex) => {
             const cells = matrix[rowIndex] ?? []
-            const totals = rowTotals[rowIndex]
+            const rowTotal = rowTotals[rowIndex]
+            const totals = rowTotal?.all
             const isEmpty = row.realTimeline.size === 0 && !row.isOverridden && !row.hasLegacy
             const netShown = usdIn(row.netUsd, currency, projectionRate)
             const vatShown = usdIn(row.vatUsd, currency, projectionRate)
             const otherShown = usdIn(row.otherUsd, currency, projectionRate)
             const totalShown = usdIn(baseTotalUsd(row), currency, projectionRate)
             const inputKey = `${row.assetId}-${currency}-${overridesVersion}`
-            const hasProjectedWithoutRate = cells.some((c) => c && !c.isReal && !c.amounts)
+            const hasProjectedWithoutRate = cells.some((c) => c?.projected && !c.projected.amounts)
             const totalsIncompleteTitle = totals ? incompleteTitle(totals.excludedNative, hasProjectedWithoutRate) : ''
             const legacyPct = row.override?.growthPercentOverride ?? null
 
@@ -327,7 +353,7 @@ export function RenewalProjectionTable({
                   <div className="min-w-0">
                     <span className="text-sm font-medium text-slate-800 block truncate" title={row.name}>{row.name}</span>
                     <span className="text-xs text-slate-400 block truncate" title={row.code}>{row.code}</span>
-                    {(row.projectionBlocked || row.hasLegacy || row.outOfTermCount > 0 || row.concurrentPeriodsExcluded > 0) && (
+                    {(row.projectionBlocked || row.hasLegacy || row.outOfTermCount > 0 || row.concurrentPeriodsExcluded > 0 || row.ambiguousPeriodItems.length > 0 || row.allocationIssues.length > 0) && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {row.projectionBlocked && (
                           <span
@@ -341,10 +367,28 @@ export function RenewalProjectionTable({
                         {row.outOfTermCount > 0 && (
                           <span
                             className="inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5 text-amber-800 bg-amber-50 border border-amber-200"
-                            title={`${row.outOfTermCount} cuota${row.outOfTermCount !== 1 ? 's' : ''}/emisión(es) del último período caen fuera de la vigencia de la póliza. Se proyectan igual (sin perder importe), dentro del ciclo — revisá las fechas de los comprobantes.`}
+                            title={`Fuera de la vigencia de su período: ${formatTraceItems(row.outOfTermItems)}. Las renovaciones proyectadas repiten esas fechas tal como están cargadas — revisá los comprobantes.`}
                           >
                             <AlertTriangle size={10} />
                             Fuera de vigencia
+                          </span>
+                        )}
+                        {row.ambiguousPeriodItems.length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5 text-amber-800 bg-amber-50 border border-amber-200"
+                            title={`No se pudo determinar con certeza a qué vigencia corresponde: ${formatTraceItems(row.ambiguousPeriodItems)}. Se tomó la vigencia contractual más cercana (no se abrió una renovación nueva) — revisá la factura y sus cuotas.`}
+                          >
+                            <AlertTriangle size={10} />
+                            Período ambiguo
+                          </span>
+                        )}
+                        {row.allocationIssues.length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5 text-amber-800 bg-amber-50 border border-amber-200"
+                            title={`El % asignado no corresponde al importe asignado: ${formatAllocationIssues(row.allocationIssues)}. Financiero reparte por % y Económico por importe, así que sus bases difieren. No se corrige automáticamente — revisá la distribución del comprobante.`}
+                          >
+                            <AlertTriangle size={10} />
+                            Asignación incoherente
                           </span>
                         )}
                         {row.concurrentPeriodsExcluded > 0 && (
@@ -497,17 +541,24 @@ export function RenewalProjectionTable({
                     return (
                       <td key={monthKey} className={`text-right align-top p-0 ${startsProj ? 'border-l-2 border-dashed border-slate-300' : ''}`}>
                         {cell ? (
-                          <div className="flex justify-end items-center gap-0.5 py-2 px-2.5 whitespace-nowrap">
-                            {cell.amounts ? (
-                              <>
-                                <span className={`text-xs font-medium rounded px-1.5 py-0.5 tabular-nums ${STATUS_PILL_CLASSES[cell.status]}`}>
-                                  {formatCurrencyCompact(cell.amounts.total, currency)}
-                                </span>
-                                {cell.incomplete && <IncompleteMark title={incompleteTitle(cell.excludedNative, false)} />}
-                              </>
-                            ) : (
-                              <UnconvertibleCellContent cell={cell} />
-                            )}
+                          <div
+                            className="flex flex-col items-end gap-0.5 py-2 px-2.5 whitespace-nowrap"
+                            title={cell.real && cell.projected ? mixedCellTitle(cell, currency) : undefined}
+                          >
+                            {cellParts(cell).map((part) => (
+                              <div key={part.isReal ? 'real' : 'projected'} className="flex justify-end items-center gap-0.5">
+                                {part.amounts ? (
+                                  <>
+                                    <span className={`text-xs font-medium rounded px-1.5 py-0.5 tabular-nums ${STATUS_PILL_CLASSES[part.status]}`}>
+                                      {formatCurrencyCompact(part.amounts.total, currency)}
+                                    </span>
+                                    {part.incomplete && <IncompleteMark title={incompleteTitle(part.excludedNative, false)} />}
+                                  </>
+                                ) : (
+                                  <UnconvertibleCellContent cell={part} />
+                                )}
+                              </div>
+                            ))}
                           </div>
                         ) : (
                           <span className="block text-center text-slate-300 text-xs py-2 px-2.5">—</span>
@@ -515,28 +566,40 @@ export function RenewalProjectionTable({
                       </td>
                     )
                   }
-                  return fields.map((f, fi) => {
-                    const value = cell ? fieldValue(cell, f.key) : null
-                    return (
-                      <td
-                        key={`${monthKey}-${f.key}`}
-                        className={`text-right py-2 px-2.5 whitespace-nowrap ${startsProj && fi === 0 ? 'border-l-2 border-dashed border-slate-300' : ''} ${
-                          cell ? (cell.amounts ? STATUS_CELL_BG_CLASSES[cell.status] : 'bg-amber-50/60') : ''
-                        }`}
-                      >
-                        {!cell ? (
-                          <span className="text-slate-300 text-xs">—</span>
-                        ) : value === null ? (
-                          fi === 0 ? <UnconvertibleCellContent cell={cell} /> : <span className="text-amber-600 text-xs">—</span>
-                        ) : (
-                          <span className="tabular-nums">
-                            {formatCurrencyCompact(value, currency)}
-                            {cell.incomplete && <IncompleteMark title={incompleteTitle(cell.excludedNative, false)} />}
-                          </span>
-                        )}
-                      </td>
-                    )
-                  })
+                  const parts = cellParts(cell)
+                  const single = parts.length === 1 ? parts[0] : null
+                  return fields.map((f, fi) => (
+                    <td
+                      key={`${monthKey}-${f.key}`}
+                      className={`text-right py-2 px-2.5 whitespace-nowrap ${startsProj && fi === 0 ? 'border-l-2 border-dashed border-slate-300' : ''} ${
+                        single ? (single.amounts ? STATUS_CELL_BG_CLASSES[single.status] : 'bg-amber-50/60') : ''
+                      }`}
+                      title={cell && parts.length > 1 ? mixedCellTitle(cell, currency) : undefined}
+                    >
+                      {parts.length === 0 ? (
+                        <span className="text-slate-300 text-xs">—</span>
+                      ) : (
+                        <div className="flex flex-col items-end gap-0.5">
+                          {parts.map((part) => {
+                            const value = fieldValue(part, f.key)
+                            const key = part.isReal ? 'real' : 'projected'
+                            if (value === null) {
+                              return fi === 0 ? <UnconvertibleCellContent key={key} cell={part} /> : <span key={key} className="text-amber-600 text-xs">—</span>
+                            }
+                            return (
+                              <span
+                                key={key}
+                                className={`tabular-nums ${parts.length > 1 ? `text-xs font-medium rounded px-1.5 py-0.5 ${STATUS_PILL_CLASSES[part.status]}` : ''}`}
+                              >
+                                {formatCurrencyCompact(value, currency)}
+                                {part.incomplete && <IncompleteMark title={incompleteTitle(part.excludedNative, false)} />}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </td>
+                  ))
                 })}
 
                 {!showBreakdown ? (
@@ -557,12 +620,29 @@ export function RenewalProjectionTable({
                     </div>
                   </td>
                 ) : (
-                  fields.map((f) => (
-                    <td key={`rowtotal-${f.key}`} className="text-right bg-slate-50/80 py-2 px-2.5 whitespace-nowrap">
-                      <span className="tabular-nums">{formatCurrencyCompact(totals ? totals[f.key] : 0, currency)}</span>
-                      {totals?.incomplete && <IncompleteMark title={totalsIncompleteTitle} />}
-                    </td>
-                  ))
+                  fields.map((f) => {
+                    // Real y proyectado en líneas separadas (mismo color que el total sin desglose); nunca un único número mezclado.
+                    const hasReal = !!rowTotal && rowTotal.real.cellCount > 0
+                    const hasProjected = !!rowTotal && rowTotal.projected.cellCount > 0
+                    return (
+                      <td key={`rowtotal-${f.key}`} className="text-right bg-slate-50/80 py-2 px-2.5 whitespace-nowrap">
+                        <div className="flex flex-col items-end gap-px">
+                          {hasReal && (
+                            <span className="tabular-nums text-slate-700" title={`${PART_LABEL.real} — ${f.label}`}>
+                              {formatCurrencyCompact(rowTotal.real[f.key], currency)}
+                            </span>
+                          )}
+                          {hasProjected && (
+                            <span className="tabular-nums text-red-500" title={`${PART_LABEL.projected} — ${f.label}`}>
+                              {formatCurrencyCompact(rowTotal.projected[f.key], currency)}
+                            </span>
+                          )}
+                          {!hasReal && !hasProjected && <span className="text-xs text-slate-300">—</span>}
+                          {totals?.incomplete && <IncompleteMark title={totalsIncompleteTitle} />}
+                        </div>
+                      </td>
+                    )
+                  })
                 )}
               </tr>
             )

@@ -136,7 +136,38 @@ export function RenewalProjectionLayout({
           <strong>
             {warnings.outOfTermAssets.length} activo{warnings.outOfTermAssets.length !== 1 ? 's' : ''} con cuotas o emisiones fuera de la vigencia de la póliza:
           </strong>{' '}
-          {nameList(warnings.outOfTermAssets)}. Se proyectan igual, dentro del ciclo y sin perder importe; revisá las fechas de esos comprobantes.
+          {nameList(warnings.outOfTermAssets)}. Cada renovación proyectada repite esas fechas tal como están cargadas
+          (el detalle de comprobantes y vencimientos está en el aviso «Fuera de vigencia» de cada fila); revisá esos comprobantes.
+        </DataWarning>
+      )}
+
+      {kpis.mixedCells > 0 && (
+        <DataWarning>
+          <strong>
+            {kpis.mixedCells} mes{kpis.mixedCells !== 1 ? 'es' : ''} con importes reales y proyectados a la vez:
+          </strong>{' '}
+          se muestran en la misma celda como dos importes separados (real arriba, proyectado abajo) y se suman por separado
+          en los totales, el KPI y el Excel.
+        </DataWarning>
+      )}
+
+      {warnings.ambiguousPeriodAssets.length > 0 && (
+        <DataWarning>
+          <strong>
+            {warnings.ambiguousPeriodAssets.length} activo{warnings.ambiguousPeriodAssets.length !== 1 ? 's' : ''} con facturas de período ambiguo:
+          </strong>{' '}
+          {nameList(warnings.ambiguousPeriodAssets)}. No se pudo determinar con certeza a qué vigencia corresponden: se tomó la
+          vigencia contractual más cercana, sin abrir una renovación nueva. Revisá las facturas indicadas en cada fila.
+        </DataWarning>
+      )}
+
+      {warnings.allocationIssueAssets.length > 0 && (
+        <DataWarning>
+          <strong>
+            {warnings.allocationIssueAssets.length} activo{warnings.allocationIssueAssets.length !== 1 ? 's' : ''} con asignaciones incoherentes:
+          </strong>{' '}
+          {nameList(warnings.allocationIssueAssets)}. El % asignado no corresponde al importe asignado; Financiero usa el % y
+          Económico el importe, así que sus bases difieren. No se corrige automáticamente: revisá la distribución de esos comprobantes.
         </DataWarning>
       )}
 

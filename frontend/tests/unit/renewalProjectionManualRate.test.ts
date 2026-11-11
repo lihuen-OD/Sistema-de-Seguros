@@ -154,8 +154,8 @@ for (const mode of ['FINANCIAL', 'ECONOMIC'] as const) {
       assert.equal(loaded.projectionRate, null)
       assert.equal(loaded.currency, 'ARS')
       const realMonth = mode === 'FINANCIAL' ? '2026-01' : '2026-01'
-      assert.equal(cellAt(loaded, realMonth)!.amounts!.total, 1_210_000)
-      assert.equal(cellAt(loaded, '2027-01')!.amounts, null)
+      assert.equal(cellAt(loaded, realMonth)!.real!.amounts!.total, 1_210_000)
+      assert.equal(cellAt(loaded, '2027-01')!.projected!.amounts, null)
       assert.equal(loaded.kpis.projectedAvailable, false)
       const callsAfterLoad = totalCalls()
 
@@ -163,19 +163,22 @@ for (const mode of ['FINANCIAL', 'ECONOMIC'] as const) {
       await page.run((s) => s.setManualRateInput('1500'))
       let s = page.get()
       assert.equal(s.projectionRate, 1500)
-      assert.equal(cellAt(s, '2027-01')!.amounts!.total, 1210 * 1500)
-      assert.equal(cellAt(s, realMonth)!.amounts!.total, 1_210_000)
+      assert.equal(cellAt(s, '2027-01')!.projected!.amounts!.total, 1210 * 1500)
+      assert.equal(cellAt(s, realMonth)!.real!.amounts!.total, 1_210_000)
       assert.equal(s.kpis.projectedAvailable, true)
       // KPI y totales de fila salen de la misma matriz que la tabla.
-      const projectedCellsSum = s.matrix[0].reduce((acc, c, i) => (c && !c.isReal && s.axis[i] > s.lastRealMonthKey && c.amounts ? acc + c.amounts.total : acc), 0)
+      const projectedCellsSum = s.matrix[0].reduce((acc, c) => (c?.projected?.amounts ? acc + c.projected.amounts.total : acc), 0)
+      assert.ok(projectedCellsSum > 0)
       assert.equal(s.kpis.projected.total, projectedCellsSum)
-      assert.equal(s.rowTotals[0].total, 1_210_000 + projectedCellsSum)
+      assert.equal(s.rowTotals[0].projected.total, projectedCellsSum)
+      assert.equal(s.rowTotals[0].real.total, 1_210_000)
+      assert.equal(s.rowTotals[0].all.total, 1_210_000 + projectedCellsSum)
 
       // 3. TC inválido, cero o negativo: vuelve a «Sin TC».
       for (const bad of ['0', '-20', 'abc']) {
         await page.run((st) => st.setManualRateInput(bad))
         assert.equal(page.get().projectionRate, null, `"${bad}" debería ser inválido`)
-        assert.equal(cellAt(page.get(), '2027-01')!.amounts, null)
+        assert.equal(cellAt(page.get(), '2027-01')!.projected!.amounts, null)
       }
 
       // 4. Cambiar de moneda mantiene el TC; USD no depende de él.
@@ -183,13 +186,13 @@ for (const mode of ['FINANCIAL', 'ECONOMIC'] as const) {
       await page.run((st) => st.setCurrency('USD'))
       s = page.get()
       assert.equal(s.manualRateInput, '1500')
-      assert.equal(cellAt(s, '2027-01')!.amounts!.total, 1210)
-      assert.equal(cellAt(s, realMonth)!.amounts!.total, 1210)
+      assert.equal(cellAt(s, '2027-01')!.projected!.amounts!.total, 1210)
+      assert.equal(cellAt(s, realMonth)!.real!.amounts!.total, 1210)
       await page.run((st) => st.setManualRateInput('9999'))
-      assert.equal(cellAt(page.get(), '2027-01')!.amounts!.total, 1210)
+      assert.equal(cellAt(page.get(), '2027-01')!.projected!.amounts!.total, 1210)
       await page.run((st) => st.setCurrency('ARS'))
       assert.equal(page.get().manualRateInput, '9999')
-      assert.equal(cellAt(page.get(), '2027-01')!.amounts!.total, 1210 * 9999)
+      assert.equal(cellAt(page.get(), '2027-01')!.projected!.amounts!.total, 1210 * 9999)
 
       // 5. Nada de lo anterior consultó ni escribió.
       assert.equal(totalCalls(), callsAfterLoad, `llamadas inesperadas: ${JSON.stringify(calls)}`)

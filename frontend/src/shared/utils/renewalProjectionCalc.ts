@@ -308,12 +308,15 @@ export function buildAssetRealTimelineByDocument(assetId: string, documents: Doc
 // - Por la póliza de cada asignación al activo (allocation → línea → póliza).
 //   Una factura consolidada aporta a cada activo solo lo que le asignó, en la
 //   póliza de esa asignación — nunca se duplica entre activos ni pólizas.
-// - Dentro de una póliza, por ventana de vigencia: las fechas de una póliza
-//   pueden editarse, así que no se asume que policyId alcanza para un único
-//   período. Ventana k = floor((díasDesdeInicio + ¼·vigencia) / vigencia):
-//   una factura emitida hasta ¼ de vigencia ANTES del inicio (renovación
-//   facturada por adelantado) o en cualquier momento de los primeros ¾ cae
-//   en el período; más tarde, en el siguiente.
+// - Dentro de una póliza, por ventana de vigencia (ventana 0 = la vigencia
+//   contractual de la póliza; ±1, ±2… = las anteriores/siguientes del mismo
+//   largo): las fechas de una póliza pueden editarse, así que no se asume que
+//   policyId alcanza para un único período. Ver assignRenewalWindow: manda la
+//   relación con la póliza (la ventana donde se emitió, o la contractual), y
+//   las cuotas solo desempatan entre candidatas razonables (anticipada /
+//   complementaria / posterior). Si no alcanza para decidir, la factura queda
+//   en la ventana más cercana a la contractual y se informa como ambigua —
+//   nunca se abre un período nuevo "por las dudas".
 // - Ciclo = duración contractual de la póliza (1, 3, 6, 12… meses, sin forzar
 //   12). Solo sin póliza conocida se usa el plazo de la póliza vigente del
 //   activo o, en último caso, 12.
@@ -325,12 +328,36 @@ export function buildAssetRealTimelineByDocument(assetId: string, documents: Doc
 
 export type RenewalBaseStatus = 'OK' | 'NO_HISTORY' | 'UNRELIABLE_FX'
 
+/** Comprobante puntual detrás de un aviso (trazabilidad en tabla, avisos y Excel). */
+export interface RenewalTraceItem {
+  documentNumber: string
+  /** 'YYYY-MM-DD' — vencimiento (cuota), emisión (Económico) o emisión de la factura ambigua. */
+  date: string
+  kind: 'cuota' | 'emisión' | 'factura'
+}
+
 export interface RenewalCycle {
   cycleLengthMonths: number
-  /** posición dentro del ciclo (0..ciclo-1) → fracción de la renovación. Siempre suma 1. */
+  /**
+   * Posición dentro del ciclo (0..ciclo-1) → fracción de la renovación, con
+   * los meses fuera del ciclo plegados. Solo resume el reparto (cantidad de
+   * cuotas de la fila); la proyección usa offsetShare.
+   */
   originalShare: Record<number, number>
+  /**
+   * Meses desde el inicio del período (puede ser < 0 o ≥ ciclo: cuotas
+   * anticipadas o posteriores a la vigencia) → fracción. Siempre suma 1. Cada
+   * renovación futura repite estas fechas tal como están registradas.
+   */
+  offsetShare: Record<number, number>
   /** Mes de inicio del último período de cobertura (ancla de la proyección). */
   lastRenewalStartMonthKey: string
+  /**
+   * Mes de inicio del último período REAL (null sin historial). Ningún período
+   * que empiece en ese mes o antes se vuelve a proyectar: ya tiene su
+   * renovación registrada (aunque el inicio se edite a mano).
+   */
+  realLastRenewalStartMonthKey: string | null
   /**
    * 'UNRELIABLE_FX': alguna factura del último período no tiene un cierre USD
    * confiable — la base queda en null y la fila no se proyecta hasta que se
@@ -342,8 +369,12 @@ export interface RenewalCycle {
   defaultOtherUsd: number | null
   /** Facturas que forman el último período (para auditoría/avisos). */
   periodInvoiceCount: number
-  /** Cuotas (Financiero) o emisiones (Económico) fuera de la vigencia del período — se proyectan igual, sin perder importe. */
+  /** Cuotas (Financiero) o emisiones (Económico) del último período fuera de su vigencia (= outOfTermItems.length). */
   outOfTermCount: number
+  /** Cuáles: comprobante + fecha. Las renovaciones proyectadas repiten esas fechas tal cual. */
+  outOfTermItems: RenewalTraceItem[]
+  /** Facturas del último período cuyo período no se pudo determinar sin ambigüedad (se informan, no se inventa uno nuevo). */
+  ambiguousPeriodItems: RenewalTraceItem[]
   /** Períodos concurrentes con otro plazo que no pudieron sumarse a la base. */
   concurrentPeriodsExcluded: number
 }
@@ -352,6 +383,8 @@ interface RenewalInvoicePart {
   doc: DocumentForFinancial
   /** Porción de la factura que corresponde al activo en esta póliza (Financiero: % de asignación; Económico: allocated/total). */
   assetShare: number
+  /** El período de la factura no se pudo determinar sin ambigüedad. */
+  ambiguous: boolean
 }
 
 interface RenewalPeriod {
@@ -384,15 +417,85 @@ function noHistoryCycle(cycleLengthMonths: number, nowMonthKey: string): Renewal
   return {
     cycleLengthMonths,
     originalShare: { 0: 1 },
+    offsetShare: { 0: 1 },
     lastRenewalStartMonthKey: nowMonthKey,
+    realLastRenewalStartMonthKey: null,
     baseStatus: 'NO_HISTORY',
     defaultNetUsd: 0,
     defaultVatUsd: 0,
     defaultOtherUsd: 0,
     periodInvoiceCount: 0,
     outOfTermCount: 0,
+    outOfTermItems: [],
+    ambiguousPeriodItems: [],
     concurrentPeriodsExcluded: 0,
   }
+}
+
+/**
+ * Ventana de vigencia (dentro de una póliza) a la que corresponde una factura.
+ * Ventana 0 = vigencia contractual; w = [inicio + w·vigencia, inicio + (w+1)·vigencia).
+ *
+ * 1. Candidatas por la relación póliza/período (fecha de emisión):
+ *    - la ventana donde se emitió;
+ *    - emitida antes del inicio contractual (hasta una vigencia antes): también
+ *      la contractual (facturación anticipada);
+ *    - emitida en el último ¼ de su ventana: también la siguiente (anticipo de
+ *      la próxima vigencia o complementaria tardía de la actual);
+ *    - emitida en el primer ¼ de una ventana posterior a la contractual:
+ *      también la anterior (facturación posterior al vencimiento).
+ * 2. Desempate con las cuotas: si más de la mitad del importe de sus cuotas
+ *    vence en UNA de las candidatas, es esa. Las cuotas nunca llevan la factura
+ *    a una ventana que no sea candidata (un vencimiento no siempre pertenece al
+ *    período contractual: plazos de pago, fechas mal cargadas).
+ * 3. Sin desempate posible con más de una candidata: ambigua — se resuelve en
+ *    buildRenewalPeriods con las demás facturas de la póliza (ver
+ *    resolveAmbiguousWindow) y SIEMPRE se informa.
+ */
+type WindowAssignment = { window: number; ambiguous: false } | { window: number; ambiguous: true; candidates: number[] }
+
+function assignRenewalWindow(doc: DocumentForFinancial, pStartDay: number, termDays: number): WindowAssignment {
+  const issue = dayNumber(doc.issueDate)
+  const windowOf = (day: number) => Math.floor((day - pStartDay) / termDays)
+  const own = windowOf(issue)
+  const quarter = termDays / 4
+  const candidates = new Set<number>([own])
+  if (own < 0 && issue >= pStartDay - termDays) candidates.add(0)
+  if (issue >= pStartDay + (own + 1) * termDays - quarter) candidates.add(own + 1)
+  if (own > 0 && issue < pStartDay + own * termDays + quarter) candidates.add(own - 1)
+
+  if (candidates.size > 1 || doc.installments.length > 0) {
+    const weight = new Map<number, number>()
+    let total = 0
+    for (const inst of doc.installments) {
+      const w = Math.abs(inst.amount)
+      if (!Number.isFinite(w) || w === 0) continue
+      const k = windowOf(dayNumber(inst.dueDate))
+      weight.set(k, (weight.get(k) ?? 0) + w)
+      total += w
+    }
+    for (const [k, w] of weight) {
+      if (w > total / 2 && candidates.has(k)) return { window: k, ambiguous: false }
+    }
+  }
+
+  if (candidates.size === 1) return { window: own, ambiguous: false }
+  return { window: own, ambiguous: true, candidates: [...candidates].sort((a, b) => a - b) }
+}
+
+/**
+ * Factura ambigua (más de una vigencia posible y las cuotas no desempatan):
+ * 1. si exactamente una candidata ya tiene facturas inequívocas de la misma
+ *    póliza, esa (no se abre un período que nada más respalda);
+ * 2. si se emitió antes de la vigencia contractual, la contractual
+ *    (facturación anticipada);
+ * 3. si no, la vigencia en la que se emitió.
+ */
+function resolveAmbiguousWindow(own: number, candidates: number[], occupied: Set<number> | undefined): number {
+  const supported = candidates.filter((k) => occupied?.has(k))
+  if (supported.length === 1) return supported[0]
+  if (own < 0 && candidates.includes(0)) return 0
+  return own
 }
 
 /**
@@ -409,17 +512,42 @@ function buildRenewalPeriods(
   const policyById = new Map(policies.map((p) => [p.id, p]))
   const periods = new Map<string, RenewalPeriod>()
 
+  // 1ª pasada: ventana de cada (factura, póliza); las inequívocas marcan qué
+  // vigencias de cada póliza están respaldadas por facturas.
+  const pending: { doc: DocumentForFinancial; policyId: string | null; assetShare: number; assignment: WindowAssignment | null }[] = []
+  const occupiedByPolicy = new Map<string, Set<number>>()
   for (const doc of renewalDocs) {
     for (const [policyId, assetShare] of shareByPolicy(doc)) {
       if (assetShare === 0) continue
       const policy = policyId ? policyById.get(policyId) : undefined
       const pStart = policy?.startDate?.slice(0, 10)
       const pEnd = policy?.endDate?.slice(0, 10)
+      const assignment = policy && pStart && pEnd && dayNumber(pEnd) > dayNumber(pStart)
+        ? assignRenewalWindow(doc, dayNumber(pStart), dayNumber(pEnd) - dayNumber(pStart))
+        : null
+      if (policy && assignment && !assignment.ambiguous) {
+        const set = occupiedByPolicy.get(policy.id) ?? new Set<number>()
+        set.add(assignment.window)
+        occupiedByPolicy.set(policy.id, set)
+      }
+      pending.push({ doc, policyId, assetShare, assignment })
+    }
+  }
+
+  // 2ª pasada: arma los períodos (resolviendo las ambiguas con lo anterior).
+  for (const { doc, policyId, assetShare, assignment } of pending) {
+    {
+      const policy = policyId ? policyById.get(policyId) : undefined
+      const pStart = policy?.startDate?.slice(0, 10)
+      const pEnd = policy?.endDate?.slice(0, 10)
       let key: string
       let period: Omit<RenewalPeriod, 'parts'>
-      if (policy && pStart && pEnd && dayNumber(pEnd) > dayNumber(pStart)) {
+      const ambiguous = assignment?.ambiguous ?? false
+      if (policy && pStart && pEnd && assignment) {
         const termDays = dayNumber(pEnd) - dayNumber(pStart)
-        const k = Math.floor((dayNumber(doc.issueDate) - dayNumber(pStart) + termDays / 4) / termDays)
+        const k = assignment.ambiguous
+          ? resolveAmbiguousWindow(assignment.window, assignment.candidates, occupiedByPolicy.get(policy.id))
+          : assignment.window
         const startDay = dayNumber(pStart) + k * termDays
         key = `${policy.id}#${k}`
         period = {
@@ -442,7 +570,7 @@ function buildRenewalPeriods(
         }
       }
       const existing = periods.get(key) ?? { ...period, parts: [] }
-      existing.parts.push({ doc, assetShare })
+      existing.parts.push({ doc, assetShare, ambiguous })
       periods.set(key, existing)
     }
   }
@@ -503,42 +631,57 @@ function partWeights(parts: RenewalInvoicePart[]): number[] {
   return parts.map(() => 1)
 }
 
+type RenewalEvent = { date: string; fraction: number; kind: RenewalTraceItem['kind'] }
+
 /**
- * Reparto de la renovación entre posiciones del ciclo, anclado al inicio del
- * último período. `events(doc)` da, por factura, los meses en que impacta
- * (vencimiento de cada cuota, o la emisión) y su fracción dentro de la factura.
- * Las posiciones fuera de 0..ciclo-1 se pliegan (módulo ciclo) en vez de
- * descartarse: ningún importe se pierde. Lo que cae fuera de la vigencia del
- * período se cuenta en outOfTermCount para mostrar el aviso.
+ * Reparto de la renovación en el tiempo, anclado al inicio del último período.
+ * `events(doc)` da, por factura, los meses en que impacta (vencimiento de cada
+ * cuota, o la emisión) y su fracción dentro de la factura. offsetShare guarda
+ * cada fracción en su mes real relativo al inicio — también los anteriores o
+ * posteriores a la vigencia — para que cada renovación futura las repita en
+ * su lugar (sin plegarlas al ciclo, sin perderlas ni duplicarlas). Lo que cae
+ * fuera de la vigencia del período se lista en outOfTermItems.
  */
 function distributeOverCycle(
   group: RenewalPeriod[],
   anchorMonthKey: string,
   cycleLengthMonths: number,
-  events: (doc: DocumentForFinancial) => { date: string; fraction: number }[],
-): { originalShare: Record<number, number>; outOfTermCount: number } {
+  events: (doc: DocumentForFinancial) => RenewalEvent[],
+): { originalShare: Record<number, number>; offsetShare: Record<number, number>; outOfTermItems: RenewalTraceItem[] } {
   const entries = group.flatMap((period) => period.parts.map((part) => ({ part, period })))
   const weights = partWeights(entries.map((e) => e.part))
   const totalWeight = weights.reduce((a, b) => a + b, 0)
   const raw: Record<number, number> = {}
-  let outOfTermCount = 0
+  const outOfTermItems: RenewalTraceItem[] = []
 
   entries.forEach(({ part, period }, idx) => {
     const partShare = totalWeight !== 0 ? weights[idx] / totalWeight : 1 / entries.length
-    for (const { date, fraction } of events(part.doc)) {
+    for (const { date, fraction, kind } of events(part.doc)) {
       const day = dayNumber(date)
-      if (day < dayNumber(period.startDate) || day > dayNumber(period.endDate)) outOfTermCount += 1
-      const pos = ((monthsBetweenKeys(anchorMonthKey, monthKeyOf(date)) % cycleLengthMonths) + cycleLengthMonths) % cycleLengthMonths
-      raw[pos] = (raw[pos] ?? 0) + partShare * fraction
+      if (day < dayNumber(period.startDate) || day > dayNumber(period.endDate)) {
+        outOfTermItems.push({ documentNumber: part.doc.documentNumber, date: date.slice(0, 10), kind })
+      }
+      const offset = monthsBetweenKeys(anchorMonthKey, monthKeyOf(date))
+      raw[offset] = (raw[offset] ?? 0) + partShare * fraction
     }
   })
 
-  // Normaliza para que el ciclo sume exactamente 1 (redondeos / pesos negativos de ajustes).
+  // Normaliza para que la renovación sume exactamente 1 (redondeos / pesos negativos de ajustes).
   const sum = Object.values(raw).reduce((a, b) => a + b, 0)
-  const originalShare: Record<number, number> = {}
-  if (sum > 0) for (const [k, v] of Object.entries(raw)) originalShare[Number(k)] = v / sum
-  else originalShare[0] = 1
-  return { originalShare, outOfTermCount }
+  const offsetShare: Record<number, number> = {}
+  if (sum > 0) for (const [k, v] of Object.entries(raw)) offsetShare[Number(k)] = v / sum
+  else offsetShare[0] = 1
+  return { originalShare: foldShares(offsetShare, cycleLengthMonths), offsetShare, outOfTermItems }
+}
+
+/** Resumen por posición del ciclo (0..ciclo-1) de un reparto por mes — solo para contar cuotas. */
+function foldShares(offsetShare: Record<number, number>, cycleLengthMonths: number): Record<number, number> {
+  const folded: Record<number, number> = {}
+  for (const [k, v] of Object.entries(offsetShare)) {
+    const pos = ((Number(k) % cycleLengthMonths) + cycleLengthMonths) % cycleLengthMonths
+    folded[pos] = (folded[pos] ?? 0) + v
+  }
+  return folded
 }
 
 function detectRenewalCycle(
@@ -548,7 +691,7 @@ function detectRenewalCycle(
   nowMonthKey: string,
   isRenewalDoc: (doc: DocumentForFinancial) => boolean,
   shareByPolicy: (doc: DocumentForFinancial) => Map<string | null, number>,
-  events: (doc: DocumentForFinancial) => { date: string; fraction: number }[],
+  events: (doc: DocumentForFinancial) => RenewalEvent[],
 ): RenewalCycle {
   const fallbackCycleLength = fallbackCycleLengthFor(assetId, policies)
   const renewalDocs = documents.filter(isRenewalDoc)
@@ -558,15 +701,25 @@ function detectRenewalCycle(
   const { last, group, excluded } = selectLastRenewal(periods)
   const anchorMonthKey = monthKeyOf(last.startDate)
   const cycleLengthMonths = Math.max(1, last.termMonths)
-  const { originalShare, outOfTermCount } = distributeOverCycle(group, anchorMonthKey, cycleLengthMonths, events)
+  const { originalShare, offsetShare, outOfTermItems } = distributeOverCycle(group, anchorMonthKey, cycleLengthMonths, events)
+  const ambiguous = new Map<string, RenewalTraceItem>()
+  for (const { parts } of group) {
+    for (const part of parts) {
+      if (part.ambiguous) ambiguous.set(part.doc.id, { documentNumber: part.doc.documentNumber, date: part.doc.issueDate.slice(0, 10), kind: 'factura' })
+    }
+  }
 
   return {
     cycleLengthMonths,
     originalShare,
+    offsetShare,
     lastRenewalStartMonthKey: anchorMonthKey,
+    realLastRenewalStartMonthKey: anchorMonthKey,
     ...usdBaseOfPeriod(group),
     periodInvoiceCount: new Set(group.flatMap((p) => p.parts.map((x) => x.doc.id))).size,
-    outOfTermCount,
+    outOfTermCount: outOfTermItems.length,
+    outOfTermItems,
+    ambiguousPeriodItems: [...ambiguous.values()],
     concurrentPeriodsExcluded: excluded,
   }
 }
@@ -597,7 +750,7 @@ export function detectRenewalCycleByCuota(
     (d) => sharesByPolicy(d, assetId, (a) => a.allocationPercentage / 100),
     (d) => {
       const sum = d.installments.reduce((s, i) => s + i.amount, 0)
-      return d.installments.map((i) => ({ date: i.dueDate, fraction: sum > 0 ? i.amount / sum : 1 / d.installments.length }))
+      return d.installments.map((i) => ({ date: i.dueDate, fraction: sum > 0 ? i.amount / sum : 1 / d.installments.length, kind: 'cuota' as const }))
     },
   )
 }
@@ -617,7 +770,7 @@ export function detectRenewalCycleByDocument(
     nowMonthKey,
     (d) => d.documentType === 'INVOICE' && docAllocatedAmountForAsset(d, assetId) > 0,
     (d) => sharesByPolicy(d, assetId, (a) => (d.totalAmount ? a.allocatedAmount / d.totalAmount : 0)),
-    (d) => [{ date: d.issueDate, fraction: 1 }],
+    (d) => [{ date: d.issueDate, fraction: 1, kind: 'emisión' as const }],
   )
 }
 
@@ -658,7 +811,8 @@ export function resolveEffectiveCycle(
     originalShare[pos] = (originalShare[pos] ?? 0) + 1 / installmentsCount
   }
 
-  return { ...cycle, cycleLengthMonths, originalShare, lastRenewalStartMonthKey }
+  // Reparto parejo dentro del ciclo editado: reemplaza también las fechas reales (offsetShare).
+  return { ...cycle, cycleLengthMonths, originalShare, offsetShare: { ...originalShare }, lastRenewalStartMonthKey }
 }
 
 // ── Overrides: base USD vigente vs. histórico protegido ─────────────────────
@@ -757,31 +911,23 @@ export function baseTotalUsd(base: { netUsd: number | null; vatUsd: number | nul
   return base.netUsd + (base.vatUsd ?? 0) + (base.otherUsd ?? 0)
 }
 
-// ── Proyección (USD) ──────────────────────────────────────────────────────────
-// La posición de cada mes futuro dentro del ciclo se ancla al inicio de la
-// ÚLTIMA renovación real (lastRenewalStartMonthKey), no al último mes con
-// datos reales — si no, el ciclo queda desfasado apenas esa renovación no
-// facturó cuotas hasta el borde exacto del ciclo (ej. ciclo anual facturado
-// en 3 cuotas en los meses 0/4/8: la última cuota real cae 4 meses antes del
-// borde de los 12, y anclar contra "el último mes real" correría la fase).
-// Crecimiento compuesto por CICLO: total × (1 + pct/100)^nºCiclo — con 0 % la
-// misma base USD se repite en cada renovación.
-
-/**
- * Mes desde el que se proyecta UNA fila: el siguiente a su propio último mes
- * real (nunca se superpone con lo real de esa fila) y nunca antes del mes
- * actual (no se "proyecta" el pasado). Es individual por activo: un
- * vencimiento anómalo muy a futuro de un activo ya no corre el inicio de los
- * demás. Ignora meses fuera de rango razonable (datos con fechas absurdas).
- */
-export function projectionStartMonthKey(realTimeline: Map<string, unknown>, nowMonthKey: string = todayMonthKey()): string {
-  let last: string | null = null
-  for (const key of realTimeline.keys()) {
-    if (isReasonableMonthKey(key) && (!last || key > last)) last = key
-  }
-  const afterReal = last ? nextMonthKey(last) : nowMonthKey
-  return afterReal > nowMonthKey ? afterReal : nowMonthKey
-}
+// ── Proyección (USD) por PERÍODO ──────────────────────────────────────────────
+// Cada renovación futura es un período completo: empieza en
+// ancla + k·ciclo y repite el reparto del último período real en sus meses
+// reales (offsetShare), incluidas las cuotas anticipadas o posteriores a la
+// vigencia. Los aportes de todos los períodos se suman por mes. Así:
+// - una cuota real tardía (o con fecha mal cargada) nunca tapa las
+//   renovaciones de los meses anteriores: lo real y lo proyectado conviven en
+//   el mismo mes como partes separadas (ver resolveDisplayCell);
+// - cada período proyectado aporta exactamente su base (× crecimiento), una
+//   sola vez — sin plegar, sin perder ni duplicar importes;
+// - un período que empieza en el mes del último período real o antes nunca se
+//   proyecta: ya tiene su renovación registrada;
+// - no se proyecta nada antes de `fromMonthKey` (el mes actual).
+// Crecimiento compuesto por RENOVACIÓN: base × (1 + pct/100)^n, con n = 1 para
+// la primera renovación posterior a la última real (n = 0 para la primera de
+// un activo sin historial, que arranca en el ancla). Con 0 % la misma base
+// USD se repite en cada renovación.
 
 export interface ProjectedMonthCell {
   monthKey: string
@@ -790,24 +936,44 @@ export interface ProjectedMonthCell {
 
 export function projectAssetRow(
   cycle: RenewalCycle,
-  startMonthKey: string,
+  fromMonthKey: string,
   endMonthKey: string,
   netUsd: number,
   vatUsd: number,
   otherUsd: number,
   growthPercent: number,
 ): ProjectedMonthCell[] {
+  const months = buildMonthRange(fromMonthKey, endMonthKey)
   const effectiveTotal = netUsd + vatUsd + otherUsd
-  return buildMonthRange(startMonthKey, endMonthKey).map((monthKey) => {
-    const offset = monthsBetweenKeys(cycle.lastRenewalStartMonthKey, monthKey)
-    const rawCycleNumber = Math.floor(offset / cycle.cycleLengthMonths)
-    const cycleNumber = Math.min(rawCycleNumber, MAX_CYCLE_NUMBER)
-    const posInCycle = ((offset % cycle.cycleLengthMonths) + cycle.cycleLengthMonths) % cycle.cycleLengthMonths
-    const share = cycle.originalShare[posInCycle] ?? 0
-    const scaledCycleTotal = effectiveTotal * Math.pow(1 + growthPercent / 100, cycleNumber)
-    const raw = scaledCycleTotal * share
-    if (!Number.isFinite(raw)) return { monthKey, amountUsd: 0 }
-    return { monthKey, amountUsd: raw }
+  const offsets = Object.entries(cycle.offsetShare)
+    .map(([k, share]) => [Number(k), share] as const)
+    .filter(([, share]) => Number.isFinite(share) && share !== 0)
+  if (months.length === 0 || offsets.length === 0) return months.map((monthKey) => ({ monthKey, amountUsd: 0 }))
+
+  const length = Math.max(1, cycle.cycleLengthMonths)
+  const anchor = cycle.lastRenewalStartMonthKey
+  const real = cycle.realLastRenewalStartMonthKey
+  // Primer período proyectable: el siguiente al último real (o el del ancla, sin historial).
+  const firstK = real === null ? 0 : Math.floor(monthsBetweenKeys(anchor, real) / length) + 1
+  const exponentOffset = real === null ? 0 : 1
+  const minOffset = Math.min(...offsets.map(([o]) => o))
+  const maxOffset = Math.max(...offsets.map(([o]) => o))
+  const kFrom = Math.max(firstK, Math.ceil((monthsBetweenKeys(anchor, fromMonthKey) - maxOffset) / length))
+  const kTo = Math.floor((monthsBetweenKeys(anchor, endMonthKey) - minOffset) / length)
+
+  const byMonth = new Map<string, number>()
+  for (let k = kFrom; k <= kTo; k++) {
+    const renewalNumber = Math.min(k - firstK + exponentOffset, MAX_CYCLE_NUMBER)
+    const periodTotal = effectiveTotal * Math.pow(1 + growthPercent / 100, renewalNumber)
+    for (const [offset, share] of offsets) {
+      const monthKey = addMonthsToKey(anchor, k * length + offset)
+      if (monthKey < fromMonthKey || monthKey > endMonthKey) continue
+      byMonth.set(monthKey, (byMonth.get(monthKey) ?? 0) + periodTotal * share)
+    }
+  }
+  return months.map((monthKey) => {
+    const raw = byMonth.get(monthKey) ?? 0
+    return { monthKey, amountUsd: Number.isFinite(raw) ? raw : 0 }
   })
 }
 
@@ -873,15 +1039,35 @@ export function usdIn(valueUsd: number | null, currency: Currency, projectionRat
 
 export type MonthCellStatus = 'paid' | 'pending' | 'projected' | 'recognized'
 
-export interface DisplayCell {
+/** Una parte de la celda: lo real o lo proyectado de ese mes (nunca mezclados). */
+export interface DisplayCellPart {
   isReal: boolean
   status: MonthCellStatus
-  /** Importes en la moneda elegida. null = nada de la celda se puede expresar en esa moneda. */
+  /** Importes en la moneda elegida. null = esta parte no se puede expresar en esa moneda. */
   amounts: MoneyBreakdown | null
   /** Importes reales excluidos por no tener un cierre confiable, en su moneda nativa. */
   excludedNative: NativeAmounts
-  /** true si la celda no está completa en la moneda elegida (algo excluido, o proyectada en ARS sin TC). */
+  /** true si la parte no está completa en la moneda elegida (algo excluido, o proyectada en ARS sin TC). */
   incomplete: boolean
+}
+
+/**
+ * Un mes de una fila. Puede tener lo real, lo proyectado, o ambos (una cuota
+ * real tardía en el mismo mes que una renovación proyectada): las dos partes
+ * se muestran, suman y exportan por separado — nunca se fusionan.
+ */
+export interface DisplayCell {
+  real: DisplayCellPart | null
+  projected: DisplayCellPart | null
+}
+
+/** Las partes presentes de una celda, real primero. */
+export function cellParts(cell: DisplayCell | null): DisplayCellPart[] {
+  if (!cell) return []
+  const parts: DisplayCellPart[] = []
+  if (cell.real) parts.push(cell.real)
+  if (cell.projected) parts.push(cell.projected)
+  return parts
 }
 
 export interface RowProjectionInputs {
@@ -897,30 +1083,25 @@ function otherCurrency(c: Currency): Currency {
   return c === 'ARS' ? 'USD' : 'ARS'
 }
 
-export function resolveDisplayCell(
-  row: RowProjectionInputs,
-  monthKey: string,
-  currency: Currency,
-  projectionRate: number | null,
-): DisplayCell | null {
-  const real = row.realTimeline.get(monthKey)
-  if (real) {
-    const cell = real.byCurrency[currency]
-    const hasExcluded = cell.excludedCount > 0
-    if (cell.total <= 0 && !hasExcluded) return null
-    // Si nada de la celda se pudo convertir, el estado de cobro sale de la
-    // otra moneda (la nativa), que sí tiene los importes.
-    const statusSource = cell.total > 0 ? cell : real.byCurrency[otherCurrency(currency)]
-    const status: MonthCellStatus = !real.hasPaymentStatus ? 'recognized' : statusSource.pending > 0 ? 'pending' : 'paid'
-    return {
-      isReal: true,
-      status,
-      amounts: cell.total > 0 ? { total: cell.total, net: cell.net, vat: cell.vat, other: cell.other } : null,
-      excludedNative: { ...cell.excludedNative },
-      incomplete: hasExcluded,
-    }
+function resolveRealPart(real: RealMonthCell | undefined, currency: Currency): DisplayCellPart | null {
+  if (!real) return null
+  const cell = real.byCurrency[currency]
+  const hasExcluded = cell.excludedCount > 0
+  if (cell.total <= 0 && !hasExcluded) return null
+  // Si nada de la celda se pudo convertir, el estado de cobro sale de la
+  // otra moneda (la nativa), que sí tiene los importes.
+  const statusSource = cell.total > 0 ? cell : real.byCurrency[otherCurrency(currency)]
+  const status: MonthCellStatus = !real.hasPaymentStatus ? 'recognized' : statusSource.pending > 0 ? 'pending' : 'paid'
+  return {
+    isReal: true,
+    status,
+    amounts: cell.total > 0 ? { total: cell.total, net: cell.net, vat: cell.vat, other: cell.other } : null,
+    excludedNative: { ...cell.excludedNative },
+    incomplete: hasExcluded,
   }
+}
 
+function resolveProjectedPart(row: RowProjectionInputs, monthKey: string, currency: Currency, projectionRate: number | null): DisplayCellPart | null {
   const projected = row.projectedByMonth.get(monthKey)
   if (!projected || !Number.isFinite(projected.amountUsd) || projected.amountUsd <= 0) return null
   const total = usdIn(projected.amountUsd, currency, projectionRate)
@@ -932,6 +1113,17 @@ export function resolveDisplayCell(
     excludedNative: emptyNativeAmounts(),
     incomplete: total === null,
   }
+}
+
+export function resolveDisplayCell(
+  row: RowProjectionInputs,
+  monthKey: string,
+  currency: Currency,
+  projectionRate: number | null,
+): DisplayCell | null {
+  const real = resolveRealPart(row.realTimeline.get(monthKey), currency)
+  const projected = resolveProjectedPart(row, monthKey, currency, projectionRate)
+  return real || projected ? { real, projected } : null
 }
 
 export function buildDisplayMatrix(
@@ -956,11 +1148,19 @@ export interface DisplayTotals extends MoneyBreakdown {
   projected: number
   excludedNative: NativeAmounts
   incomplete: boolean
-  /** Cantidad de celdas no vacías sumadas. */
+  /** Cantidad de partes (real/proyectada) no vacías sumadas. */
   cellCount: number
 }
 
-export function sumDisplayCells(cells: Iterable<DisplayCell | null>): DisplayTotals {
+export type DisplayPartKind = 'real' | 'projected'
+
+/**
+ * Suma las partes de las celdas. Sin `kind`: real + proyectado (cada uno en
+ * su propio campo: paid/pending/recognized vs projected). Con `kind`: solo
+ * esa parte — así el KPI, el total proyectado y las filas Real/Proyectado del
+ * Excel salen de la misma matriz sin mezclarse.
+ */
+export function sumDisplayCells(cells: Iterable<DisplayCell | null>, kind?: DisplayPartKind): DisplayTotals {
   const t: DisplayTotals = {
     total: 0, net: 0, vat: 0, other: 0,
     paid: 0, pending: 0, recognized: 0, projected: 0,
@@ -970,22 +1170,80 @@ export function sumDisplayCells(cells: Iterable<DisplayCell | null>): DisplayTot
   }
   for (const cell of cells) {
     if (!cell) continue
-    t.cellCount += 1
-    t.excludedNative.ARS += cell.excludedNative.ARS
-    t.excludedNative.USD += cell.excludedNative.USD
-    if (cell.incomplete) t.incomplete = true
-    if (!cell.amounts) continue
-    const { total } = cell.amounts
-    if (cell.status === 'paid') t.paid += total
-    else if (cell.status === 'pending') t.pending += total
-    else if (cell.status === 'recognized') t.recognized += total
-    else t.projected += total
-    t.total += total
-    t.net += cell.amounts.net
-    t.vat += cell.amounts.vat
-    t.other += cell.amounts.other
+    const parts = kind === undefined ? cellParts(cell) : [cell[kind]].filter((p): p is DisplayCellPart => p !== null)
+    for (const part of parts) {
+      t.cellCount += 1
+      t.excludedNative.ARS += part.excludedNative.ARS
+      t.excludedNative.USD += part.excludedNative.USD
+      if (part.incomplete) t.incomplete = true
+      if (!part.amounts) continue
+      const { total } = part.amounts
+      if (part.status === 'paid') t.paid += total
+      else if (part.status === 'pending') t.pending += total
+      else if (part.status === 'recognized') t.recognized += total
+      else t.projected += total
+      t.total += total
+      t.net += part.amounts.net
+      t.vat += part.amounts.vat
+      t.other += part.amounts.other
+    }
   }
   return t
+}
+
+/** Totales de una fila: todo junto (cada estado en su campo) y cada parte por separado. */
+export interface RowTotals {
+  all: DisplayTotals
+  real: DisplayTotals
+  projected: DisplayTotals
+}
+
+export function sumRowTotals(cells: (DisplayCell | null)[]): RowTotals {
+  return { all: sumDisplayCells(cells), real: sumDisplayCells(cells, 'real'), projected: sumDisplayCells(cells, 'projected') }
+}
+
+// ── Coherencia de asignaciones (importe vs. %) ───────────────────────────────
+// allocatedAmount es la porción del total del documento asignada a la línea;
+// allocationPercentage se deriva al guardar (importe ÷ total). Financiero
+// reparte por %, Económico por importe (para que las NC negativas compensen):
+// si no se corresponden, las bases de ambos análisis divergen. Solo se
+// detecta y se informa — nunca se corrige un dato histórico. Las NC guardan
+// importe negativo y % positivo (se compara en valor absoluto); la tolerancia
+// cubre los redondeos del % (6 decimales) y de importes en centavos.
+
+export const ALLOCATION_TOLERANCE_PP = 0.5
+
+export interface AllocationInconsistency {
+  documentNumber: string
+  documentType: string
+  currency: Currency
+  allocatedAmount: number
+  documentTotal: number
+  storedPercentage: number
+  impliedPercentage: number
+}
+
+export function inconsistentAllocationsForAsset(assetId: string, documents: DocumentForFinancial[]): AllocationInconsistency[] {
+  const out: AllocationInconsistency[] = []
+  for (const doc of documents) {
+    const total = Math.abs(doc.totalAmount)
+    if (!Number.isFinite(total) || total === 0) continue
+    for (const a of doc.allocations) {
+      if (a.assetId !== assetId) continue
+      const implied = (Math.abs(a.allocatedAmount) / total) * 100
+      if (!Number.isFinite(implied) || Math.abs(implied - Math.abs(a.allocationPercentage)) <= ALLOCATION_TOLERANCE_PP) continue
+      out.push({
+        documentNumber: doc.documentNumber,
+        documentType: doc.documentType,
+        currency: doc.currency,
+        allocatedAmount: a.allocatedAmount,
+        documentTotal: doc.totalAmount,
+        storedPercentage: a.allocationPercentage,
+        impliedPercentage: implied,
+      })
+    }
+  }
+  return out
 }
 
 export function hasExcludedNative(n: NativeAmounts): boolean {
