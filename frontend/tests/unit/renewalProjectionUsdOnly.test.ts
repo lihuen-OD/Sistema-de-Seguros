@@ -12,7 +12,7 @@ import { exchangeRateApi } from '../../src/shared/api/exchange-rate.api'
 import { renewalProjectionsApi, type RenewalProjectionMode } from '../../src/shared/api/renewal-projections.api'
 import { useRenewalProjectionData } from '../../src/modules/insurance/renewal-projections/useRenewalProjectionData'
 import { buildRenewalProjectionExport } from '../../src/modules/insurance/renewal-projections/renewalProjectionExport'
-import { RenewalObservationsPanel } from '../../src/modules/insurance/renewal-projections/RenewalObservationsPanel'
+import { ObservationsPanel } from '../../src/shared/components/feedback/ObservationsPanel'
 import type { Asset, Policy } from '../../src/shared/types'
 
 // Proyecciones SOLO en USD, probado sobre el hook REAL de las dos páginas
@@ -222,7 +222,7 @@ for (const mode of ['FINANCIAL', 'ECONOMIC'] as const) {
       }
 
       // 5. El panel arranca cerrado y resume revisión / informativas.
-      const html = renderToStaticMarkup(createElement(RenewalObservationsPanel, { observations: s.observations }))
+      const html = renderToStaticMarkup(createElement(ObservationsPanel, { observations: s.observations, ariaLabel: 'Observaciones de la proyección' }))
       assert.match(html, /^<details(?![^>]*\bopen\b)/, 'cerrado por defecto')
       assert.match(html, /requiere(n)? revisión/)
       assert.match(html, /F-OLD|MAR 25/)

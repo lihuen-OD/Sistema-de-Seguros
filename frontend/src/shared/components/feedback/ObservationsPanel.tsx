@@ -1,6 +1,6 @@
 import { AlertTriangle, ChevronRight, Info } from 'lucide-react'
-import { Badge } from '../../../shared/components/badges/Badge'
-import type { ObservationCategory, ObservationSeverity } from './renewalObservations'
+import { Badge } from '../badges/Badge'
+import type { ObservationCategory, ObservationSeverity } from '../../utils/observations'
 
 // Panel compacto de observaciones: cerrado ocupa una sola línea con el
 // resumen (cuántas categorías requieren revisión y cuántas son informativas),
@@ -45,7 +45,14 @@ function CategoryItem({ category }: { category: ObservationCategory }) {
   )
 }
 
-export function RenewalObservationsPanel({ observations }: { observations: ObservationCategory[] }) {
+export function ObservationsPanel({
+  observations,
+  ariaLabel = 'Observaciones',
+}: {
+  observations: ObservationCategory[]
+  /** Nombre accesible del panel (ej. «Observaciones de la proyección»). */
+  ariaLabel?: string
+}) {
   if (observations.length === 0) return null
   const review = observations.filter((o) => o.severity === 'review')
   const info = observations.filter((o) => o.severity === 'info')
@@ -57,7 +64,7 @@ export function RenewalObservationsPanel({ observations }: { observations: Obser
   return (
     <details
       className={`group mb-5 rounded-lg border bg-white ${review.length > 0 ? 'border-amber-200' : 'border-slate-200'}`}
-      aria-label="Observaciones de la proyección"
+      aria-label={ariaLabel}
     >
       <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 [&::-webkit-details-marker]:hidden">
         <span className="flex items-center gap-2">

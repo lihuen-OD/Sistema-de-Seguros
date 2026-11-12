@@ -15,7 +15,7 @@ import { RenewalFieldSelectorPopover } from './RenewalFieldSelectorPopover'
 import { RenewalLegacyOverridesModal } from './RenewalLegacyOverridesModal'
 import type { useRenewalProjectionData } from './useRenewalProjectionData'
 import { formatNativeAmounts, PROJECTION_CURRENCY } from './renewalProjectionFormat'
-import { RenewalObservationsPanel } from './RenewalObservationsPanel'
+import { ObservationsPanel } from '../../../shared/components/feedback/ObservationsPanel'
 
 interface LegendItem {
   label: string
@@ -80,7 +80,7 @@ export function RenewalProjectionLayout({
       <FinancialDataWarning result={financialDocsResult} />
 
       {/* Observaciones compactas (cerradas por defecto) — el banner de truncamiento queda aparte, arriba. */}
-      <RenewalObservationsPanel observations={observations} />
+      <ObservationsPanel observations={observations} ariaLabel="Observaciones de la proyección" />
 
       <MetricGrid cols={3} className="mb-6">
         <KpiCard

@@ -1,34 +1,13 @@
 import { formatCurrencyFull } from '../../../shared/utils/format'
 import { emptyNativeAmounts, type DisplayCell, type NativeAmounts } from '../../../shared/utils/renewalProjectionCalc'
 import type { AssetRowData } from './RenewalProjectionTable'
+import type { ObservationCategory, ObservationDetail, ObservationSeverity } from '../../../shared/utils/observations'
 import { formatAllocationIssues, formatExcludedAdjustments, formatNativeAmounts, formatTraceItems, monthLabel } from './renewalProjectionFormat'
 
 // Observaciones de la proyección, agrupadas por categoría para el panel
 // compacto. Solo PRESENTA lo que ya calcularon las filas y la matriz (misma
-// fuente que tabla, KPIs y Excel) — no recalcula ni corrige nada.
-// - 'review': algo en los datos que el usuario tiene que revisar.
-// - 'info': comportamiento esperado que conviene conocer (no es un error).
-
-export type ObservationSeverity = 'review' | 'info'
-
-export interface ObservationDetail {
-  /** Activo afectado (null = observación general, sin activo puntual). */
-  assetName: string | null
-  /** Comprobantes, fechas, meses e importes detrás del aviso. */
-  text: string
-}
-
-export interface ObservationCategory {
-  key: string
-  severity: ObservationSeverity
-  title: string
-  /** Cantidad de casos (activos, celdas o registros según `countUnit`). */
-  count: number
-  countUnit: string
-  /** Qué significa y qué hacer — una sola vez por categoría. */
-  description: string
-  details: ObservationDetail[]
-}
+// fuente que tabla, KPIs y Excel) — no recalcula ni corrige nada. Tipos en
+// shared/utils/observations (compartidos con Presupuestos).
 
 const LEGACY_LABELS = { net: 'Neto', vat: 'IVA', other: 'Otros' } as const
 

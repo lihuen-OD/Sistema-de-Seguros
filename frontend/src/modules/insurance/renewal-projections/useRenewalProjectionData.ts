@@ -8,27 +8,19 @@ import { exchangeRateQueries } from '../../../shared/api/exchange-rate.api'
 import { renewalProjectionsApi, renewalProjectionQueries, renewalProjectionKeys } from '../../../shared/api/renewal-projections.api'
 import type { RenewalProjectionMode, RenewalProjectionOverrideInput } from '../../../shared/api/renewal-projections.api'
 import {
-  buildAssetRealTimelineByCuota,
-  detectRenewalCycleByCuota,
-  buildAssetRealTimelineByDocument,
-  detectRenewalCycleByDocument,
-  resolveEffectiveCycle,
-  autoInstallmentsCount,
-  projectAssetRow,
-  resolveRowBase,
-  convertibleLegacyFields,
-  hasLegacyValues,
-  hasCurrentOverrides,
   buildDisplayMatrix,
   sumDisplayCells,
   sumRowTotals,
-  excludedAdjustmentsForAsset,
   todayMonthKey,
   addMonthsToKey,
-  inconsistentAllocationsForAsset,
   buildMonthRange,
   isReasonableMonthKey,
 } from '../../../shared/utils/renewalProjectionCalc'
+import {
+  buildProjectionAssetInputs,
+  buildRenewalProjectionRows,
+  relevantProjectionAssets,
+} from '../../../shared/utils/renewalProjectionRows'
 import type { LegacyAmountField } from '../../../shared/utils/renewalProjectionCalc'
 import type { AssetRowData } from './RenewalProjectionTable'
 import type { BreakdownFieldKey } from './RenewalFieldSelectorPopover'
@@ -38,14 +30,9 @@ import { PROJECTION_CURRENCY } from './renewalProjectionFormat'
 import { buildRenewalObservations } from './renewalObservations'
 
 // Financiero calcula lo real por cuota (dueDate), Económico por documento
-// (issueDate) — dos números legítimamente distintos para el mismo activo,
-// así que este hook elige el par de funciones correcto según `mode` y nunca
-// mezcla datos ni overrides entre los dos (cada modo tiene su propia fila
-// en AssetRenewalProjectionOverride, ver @@unique([assetId, mode])).
-const BUILDERS = {
-  FINANCIAL: { buildTimeline: buildAssetRealTimelineByCuota, detectCycle: detectRenewalCycleByCuota },
-  ECONOMIC: { buildTimeline: buildAssetRealTimelineByDocument, detectCycle: detectRenewalCycleByDocument },
-} as const
+// (issueDate): el par de funciones correcto según `mode` lo elige
+// shared/utils/renewalProjectionRows (fuente única, también la usa
+// Presupuestos), que nunca mezcla datos ni overrides entre los dos modos.
 
 export type RenewalOverrideField = 'net' | 'vat' | 'other' | 'pct' | 'cycle' | 'installments' | 'start'
 
@@ -63,7 +50,6 @@ const OVERRIDE_KEY_BY_FIELD: Record<RenewalOverrideField, keyof RenewalProjectio
 
 export function useRenewalProjectionData(mode: RenewalProjectionMode) {
   const queryClient = useQueryClient()
-  const { buildTimeline, detectCycle } = BUILDERS[mode]
 
   const [horizonYears, setHorizonYears] = useState<1 | 2 | 3>(2)
   const [customEnd, setCustomEnd] = useState<string | null>(null)
@@ -126,31 +112,15 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
 
   // ─── Activos relevantes (los que alguna vez tuvieron una línea de cobertura) ─
 
-  const relevantAssets = useMemo(() => {
-    const ids = new Set<string>()
-    for (const policy of allPolicies) {
-      for (const coverage of policy.coverages ?? []) {
-        if (coverage.assetId) ids.add(coverage.assetId)
-      }
-    }
-    return allAssets.filter((a) => ids.has(a.id)).sort((a, b) => a.name.localeCompare(b.name, 'es'))
-  }, [allAssets, allPolicies])
+  const relevantAssets = useMemo(() => relevantProjectionAssets(allAssets, allPolicies), [allAssets, allPolicies])
 
   const overridesByAssetId = useMemo(() => new Map(overrides.map((o) => [o.assetId, o])), [overrides])
 
   // ─── Línea de tiempo real + ciclo por activo ─────────────────────────────────
 
   const perAssetData = useMemo(
-    () =>
-      relevantAssets.map((asset) => ({
-        asset,
-        realTimeline: buildTimeline(asset.id, financialDocs),
-        cycle: detectCycle(asset.id, financialDocs, allPolicies),
-        allocationIssues: inconsistentAllocationsForAsset(asset.id, financialDocs),
-        // Solo Financiero (por cuota) excluye cuotas propias de ajustes ya volcados; Económico no excluye nada.
-        excludedAdjustments: mode === 'FINANCIAL' ? excludedAdjustmentsForAsset(asset.id, financialDocs) : [],
-      })),
-    [relevantAssets, financialDocs, allPolicies, buildTimeline, detectCycle, mode],
+    () => buildProjectionAssetInputs(mode, relevantAssets, financialDocs, allPolicies),
+    [relevantAssets, financialDocs, allPolicies, mode],
   )
 
   const today = todayMonthKey()
@@ -187,53 +157,7 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
   // ─── Filas (base USD efectiva + proyección USD) ─────────────────────────────
 
   const rows: AssetRowData[] = useMemo(
-    () =>
-      perAssetData.map(({ asset, realTimeline, cycle, allocationIssues, excludedAdjustments }) => {
-        const override = overridesByAssetId.get(asset.id) ?? null
-        const base = resolveRowBase(cycle, override)
-        // "Cada cuántos meses renueva", "cuántas cuotas" y "en qué mes arranca"
-        // son editables SOLO acá — nunca tocan la póliza/documento real, y
-        // solo afectan los meses proyectados de la fila.
-        const effectiveCycle = resolveEffectiveCycle(
-          cycle,
-          override?.cycleLengthMonthsOverride ?? null,
-          override?.installmentsCountOverride ?? null,
-          override?.startMonthOverride ?? null,
-        )
-        // Sin base USD confiable no se proyecta (ni se inventa una base).
-        // Se proyecta por período desde el mes actual: un mes puede tener lo
-        // real y lo proyectado a la vez (partes separadas en la matriz).
-        const projectedList = base.projectionBlocked
-          ? []
-          : projectAssetRow(effectiveCycle, today, horizonEndMonthKey, base.netUsd ?? 0, base.vatUsd ?? 0, base.otherUsd ?? 0, base.pct)
-        return {
-          assetId: asset.id,
-          name: asset.name,
-          code: `${asset.internalCode} · ${asset.assetType}`,
-          realTimeline,
-          projectedByMonth: new Map(projectedList.map((c) => [c.monthKey, c])),
-          netUsd: base.netUsd,
-          vatUsd: base.vatUsd,
-          otherUsd: base.otherUsd,
-          pct: base.pct,
-          cycleLengthMonths: effectiveCycle.cycleLengthMonths,
-          installmentsCount: autoInstallmentsCount(effectiveCycle),
-          startMonthKey: effectiveCycle.lastRenewalStartMonthKey,
-          baseStatus: cycle.baseStatus,
-          projectionBlocked: base.projectionBlocked,
-          periodInvoiceCount: cycle.periodInvoiceCount,
-          outOfTermCount: cycle.outOfTermCount,
-          outOfTermItems: cycle.outOfTermItems,
-          ambiguousPeriodItems: cycle.ambiguousPeriodItems,
-          allocationIssues,
-          excludedAdjustments,
-          concurrentPeriodsExcluded: cycle.concurrentPeriodsExcluded,
-          isOverridden: hasCurrentOverrides(override),
-          hasLegacy: hasLegacyValues(override),
-          legacyPendingFields: convertibleLegacyFields(override),
-          override,
-        }
-      }),
+    () => buildRenewalProjectionRows(perAssetData, overridesByAssetId, today, horizonEndMonthKey),
     [perAssetData, overridesByAssetId, today, horizonEndMonthKey],
   )
 

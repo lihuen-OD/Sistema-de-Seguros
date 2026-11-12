@@ -4,57 +4,19 @@ import {
   baseTotalUsd,
   cellParts,
   hasExcludedNative,
-  type AllocationInconsistency,
   type DisplayCell,
   type DisplayCellPart,
-  type ExcludedAdjustmentItem,
   type RowTotals,
-  type LegacyAmountField,
   type NativeAmounts,
-  type RenewalBaseStatus,
-  type RenewalTraceItem,
-  type RowProjectionInputs,
 } from '../../../shared/utils/renewalProjectionCalc'
-import type { RenewalProjectionOverride } from '../../../shared/api/renewal-projections.api'
+import type { RenewalProjectionRowData } from '../../../shared/utils/renewalProjectionRows'
 import type { RenewalOverrideField } from './useRenewalProjectionData'
 import type { BreakdownFieldKey } from './RenewalFieldSelectorPopover'
 import { BREAKDOWN_FIELD_DEFS } from './RenewalFieldSelectorPopover'
 import { monthLabel, formatAllocationIssues, formatExcludedAdjustments, formatNativeAmounts, formatNativeAmountsCompact, formatTraceItems, PROJECTION_CURRENCY } from './renewalProjectionFormat'
 
-export interface AssetRowData extends RowProjectionInputs {
-  assetId: string
-  name: string
-  code: string
-  /** % por ciclo sobre la base USD (default 0 %). */
-  pct: number
-  cycleLengthMonths: number
-  installmentsCount: number
-  startMonthKey: string
-  baseStatus: RenewalBaseStatus
-  /** Sin base USD confiable (y sin Neto USD manual): la fila no se proyecta. */
-  projectionBlocked: boolean
-  /** Facturas que forman el último período de cobertura. */
-  periodInvoiceCount: number
-  /** Cuotas/emisiones del último período fuera de su vigencia (= outOfTermItems.length). */
-  outOfTermCount: number
-  /** Cuáles (comprobante + fecha): las renovaciones proyectadas repiten esas fechas tal cual. */
-  outOfTermItems: RenewalTraceItem[]
-  /** Facturas del último período cuyo período no se pudo determinar sin ambigüedad. */
-  ambiguousPeriodItems: RenewalTraceItem[]
-  /** Asignaciones del activo cuyo % no corresponde al importe asignado (se informan, no se corrigen). */
-  allocationIssues: AllocationInconsistency[]
-  /** Ajustes ya volcados en su factura cuyas cuotas propias no se suman (solo Financiero; informativo). */
-  excludedAdjustments: ExcludedAdjustmentItem[]
-  /** Coberturas concurrentes con otro plazo que no se suman a la base. */
-  concurrentPeriodsExcluded: number
-  /** Tiene configuración vigente que "Volver al automático" puede limpiar. */
-  isOverridden: boolean
-  /** Tiene importes ARS / % anteriores (o su trazabilidad) — histórico protegido. */
-  hasLegacy: boolean
-  /** Importes ARS anteriores pendientes de una conversión confirmada. */
-  legacyPendingFields: LegacyAmountField[]
-  override: RenewalProjectionOverride | null
-}
+// Forma única de una fila de proyección (shared/utils/renewalProjectionRows).
+export type AssetRowData = RenewalProjectionRowData
 
 interface RenewalProjectionTableProps {
   rows: AssetRowData[]
