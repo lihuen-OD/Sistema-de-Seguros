@@ -911,6 +911,47 @@ describe('Assets API', () => {
       expect(db.asset.delete).toHaveBeenCalledWith({ where: { id: ASSET_ID } })
     })
 
+    // Preservación del histórico de proyecciones: el cascade de
+    // AssetRenewalProjectionOverride borraría importes ARS / % anteriores y
+    // la trazabilidad de conversión — el borrado físico se rechaza antes.
+    it('returns 409 ASSET_HAS_RENEWAL_PROJECTION_HISTORY and never deletes when the asset has projection overrides', async () => {
+      db.asset.findUnique.mockResolvedValue({
+        id: ASSET_ID,
+        _count: { pledges: 0, renewalProjectionOverrides: 2 },
+        attachments: [{ cloudinaryPublicId: 'asset-file-1' }],
+        insuranceAudits: [],
+      })
+
+      const res = await request(app)
+        .delete(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(409)
+      expect(res.body.error.code).toBe('ASSET_HAS_RENEWAL_PROJECTION_HISTORY')
+      expect(db.asset.delete).not.toHaveBeenCalled()
+      expect(db.$transaction).not.toHaveBeenCalled()
+      // Se rechaza ANTES de tocar Cloudinary — no quedan adjuntos huérfanos.
+      expect(deleteFromCloudinary).not.toHaveBeenCalled()
+    })
+
+    it('counts renewal projection overrides in the pre-delete check and deletes normally when there are none', async () => {
+      db.asset.findUnique.mockResolvedValue({
+        id: ASSET_ID,
+        _count: { pledges: 0, renewalProjectionOverrides: 0 },
+        attachments: [],
+        insuranceAudits: [],
+      })
+      db.asset.delete.mockResolvedValue({ id: ASSET_ID })
+
+      const res = await request(app)
+        .delete(`/api/v1/assets/${ASSET_ID}`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      expect(db.asset.findUnique.mock.calls[0][0].select._count).toEqual({ select: { pledges: true, renewalProjectionOverrides: true } })
+      expect(db.asset.delete).toHaveBeenCalledWith({ where: { id: ASSET_ID } })
+    })
+
     it('returns 403 when a USER without the assets module tries to delete', async () => {
       db.user.findUnique.mockResolvedValueOnce(mockDbUser({ role: 'USER', modules: [] }))
 

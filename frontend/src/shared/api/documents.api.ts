@@ -22,9 +22,18 @@ import type {
   DocumentAuditLog,
 } from '../types'
 
+/** Σ de lo que el documento (NC/ND/Ajuste/Endoso aplicado) ya volcó sobre las cuotas de su factura vinculada. */
+export interface AppliedAdjustmentSummary {
+  count: number
+  ars: number
+  usd: number
+}
+
 export interface DocumentForFinancial extends AccountingDocument {
   installments: Installment[]
   allocations: Pick<DocumentPolicyAllocation, 'id' | 'accountingDocumentId' | 'policyAssetCoverageId' | 'policyId' | 'assetId' | 'allocatedAmount' | 'allocationPercentage'>[]
+  /** Solo en la versión con cuotas del endpoint financiero (null/undefined = desconocido). */
+  appliedAdjustment?: AppliedAdjustmentSummary | null
 }
 
 export interface FinancialDocumentResult {
@@ -148,6 +157,7 @@ function mapDocument(b: BackendDocument): AccountingDocument {
 type BackendFinancialDocument = Omit<BackendDocument, 'allocations'> & {
   installments: BackendInstallment[]
   allocations: BackendAllocation[]
+  appliedAdjustment?: AppliedAdjustmentSummary
 }
 
 function mapFinancialDocument(b: BackendFinancialDocument): DocumentForFinancial {
@@ -175,6 +185,7 @@ function mapFinancialDocument(b: BackendFinancialDocument): DocumentForFinancial
       allocatedAmount: a.allocatedAmount,
       allocationPercentage: a.allocationPercentage,
     })),
+    appliedAdjustment: b.appliedAdjustment ?? null,
   }
 }
 

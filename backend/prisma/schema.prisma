@@ -285,11 +285,33 @@ model AssetRenewalProjectionOverride {
   id                    String   @id @default(uuid())
   assetId               String
   mode                  String
+  // ── LEGADO (solo lectura) ─────────────────────────────────────────────────
+  // Neto/IVA/Otros editados antes de la base USD: están en ARS, convertidos
+  // con el TC del momento (no registrado). La app ya no los escribe (el PUT
+  // los rechaza) ni los borra (reset/convert los preservan) — se muestran
+  // como histórico y solo se trasladan a *Usd si el usuario confirma una
+  // conversión (ver legacyConverted*). Igual el % viejo: pensado para
+  // crecimiento en pesos, no se aplica a la proyección USD.
   netOverride           Float?
   vatOverride           Float?
   otherOverride         Float?
   // Escala 0-100, puede ser negativo (ej. -5 = -5% en cada renovación).
   growthPercentOverride Float?
+  // ── Base USD (vigente) ───────────────────────────────────────────────────
+  // Neto/IVA/Otros de la renovación proyectada, en USD — null = usar el
+  // valor automático (cierre USD histórico de la última factura).
+  netOverrideUsd           Float?
+  vatOverrideUsd           Float?
+  otherOverrideUsd         Float?
+  // % de renovación sobre la base USD (escala 0-100, admite negativos) —
+  // null = 0 %. Independiente de growthPercentOverride (legado).
+  growthPercentUsdOverride Float?
+  // Trazabilidad de la conversión confirmada de net/vat/otherOverride (ARS)
+  // → *Usd: TC actual usado (ARS por USD), cuándo y quién. Se escribe una
+  // sola vez; los importes ARS originales quedan intactos.
+  legacyConvertedRate      Float?
+  legacyConvertedAt        DateTime?
+  legacyConvertedBy        String?
   // Cada cuántos meses se repite la renovación proyectada (ambos modos) y
   // cuántas cuotas iguales la componen (solo tiene sentido en modo cuota —
   // Económico siempre es un pago único por documento, así que este campo

@@ -1,4 +1,5 @@
-import { CalendarClock, Eye, EyeOff, FileSpreadsheet, History, RotateCcw, TrendingUp, AlertTriangle } from 'lucide-react'
+import { useState } from 'react'
+import { CalendarClock, Eye, EyeOff, FileSpreadsheet, History, RotateCcw, TrendingUp } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -7,11 +8,14 @@ import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { FinancialDataWarning } from '../../../shared/components/feedback/FinancialDataWarning'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
-import type { Currency } from '../../../shared/types'
+import { hasExcludedNative } from '../../../shared/utils/renewalProjectionCalc'
 import { RenewalProjectionTable } from './RenewalProjectionTable'
 import { RenewalHorizonPicker } from './RenewalHorizonPicker'
 import { RenewalFieldSelectorPopover } from './RenewalFieldSelectorPopover'
+import { RenewalLegacyOverridesModal } from './RenewalLegacyOverridesModal'
 import type { useRenewalProjectionData } from './useRenewalProjectionData'
+import { formatNativeAmounts, PROJECTION_CURRENCY } from './renewalProjectionFormat'
+import { RenewalObservationsPanel } from './RenewalObservationsPanel'
 
 interface LegendItem {
   label: string
@@ -36,49 +40,55 @@ export function RenewalProjectionLayout({
   showInstallmentsColumn,
   isError,
   financialDocsResult,
-  currency, setCurrency,
   horizonYears, setHorizonYears,
   customEnd, setCustomEnd,
   breakdownFields, toggleBreakdownField,
   hideAssetPanel, setHideAssetPanel,
-  exchangeRate,
   overridesVersion,
   rows,
+  matrix,
+  rowTotals,
   axis,
-  lastRealMonthKey,
+  currentMonthKey,
   maxMonthKey,
   horizonEndMonthKey,
   kpis,
-  projectedDisplay,
+  observations,
+  isConvertingLegacy,
   handleCommitField,
   handleResetRow,
   handleResetAll,
+  handleConvertLegacy,
   handleExportExcel,
-  filteredAbsurdDates,
 }: RenewalProjectionLayoutProps) {
+  const [legacyAssetId, setLegacyAssetId] = useState<string | null>(null)
+  const legacyRow = legacyAssetId ? rows.find((r) => r.assetId === legacyAssetId) ?? null : null
+
   if (isError) return <PageContent><ErrorState /></PageContent>
+
+  const projectedTotals = kpis.projected
+  const projectedIncomplete = projectedTotals.incomplete
+  const projectedLabel = `Proyectado a ${customEnd ? horizonEndMonthKey : `${horizonYears} año${horizonYears > 1 ? 's' : ''}`}`
+  const projectedValue = `${formatCurrencyCompact(projectedTotals.total, PROJECTION_CURRENCY)}${projectedIncomplete ? '*' : ''}`
+  const projectedDescription = projectedIncomplete
+    ? `Incompleto${hasExcludedNative(projectedTotals.excludedNative) ? ` — excluye ${formatNativeAmounts(projectedTotals.excludedNative)}` : ''}`
+    : `${formatCurrencyFull(projectedTotals.total, PROJECTION_CURRENCY)} · base USD`
 
   return (
     <PageContent>
       <PageHeader title={title} subtitle={subtitle} />
       <FinancialDataWarning result={financialDocsResult} />
 
-      {filteredAbsurdDates > 0 && (
-        <div className="mb-4 flex items-start gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg">
-          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-          <span>
-            Se ignoraron {filteredAbsurdDates} registro{filteredAbsurdDates !== 1 ? 's' : ''} con fechas fuera de rango esperado (mayor a {new Date().getFullYear() + 10}). Los datos históricos normales no se afectaron.
-          </span>
-        </div>
-      )}
+      {/* Observaciones compactas (cerradas por defecto) — el banner de truncamiento queda aparte, arriba. */}
+      <RenewalObservationsPanel observations={observations} />
 
       <MetricGrid cols={3} className="mb-6">
         <KpiCard
-          label={`Proyectado a ${customEnd ? horizonEndMonthKey : `${horizonYears} año${horizonYears > 1 ? 's' : ''}`}`}
-          value={formatCurrencyCompact(projectedDisplay, currency)}
-          description={formatCurrencyFull(projectedDisplay, currency)}
+          label={projectedLabel}
+          value={projectedValue}
+          description={projectedDescription}
           icon={TrendingUp}
-          variant="info"
+          variant={projectedIncomplete ? 'warning' : 'info'}
         />
         <KpiCard
           label="Activos con historial real"
@@ -99,30 +109,11 @@ export function RenewalProjectionLayout({
       {/* Controles — separados del header de la tarjeta para que el título nunca se aplaste */}
       <div className="flex flex-wrap items-center gap-4 mb-6">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-500">Moneda</span>
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-            {(['ARS', 'USD'] as Currency[]).map((c) => (
-              <button
-                key={c}
-                onClick={() => setCurrency(c)}
-                className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  currency === c ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="w-px h-5 bg-slate-200 hidden sm:block" />
-
-        <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-slate-500">Proyectar</span>
           <RenewalHorizonPicker
             horizonYears={horizonYears}
             customEndMonthKey={customEnd}
-            lastRealMonthKey={lastRealMonthKey}
+            lastRealMonthKey={currentMonthKey}
             maxMonthKey={maxMonthKey}
             onSelectPreset={(years) => {
               setHorizonYears(years)
@@ -170,13 +161,20 @@ export function RenewalProjectionLayout({
           </div>
         }
       >
-        <div className="flex items-center gap-4 px-5 py-2.5 border-b border-slate-100">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-2.5 border-b border-slate-100">
           {legend.map((item) => (
             <span key={item.label} className="flex items-center gap-1.5 text-xs text-slate-500">
               <span className={`w-2.5 h-2.5 rounded-sm ${item.colorClass}`} />
               {item.label}
             </span>
           ))}
+          <span className="flex items-center gap-1.5 text-xs text-slate-500">
+            <span className="w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-300" />
+            Sin cierre USD confiable (moneda original, no se suma)
+          </span>
+          <span className="text-xs text-slate-400">
+            Importes en USD · Real: cierre USD histórico de cada documento · Proyectado: base USD · * = total incompleto
+          </span>
         </div>
 
         {rows.length === 0 ? (
@@ -186,19 +184,30 @@ export function RenewalProjectionLayout({
         ) : (
           <RenewalProjectionTable
             rows={rows}
+            matrix={matrix}
+            rowTotals={rowTotals}
             axis={axis}
-            lastRealMonthKey={lastRealMonthKey}
-            currency={currency}
-            exchangeRate={exchangeRate}
+            projectionFromMonthKey={currentMonthKey}
             breakdownFields={breakdownFields}
             hideAssetPanel={hideAssetPanel}
             showInstallmentsColumn={showInstallmentsColumn}
             overridesVersion={overridesVersion}
             onCommitField={handleCommitField}
             onResetRow={handleResetRow}
+            onOpenLegacy={setLegacyAssetId}
           />
         )}
       </SectionCard>
+
+      {legacyRow && (
+        <RenewalLegacyOverridesModal
+          row={legacyRow}
+          modeLabel={title}
+          isConverting={isConvertingLegacy}
+          onConfirm={(expectedRate, fields) => handleConvertLegacy(legacyRow.assetId, expectedRate, fields)}
+          onClose={() => setLegacyAssetId(null)}
+        />
+      )}
     </PageContent>
   )
 }

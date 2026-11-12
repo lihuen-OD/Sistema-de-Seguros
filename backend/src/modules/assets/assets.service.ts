@@ -534,9 +534,14 @@ export const assetsService = {
 
   // Elimina el activo por completo (no es soft-delete). AssetPledge usa
   // RESTRICT para preservar su historial, por eso se rechaza antes con un
-  // AppError claro. allocations/valueHistory/statusHistory/attachments/
-  // renewalProjectionOverrides/insuranceAudits (y sus adjuntos) se borran
-  // solos vía onDelete: Cascade; FireExtinguisher.assetId, Claim.assetId y
+  // AppError claro. Mismo criterio para las proyecciones de renovación: si
+  // el activo tiene cualquier fila de AssetRenewalProjectionOverride (en
+  // cualquier modo) se rechaza con 409 — esas filas pueden guardar
+  // información histórica protegida (importes ARS y % anteriores, trazabilidad
+  // de conversión) que el cascade borraría. Una fila solo con configuración
+  // nueva se libera antes con "Volver al automático". allocations/
+  // valueHistory/statusHistory/attachments/insuranceAudits (y sus adjuntos)
+  // se borran solos vía onDelete: Cascade; FireExtinguisher.assetId, Claim.assetId y
   // PolicyAssetCoverage.assetId quedan en null vía onDelete: SetNull — esos
   // matafuegos/siniestros/líneas de póliza NO se borran, solo pierden el
   // vínculo con este activo (ver schema.prisma). Lo único que Postgres no
@@ -547,7 +552,7 @@ export const assetsService = {
       where: { id },
       select: {
         id: true,
-        _count: { select: { pledges: true } },
+        _count: { select: { pledges: true, renewalProjectionOverrides: true } },
         attachments: { select: { cloudinaryPublicId: true } },
         insuranceAudits: { select: { attachments: { select: { cloudinaryPublicId: true } } } },
       },
@@ -558,6 +563,13 @@ export const assetsService = {
         409,
         'No se puede eliminar un activo que tiene historial de prendas.',
         'ASSET_HAS_PLEDGE_HISTORY',
+      )
+    }
+    if (asset._count?.renewalProjectionOverrides > 0) {
+      throw new AppError(
+        409,
+        'No se puede eliminar un activo que tiene configuración o historial de proyección de renovaciones.',
+        'ASSET_HAS_RENEWAL_PROJECTION_HISTORY',
       )
     }
 

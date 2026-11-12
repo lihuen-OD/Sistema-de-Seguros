@@ -127,6 +127,19 @@ const DOCUMENT_FINANCIAL_INCLUDE = {
     orderBy: { installmentNumber: 'asc' as const },
   },
   allocations: { select: FINANCIAL_ALLOCATIONS_SELECT },
+  // Ajustes que este documento (NC/ND/Ajuste/Endoso aplicado) ya volcó sobre
+  // las cuotas de su factura vinculada — solo lectura, para que los análisis
+  // detecten cuotas propias que repiten un ajuste ya reflejado en la factura.
+  installmentAdjustments: { select: { deltaAmountArs: true, deltaAmountUsd: true } },
+}
+
+// Resumen de installmentAdjustments (en vez de las filas): Σ en ambas monedas.
+function summarizeAppliedAdjustments(rows: { deltaAmountArs: number; deltaAmountUsd: number }[] | undefined = []) {
+  return {
+    count: rows.length,
+    ars: rows.reduce((sum, r) => sum + r.deltaAmountArs, 0),
+    usd: rows.reduce((sum, r) => sum + r.deltaAmountUsd, 0),
+  }
 }
 
 // Versión liviana (Fase D4, Performance & RateLimit) — para consumidores que
@@ -270,10 +283,11 @@ async function loadFinancialDocuments(params?: { from?: string; to?: string; inc
     take: FINANCIAL_DOCUMENT_LIMIT + 1,
   })
   const truncated = docs.length > FINANCIAL_DOCUMENT_LIMIT
-  const data = docs.slice(0, FINANCIAL_DOCUMENT_LIMIT).map((doc) => ({
+  const data = docs.slice(0, FINANCIAL_DOCUMENT_LIMIT).map(({ installmentAdjustments, ...doc }) => ({
     ...withTotalAmount(doc),
     installments: doc.installments.map((i) => mapInstallment(i as Record<string, unknown>)),
     allocations: mapFinancialAllocations(doc.allocations),
+    appliedAdjustment: summarizeAppliedAdjustments(installmentAdjustments),
   }))
   return { data, truncated, limit: FINANCIAL_DOCUMENT_LIMIT }
 }

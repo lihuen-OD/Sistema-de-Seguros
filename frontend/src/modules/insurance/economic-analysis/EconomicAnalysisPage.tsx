@@ -14,15 +14,15 @@ import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
 import { DateRangeMonthPicker } from '../../../shared/components/filters/DateRangeMonthPicker'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
-import { getDocumentEconomicEffect } from '../../../shared/utils/documentEconomicEffect'
 import {
   downloadXLSX, printTableAsPDF, generateWeekRange, generateMonthRange,
 } from '../../../shared/utils/export'
 import type { ExportCell } from '../../../shared/utils/export'
 import {
-  getRows, buildEconomicMatrix, pickDocTotal, allocationInCurrency, buildDocumentAllocationContexts,
+  getRows, buildEconomicMatrix, economicDocumentsInRange, computeEconomicKpis, economicMonthlySeries,
   type RowGrouping,
 } from '../../../shared/utils/economicAnalysisCalc'
+import { completeRows, syntheticRowLabel } from '../../../shared/utils/analysisGrouping'
 import { documentQueries } from '../../../shared/api/documents.api'
 import { policyQueries } from '../../../shared/api/policies.api'
 import { assetQueries } from '../../../shared/api/assets.api'
@@ -116,6 +116,13 @@ export default function EconomicAnalysisPage() {
     () => financialDocs.flatMap((d) => d.allocations) as DocumentPolicyAllocation[],
     [financialDocs],
   )
+  // Fuente única del período para KPI, gráficos, tabla y exportes: solo
+  // documentos emitidos dentro del rango (un trimestre o año que cruza el
+  // borde no suma meses de afuera).
+  const periodDocuments = useMemo(
+    () => economicDocumentsInRange(allDocuments, dateFrom, dateTo),
+    [allDocuments, dateFrom, dateTo],
+  )
 
   // ─── Period columns ──────────────────────────────────────────────────────────
 
@@ -161,12 +168,16 @@ export default function EconomicAnalysisPage() {
   // Matrix granularity: only 'semana' uses week keys, everything else uses month keys
   const matrixGranularity: 'week' | 'month' = colPeriod === 'semana' ? 'week' : 'month'
   const { matrix: matrixData, paymentMethods: companyPaymentMatrix } = useMemo(
-    () => buildEconomicMatrix(grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allAllocations),
-    [grouping, currency, matrixGranularity, allPolicies, allAssets, allDocuments, allAllocations],
+    () => buildEconomicMatrix(grouping, currency, matrixGranularity, allPolicies, allAssets, periodDocuments, allAllocations),
+    [grouping, currency, matrixGranularity, allPolicies, allAssets, periodDocuments, allAllocations],
   )
+  // Filas base + las que tienen movimientos y la lista base no muestra
+  // (póliza vencida, «Sin asignar», «Líneas sin activo», …): nada se pierde.
   const rows = useMemo(
-    () => getRows(grouping, allCompanies, allCostCenters, allAssets, allPolicies),
-    [grouping, allCompanies, allCostCenters, allAssets, allPolicies],
+    () => completeRows(grouping, getRows(grouping, allCompanies, allCostCenters, allAssets, allPolicies), matrixData.keys(), {
+      companies: allCompanies, costCenters: allCostCenters, assets: allAssets, policies: allPolicies,
+    }),
+    [grouping, allCompanies, allCostCenters, allAssets, allPolicies, matrixData],
   )
 
   // ─── Column definitions ───────────────────────────────────────────────────────
@@ -234,49 +245,24 @@ export default function EconomicAnalysisPage() {
 
   // ─── KPIs + pie data ─────────────────────────────────────────────────────────
 
+  // Misma fuente que la tabla: el costo por aseguradora (torta y «Mayor
+  // costo») son las filas de la agrupación «Aseguradora», con el signo
+  // económico de cada documento.
   const { kpis, pieChartData } = useMemo(() => {
-    let totalCost = 0
-    const byInsurer = new Map<string, number>()
-    const allocedPolicies = new Set<string>()
-    const allocationContexts = buildDocumentAllocationContexts(allAllocations, allPolicies, allAssets)
-
-    allDocuments.forEach((doc) => {
-      const monthKey = doc.issueDate.substring(0, 7)
-      if (monthKey < dateFrom || monthKey > dateTo) return
-      totalCost += getDocumentEconomicEffect({ ...doc, totalAmount: pickDocTotal(doc, currency) })
-      const docContexts = allocationContexts.get(doc.id)
-      if (!docContexts) return
-      docContexts.forEach((ctx) => {
-        allocedPolicies.add(ctx.policyId)
-        if (!ctx.insuranceCompany) return
-        const policyAmount = allocationInCurrency(doc, ctx.allocatedAmount, currency)
-        byInsurer.set(ctx.insuranceCompany, (byInsurer.get(ctx.insuranceCompany) ?? 0) + policyAmount)
-      })
-    })
-
-    let topInsurer = { name: '—', amount: 0 }
-    byInsurer.forEach((amount, name) => { if (amount > topInsurer.amount) topInsurer = { name, amount } })
-
-    const pie = Array.from(byInsurer.entries())
-      .map(([name, value]) => ({ name, value }))
+    const k = computeEconomicKpis(periodDocuments, allAllocations, allPolicies, allAssets, currency)
+    const pie = k.byInsurer
+      .filter((x) => x.amount > 0)
+      .map((x) => ({ name: syntheticRowLabel(x.id) ?? x.id, value: x.amount }))
       .sort((a, b) => b.value - a.value)
-
-    return { kpis: { totalCost, topInsurer, policiesWithCost: allocedPolicies.size }, pieChartData: pie }
-  }, [allDocuments, allAllocations, allPolicies, allAssets, currency, dateFrom, dateTo])
+    return { kpis: { totalCost: k.totalCost, topInsurer: k.topInsurer, policiesWithCost: k.policiesWithCost }, pieChartData: pie }
+  }, [periodDocuments, allAllocations, allPolicies, allAssets, currency])
 
   // ─── Bar chart (always monthly) ───────────────────────────────────────────────
 
   const barChartData = useMemo(() => {
-    return viewMonths.map(({ key, label }) => {
-      let total = 0
-      allDocuments.forEach((doc) => {
-        if (doc.issueDate.substring(0, 7) === key) {
-          total += getDocumentEconomicEffect({ ...doc, totalAmount: pickDocTotal(doc, currency) })
-        }
-      })
-      return { label, total }
-    })
-  }, [viewMonths, allDocuments, currency])
+    const series = economicMonthlySeries(periodDocuments, viewMonths.map((m) => m.key), currency)
+    return viewMonths.map(({ label }, i) => ({ label, total: series[i].total }))
+  }, [viewMonths, periodDocuments, currency])
 
   // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -296,6 +282,7 @@ export default function EconomicAnalysisPage() {
     { value: 'aseguradora', label: 'Aseguradora' },
     { value: 'poliza', label: 'Póliza' },
     { value: 'activo', label: 'Activo' },
+    { value: 'bien_de_uso', label: 'Bien de uso' },
   ]
 
   const periodButtons: { value: ColPeriod; label: string }[] = [

@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { authMiddleware } from '../../middleware/auth.middleware'
 import { requireModule } from '../../middleware/roles.middleware'
 import { validate } from '../../middleware/validate.middleware'
-import { UpsertRenewalProjectionOverrideSchema } from './renewal-projections.schemas'
+import { ConvertLegacyOverridesSchema, UpsertRenewalProjectionOverrideSchema } from './renewal-projections.schemas'
 import { renewalProjectionsController } from './renewal-projections.controller'
 
 export const renewalProjectionsRouter = Router()
@@ -22,3 +22,11 @@ renewalProjectionsRouter.put(
   renewalProjectionsController.upsert,
 )
 renewalProjectionsRouter.delete('/overrides/:mode/:assetId', requireModule(...RENEWAL_PROJECTION_MODULES), renewalProjectionsController.reset)
+// Conversión confirmada de los importes ARS legados → USD (ver
+// renewalProjectionsService.convertLegacy). Mismo gate de módulos que el resto.
+renewalProjectionsRouter.post(
+  '/overrides/:mode/:assetId/convert-legacy',
+  requireModule(...RENEWAL_PROJECTION_MODULES),
+  validate(ConvertLegacyOverridesSchema),
+  renewalProjectionsController.convertLegacy,
+)

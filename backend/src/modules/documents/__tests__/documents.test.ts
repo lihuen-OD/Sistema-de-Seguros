@@ -1916,6 +1916,37 @@ describe('Documents API', () => {
       })
     })
 
+    it('summarizes the adjustments each document already applied to its invoice installments (read-only)', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([
+        {
+          ...fakeDocument,
+          documentType: 'DEBIT_NOTE',
+          installments: [],
+          allocations: [],
+          installmentAdjustments: [
+            { deltaAmountArs: 3_000_000, deltaAmountUsd: 2000 },
+            { deltaAmountArs: 4_500_000, deltaAmountUsd: 3000 },
+          ],
+        },
+      ])
+
+      const res = await request(app)
+        .get('/api/v1/documents/financial')
+        .set('Authorization', `Bearer ${adminToken()}`)
+
+      expect(res.status).toBe(200)
+      const findManyCall = db.accountingDocument.findMany.mock.calls[0][0]
+      expect(findManyCall.include.installmentAdjustments).toEqual({ select: { deltaAmountArs: true, deltaAmountUsd: true } })
+      expect(res.body.data[0].appliedAdjustment).toEqual({ count: 2, ars: 7_500_000, usd: 5000 })
+      expect(res.body.data[0]).not.toHaveProperty('installmentAdjustments')
+    })
+
+    it('a document without applied adjustments reports an empty summary', async () => {
+      db.accountingDocument.findMany.mockResolvedValue([{ ...fakeDocument, installments: [], allocations: [], installmentAdjustments: [] }])
+      const res = await request(app).get('/api/v1/documents/financial').set('Authorization', `Bearer ${adminToken()}`)
+      expect(res.body.data[0].appliedAdjustment).toEqual({ count: 0, ars: 0, usd: 0 })
+    })
+
     // ── Fase D4: includeInstallments ──────────────────────────────────────────
 
     it('includeInstallments=true (explícito) keeps installments in the Prisma include, same as the default', async () => {

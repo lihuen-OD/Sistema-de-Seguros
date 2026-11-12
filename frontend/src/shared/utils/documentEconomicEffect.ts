@@ -33,3 +33,15 @@ export function getDocumentEconomicEffect(doc: {
       return 0
   }
 }
+
+/**
+ * Sentido económico de un documento (+1 suma, −1 resta, 0 no impacta), con la
+ * MISMA regla que getDocumentEconomicEffect (tipo y estado). Lo usan las
+ * tablas que reparten un documento por sus asignaciones: cada asignación
+ * aporta |importe asignado| × sentido, así una NC aplicada resta aunque su
+ * distribución se haya cargado con importes positivos, y una NC sin aplicar
+ * no impacta — igual que el KPI.
+ */
+export function getDocumentEconomicDirection(doc: Parameters<typeof getDocumentEconomicEffect>[0]): -1 | 0 | 1 {
+  return Math.sign(getDocumentEconomicEffect({ ...doc, totalAmount: 1 })) as -1 | 0 | 1
+}

@@ -6,7 +6,7 @@ import { policyQueries } from '../../../shared/api/policies.api'
 import { documentQueries } from '../../../shared/api/documents.api'
 import { exchangeRateQueries } from '../../../shared/api/exchange-rate.api'
 import { renewalProjectionsApi, renewalProjectionQueries, renewalProjectionKeys } from '../../../shared/api/renewal-projections.api'
-import type { RenewalProjectionMode } from '../../../shared/api/renewal-projections.api'
+import type { RenewalProjectionMode, RenewalProjectionOverrideInput } from '../../../shared/api/renewal-projections.api'
 import {
   buildAssetRealTimelineByCuota,
   detectRenewalCycleByCuota,
@@ -15,20 +15,27 @@ import {
   resolveEffectiveCycle,
   autoInstallmentsCount,
   projectAssetRow,
-  resolveMonthCell,
+  resolveRowBase,
+  convertibleLegacyFields,
+  hasLegacyValues,
+  hasCurrentOverrides,
+  buildDisplayMatrix,
+  sumDisplayCells,
+  sumRowTotals,
+  excludedAdjustmentsForAsset,
   todayMonthKey,
   addMonthsToKey,
-  nextMonthKey,
+  inconsistentAllocationsForAsset,
   buildMonthRange,
   isReasonableMonthKey,
 } from '../../../shared/utils/renewalProjectionCalc'
-import { monthLabel } from './RenewalProjectionTable'
+import type { LegacyAmountField } from '../../../shared/utils/renewalProjectionCalc'
 import type { AssetRowData } from './RenewalProjectionTable'
-import { BREAKDOWN_FIELD_DEFS } from './RenewalFieldSelectorPopover'
 import type { BreakdownFieldKey } from './RenewalFieldSelectorPopover'
+import { buildRenewalProjectionExport } from './renewalProjectionExport'
 import { downloadXLSX } from '../../../shared/utils/export'
-import type { ExportCell } from '../../../shared/utils/export'
-import type { Currency } from '../../../shared/types'
+import { PROJECTION_CURRENCY } from './renewalProjectionFormat'
+import { buildRenewalObservations } from './renewalObservations'
 
 // Financiero calcula lo real por cuota (dueDate), Económico por documento
 // (issueDate) — dos números legítimamente distintos para el mismo activo,
@@ -42,11 +49,13 @@ const BUILDERS = {
 
 export type RenewalOverrideField = 'net' | 'vat' | 'other' | 'pct' | 'cycle' | 'installments' | 'start'
 
-const OVERRIDE_KEY_BY_FIELD: Record<RenewalOverrideField, string> = {
-  net: 'netOverride',
-  vat: 'vatOverride',
-  other: 'otherOverride',
-  pct: 'growthPercentOverride',
+// Solo columnas VIGENTES: Neto/IVA/Otros se guardan en USD (la base) y el %
+// en su propia columna USD — nunca en las columnas históricas en ARS.
+const OVERRIDE_KEY_BY_FIELD: Record<RenewalOverrideField, keyof RenewalProjectionOverrideInput> = {
+  net: 'netOverrideUsd',
+  vat: 'vatOverrideUsd',
+  other: 'otherOverrideUsd',
+  pct: 'growthPercentUsdOverride',
   cycle: 'cycleLengthMonthsOverride',
   installments: 'installmentsCountOverride',
   start: 'startMonthOverride',
@@ -56,7 +65,6 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
   const queryClient = useQueryClient()
   const { buildTimeline, detectCycle } = BUILDERS[mode]
 
-  const [currency, setCurrency] = useState<Currency>('ARS')
   const [horizonYears, setHorizonYears] = useState<1 | 2 | 3>(2)
   const [customEnd, setCustomEnd] = useState<string | null>(null)
   const [breakdownFields, setBreakdownFields] = useState<BreakdownFieldKey[]>([])
@@ -69,10 +77,8 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
   const financialDocs = useMemo(() => financialResult?.data ?? [], [financialResult])
   const { data: allPolicies = [], isError: isErrorPolicies } = useQuery(policyQueries.list({ includeCoverages: true }))
   const { data: allAssets = [], isError: isErrorAssets } = useQuery(assetQueries.list())
-  const { data: exchangeRateData, isError: isErrorFx } = useQuery(exchangeRateQueries.current())
   const { data: overrides = [], isError: isErrorOverrides, dataUpdatedAt: overridesVersion } = useQuery(renewalProjectionQueries.overrides(mode))
-  const isError = isErrorDocs || isErrorPolicies || isErrorAssets || isErrorFx || isErrorOverrides
-  const exchangeRate = exchangeRateData?.rate ?? 1
+  const isError = isErrorDocs || isErrorPolicies || isErrorAssets || isErrorOverrides
 
   // ─── Mutaciones ──────────────────────────────────────────────────────────────
 
@@ -104,6 +110,20 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
     onError: () => toast.error('No se pudo restablecer todos los activos'),
   })
 
+  const convertLegacyMutation = useMutation({
+    mutationFn: ({ assetId, expectedRate, fields }: { assetId: string; expectedRate: number; fields: LegacyAmountField[] }) =>
+      renewalProjectionsApi.convertLegacy(assetId, mode, { expectedRate, fields }),
+    onSuccess: () => toast.success('Valores anteriores convertidos a USD — los importes ARS originales se conservan'),
+    // Un 409 (TC cambió / vista previa vieja) trae un mensaje apto para el
+    // usuario: se muestra tal cual y se refrescan TC y overrides para que la
+    // nueva vista previa refleje el estado real.
+    onError: (err: Error) => toast.error(err.message || 'No se pudo convertir'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: renewalProjectionKeys.all(mode) })
+      queryClient.invalidateQueries({ queryKey: exchangeRateQueries.current().queryKey })
+    },
+  })
+
   // ─── Activos relevantes (los que alguna vez tuvieron una línea de cobertura) ─
 
   const relevantAssets = useMemo(() => {
@@ -126,8 +146,11 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
         asset,
         realTimeline: buildTimeline(asset.id, financialDocs),
         cycle: detectCycle(asset.id, financialDocs, allPolicies),
+        allocationIssues: inconsistentAllocationsForAsset(asset.id, financialDocs),
+        // Solo Financiero (por cuota) excluye cuotas propias de ajustes ya volcados; Económico no excluye nada.
+        excludedAdjustments: mode === 'FINANCIAL' ? excludedAdjustmentsForAsset(asset.id, financialDocs) : [],
       })),
-    [relevantAssets, financialDocs, allPolicies, buildTimeline, detectCycle],
+    [relevantAssets, financialDocs, allPolicies, buildTimeline, detectCycle, mode],
   )
 
   const today = todayMonthKey()
@@ -151,21 +174,23 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
   // maxMonthKey: el mes más lejano permitido para proyectar (hoy + 10 años).
   const maxMonthKey = useMemo(() => addMonthsToKey(today, 120), [today])
 
-  // Si customEnd viene fuera de rango, ignorarlo y usar el preset.
+  // Si customEnd viene fuera de rango, ignorarlo y usar el preset. El
+  // horizonte se mide desde HOY ("proyectado a N años"), no desde el último
+  // dato real de toda la tabla: un vencimiento anómalo muy a futuro de un
+  // activo no debe estirar ni correr la proyección de los demás. El eje
+  // igual llega hasta el último mes real, para no ocultar datos reales.
   const safeCustomEnd = customEnd && customEnd > today && customEnd <= maxMonthKey ? customEnd : null
-  const horizonEndMonthKey = safeCustomEnd ?? addMonthsToKey(lastRealMonthKey > today ? lastRealMonthKey : today, horizonYears * 12)
-  const axis = useMemo(() => buildMonthRange(firstRealMonthKey, horizonEndMonthKey), [firstRealMonthKey, horizonEndMonthKey])
+  const horizonEndMonthKey = safeCustomEnd ?? addMonthsToKey(today, horizonYears * 12)
+  const axisEnd = lastRealMonthKey > horizonEndMonthKey ? lastRealMonthKey : horizonEndMonthKey
+  const axis = useMemo(() => buildMonthRange(firstRealMonthKey, axisEnd), [firstRealMonthKey, axisEnd])
 
-  // ─── Filas (valores efectivos = override ?? automático + proyección) ────────
+  // ─── Filas (base USD efectiva + proyección USD) ─────────────────────────────
 
   const rows: AssetRowData[] = useMemo(
     () =>
-      perAssetData.map(({ asset, realTimeline, cycle }) => {
-        const override = overridesByAssetId.get(asset.id)
-        const netArs = override?.netOverride ?? cycle.defaultNetArs
-        const vatArs = override?.vatOverride ?? cycle.defaultVatArs
-        const otherArs = override?.otherOverride ?? cycle.defaultOtherArs
-        const pct = override?.growthPercentOverride ?? cycle.autoGrowthPercent
+      perAssetData.map(({ asset, realTimeline, cycle, allocationIssues, excludedAdjustments }) => {
+        const override = overridesByAssetId.get(asset.id) ?? null
+        const base = resolveRowBase(cycle, override)
         // "Cada cuántos meses renueva", "cuántas cuotas" y "en qué mes arranca"
         // son editables SOLO acá — nunca tocan la póliza/documento real, y
         // solo afectan los meses proyectados de la fila.
@@ -175,43 +200,67 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
           override?.installmentsCountOverride ?? null,
           override?.startMonthOverride ?? null,
         )
-        const projectedList = projectAssetRow(effectiveCycle, nextMonthKey(lastRealMonthKey), horizonEndMonthKey, netArs, vatArs, otherArs, pct)
+        // Sin base USD confiable no se proyecta (ni se inventa una base).
+        // Se proyecta por período desde el mes actual: un mes puede tener lo
+        // real y lo proyectado a la vez (partes separadas en la matriz).
+        const projectedList = base.projectionBlocked
+          ? []
+          : projectAssetRow(effectiveCycle, today, horizonEndMonthKey, base.netUsd ?? 0, base.vatUsd ?? 0, base.otherUsd ?? 0, base.pct)
         return {
           assetId: asset.id,
           name: asset.name,
           code: `${asset.internalCode} · ${asset.assetType}`,
           realTimeline,
           projectedByMonth: new Map(projectedList.map((c) => [c.monthKey, c])),
-          netArs,
-          vatArs,
-          otherArs,
-          pct,
+          netUsd: base.netUsd,
+          vatUsd: base.vatUsd,
+          otherUsd: base.otherUsd,
+          pct: base.pct,
           cycleLengthMonths: effectiveCycle.cycleLengthMonths,
           installmentsCount: autoInstallmentsCount(effectiveCycle),
           startMonthKey: effectiveCycle.lastRenewalStartMonthKey,
-          isOverridden: !!override,
+          baseStatus: cycle.baseStatus,
+          projectionBlocked: base.projectionBlocked,
+          periodInvoiceCount: cycle.periodInvoiceCount,
+          outOfTermCount: cycle.outOfTermCount,
+          outOfTermItems: cycle.outOfTermItems,
+          ambiguousPeriodItems: cycle.ambiguousPeriodItems,
+          allocationIssues,
+          excludedAdjustments,
+          concurrentPeriodsExcluded: cycle.concurrentPeriodsExcluded,
+          isOverridden: hasCurrentOverrides(override),
+          hasLegacy: hasLegacyValues(override),
+          legacyPendingFields: convertibleLegacyFields(override),
+          override,
         }
       }),
-    [perAssetData, overridesByAssetId, lastRealMonthKey, horizonEndMonthKey],
+    [perAssetData, overridesByAssetId, today, horizonEndMonthKey],
   )
 
-  // ─── KPIs ────────────────────────────────────────────────────────────────────
+  // ─── Matriz de presentación (única fuente de tabla, KPIs y Excel) ──────────
+  // Siempre en USD: lo real con su cierre USD histórico (sin cierre confiable
+  // queda en su moneda original, excluido y marcado) y lo proyectado sobre la
+  // base USD. Sin TC manual: nada se convierte a ARS en estas pantallas.
+
+  const matrix = useMemo(() => buildDisplayMatrix(rows, axis, PROJECTION_CURRENCY, null), [rows, axis])
+  const rowTotals = useMemo(() => matrix.map((cells) => sumRowTotals(cells)), [matrix])
+
+  // ─── KPIs + avisos ───────────────────────────────────────────────────────────
 
   const kpis = useMemo(() => {
-    let projectedTotalArs = 0
-    let withHistory = 0
-    for (const row of rows) {
-      if (row.realTimeline.size > 0) withHistory += 1
-      for (const monthKey of axis) {
-        if (monthKey <= lastRealMonthKey) continue
-        const cell = resolveMonthCell(row.realTimeline, row.projectedByMonth, monthKey, row.netArs, row.vatArs, row.otherArs)
-        if (cell) projectedTotalArs += cell.totalArs
-      }
+    const withHistory = rows.filter((r) => r.realTimeline.size > 0).length
+    return {
+      // Solo la parte proyectada de cada celda (un mes mixto aporta solo lo proyectado).
+      projected: sumDisplayCells(matrix.flat(), 'projected'),
+      withHistory,
+      withoutHistory: rows.length - withHistory,
     }
-    return { projectedTotalArs, withHistory, withoutHistory: rows.length - withHistory }
-  }, [rows, axis, lastRealMonthKey])
+  }, [matrix, rows])
 
-  const projectedDisplay = currency === 'USD' && exchangeRate > 0 ? kpis.projectedTotalArs / exchangeRate : kpis.projectedTotalArs
+  const observations = useMemo(
+    () => buildRenewalObservations({ rows, matrix, axis, filteredAbsurdDates }),
+    [rows, matrix, axis, filteredAbsurdDates],
+  )
 
   // ─── Acciones ────────────────────────────────────────────────────────────────
 
@@ -232,106 +281,45 @@ export function useRenewalProjectionData(mode: RenewalProjectionMode) {
     resetAllMutation.mutate(overriddenIds)
   }
 
+  function handleConvertLegacy(assetId: string, expectedRate: number, fields: LegacyAmountField[], onDone?: () => void) {
+    convertLegacyMutation.mutate({ assetId, expectedRate, fields }, { onSuccess: () => onDone?.() })
+  }
+
   function toggleBreakdownField(key: BreakdownFieldKey) {
     setBreakdownFields((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
   }
 
   async function handleExportExcel(filenamePrefix: string) {
-    const fields = BREAKDOWN_FIELD_DEFS.filter((f) => breakdownFields.includes(f.key))
-    const showBreakdown = fields.length > 0
-
-    // Mismo criterio que en pantalla: si el panel del activo está oculto (o
-    // el "Detalle por mes" no tiene nada tildado), el export tampoco los
-    // incluye — mismo orden que las columnas de la tabla (Neto/IVA/Otros/
-    // Total, Ciclo/Cuotas/Inicio, % renov.). "Inicio" es 'YYYY-MM' — no numérico.
-    const ASSET_DATA_COLUMNS: { label: string; numeric: boolean; value: (row: AssetRowData) => ExportCell }[] = [
-      { label: 'Neto', numeric: true, value: (row) => row.netArs },
-      { label: 'IVA', numeric: true, value: (row) => row.vatArs },
-      { label: 'Otros imp.', numeric: true, value: (row) => row.otherArs },
-      { label: 'Total', numeric: true, value: (row) => row.netArs + row.vatArs + row.otherArs },
-      { label: 'Ciclo (m)', numeric: true, value: (row) => row.cycleLengthMonths },
-      { label: 'Cuotas', numeric: true, value: (row) => row.installmentsCount },
-      { label: 'Inicio', numeric: false, value: (row) => row.startMonthKey },
-      { label: '% renov.', numeric: true, value: (row) => row.pct },
-    ]
-    const assetDataCols = hideAssetPanel ? [] : ASSET_DATA_COLUMNS
-    const leadingLabels = ['Activo', ...assetDataCols.map((c) => c.label)]
-
-    // Sin "Detalle por mes": una columna "Total" plana por mes, como siempre.
-    // Con "Detalle por mes": cada mes ocupa un bloque de columnas (una por
-    // campo tildado) — en vez de repetir "2026-07 Neto / 2026-07 IVA / ..."
-    // en el título de cada columna (así quedaba antes, difícil de leer en
-    // Excel), se agrupa con una celda combinada por mes en la fila de arriba
-    // y el nombre de cada campo en la fila de abajo — mismo criterio visual
-    // que la tabla en pantalla, en vez de repetir la fecha por columna.
-    const monthValueHeaders = showBreakdown ? axis.flatMap(() => fields.map((f) => f.label)) : axis.map((m) => m)
-    const totalValueHeaders = showBreakdown ? fields.map((f) => f.label) : ['Total']
-    const header: ExportCell[] = [
-      ...(showBreakdown ? leadingLabels.map(() => '') : leadingLabels),
-      ...monthValueHeaders,
-      ...totalValueHeaders,
-    ]
-    const headerGroups = showBreakdown
-      ? [
-          ...leadingLabels.map((label) => ({ label, colSpan: 1, rowSpan: 2 })),
-          ...axis.map((m) => ({ label: monthLabel(m), colSpan: fields.length })),
-          { label: 'Total', colSpan: fields.length },
-        ]
-      : undefined
-
-    const dataRows: ExportCell[][] = rows.map((row) => {
-      const assetDataValues = assetDataCols.map((c) => c.value(row))
-      const monthValues = axis.flatMap((monthKey) => {
-        const cell = resolveMonthCell(row.realTimeline, row.projectedByMonth, monthKey, row.netArs, row.vatArs, row.otherArs)
-        if (!showBreakdown) return [cell?.totalArs ?? 0]
-        return fields.map((f) => (cell ? (f.key === 'net' ? cell.netArs : f.key === 'vat' ? cell.vatArs : f.key === 'other' ? cell.otherArs : cell.totalArs) : 0))
-      })
-      const totalsAcc = { net: 0, vat: 0, other: 0, total: 0 }
-      axis.forEach((monthKey) => {
-        const cell = resolveMonthCell(row.realTimeline, row.projectedByMonth, monthKey, row.netArs, row.vatArs, row.otherArs)
-        if (!cell) return
-        totalsAcc.net += cell.netArs
-        totalsAcc.vat += cell.vatArs
-        totalsAcc.other += cell.otherArs
-        totalsAcc.total += cell.totalArs
-      })
-      const totalValues = showBreakdown ? fields.map((f) => totalsAcc[f.key]) : [totalsAcc.total]
-      return [row.name, ...assetDataValues, ...monthValues, ...totalValues]
+    const xlsx = buildRenewalProjectionExport({
+      rows, matrix, rowTotals, axis, breakdownFields, hideAssetPanel, horizonEndMonthKey, filenamePrefix,
     })
-
-    const numericColumnIndexes: number[] = []
-    assetDataCols.forEach((c, idx) => { if (c.numeric) numericColumnIndexes.push(1 + idx) })
-    const monthsStartIndex = 1 + assetDataCols.length
-    for (let i = 0; i < monthValueHeaders.length + totalValueHeaders.length; i++) numericColumnIndexes.push(monthsStartIndex + i)
-
-    await downloadXLSX(
-      [header, ...dataRows],
-      `${filenamePrefix}-${horizonEndMonthKey}.xlsx`,
-      { autoFilter: true, numericColumnIndexes, headerGroups },
-    )
+    await downloadXLSX(xlsx.rows, xlsx.filename, xlsx.options)
   }
 
   return {
     isError,
     financialDocsResult: financialResult,
-    currency, setCurrency,
     horizonYears, setHorizonYears,
     customEnd: safeCustomEnd, setCustomEnd,
     breakdownFields, toggleBreakdownField,
     hideAssetPanel, setHideAssetPanel,
-    exchangeRate,
     overridesVersion,
     rows,
+    matrix,
+    rowTotals,
     axis,
     lastRealMonthKey,
+    // Mes actual: frontera visual de la zona proyectada y mínimo del horizonte personalizado.
+    currentMonthKey: today,
     maxMonthKey,
     horizonEndMonthKey,
     kpis,
-    projectedDisplay,
-    filteredAbsurdDates,
+    observations,
+    isConvertingLegacy: convertLegacyMutation.isPending,
     handleCommitField,
     handleResetRow,
     handleResetAll,
+    handleConvertLegacy,
     handleExportExcel,
   }
 }
