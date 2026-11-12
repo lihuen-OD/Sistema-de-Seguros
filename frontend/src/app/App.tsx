@@ -39,6 +39,7 @@ const FinancialAnalysisPage = lazy(() => import('../modules/insurance/financial-
 const EconomicAnalysisPage = lazy(() => import('../modules/insurance/economic-analysis/EconomicAnalysisPage'))
 const RenewalProjectionsFinancialPage = lazy(() => import('../modules/insurance/renewal-projections/RenewalProjectionsFinancialPage'))
 const RenewalProjectionsEconomicPage = lazy(() => import('../modules/insurance/renewal-projections/RenewalProjectionsEconomicPage'))
+const InsuranceBudgetsPage = lazy(() => import('../modules/insurance/budgets/InsuranceBudgetsPage'))
 const InsuranceDashboardPage = lazy(() => import('../modules/insurance/insurance-dashboard/InsuranceDashboardPage'))
 
 // Producers
@@ -157,6 +158,7 @@ export default function App() {
           <Route path="/insurance/financial-analysis/renewal-projections" element={<RenewalProjectionsFinancialPage />} />
           <Route path="/insurance/economic-analysis" element={<EconomicAnalysisPage />} />
           <Route path="/insurance/economic-analysis/renewal-projections" element={<RenewalProjectionsEconomicPage />} />
+          <Route path="/insurance/budgets" element={<InsuranceBudgetsPage />} />
           <Route path="/insurance/dashboard" element={<InsuranceDashboardPage />} />
 
           {/* Producers */}

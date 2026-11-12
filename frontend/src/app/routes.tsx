@@ -21,6 +21,7 @@ export const ROUTES = {
   ECONOMIC_ANALYSIS: '/insurance/economic-analysis',
   RENEWAL_PROJECTIONS_FINANCIAL: '/insurance/financial-analysis/renewal-projections',
   RENEWAL_PROJECTIONS_ECONOMIC: '/insurance/economic-analysis/renewal-projections',
+  INSURANCE_BUDGETS: '/insurance/budgets',
   INSURANCE_DASHBOARD: '/insurance/dashboard',
 
   PRODUCERS: '/producers',

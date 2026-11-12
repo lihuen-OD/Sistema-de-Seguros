@@ -35,6 +35,9 @@ const PATH_TO_MODULE: Array<{ prefix: string; modules: ModuleKey[]; landable?: b
   { prefix: '/insurance/financial-analysis', modules: ['financial_analysis'] },
   { prefix: '/insurance/economic-analysis/renewal-projections', modules: ['renewal_projections_economic'] },
   { prefix: '/insurance/economic-analysis', modules: ['economic_analysis'] },
+  // Ver presupuestos = `insurance_budgets`; editar exige además
+  // `insurance_budgets_edit` (lo valida el backend; la pantalla solo oculta).
+  { prefix: '/insurance/budgets', modules: ['insurance_budgets'] },
   { prefix: '/insurance/dashboard', modules: ['insurance_dashboard'] },
   { prefix: '/claims', modules: ['claims'] },
   // Crear/auditar es un permiso distinto de revisar/aprobar — ver el detalle

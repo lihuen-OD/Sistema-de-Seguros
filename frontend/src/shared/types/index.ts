@@ -8,10 +8,13 @@ export type Role = 'ADMIN' | 'USER'
 // igual que ya pasaba con Role antes de este cambio.
 // `policy_renewals` no es una pantalla: habilita marcar/deshacer renovaciones
 // dentro del detalle de póliza y el backend lo exige junto con `policies`.
+// `insurance_budgets_edit` tampoco: habilita crear/editar presupuestos y el
+// backend lo exige junto con `insurance_budgets` (la pantalla).
 export const MODULE_KEYS = [
   'dashboard',
   'assets',
   'policies', 'policy_renewals', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
+  'insurance_budgets', 'insurance_budgets_edit',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
   'asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard',
@@ -33,6 +36,8 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   renewal_projections: 'Proyección de Renovaciones (Financiero)',
   renewal_projections_economic: 'Proyección de Renovaciones (Económico)',
   insurance_dashboard: 'Dashboard de Seguros',
+  insurance_budgets: 'Presupuestos de Seguros',
+  insurance_budgets_edit: 'Edición de Presupuestos de Seguros',
   claims: 'Siniestros',
   fire_extinguishers: 'Matafuegos',
   fire_extinguisher_audits: 'Auditoría de Matafuegos',
@@ -68,7 +73,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   // criterio que el sidebar (ver Sidebar.tsx).
   { label: 'Matafuegos', modules: ['fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard', 'asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard'] },
   { label: 'Auditoría de Seguros', modules: ['insurance_audits', 'insurance_audit_coverage', 'insurance_audit_dashboard'] },
-  { label: 'Seguros', modules: ['policies', 'policy_renewals', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard', 'claims'] },
+  { label: 'Seguros', modules: ['policies', 'policy_renewals', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_budgets', 'insurance_budgets_edit', 'insurance_dashboard', 'claims'] },
   { label: 'Operaciones', modules: ['producers', 'tasks'] },
   { label: 'Configuración', modules: ['companies', 'cost_centers', 'fixed_assets', 'insurance_types', 'module_config'] },
 ]

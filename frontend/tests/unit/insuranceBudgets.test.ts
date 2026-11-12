@@ -432,6 +432,16 @@ describe('filtros y fondos', () => {
     assert.deepEqual(filterBudgetRows(r.rows, 'ASSET', { entityIds: [], fixedAssetIds: ['fa1'] }, assets).map((x) => x.id), ['a1'])
   })
 
+  test('regresión: los agregados conservan la clave de mes y la cantidad de meses', () => {
+    assert.deepEqual(result.levelTotals.months.map((m) => m.month), result.months)
+    assert.equal(result.levelTotals.totals.monthCount, 6)
+    assert.equal(byId(result.rows, 'c1').totals.monthCount, 6)
+    const agg = aggregateRows(result.rows, result.months, NOW)
+    assert.deepEqual(agg.months.map((m) => m.month), result.months)
+    assert.deepEqual(agg.months.map((m) => m.isElapsed), [true, true, true, true, false, false])
+    assert.deepEqual(buildFundsSeries(agg.months).map((p) => p.month), result.months)
+  })
+
   test('flujo de fondos acumulado: presupuesto vs vencimientos + proyección financiera', () => {
     const series = buildFundsSeries(result.levelTotals.months)
     assert.deepEqual(series.map((p) => p.need), [0, 300, 500, 700, 250, 0])
@@ -536,5 +546,118 @@ describe('rendimiento', () => {
     }
     const elapsed = Date.now() - started
     assert.ok(elapsed < 3000, `tardó ${elapsed} ms`)
+  })
+})
+
+// ── Excel, observaciones y render (pantalla) ────────────────────────────────
+
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { buildBudgetExport } from '../../src/modules/insurance/budgets/budgetExport'
+import { buildBudgetObservations } from '../../src/modules/insurance/budgets/budgetObservations'
+import { HISTORICAL_ALLOCATION_WARNING } from '../../src/modules/insurance/budgets/budgetFormat'
+import { BudgetComparisonTable } from '../../src/modules/insurance/budgets/BudgetComparisonTable'
+import { BudgetFundsSection } from '../../src/modules/insurance/budgets/BudgetFundsSection'
+
+describe('Excel, observaciones y pantalla', () => {
+  const level: BudgetLevel = 'COMPANY'
+  const result = computeBudgetComparison(input(level, companyBudgets))
+  const recs = [
+    reconcileEconomic({ level, from: FROM, to: TO, documents, policies, assets, rows: result.rows }),
+    reconcileFinancial({ level, from: FROM, to: TO, documents, policies, assets, rows: result.rows }),
+  ]
+  const observations = buildBudgetObservations(result, recs)
+  const visibleRows = filterBudgetRows(result.rows, level, { entityIds: ['c1'] }, assets)
+  const visibleTotals = aggregateRows(visibleRows, result.months, NOW)
+  const xlsx = buildBudgetExport(level, {
+    result, visibleRows, visibleTotals, filtersApplied: true, filterDescriptions: ['Empresas: Empresa 1'],
+    reconciliations: recs, observations, truncated: true, generatedAt: new Date('2026-11-12T10:00:00Z'),
+  })
+  const sheet = (name: string) => xlsx.options.extraSheets!.find((s) => s.name === name)!
+
+  test('observaciones: excluidos por cierre USD, ajustes, % ≠ 100, proyección bloqueada, líneas sin activo', () => {
+    const keys = observations.map((o) => o.key)
+    for (const k of ['excluded-economic', 'excluded-financial', 'adjustment-excluded', 'allocation-percent', 'projection-blocked', 'lines-without-asset']) {
+      assert.ok(keys.includes(k), `falta ${k}`)
+    }
+    assert.ok(!keys.some((k) => k.startsWith('reconciliation-')), 'la conciliación cierra')
+    assert.match(observations.find((o) => o.key === 'excluded-economic')!.details[0].text, /no se suma/)
+  })
+
+  test('hoja principal: formato largo con «Incompleto» y «Excluidos (n)», totales visibles y del nivel', () => {
+    const [header, ...rows] = xlsx.rows
+    const iIncomplete = header.indexOf('Incompleto')
+    const iExcluded = header.indexOf('Excluidos (n)')
+    const iMonth = header.indexOf('Mes')
+    assert.ok(iIncomplete > 0 && iExcluded > 0)
+    assert.ok(header.some((h) => String(h).includes('no es costo')), 'Real financiero rotulado como fondos')
+    const marzo = rows.find((r) => r[1] === 'Empresa 1' && String(r[iMonth]).includes('MAR'))!
+    assert.equal(marzo[iIncomplete], 'Sí')
+    assert.equal(marzo[iExcluded], 2, 'BAD-FX: el comprobante (económico) + su cuota (financiero)')
+    const junio = rows.find((r) => r[1] === 'Empresa 1' && String(r[iMonth]).includes('JUN'))!
+    assert.equal(junio[header.indexOf('Sin presupuesto')], 'Sí')
+    assert.equal(junio[header.indexOf('Presupuesto (USD)')], null, 'sin presupuesto ≠ 0')
+    assert.ok(rows.some((r) => r[1] === 'Total filas visibles'))
+    assert.ok(rows.some((r) => String(r[1]).startsWith('Total del nivel')))
+    assert.ok(!rows.some((r) => r[1] === 'Empresa 2'), 'el filtro oculta filas')
+  })
+
+  test('hojas: fondos (no es costo), conciliación y filtros/observaciones con advertencia D8 y truncado', () => {
+    assert.deepEqual(xlsx.options.extraSheets!.map((s) => s.name), ['Fondos (no es costo)', 'Conciliación', 'Filtros y observaciones'])
+    assert.ok(sheet('Fondos (no es costo)').rows[0].some((h) => String(h).includes('Diferencia de fondos')))
+    assert.ok(!sheet('Fondos (no es costo)').rows[0].some((h) => /desv[ií]o/i.test(String(h))), 'fondos nunca habla de «desvío»')
+    const conc = sheet('Conciliación').rows
+    assert.ok(conc.some((r) => r[0] === 'Análisis Económico' && r[1] === 'Total del nivel'))
+    assert.ok(conc.some((r) => r[0] === 'Análisis Financiero' && r[1] === 'Total del nivel'))
+    const filtros = sheet('Filtros y observaciones').rows.map((r) => r.join(' | '))
+    assert.ok(filtros.some((l) => l.includes('Empresas: Empresa 1')))
+    assert.ok(filtros.some((l) => l.includes(HISTORICAL_ALLOCATION_WARNING)))
+    assert.ok(filtros.some((l) => l.startsWith('Truncado | Sí')))
+    assert.ok(filtros.some((l) => l.includes('BAD-FX')), 'lista los excluidos')
+  })
+
+  test('nivel Activo: sin advertencia de imputación histórica en el Excel', () => {
+    const r = computeBudgetComparison(input('ASSET'))
+    const x = buildBudgetExport('ASSET', {
+      result: r, visibleRows: r.rows, visibleTotals: r.levelTotals, filtersApplied: false, filterDescriptions: [],
+      reconciliations: [], observations: [], truncated: false, generatedAt: new Date(),
+    })
+    const filtros = x.options.extraSheets!.find((s) => s.name === 'Filtros y observaciones')!.rows.map((row) => row.join(' | '))
+    assert.ok(!filtros.some((l) => l.includes(HISTORICAL_ALLOCATION_WARNING)))
+  })
+
+  test('pantalla: tabla con grupo de fondos «no es costo», «Sin presupuesto», incompleto y total del nivel', () => {
+    const html = renderToStaticMarkup(createElement(BudgetComparisonTable, {
+      rows: result.rows, levelLabel: 'Empresa', canEdit: true, filtersApplied: false,
+      visibleTotals: result.levelTotals.totals, levelTotals: result.levelTotals.totals,
+      unassignedTotals: syntheticTotals(result.rows, result.months, NOW),
+      onEdit: () => {}, onHistory: () => {},
+    }))
+    assert.match(html, /Referencia de fondos/)
+    assert.match(html, /no es costo/)
+    assert.match(html, /Sin presupuesto/)
+    assert.match(html, /Incompleto/)
+    assert.match(html, /Total del nivel/)
+    assert.match(html, /Sin asignar/)
+    assert.match(html, /Editar/)
+  })
+
+  test('pantalla: sin permiso de edición no hay botones Editar/Cargar', () => {
+    const html = renderToStaticMarkup(createElement(BudgetComparisonTable, {
+      rows: result.rows, levelLabel: 'Empresa', canEdit: false, filtersApplied: false,
+      visibleTotals: result.levelTotals.totals, levelTotals: result.levelTotals.totals,
+      unassignedTotals: syntheticTotals(result.rows, result.months, NOW),
+      onEdit: () => {}, onHistory: () => {},
+    }))
+    assert.doesNotMatch(html, />Editar</)
+    assert.doesNotMatch(html, />Cargar</)
+    assert.match(html, /Historial/)
+  })
+
+  test('pantalla: sección de fondos rotulada «no es gasto económico» y con «Diferencia de fondos»', () => {
+    const html = renderToStaticMarkup(createElement(BudgetFundsSection, { cells: result.levelTotals.months }))
+    assert.match(html, /no es gasto económico/)
+    assert.match(html, /Diferencia de fondos/)
+    assert.doesNotMatch(html, /[Dd]esvío/)
   })
 })

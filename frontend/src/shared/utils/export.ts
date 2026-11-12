@@ -45,7 +45,7 @@ export interface XLSXHeaderGroup {
   rowSpan?: number
 }
 
-export interface XLSXExportOptions {
+export interface XLSXSheetOptions {
   autoFilter?: boolean
   numericColumnIndexes?: number[]
   numberFormat?: string
@@ -59,16 +59,16 @@ export interface XLSXExportOptions {
   headerGroups?: XLSXHeaderGroup[]
 }
 
-export async function downloadXLSX(
-  rows: ExportCell[][],
-  filename: string,
-  options: XLSXExportOptions = {},
-): Promise<void> {
-  if (rows.length === 0) return
-  const ExcelJS = await import('exceljs')
-  const workbook = new ExcelJS.Workbook()
-  const sheet = workbook.addWorksheet('Datos')
+export interface XLSXExportOptions extends XLSXSheetOptions {
+  /** Nombre de la hoja principal (default «Datos»). */
+  sheetName?: string
+  /** Hojas adicionales, en orden, cada una con sus propias opciones de formato. */
+  extraSheets?: { name: string; rows: ExportCell[][]; options?: XLSXSheetOptions }[]
+}
 
+// Arma UNA hoja (encabezado, filtros, formatos, anchos y congelado). Misma
+// lógica para la hoja principal y para cada hoja de `extraSheets`.
+function fillSheet(sheet: import('exceljs').Worksheet, rows: ExportCell[][], options: XLSXSheetOptions): void {
   const headerRowCount = options.headerGroups ? 2 : 1
   let sheetRows = rows
   if (options.headerGroups) {
@@ -142,6 +142,22 @@ export async function downloadXLSX(
 
   // Freeze header row(s)
   sheet.views = [{ state: 'frozen', ySplit: headerRowCount }]
+}
+
+export async function downloadXLSX(
+  rows: ExportCell[][],
+  filename: string,
+  options: XLSXExportOptions = {},
+): Promise<void> {
+  if (rows.length === 0) return
+  const ExcelJS = await import('exceljs')
+  const workbook = new ExcelJS.Workbook()
+  fillSheet(workbook.addWorksheet(options.sheetName ?? 'Datos'), rows, options)
+  // Hojas adicionales (opcional, aditivo): cada una con su propio formato.
+  for (const extra of options.extraSheets ?? []) {
+    if (extra.rows.length === 0) continue
+    fillSheet(workbook.addWorksheet(extra.name), extra.rows, extra.options ?? {})
+  }
 
   const buffer = await workbook.xlsx.writeBuffer()
   const blob = new Blob([buffer], {

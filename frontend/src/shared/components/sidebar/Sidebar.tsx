@@ -26,6 +26,7 @@ import {
   UserCog,
   KeyRound,
   Tractor,
+  PiggyBank,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useCurrentUser } from '../../../app/auth/AuthContext'
@@ -97,6 +98,9 @@ const navGroups: NavGroup[] = [
       { label: 'Proyección de Renovaciones', to: '/insurance/financial-analysis/renewal-projections', icon: CalendarClock, isChild: true },
       { label: 'Análisis Económico', to: '/insurance/economic-analysis', icon: TrendingUp },
       { label: 'Proyección de Renovaciones', to: '/insurance/economic-analysis/renewal-projections', icon: CalendarClock, isChild: true },
+      // Compara un presupuesto USD por alcance contra lo real (Económico y
+      // Financiero) y la proyección — misma sección de Análisis.
+      { label: 'Presupuestos', to: '/insurance/budgets', icon: PiggyBank },
       { label: 'Dashboard de Seguros', to: '/insurance/dashboard', icon: Gauge },
     ],
   },

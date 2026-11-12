@@ -153,8 +153,12 @@ export function emptyAmounts(): BudgetAmounts {
   }
 }
 
+// Solo los campos de importe/contador: nunca month, isElapsed ni monthCount
+// (recorrer las claves del destino los concatenaría o los dejaría en NaN).
+const AMOUNT_KEYS = Object.keys(emptyAmounts()) as (keyof BudgetAmounts)[]
+
 function addInto(target: BudgetAmounts, source: BudgetAmounts): void {
-  for (const key of Object.keys(target) as (keyof BudgetAmounts)[]) target[key] += source[key]
+  for (const key of AMOUNT_KEYS) target[key] += source[key]
 }
 
 /** Real financiero total (pagado + pendiente) — referencia de fondos, nunca costo. */
