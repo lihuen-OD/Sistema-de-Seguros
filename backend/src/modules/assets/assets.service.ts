@@ -553,6 +553,7 @@ export const assetsService = {
       select: {
         id: true,
         _count: { select: { pledges: true, renewalProjectionOverrides: true } },
+        insuranceBudget: { select: { id: true } },
         attachments: { select: { cloudinaryPublicId: true } },
         insuranceAudits: { select: { attachments: { select: { cloudinaryPublicId: true } } } },
       },
@@ -570,6 +571,15 @@ export const assetsService = {
         409,
         'No se puede eliminar un activo que tiene configuración o historial de proyección de renovaciones.',
         'ASSET_HAS_RENEWAL_PROJECTION_HISTORY',
+      )
+    }
+    // El presupuesto (y su historial de auditoría) es información de negocio
+    // permanente — la FK es RESTRICT; se informa antes con un 409 legible.
+    if (asset.insuranceBudget) {
+      throw new AppError(
+        409,
+        'No se puede eliminar un activo que tiene un presupuesto de seguros cargado.',
+        'ASSET_HAS_INSURANCE_BUDGET',
       )
     }
 

@@ -14,7 +14,9 @@ renewalProjectionsRouter.use(authMiddleware)
 // el filtro por `mode` en el `where` ya aísla los datos de cada página.
 const RENEWAL_PROJECTION_MODULES = ['renewal_projections', 'renewal_projections_economic'] as const
 
-renewalProjectionsRouter.get('/overrides/:mode', requireModule(...RENEWAL_PROJECTION_MODULES), renewalProjectionsController.list)
+// La pantalla de Presupuestos lee los overrides para proyectar (solo lectura:
+// PUT/DELETE/convert siguen exigiendo los módulos de proyección).
+renewalProjectionsRouter.get('/overrides/:mode', requireModule(...RENEWAL_PROJECTION_MODULES, 'insurance_budgets'), renewalProjectionsController.list)
 renewalProjectionsRouter.put(
   '/overrides/:mode/:assetId',
   requireModule(...RENEWAL_PROJECTION_MODULES),

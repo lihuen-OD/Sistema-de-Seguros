@@ -16,7 +16,7 @@ costCentersRouter.use(authMiddleware)
 // CostCenter es dato de referencia consumido como selector por varios
 // módulos (Assets, Pólizas, Empresas, Dashboard, Análisis financiero/económico)
 // además de su propia pantalla de configuración.
-const COST_CENTERS_READ_MODULES = ['cost_centers', 'companies', 'dashboard', 'assets', 'policies', 'financial_analysis', 'economic_analysis'] as const
+const COST_CENTERS_READ_MODULES = ['cost_centers', 'companies', 'dashboard', 'assets', 'policies', 'financial_analysis', 'economic_analysis', 'insurance_budgets'] as const
 
 costCentersRouter.get('/', requireModule(...COST_CENTERS_READ_MODULES), validateQuery(ListCostCentersQuerySchema), costCentersController.list)
 costCentersRouter.post(

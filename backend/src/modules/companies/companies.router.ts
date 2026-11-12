@@ -16,7 +16,7 @@ companiesRouter.use(authMiddleware)
 // Company es dato de referencia consumido como selector por varios módulos
 // (Assets, Pólizas, Dashboard, Análisis financiero/económico) además de su
 // propia pantalla de configuración — de ahí la lista amplia de módulos.
-const COMPANIES_READ_MODULES = ['companies', 'dashboard', 'assets', 'policies', 'financial_analysis', 'economic_analysis'] as const
+const COMPANIES_READ_MODULES = ['companies', 'dashboard', 'assets', 'policies', 'financial_analysis', 'economic_analysis', 'insurance_budgets'] as const
 
 companiesRouter.get('/', requireModule(...COMPANIES_READ_MODULES), validateQuery(ListCompaniesQuerySchema), companiesController.list)
 companiesRouter.post(

@@ -25,6 +25,7 @@ model Company {
 
   assetAllocations     AssetAllocation[]
   policyAssetCoverages PolicyAssetCoverage[]
+  insuranceBudget      InsuranceBudget?
 
   @@index([isActive])
   @@map("companies")
@@ -41,6 +42,7 @@ model CostCenter {
 
   assetAllocations     AssetAllocation[]
   policyAssetCoverages PolicyAssetCoverage[]
+  insuranceBudget      InsuranceBudget?
 
   @@map("cost_centers")
 }
@@ -54,7 +56,8 @@ model FixedAsset {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  assets Asset[]
+  assets          Asset[]
+  insuranceBudget InsuranceBudget?
 
   @@map("fixed_assets")
 }
@@ -151,6 +154,7 @@ model Asset {
   fixedAsset                 FixedAsset?                      @relation(fields: [fixedAssetId], references: [id])
   renewalProjectionOverrides AssetRenewalProjectionOverride[]
   insuranceAudits           InsuranceAudit[]
+  insuranceBudget           InsuranceBudget?
 
   @@index([isActive, status])
   @@index([isActive, assetType])
@@ -1331,4 +1335,109 @@ model NotificationDismissal {
   @@unique([userId, notificationId, dueDate])
   @@index([userId])
   @@map("notification_dismissals")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Presupuestos de Seguros (Análisis → Presupuestos)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Un presupuesto en USD por alcance (empresa, centro de costo, bien de uso o
+// activo), cargado por mes. Los cuatro niveles son INDEPENDIENTES: nunca se
+// suman entre sí (no hay jerarquía en los datos — un centro de costo no
+// pertenece a una empresa y un activo se reparte por % entre varias).
+//
+// Restricciones que Prisma no representa (viven en la migración
+// 20261112150000_add_insurance_budgets — mantenerlas si se regenera algo):
+//   - insurance_budgets_scope_consistent: exactamente una FK de alcance no
+//     nula y coherente con scopeType.
+//   - insurance_budget_months_month_format: month con formato 'YYYY-MM'.
+//   - insurance_budget_months_amount_non_negative: amountUsd >= 0.
+
+enum InsuranceBudgetScope {
+  COMPANY
+  COST_CENTER
+  FIXED_ASSET
+  ASSET
+}
+
+enum InsuranceBudgetAuditAction {
+  CREATE
+  UPDATE_MONTHS
+  UPDATE_NOTES
+}
+
+// Una línea presupuestaria por alcance: cada FK es @unique (Postgres admite
+// varios NULL, así que solo la FK no nula compite). Nunca se borra (el
+// historial de auditoría cuelga de acá) — por eso todas las FKs son RESTRICT.
+model InsuranceBudget {
+  id           String               @id @default(uuid())
+  scopeType    InsuranceBudgetScope
+  companyId    String?              @unique
+  costCenterId String?              @unique
+  fixedAssetId String?              @unique
+  assetId      String?              @unique
+  notes        String?
+  // Concurrencia optimista: cada escritura exige la versión que el cliente
+  // vio (compare-and-set) y la incrementa — nunca se pisa en silencio un
+  // cambio de otro usuario.
+  version      Int                  @default(1)
+  createdBy    String
+  updatedBy    String
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  company    Company?    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  costCenter CostCenter? @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
+  fixedAsset FixedAsset? @relation(fields: [fixedAssetId], references: [id], onDelete: Restrict)
+  asset      Asset?      @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  months     InsuranceBudgetMonth[]
+  auditLogs  InsuranceBudgetAuditLog[]
+
+  @@index([scopeType])
+  @@map("insurance_budgets")
+}
+
+// Sin fila = mes SIN presupuesto; amountUsd 0 = presupuesto CERO (distintos a
+// propósito). El total anual no se guarda: siempre es la suma de los meses.
+model InsuranceBudgetMonth {
+  id        String          @id @default(uuid())
+  budgetId  String
+  // 'YYYY-MM' (mismo formato que startMonthOverride) — String a propósito:
+  // es una clave de mes calendario sin zona horaria, no un instante.
+  month     String
+  amountUsd Decimal         @db.Decimal(14, 2)
+  updatedBy String
+  updatedAt DateTime        @updatedAt
+  budget    InsuranceBudget @relation(fields: [budgetId], references: [id], onDelete: Restrict)
+
+  @@unique([budgetId, month])
+  @@map("insurance_budget_months")
+}
+
+// Historial de negocio append-only, una fila por mes cambiado. SIN retención
+// automática y FUERA de scripts/cleanup-old-logs.ts (decisión del usuario,
+// 2026-11-12: auditoría y consulta de ejercicios anteriores; volumen estimado
+// de pocos miles de filas por año).
+model InsuranceBudgetAuditLog {
+  id                String                     @id @default(uuid())
+  budgetId          String
+  action            InsuranceBudgetAuditAction
+  month             String?
+  previousAmountUsd Decimal?                   @db.Decimal(14, 2)
+  // null con month presente = el mes se vació (pasó a "sin presupuesto").
+  newAmountUsd      Decimal?                   @db.Decimal(14, 2)
+  // Solo UPDATE_NOTES: { notes } anterior / nuevo.
+  previousData      Json?
+  newData           Json?
+  reason            String?
+  // Email, sin FK a User (mismo criterio que DocumentAuditLog/UserAuditLog:
+  // el historial sobrevive aunque el usuario se borre).
+  performedBy       String
+  versionAfter      Int
+  createdAt         DateTime                   @default(now())
+  budget            InsuranceBudget            @relation(fields: [budgetId], references: [id], onDelete: Restrict)
+
+  @@index([budgetId, createdAt])
+  @@index([budgetId, month])
+  @@map("insurance_budget_audit_logs")
 }

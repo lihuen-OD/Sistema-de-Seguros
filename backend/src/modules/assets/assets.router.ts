@@ -22,7 +22,7 @@ export const assetsRouter = Router()
 assetsRouter.use(authMiddleware)
 
 // CRUD principal
-assetsRouter.get('/', requireModule('assets', 'renewal_projections', 'renewal_projections_economic'), validateQuery(ListAssetsQuerySchema), assetsController.list)
+assetsRouter.get('/', requireModule('assets', 'renewal_projections', 'renewal_projections_economic', 'insurance_budgets'), validateQuery(ListAssetsQuerySchema), assetsController.list)
 // Debe declararse antes de /:id para que Express no interprete "search" como un UUID de activo.
 assetsRouter.get('/search', requireModule('assets', 'policies'), validateQuery(SearchAssetsQuerySchema), assetsController.search)
 assetsRouter.post(

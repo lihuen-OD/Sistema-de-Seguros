@@ -55,7 +55,7 @@ documentsRouter.get(
 // ── Análisis financiero (debe ir antes de /:id para evitar conflicto de ruta) ─
 documentsRouter.get(
   '/financial',
-  requireModule('financial_analysis', 'renewal_projections', 'renewal_projections_economic'),
+  requireModule('financial_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_budgets'),
   validateQuery(FinancialQuerySchema),
   documentsController.getFinancial,
 )

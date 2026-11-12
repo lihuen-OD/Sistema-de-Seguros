@@ -15,7 +15,7 @@ fixedAssetsRouter.use(authMiddleware)
 
 // El listado también lo usa el selector de "Bien de Uso" del formulario de
 // Activos (BienDeUsoField), por eso acepta también el módulo `assets`.
-fixedAssetsRouter.get('/', requireModule('fixed_assets', 'assets'), validateQuery(ListFixedAssetsQuerySchema), fixedAssetsController.list)
+fixedAssetsRouter.get('/', requireModule('fixed_assets', 'assets', 'insurance_budgets'), validateQuery(ListFixedAssetsQuerySchema), fixedAssetsController.list)
 fixedAssetsRouter.post(
   '/',
   requireModule('fixed_assets'),

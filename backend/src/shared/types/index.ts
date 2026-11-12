@@ -16,10 +16,14 @@ import type { Role } from '@prisma/client'
 // póliza (marcar/revertir una renovación) — siempre se exige junto con
 // `policies` (ver policies.router.ts), mismo criterio que crear/auditar vs.
 // revisar en las auditorías.
+// `insurance_budgets` es la pantalla Análisis → Presupuestos (lectura) y
+// `insurance_budgets_edit` la acción de crear/editar importes — se exige
+// SIEMPRE junto con `insurance_budgets` (mismo patrón que `policy_renewals`).
 export const MODULE_KEYS = [
   'dashboard',
   'assets',
   'policies', 'policy_renewals', 'documents', 'financial_analysis', 'economic_analysis', 'renewal_projections', 'renewal_projections_economic', 'insurance_dashboard',
+  'insurance_budgets', 'insurance_budgets_edit',
   'claims',
   'fire_extinguishers', 'fire_extinguisher_audits', 'fire_extinguisher_audit_coverage', 'fire_extinguisher_dashboard',
   'asset_audits', 'asset_audit_coverage', 'asset_audit_dashboard',
