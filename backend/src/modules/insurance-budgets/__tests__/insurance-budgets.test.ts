@@ -139,7 +139,11 @@ describe('Insurance Budgets API', () => {
       ['/api/v1/fixed-assets'],
       ['/api/v1/renewal-projections/overrides/ECONOMIC'],
     ])('GET %s is not forbidden with only insurance_budgets', async (url) => {
+      // Con los mocks vacíos algunos servicios responden 500: acá solo importa
+      // que el gate de permisos deje pasar (no 401/403). Se silencia ese log.
+      const spy = jest.spyOn(console, 'error').mockImplementation(() => {})
       const res = await request(app).get(url).set('Authorization', asUser(['insurance_budgets']))
+      spy.mockRestore()
       expect(res.status).not.toBe(403)
       expect(res.status).not.toBe(401)
     })

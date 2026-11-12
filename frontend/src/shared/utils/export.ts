@@ -150,7 +150,10 @@ export async function downloadXLSX(
   options: XLSXExportOptions = {},
 ): Promise<void> {
   if (rows.length === 0) return
-  const ExcelJS = await import('exceljs')
+  // exceljs es CommonJS: el bundle de Vite expone Workbook en el namespace,
+  // Node (tests) lo expone en `default`. Mismo módulo en ambos casos.
+  const mod = await import('exceljs')
+  const ExcelJS = ((mod as unknown as { default?: typeof mod }).default ?? mod) as typeof mod
   const workbook = new ExcelJS.Workbook()
   fillSheet(workbook.addWorksheet(options.sheetName ?? 'Datos'), rows, options)
   // Hojas adicionales (opcional, aditivo): cada una con su propio formato.
