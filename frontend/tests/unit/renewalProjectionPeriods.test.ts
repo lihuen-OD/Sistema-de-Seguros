@@ -401,6 +401,7 @@ function rowFrom(docs: DocumentForFinancial[], policies: Policy[], mode: 'FIN' |
     baseStatus: cycle.baseStatus, projectionBlocked: base.projectionBlocked,
     periodInvoiceCount: cycle.periodInvoiceCount, outOfTermCount: cycle.outOfTermCount, outOfTermItems: cycle.outOfTermItems,
     ambiguousPeriodItems: cycle.ambiguousPeriodItems, allocationIssues: inconsistentAllocationsForAsset(A, docs),
+    excludedAdjustments: [],
     concurrentPeriodsExcluded: cycle.concurrentPeriodsExcluded,
     isOverridden: false, hasLegacy: false, legacyPendingFields: [], override: null,
   }
@@ -464,7 +465,7 @@ describe('C1 · proyección por período (sin plegar, sin omitir, sin duplicar)'
     close(sumDisplayCells(cells, 'projected').total, projectedParts, 'KPI = suma de partes proyectadas')
 
     const { buildRenewalProjectionExport } = await import('../../src/modules/insurance/renewal-projections/renewalProjectionExport')
-    const xlsx = buildRenewalProjectionExport({ rows: [row], matrix: [cells], rowTotals: [totals], axis, currency: 'USD', projectionRate: null, breakdownFields: [], hideAssetPanel: true, horizonEndMonthKey: '2027-12', filenamePrefix: 'p' })
+    const xlsx = buildRenewalProjectionExport({ rows: [row], matrix: [cells], rowTotals: [totals], axis, breakdownFields: [], hideAssetPanel: true, horizonEndMonthKey: '2027-12', filenamePrefix: 'p' })
     const [header, realRow, projRow] = xlsx.rows
     const col = header.indexOf('2027-08')
     close(realRow[col] as number, 2000)
@@ -654,13 +655,14 @@ describe('C3 · trazabilidad y asignaciones incoherentes', () => {
     const docs = [doc({ number: 'F', issueDate: '2026-01-05', net: 1000, vat: 210, alloc: [{ policyId: 'ANUAL', pct: 100 }], installments: [inst('2026-02-10', 605, 'USD', 1500, true), inst('2027-02-10', 605)] })]
     const rows = [rowFrom(docs, policies, 'FIN', '2028-12', 'Uno'), rowFrom(docs, policies, 'ECO', '2028-12', 'Dos')]
     const axis = buildMonthRange('2026-01', '2028-12')
-    for (const [currency, rate] of [['USD', null], ['ARS', 1500]] as const) {
-      const matrix = buildDisplayMatrix(rows, axis, currency, rate)
+    // Las proyecciones se muestran y exportan solo en USD.
+    for (const currency of ['USD'] as const) {
+      const matrix = buildDisplayMatrix(rows, axis, currency, null)
       const rowTotals = matrix.map((cells) => sumRowTotals(cells))
       const kpi = sumDisplayCells(matrix.flat(), 'projected')
       close(kpi.total, rowTotals.reduce((s, t) => s + t.projected.total, 0), 'KPI = Σ totales proyectados de fila')
       const { buildRenewalProjectionExport } = await import('../../src/modules/insurance/renewal-projections/renewalProjectionExport')
-      const xlsx = buildRenewalProjectionExport({ rows, matrix, rowTotals, axis, currency, projectionRate: rate, breakdownFields: ['net', 'vat', 'total'], hideAssetPanel: false, horizonEndMonthKey: '2028-12', filenamePrefix: 'p' })
+      const xlsx = buildRenewalProjectionExport({ rows, matrix, rowTotals, axis, breakdownFields: ['net', 'vat', 'total'], hideAssetPanel: false, horizonEndMonthKey: '2028-12', filenamePrefix: 'p' })
       const [, ...data] = xlsx.rows
       assert.equal(data.length, 4)
       const header = xlsx.rows[0]

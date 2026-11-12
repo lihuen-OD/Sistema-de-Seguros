@@ -1,13 +1,13 @@
-import { AlertTriangle, History, RotateCcw } from 'lucide-react'
+import { AlertTriangle, History, Info, RotateCcw } from 'lucide-react'
 import { formatCurrencyCompact, formatCurrencyFull, formatCurrencyInteger } from '../../../shared/utils/format'
 import {
   baseTotalUsd,
   cellParts,
   hasExcludedNative,
-  usdIn,
   type AllocationInconsistency,
   type DisplayCell,
   type DisplayCellPart,
+  type ExcludedAdjustmentItem,
   type RowTotals,
   type LegacyAmountField,
   type NativeAmounts,
@@ -16,11 +16,10 @@ import {
   type RowProjectionInputs,
 } from '../../../shared/utils/renewalProjectionCalc'
 import type { RenewalProjectionOverride } from '../../../shared/api/renewal-projections.api'
-import type { Currency } from '../../../shared/types'
 import type { RenewalOverrideField } from './useRenewalProjectionData'
 import type { BreakdownFieldKey } from './RenewalFieldSelectorPopover'
 import { BREAKDOWN_FIELD_DEFS } from './RenewalFieldSelectorPopover'
-import { monthLabel, formatAllocationIssues, formatNativeAmounts, formatNativeAmountsCompact, formatTraceItems } from './renewalProjectionFormat'
+import { monthLabel, formatAllocationIssues, formatExcludedAdjustments, formatNativeAmounts, formatNativeAmountsCompact, formatTraceItems, PROJECTION_CURRENCY } from './renewalProjectionFormat'
 
 export interface AssetRowData extends RowProjectionInputs {
   assetId: string
@@ -44,6 +43,8 @@ export interface AssetRowData extends RowProjectionInputs {
   ambiguousPeriodItems: RenewalTraceItem[]
   /** Asignaciones del activo cuyo % no corresponde al importe asignado (se informan, no se corrigen). */
   allocationIssues: AllocationInconsistency[]
+  /** Ajustes ya volcados en su factura cuyas cuotas propias no se suman (solo Financiero; informativo). */
+  excludedAdjustments: ExcludedAdjustmentItem[]
   /** Coberturas concurrentes con otro plazo que no se suman a la base. */
   concurrentPeriodsExcluded: number
   /** Tiene configuración vigente que "Volver al automático" puede limpiar. */
@@ -63,9 +64,6 @@ interface RenewalProjectionTableProps {
   axis: string[]
   /** Mes actual: desde acá (inclusive) las columnas se marcan como zona de proyección. */
   projectionFromMonthKey: string
-  currency: Currency
-  /** TC manual de la pantalla (null = lo futuro en ARS se muestra «Sin TC»). */
-  projectionRate: number | null
   breakdownFields: BreakdownFieldKey[]
   hideAssetPanel: boolean
   /** Financiero reparte el total en cuotas — Económico es siempre un pago único por documento, así que ahí no tiene sentido editar la cantidad de cuotas. */
@@ -106,10 +104,13 @@ function fieldValue(part: DisplayCellPart, key: BreakdownFieldKey): number | nul
 
 const PART_LABEL = { real: 'Real', projected: 'Proyectado' } as const
 
+// Las proyecciones se muestran solo en USD (ver PROJECTION_CURRENCY).
+const currency = PROJECTION_CURRENCY
+
 /** Tooltip de un mes con lo real y lo proyectado a la vez. */
-function mixedCellTitle(cell: DisplayCell, currency: Currency): string {
+function mixedCellTitle(cell: DisplayCell): string {
   const describe = (part: DisplayCellPart | null, label: string) =>
-    !part ? null : `${label}: ${part.amounts ? formatCurrencyFull(part.amounts.total, currency) : part.isReal ? `${formatNativeAmounts(part.excludedNative)} sin TC` : 'Sin TC'}`
+    !part ? null : `${label}: ${part.amounts ? formatCurrencyFull(part.amounts.total, currency) : part.isReal ? `${formatNativeAmounts(part.excludedNative)} sin TC` : NO_USD_AMOUNT}`
   return [
     'Mes con importes reales y proyectados — se muestran y suman por separado',
     describe(cell.real, PART_LABEL.real),
@@ -119,21 +120,21 @@ function mixedCellTitle(cell: DisplayCell, currency: Currency): string {
     .join('\n')
 }
 
-// Las columnas del panel miden 104px: hasta ~13 caracteres ("AR$ 3.000.000")
-// el importe entero entra; más largo (ej. "AR$ 150.000.000" en la vista ARS)
-// se muestra compacto ("AR$ 150M") y el valor completo queda en el tooltip.
+// Las columnas del panel miden 104px: hasta ~13 caracteres ("US$ 3.000.000")
+// el importe entero entra; más largo se muestra compacto ("US$ 150M") y el
+// valor completo queda en el tooltip.
 const PANEL_AMOUNT_MAX_CHARS = 13
-function panelAmount(value: number, currency: Currency): string {
+function panelAmount(value: number): string {
   const integer = formatCurrencyInteger(value, currency)
   return integer.length <= PANEL_AMOUNT_MAX_CHARS ? integer : formatCurrencyCompact(value, currency)
 }
 
-const NO_RATE_TITLE = 'Sin TC — ingresá un tipo de cambio (ARS por USD) para ver los importes futuros en ARS'
+// Defensivo: en USD lo proyectado siempre tiene importe (sale de la base USD).
+const NO_USD_AMOUNT = 'Sin importe USD'
 
-function incompleteTitle(excluded: NativeAmounts, hasProjectedWithoutRate: boolean): string {
+function incompleteTitle(excluded: NativeAmounts): string {
   const parts = ['Incompleto']
-  if (hasExcludedNative(excluded)) parts.push(`excluye ${formatNativeAmounts(excluded)} sin tipo de cambio histórico confiable`)
-  if (hasProjectedWithoutRate) parts.push('incluye meses proyectados en ARS sin TC')
+  if (hasExcludedNative(excluded)) parts.push(`excluye ${formatNativeAmounts(excluded)} sin cierre USD histórico confiable`)
   return parts.join(' — ')
 }
 
@@ -169,10 +170,10 @@ function IncompleteMark({ title }: { title: string }) {
   )
 }
 
-/** Parte sin importe expresable en la moneda elegida: lo real se ve en su moneda nativa, lo proyectado en ARS sin TC manual como «Sin TC». */
+/** Parte sin importe en USD: lo real sin cierre USD confiable se ve en su moneda nativa (no se suma). */
 function UnconvertibleCellContent({ cell }: { cell: DisplayCellPart }) {
   if (cell.isReal) {
-    const title = `Sin tipo de cambio histórico confiable — se muestra en su moneda original (${formatNativeAmounts(cell.excludedNative)}) y no se suma a los totales`
+    const title = `Sin cierre USD histórico confiable — se muestra en su moneda original (${formatNativeAmounts(cell.excludedNative)}) y no se suma a los totales`
     return (
       <span className={`text-xs font-medium rounded px-1.5 py-0.5 tabular-nums ${UNCONVERTIBLE_PILL_CLASS}`} title={title}>
         {formatNativeAmountsCompact(cell.excludedNative)} · sin TC
@@ -180,8 +181,8 @@ function UnconvertibleCellContent({ cell }: { cell: DisplayCellPart }) {
     )
   }
   return (
-    <span className={`text-xs font-medium rounded px-1.5 py-0.5 border-dashed ${UNCONVERTIBLE_PILL_CLASS}`} title={NO_RATE_TITLE}>
-      Sin TC
+    <span className={`text-xs font-medium rounded px-1.5 py-0.5 border-dashed ${UNCONVERTIBLE_PILL_CLASS}`} title={NO_USD_AMOUNT}>
+      —
     </span>
   )
 }
@@ -192,8 +193,6 @@ export function RenewalProjectionTable({
   rowTotals,
   axis,
   projectionFromMonthKey,
-  currency,
-  projectionRate,
   breakdownFields,
   hideAssetPanel,
   showInstallmentsColumn,
@@ -212,9 +211,6 @@ export function RenewalProjectionTable({
     cumulativeLeft += col.width
   }
   const lastStickyIndex = visibleStickyCols.length - 1
-  // La base se guarda en USD: Neto/IVA/Otros solo se editan en la vista USD,
-  // así ninguna escritura depende de un tipo de cambio.
-  const canEditAmounts = currency === 'USD'
 
   // Solo guarda si el valor realmente cambió respecto de lo mostrado — un
   // foco + blur sin tocar nada no crea ni pisa ningún override.
@@ -291,13 +287,10 @@ export function RenewalProjectionTable({
             const rowTotal = rowTotals[rowIndex]
             const totals = rowTotal?.all
             const isEmpty = row.realTimeline.size === 0 && !row.isOverridden && !row.hasLegacy
-            const netShown = usdIn(row.netUsd, currency, projectionRate)
-            const vatShown = usdIn(row.vatUsd, currency, projectionRate)
-            const otherShown = usdIn(row.otherUsd, currency, projectionRate)
-            const totalShown = usdIn(baseTotalUsd(row), currency, projectionRate)
-            const inputKey = `${row.assetId}-${currency}-${overridesVersion}`
-            const hasProjectedWithoutRate = cells.some((c) => c?.projected && !c.projected.amounts)
-            const totalsIncompleteTitle = totals ? incompleteTitle(totals.excludedNative, hasProjectedWithoutRate) : ''
+            // La base se guarda y se edita en USD: ninguna escritura depende de un tipo de cambio.
+            const totalShown = baseTotalUsd(row)
+            const inputKey = `${row.assetId}-${overridesVersion}`
+            const totalsIncompleteTitle = totals ? incompleteTitle(totals.excludedNative) : ''
             const legacyPct = row.override?.growthPercentOverride ?? null
 
             function stickyStyle(i: number) {
@@ -310,39 +303,23 @@ export function RenewalProjectionTable({
             }
 
             function amountCell(field: 'net' | 'vat' | 'other', i: number, shown: number | null) {
-              if (canEditAmounts) {
-                const rounded = shown === null ? null : Math.round(shown)
-                return (
-                  <td key={field} className={DOC_CELL_CLASS} style={stickyStyle(i)}>
-                    <input
-                      key={`${inputKey}-${field}`}
-                      type="number"
-                      min={0}
-                      defaultValue={rounded ?? ''}
-                      placeholder={row.projectionBlocked && field === 'net' ? 'USD' : rounded === null ? '0' : undefined}
-                      title={
-                        row.projectionBlocked && field === 'net'
-                          ? 'La última renovación no tiene tipo de cambio histórico confiable — cargá el Neto en USD para habilitar la proyección'
-                          : 'Base USD de la renovación proyectada'
-                      }
-                      onBlur={(e) => commitInput(row.assetId, field, e.target.value, rounded, 0)}
-                      className={row.projectionBlocked ? INPUT_WARNING_CLASS : INPUT_CLASS}
-                    />
-                  </td>
-                )
-              }
+              const rounded = shown === null ? null : Math.round(shown)
               return (
                 <td key={field} className={DOC_CELL_CLASS} style={stickyStyle(i)}>
-                  <span
-                    className={`text-xs tabular-nums ${shown === null ? 'text-amber-700' : 'text-slate-700'}`}
+                  <input
+                    key={`${inputKey}-${field}`}
+                    type="number"
+                    min={0}
+                    defaultValue={rounded ?? ''}
+                    placeholder={row.projectionBlocked && field === 'net' ? 'USD' : rounded === null ? '0' : undefined}
                     title={
-                      shown === null
-                        ? row.netUsd === null ? 'Sin base USD confiable' : NO_RATE_TITLE
-                        : `${formatCurrencyFull(shown, currency)} — la base se edita en USD: cambiá la moneda a USD para modificarla`
+                      row.projectionBlocked && field === 'net'
+                        ? 'La última renovación no tiene cierre USD histórico confiable — cargá el Neto en USD para habilitar la proyección'
+                        : 'Base USD de la renovación proyectada'
                     }
-                  >
-                    {shown === null ? (row.netUsd === null ? '—' : 'Sin TC') : panelAmount(shown, currency)}
-                  </span>
+                    onBlur={(e) => commitInput(row.assetId, field, e.target.value, rounded, 0)}
+                    className={row.projectionBlocked ? INPUT_WARNING_CLASS : INPUT_CLASS}
+                  />
                 </td>
               )
             }
@@ -353,12 +330,12 @@ export function RenewalProjectionTable({
                   <div className="min-w-0">
                     <span className="text-sm font-medium text-slate-800 block truncate" title={row.name}>{row.name}</span>
                     <span className="text-xs text-slate-400 block truncate" title={row.code}>{row.code}</span>
-                    {(row.projectionBlocked || row.hasLegacy || row.outOfTermCount > 0 || row.concurrentPeriodsExcluded > 0 || row.ambiguousPeriodItems.length > 0 || row.allocationIssues.length > 0) && (
+                    {(row.projectionBlocked || row.hasLegacy || row.outOfTermCount > 0 || row.concurrentPeriodsExcluded > 0 || row.ambiguousPeriodItems.length > 0 || row.allocationIssues.length > 0 || row.excludedAdjustments.length > 0) && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {row.projectionBlocked && (
                           <span
                             className="inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5 text-amber-800 bg-amber-50 border border-amber-200"
-                            title="La última renovación está en una moneda sin tipo de cambio histórico confiable — no se proyecta hasta que se cargue el Neto en USD"
+                            title="La última renovación no tiene cierre USD histórico confiable — no se proyecta hasta que se cargue el Neto en USD"
                           >
                             <AlertTriangle size={10} />
                             Sin TC confiable
@@ -400,6 +377,15 @@ export function RenewalProjectionTable({
                             Póliza paralela no sumada
                           </span>
                         )}
+                        {row.excludedAdjustments.length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5 text-slate-600 bg-slate-50 border border-slate-200"
+                            title={`Ajuste ya volcado en las cuotas de su factura — sus cuotas propias no se suman para no duplicarlo (informativo): ${formatExcludedAdjustments(row.excludedAdjustments)}`}
+                          >
+                            <Info size={10} />
+                            Ajuste ya aplicado
+                          </span>
+                        )}
                         {row.hasLegacy && (
                           <button
                             type="button"
@@ -432,21 +418,21 @@ export function RenewalProjectionTable({
                     }
                     switch (col.key) {
                       case 'net':
-                        return amountCell('net', i, netShown)
+                        return amountCell('net', i, row.netUsd)
                       case 'vat':
-                        return amountCell('vat', i, vatShown)
+                        return amountCell('vat', i, row.vatUsd)
                       case 'other':
-                        return amountCell('other', i, otherShown)
+                        return amountCell('other', i, row.otherUsd)
                       case 'total':
                         return (
                           <td key={col.key} className={DOC_CELL_CLASS} style={stickyStyle(i)}>
                             {totalShown === null ? (
-                              <span className="text-xs font-bold text-amber-700" title={row.netUsd === null ? 'Sin base USD confiable' : NO_RATE_TITLE}>
-                                {row.netUsd === null ? '—' : 'Sin TC'}
+                              <span className="text-xs font-bold text-amber-700" title="Sin base USD confiable">
+                                —
                               </span>
                             ) : (
                               <span className="text-xs font-bold text-slate-800 tabular-nums" title={formatCurrencyFull(totalShown, currency)}>
-                                {panelAmount(totalShown, currency)}
+                                {panelAmount(totalShown)}
                               </span>
                             )}
                           </td>
@@ -543,7 +529,7 @@ export function RenewalProjectionTable({
                         {cell ? (
                           <div
                             className="flex flex-col items-end gap-0.5 py-2 px-2.5 whitespace-nowrap"
-                            title={cell.real && cell.projected ? mixedCellTitle(cell, currency) : undefined}
+                            title={cell.real && cell.projected ? mixedCellTitle(cell) : undefined}
                           >
                             {cellParts(cell).map((part) => (
                               <div key={part.isReal ? 'real' : 'projected'} className="flex justify-end items-center gap-0.5">
@@ -552,7 +538,7 @@ export function RenewalProjectionTable({
                                     <span className={`text-xs font-medium rounded px-1.5 py-0.5 tabular-nums ${STATUS_PILL_CLASSES[part.status]}`}>
                                       {formatCurrencyCompact(part.amounts.total, currency)}
                                     </span>
-                                    {part.incomplete && <IncompleteMark title={incompleteTitle(part.excludedNative, false)} />}
+                                    {part.incomplete && <IncompleteMark title={incompleteTitle(part.excludedNative)} />}
                                   </>
                                 ) : (
                                   <UnconvertibleCellContent cell={part} />
@@ -574,7 +560,7 @@ export function RenewalProjectionTable({
                       className={`text-right py-2 px-2.5 whitespace-nowrap ${startsProj && fi === 0 ? 'border-l-2 border-dashed border-slate-300' : ''} ${
                         single ? (single.amounts ? STATUS_CELL_BG_CLASSES[single.status] : 'bg-amber-50/60') : ''
                       }`}
-                      title={cell && parts.length > 1 ? mixedCellTitle(cell, currency) : undefined}
+                      title={cell && parts.length > 1 ? mixedCellTitle(cell) : undefined}
                     >
                       {parts.length === 0 ? (
                         <span className="text-slate-300 text-xs">—</span>
@@ -592,7 +578,7 @@ export function RenewalProjectionTable({
                                 className={`tabular-nums ${parts.length > 1 ? `text-xs font-medium rounded px-1.5 py-0.5 ${STATUS_PILL_CLASSES[part.status]}` : ''}`}
                               >
                                 {formatCurrencyCompact(value, currency)}
-                                {part.incomplete && <IncompleteMark title={incompleteTitle(part.excludedNative, false)} />}
+                                {part.incomplete && <IncompleteMark title={incompleteTitle(part.excludedNative)} />}
                               </span>
                             )
                           })}

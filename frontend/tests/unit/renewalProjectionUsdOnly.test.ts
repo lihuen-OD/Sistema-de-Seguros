@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { test } from 'node:test'
 import { act, createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { JSDOM } from 'jsdom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { assetsApi } from '../../src/shared/api/assets.api'
@@ -10,12 +11,15 @@ import { documentsApi, type DocumentForFinancial } from '../../src/shared/api/do
 import { exchangeRateApi } from '../../src/shared/api/exchange-rate.api'
 import { renewalProjectionsApi, type RenewalProjectionMode } from '../../src/shared/api/renewal-projections.api'
 import { useRenewalProjectionData } from '../../src/modules/insurance/renewal-projections/useRenewalProjectionData'
+import { buildRenewalProjectionExport } from '../../src/modules/insurance/renewal-projections/renewalProjectionExport'
+import { RenewalObservationsPanel } from '../../src/modules/insurance/renewal-projections/RenewalObservationsPanel'
 import type { Asset, Policy } from '../../src/shared/types'
 
-// TC manual de la proyección, probado sobre el hook REAL de las dos páginas
-// (Financiero y Económico): arranca vacío, solo convierte lo proyectado a ARS,
-// sobrevive a cambiar de moneda, no se guarda, y cambiarlo no dispara
-// ninguna consulta ni escritura (las APIs se cuentan con stubs).
+// Proyecciones SOLO en USD, probado sobre el hook REAL de las dos páginas
+// (Financiero y Económico): sin selector de moneda ni TC manual, lo real con
+// su cierre USD histórico (sin cierre confiable: excluido y marcado, nunca
+// convertido), KPI = tabla = Excel, Excel solo USD, observaciones con
+// comprobante y fecha, y nada consulta ni escribe de más (APIs con stubs).
 
 const A = 'asset-a'
 
@@ -41,12 +45,27 @@ const DOC = {
   }],
 } as unknown as DocumentForFinancial
 
+// Factura vieja con TC 1 por default (USD = ARS): su cierre USD NO es confiable.
+const OLD = {
+  ...DOC, id: 'doc-old', documentNumber: 'F-OLD', issueDate: '2025-03-05', exchangeRate: 1,
+  netAmount: 500_000, vatAmount: 0, totalAmount: 500_000, totalAmountArs: 500_000, totalAmountUsd: 500_000,
+  installments: [{ ...DOC.installments[0], id: 'i-old', accountingDocumentId: 'doc-old', dueDate: '2025-03-20', amount: 500_000, amountArs: 500_000, amountUsd: 500_000 }],
+  allocations: [{ ...DOC.allocations[0], id: 'al-old', accountingDocumentId: 'doc-old', allocatedAmount: 500_000 }],
+} as unknown as DocumentForFinancial
+
+// ND aplicada que ya volcó todo su importe en la factura y además tiene una
+// cuota propia (caso ND01): Financiero la excluye para no duplicarla.
+const ND = {
+  ...DOC, id: 'doc-nd', documentType: 'DEBIT_NOTE', documentStatus: 'APPLIED', documentNumber: 'ND-01',
+  issueDate: '2026-03-05', netAmount: 121_000, vatAmount: 0, totalAmount: 121_000, totalAmountArs: 121_000, totalAmountUsd: 121,
+  appliedAdjustment: { count: 1, ars: 121_000, usd: 121 },
+  installments: [{ ...DOC.installments[0], id: 'i-nd', accountingDocumentId: 'doc-nd', dueDate: '2026-04-10', amount: 121_000, amountArs: 121_000, amountUsd: 121 }],
+  allocations: [{ ...DOC.allocations[0], id: 'al-nd', accountingDocumentId: 'doc-nd', allocatedAmount: 121_000 }],
+} as unknown as DocumentForFinancial
+
 const calls: Record<string, number> = {}
 function count(name: string) {
   calls[name] = (calls[name] ?? 0) + 1
-}
-function totalCalls() {
-  return Object.values(calls).reduce((a, b) => a + b, 0)
 }
 
 // Los queryFn resuelven el método del objeto al llamarse, así que pisarlo
@@ -54,7 +73,7 @@ function totalCalls() {
 Object.assign(assetsApi, { findAll: async () => { count('assets'); return [ASSET] } })
 Object.assign(policiesApi, { findAll: async () => { count('policies'); return [POLICY] } })
 Object.assign(documentsApi, {
-  findAllForFinancialWithMeta: async () => { count('documents'); return { data: [DOC], truncated: false, truncationKnown: true } },
+  findAllForFinancialWithMeta: async () => { count('documents'); return { data: [OLD, DOC, ND], truncated: false, truncationKnown: true } },
 })
 Object.assign(exchangeRateApi, {
   getCurrent: async () => { count('systemRate'); return { rate: 1000, updatedBy: null, updatedAt: null, isPlaceholder: true } },
@@ -140,74 +159,78 @@ function cellAt(s: HookState, monthKey: string) {
 }
 
 for (const mode of ['FINANCIAL', 'ECONOMIC'] as const) {
-  test(`${mode}: TC manual vacío al entrar, solo convierte lo futuro, se mantiene al cambiar de moneda y no consulta ni escribe`, async () => {
+  test(`${mode}: solo USD — sin selector ni TC, real con su cierre USD, KPI = tabla = Excel, observaciones con comprobante y fecha`, async () => {
     for (const key of Object.keys(calls)) delete calls[key]
     const page = await mountHook(mode)
     try {
-      const loaded = page.get()
-      assert.equal(loaded.rows.length, 1, 'la fila del activo debería cargar')
+      const s = page.get()
+      assert.equal(s.rows.length, 1, 'la fila del activo debería cargar')
+      // 1. No hay moneda elegible ni TC manual en el estado de la pantalla.
+      for (const key of ['currency', 'setCurrency', 'manualRateInput', 'setManualRateInput', 'projectionRate']) {
+        assert.ok(!(key in s), `no debería exponer ${key}`)
+      }
       // La página no consulta el TC del sistema (solo lo hace el modal de valores anteriores).
       assert.equal(calls.systemRate, undefined)
 
-      // 1. Vacío por defecto: en ARS lo futuro queda «Sin TC», lo real con su ARS registrado.
-      assert.equal(loaded.manualRateInput, '')
-      assert.equal(loaded.projectionRate, null)
-      assert.equal(loaded.currency, 'ARS')
-      const realMonth = mode === 'FINANCIAL' ? '2026-01' : '2026-01'
-      assert.equal(cellAt(loaded, realMonth)!.real!.amounts!.total, 1_210_000)
-      assert.equal(cellAt(loaded, '2027-01')!.projected!.amounts, null)
-      assert.equal(loaded.kpis.projectedAvailable, false)
-      const callsAfterLoad = totalCalls()
-
-      // 2. TC válido: lo futuro = base USD × TC; lo real no cambia.
-      await page.run((s) => s.setManualRateInput('1500'))
-      let s = page.get()
-      assert.equal(s.projectionRate, 1500)
-      assert.equal(cellAt(s, '2027-01')!.projected!.amounts!.total, 1210 * 1500)
-      assert.equal(cellAt(s, realMonth)!.real!.amounts!.total, 1_210_000)
-      assert.equal(s.kpis.projectedAvailable, true)
-      // KPI y totales de fila salen de la misma matriz que la tabla.
-      const projectedCellsSum = s.matrix[0].reduce((acc, c) => (c?.projected?.amounts ? acc + c.projected.amounts.total : acc), 0)
+      // 2. Lo real usa el cierre USD guardado, sin recalcular (F-1: USD 1210).
+      assert.equal(cellAt(s, '2026-01')!.real!.amounts!.total, 1210)
+      // Sin cierre USD confiable (TC 1): no se convierte, queda en ARS nativo y excluido.
+      const old = cellAt(s, '2025-03')!.real!
+      assert.equal(old.amounts, null)
+      assert.equal(old.excludedNative.ARS, 500_000)
+      assert.equal(old.incomplete, true)
+      assert.equal(s.rowTotals[0].real.incomplete, true, 'el total real queda marcado incompleto')
+      // Lo proyectado sale de la base USD.
+      const projectedCellsSum = s.matrix[0].reduce((acc, c) => acc + (c?.projected?.amounts?.total ?? 0), 0)
       assert.ok(projectedCellsSum > 0)
+
+      // 3. KPI = Σ celdas = total de fila = Excel.
       assert.equal(s.kpis.projected.total, projectedCellsSum)
       assert.equal(s.rowTotals[0].projected.total, projectedCellsSum)
-      assert.equal(s.rowTotals[0].real.total, 1_210_000)
-      assert.equal(s.rowTotals[0].all.total, 1_210_000 + projectedCellsSum)
+      const xlsx = buildRenewalProjectionExport({
+        rows: s.rows, matrix: s.matrix, rowTotals: s.rowTotals, axis: s.axis,
+        breakdownFields: [], hideAssetPanel: false, horizonEndMonthKey: s.horizonEndMonthKey, filenamePrefix: 'proy',
+      })
+      const [header, realRow, projRow] = xlsx.rows
+      assert.match(xlsx.filename, /^proy-USD-/)
+      assert.ok(header.every((h) => !String(h).includes('ARS')), `encabezados solo USD: ${header.join(' | ')}`)
+      assert.equal(header[header.length - 2], 'Total (USD)')
+      assert.equal(projRow[header.length - 2], projectedCellsSum, 'Excel proyectado = KPI')
+      assert.equal(realRow[header.length - 2], s.rowTotals[0].real.total, 'Excel real = total real de la tabla')
+      assert.equal(realRow[header.indexOf('2026-01')], 1210)
+      assert.match(String(realRow[header.indexOf('2025-03')]), /^AR\$ .*\(sin TC\)$/, 'sin cierre confiable va como texto nativo, no convertido')
+      assert.match(String(realRow[header.length - 1]), /TOTAL INCOMPLETO — excluye AR\$/)
 
-      // 3. TC inválido, cero o negativo: vuelve a «Sin TC».
-      for (const bad of ['0', '-20', 'abc']) {
-        await page.run((st) => st.setManualRateInput(bad))
-        assert.equal(page.get().projectionRate, null, `"${bad}" debería ser inválido`)
-        assert.equal(cellAt(page.get(), '2027-01')!.projected!.amounts, null)
+      // 4. Observaciones agrupadas: revisión vs informativas, con detalle.
+      const byKey = new Map(s.observations.map((o) => [o.key, o]))
+      assert.ok(byKey.has('unreliable-real'), 'categoría de importes sin cierre USD confiable')
+      const unreliable = byKey.get('unreliable-real')!
+      assert.equal(unreliable.severity, 'review')
+      assert.equal(unreliable.count, 1)
+      assert.match(unreliable.details[0].text, /MAR 25 — excluye AR\$/)
+      const adjustment = byKey.get('excluded-adjustments')
+      if (mode === 'FINANCIAL') {
+        assert.ok(adjustment, 'Financiero informa la cuota de ajuste excluida')
+        if (!adjustment) return
+        assert.equal(adjustment.severity, 'info', 'una exclusión correcta es informativa, no un error')
+        assert.match(adjustment.details[0].text, /ND-01 \(Nota de Débito\) · emitida 05\/03\/2026 · cuota 10\/04\/2026/)
+        assert.match(String(realRow[header.length - 1]), /Cuotas de ajustes ya aplicados.*ND-01/)
+        // El ajuste excluido no aparece como importe real en abril.
+        assert.equal(cellAt(s, '2026-04')?.real ?? null, null)
+      } else {
+        assert.equal(adjustment, undefined, 'Económico no excluye cuotas de ajustes')
       }
 
-      // 4. Cambiar de moneda mantiene el TC; USD no depende de él.
-      await page.run((st) => st.setManualRateInput('1500'))
-      await page.run((st) => st.setCurrency('USD'))
-      s = page.get()
-      assert.equal(s.manualRateInput, '1500')
-      assert.equal(cellAt(s, '2027-01')!.projected!.amounts!.total, 1210)
-      assert.equal(cellAt(s, realMonth)!.real!.amounts!.total, 1210)
-      await page.run((st) => st.setManualRateInput('9999'))
-      assert.equal(cellAt(page.get(), '2027-01')!.projected!.amounts!.total, 1210)
-      await page.run((st) => st.setCurrency('ARS'))
-      assert.equal(page.get().manualRateInput, '9999')
-      assert.equal(cellAt(page.get(), '2027-01')!.projected!.amounts!.total, 1210 * 9999)
+      // 5. El panel arranca cerrado y resume revisión / informativas.
+      const html = renderToStaticMarkup(createElement(RenewalObservationsPanel, { observations: s.observations }))
+      assert.match(html, /^<details(?![^>]*\bopen\b)/, 'cerrado por defecto')
+      assert.match(html, /requiere(n)? revisión/)
+      assert.match(html, /F-OLD|MAR 25/)
 
-      // 5. Nada de lo anterior consultó ni escribió.
-      assert.equal(totalCalls(), callsAfterLoad, `llamadas inesperadas: ${JSON.stringify(calls)}`)
+      // 6. Nada consultó de más ni escribió.
       assert.ok(!Object.keys(calls).some((k) => k.startsWith('WRITE')), `escrituras inesperadas: ${JSON.stringify(calls)}`)
     } finally {
       page.unmount()
-    }
-
-    // 6. Al volver a entrar, el TC arranca vacío otra vez (no se persiste).
-    const again = await mountHook(mode)
-    try {
-      assert.equal(again.get().manualRateInput, '')
-      assert.equal(again.get().projectionRate, null)
-    } finally {
-      again.unmount()
     }
   })
 }

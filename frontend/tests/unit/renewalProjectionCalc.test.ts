@@ -501,7 +501,7 @@ describe('exportación Excel', () => {
       netUsd: 1000, vatUsd: 210, otherUsd: 0, pct: 0,
       cycleLengthMonths: 12, installmentsCount: 1, startMonthKey: '2026-01',
       baseStatus: 'OK', projectionBlocked: false, isOverridden: false,
-      periodInvoiceCount: 1, outOfTermCount: 0, outOfTermItems: [], ambiguousPeriodItems: [], allocationIssues: [], concurrentPeriodsExcluded: 0,
+      periodInvoiceCount: 1, outOfTermCount: 0, outOfTermItems: [], ambiguousPeriodItems: [], allocationIssues: [], excludedAdjustments: [], concurrentPeriodsExcluded: 0,
       hasLegacy: true, legacyPendingFields: ['net'],
       override: { ...noOverride(), assetId: A, mode: 'ECONOMIC', netOverride: 1_500_000, growthPercentOverride: 85, legacyConvertedRate: null, legacyConvertedBy: null, updatedAt: '2026-08-01T00:00:00Z' },
       ...overrides,
@@ -509,18 +509,19 @@ describe('exportación Excel', () => {
   }
   const axis = ['2025-06', '2026-01', '2027-01']
 
-  function build(currency: Currency, projectionRate: number | null, row = assetRow()) {
-    const matrix = buildDisplayMatrix([row], axis, currency, projectionRate)
+  // Las proyecciones se exportan SOLO en USD (misma matriz USD que la pantalla).
+  function build(row = assetRow()) {
+    const matrix = buildDisplayMatrix([row], axis, 'USD', null)
     return loadExport().then(({ buildRenewalProjectionExport }) =>
       buildRenewalProjectionExport({
-        rows: [row], matrix, rowTotals: matrix.map((c) => sumRowTotals(c)), axis, currency, projectionRate,
+        rows: [row], matrix, rowTotals: matrix.map((c) => sumRowTotals(c)), axis,
         breakdownFields: [], hideAssetPanel: false, horizonEndMonthKey: '2027-12', filenamePrefix: 'proy',
       }),
     )
   }
 
   test('USD: base y meses en USD; la celda con TC 1 va como texto nativo; total marcado incompleto', async () => {
-    const xlsx = await build('USD', 1400)
+    const xlsx = await build()
     const [header, data, projectedRow] = xlsx.rows
     assert.equal(xlsx.rows.length, 3, 'encabezado + fila Real + fila Proyectado')
     assert.equal(xlsx.filename, 'proy-USD-2027-12.xlsx')
@@ -554,25 +555,22 @@ describe('exportación Excel', () => {
     assert.ok(!xlsx.options.numericColumnIndexes!.includes(1))
   })
 
-  test('ARS con TC manual: real a TC histórico, proyectado al TC ingresado, y el TC queda en el encabezado', async () => {
-    const xlsx = await build('ARS', 1400)
-    const [header, data, projectedRow] = xlsx.rows
-    assert.equal(xlsx.filename, 'proy-ARS-2027-12.xlsx')
-    assert.equal(data[header.indexOf('Neto (ARS)')], 1_400_000)
-    close(data[header.indexOf('2025-06')] as number, 500_000)
-    close(data[header.indexOf('2026-01')] as number, 1_210_000)
-    close(projectedRow[header.indexOf('2027-01')] as number, 1210 * 1400)
-    assert.match(String(header[header.length - 2]), /^Total \(ARS · proy\. TC manual AR\$ 1\.400/)
+  test('solo USD: ningún encabezado ni celda en ARS convertida; lo real sin cierre confiable queda como texto nativo', async () => {
+    const xlsx = await build()
+    const [header, data] = xlsx.rows
+    assert.ok(header.every((h) => !/\bARS\b/.test(String(h))), `encabezados: ${header.join(' | ')}`)
+    // El único rastro de ARS es el importe nativo excluido (texto) y la observación de valores anteriores.
+    const numericCells = data.filter((v) => typeof v === 'number') as number[]
+    assert.ok(!numericCells.includes(500_000), 'el importe ARS con TC 1 nunca se exporta como número USD')
+    assert.ok(!numericCells.includes(1_500_000), 'el valor anterior en ARS no se aplica')
   })
 
-  test('ARS sin TC manual: base vacía y proyectado "Sin TC", nunca USD × 1', async () => {
-    const xlsx = await build('ARS', null)
-    const [header, data, projectedRow] = xlsx.rows
-    assert.equal(data[header.indexOf('Neto (ARS)')], null)
-    assert.equal(projectedRow[header.indexOf('2027-01')], 'Sin TC')
-    close(data[header.indexOf('2026-01')] as number, 1_210_000)
-    assert.match(String(projectedRow[header.length - 1]), /TOTAL INCOMPLETO.*proyectado en ARS sin TC/)
-    assert.equal(header[header.length - 2], 'Total (ARS)')
+  test('ajuste ya aplicado: observación informativa con comprobante y fechas', async () => {
+    const xlsx = await build(assetRow({
+      excludedAdjustments: [{ documentNumber: 'ND01', documentType: 'DEBIT_NOTE', issueDate: '2026-03-05', dueDates: ['2026-04-10'], ownInstallmentsAmount: 7_500_000, currency: 'ARS' }],
+    }))
+    const [header, data] = xlsx.rows
+    assert.match(String(data[header.length - 1]), /Cuotas de ajustes ya aplicados en su factura, no sumadas para no duplicarlas \(informativo\): ND01 \(Nota de Débito\) · emitida 05\/03\/2026 · cuota 10\/04\/2026/)
   })
 })
 

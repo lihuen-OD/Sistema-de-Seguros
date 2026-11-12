@@ -264,6 +264,41 @@ export function buildAssetRealTimelineByCuota(assetId: string, documents: Docume
   return acc
 }
 
+/** Ajuste aplicado cuyas cuotas propias se excluyen del real por cuota (ya están en su factura). */
+export interface ExcludedAdjustmentItem {
+  documentNumber: string
+  documentType: string
+  /** 'YYYY-MM-DD' — emisión del ajuste. */
+  issueDate: string
+  /** Vencimientos de las cuotas propias excluidas ('YYYY-MM-DD'). */
+  dueDates: string[]
+  /** Σ de las cuotas propias del documento, en su moneda nativa (no se suma a nada). */
+  ownInstallmentsAmount: number
+  currency: Currency
+}
+
+// Solo informa — mismo criterio exacto que el `continue` de
+// buildAssetRealTimelineByCuota (ajuste ya volcado + asignado al activo), así
+// lo que se lista es justo lo que el cálculo dejó afuera. No cambia importes.
+export function excludedAdjustmentsForAsset(assetId: string, documents: DocumentForFinancial[]): ExcludedAdjustmentItem[] {
+  const items: ExcludedAdjustmentItem[] = []
+  for (const doc of documents) {
+    if (doc.installments.length === 0) continue
+    const issue = adjustmentInstallmentIssue(doc)
+    if (!issue?.excluded) continue
+    if (docAssetShareByPercentage(doc, assetId) <= 0) continue
+    items.push({
+      documentNumber: doc.documentNumber,
+      documentType: doc.documentType,
+      issueDate: doc.issueDate.slice(0, 10),
+      dueDates: doc.installments.map((i) => i.dueDate.slice(0, 10)).sort(),
+      ownInstallmentsAmount: issue.ownInstallmentsAmount,
+      currency: doc.currency,
+    })
+  }
+  return items
+}
+
 // ── Variante por documento (Económico) ───────────────────────────────────────
 // Replica allocationInCurrency/buildEconomicMatrix de EconomicAnalysisPage.tsx:
 // cualquier tipo de documento (factura, NC, ND, endoso) que tenga una

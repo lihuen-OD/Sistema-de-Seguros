@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CalendarClock, Eye, EyeOff, FileSpreadsheet, History, RotateCcw, TrendingUp, AlertTriangle } from 'lucide-react'
+import { CalendarClock, Eye, EyeOff, FileSpreadsheet, History, RotateCcw, TrendingUp } from 'lucide-react'
 import { PageContent } from '../../../shared/components/page-header/PageContent'
 import { PageHeader } from '../../../shared/components/page-header/PageHeader'
 import { SectionCard } from '../../../shared/components/cards/SectionCard'
@@ -7,16 +7,15 @@ import { MetricGrid } from '../../../shared/components/cards/MetricGrid'
 import { KpiCard } from '../../../shared/components/cards/KpiCard'
 import { ErrorState } from '../../../shared/components/empty-states/ErrorState'
 import { FinancialDataWarning } from '../../../shared/components/feedback/FinancialDataWarning'
-import { DataWarning } from '../../../shared/components/feedback/DataWarning'
 import { formatCurrencyCompact, formatCurrencyFull } from '../../../shared/utils/format'
 import { hasExcludedNative } from '../../../shared/utils/renewalProjectionCalc'
-import type { Currency } from '../../../shared/types'
 import { RenewalProjectionTable } from './RenewalProjectionTable'
 import { RenewalHorizonPicker } from './RenewalHorizonPicker'
 import { RenewalFieldSelectorPopover } from './RenewalFieldSelectorPopover'
 import { RenewalLegacyOverridesModal } from './RenewalLegacyOverridesModal'
 import type { useRenewalProjectionData } from './useRenewalProjectionData'
-import { formatNativeAmounts } from './renewalProjectionFormat'
+import { formatNativeAmounts, PROJECTION_CURRENCY } from './renewalProjectionFormat'
+import { RenewalObservationsPanel } from './RenewalObservationsPanel'
 
 interface LegendItem {
   label: string
@@ -32,12 +31,6 @@ interface RenewalProjectionLayoutProps extends ReturnType<typeof useRenewalProje
   showInstallmentsColumn: boolean
 }
 
-// Lista corta de nombres para un aviso: los primeros N y "y N más".
-function nameList(names: string[], max = 5): string {
-  if (names.length <= max) return names.join(', ')
-  return `${names.slice(0, max).join(', ')} y ${names.length - max} más`
-}
-
 export function RenewalProjectionLayout({
   title,
   subtitle,
@@ -47,13 +40,10 @@ export function RenewalProjectionLayout({
   showInstallmentsColumn,
   isError,
   financialDocsResult,
-  currency, setCurrency,
   horizonYears, setHorizonYears,
   customEnd, setCustomEnd,
   breakdownFields, toggleBreakdownField,
   hideAssetPanel, setHideAssetPanel,
-  manualRateInput, setManualRateInput,
-  projectionRate,
   overridesVersion,
   rows,
   matrix,
@@ -63,14 +53,13 @@ export function RenewalProjectionLayout({
   maxMonthKey,
   horizonEndMonthKey,
   kpis,
-  warnings,
+  observations,
   isConvertingLegacy,
   handleCommitField,
   handleResetRow,
   handleResetAll,
   handleConvertLegacy,
   handleExportExcel,
-  filteredAbsurdDates,
 }: RenewalProjectionLayoutProps) {
   const [legacyAssetId, setLegacyAssetId] = useState<string | null>(null)
   const legacyRow = legacyAssetId ? rows.find((r) => r.assetId === legacyAssetId) ?? null : null
@@ -80,115 +69,18 @@ export function RenewalProjectionLayout({
   const projectedTotals = kpis.projected
   const projectedIncomplete = projectedTotals.incomplete
   const projectedLabel = `Proyectado a ${customEnd ? horizonEndMonthKey : `${horizonYears} año${horizonYears > 1 ? 's' : ''}`}`
-  const projectedValue = kpis.projectedAvailable
-    ? `${formatCurrencyCompact(projectedTotals.total, currency)}${projectedIncomplete ? '*' : ''}`
-    : 'Sin TC'
-  const projectedDescription = !kpis.projectedAvailable
-    ? 'Ingresá un tipo de cambio (ARS por USD) para ver la proyección en ARS'
-    : projectedIncomplete
-      ? `Incompleto${hasExcludedNative(projectedTotals.excludedNative) ? ` — excluye ${formatNativeAmounts(projectedTotals.excludedNative)}` : ''}`
-      : `${formatCurrencyFull(projectedTotals.total, currency)}${currency === 'ARS' ? ' · base USD × TC ingresado' : ''}`
+  const projectedValue = `${formatCurrencyCompact(projectedTotals.total, PROJECTION_CURRENCY)}${projectedIncomplete ? '*' : ''}`
+  const projectedDescription = projectedIncomplete
+    ? `Incompleto${hasExcludedNative(projectedTotals.excludedNative) ? ` — excluye ${formatNativeAmounts(projectedTotals.excludedNative)}` : ''}`
+    : `${formatCurrencyFull(projectedTotals.total, PROJECTION_CURRENCY)} · base USD`
 
   return (
     <PageContent>
       <PageHeader title={title} subtitle={subtitle} />
       <FinancialDataWarning result={financialDocsResult} />
 
-      {filteredAbsurdDates > 0 && (
-        <div className="mb-4 flex items-start gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg">
-          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-          <span>
-            Se ignoraron {filteredAbsurdDates} registro{filteredAbsurdDates !== 1 ? 's' : ''} con fechas fuera de rango esperado (mayor a {new Date().getFullYear() + 10}). Los datos históricos normales no se afectaron.
-          </span>
-        </div>
-      )}
-
-      {currency === 'ARS' && projectionRate === null && (
-        <DataWarning>
-          <strong>{manualRateInput.trim() === '' ? 'Sin TC para la proyección en ARS.' : 'El TC ingresado no es válido (tiene que ser mayor a 0).'}</strong>{' '}
-          La proyección se calcula en USD: ingresá un tipo de cambio (ARS por USD) para verla en pesos. Mientras tanto
-          los importes futuros se muestran como «Sin TC». Los importes reales conservan su valor histórico registrado.
-        </DataWarning>
-      )}
-
-      {warnings.blockedAssets.length > 0 && (
-        <DataWarning>
-          <strong>
-            {warnings.blockedAssets.length} activo{warnings.blockedAssets.length !== 1 ? 's' : ''} sin proyección:
-          </strong>{' '}
-          su última renovación no tiene un tipo de cambio histórico confiable ({nameList(warnings.blockedAssets)}). Sus
-          importes reales se conservan; para proyectarlos, cambiá a USD y cargá el Neto de la renovación.
-        </DataWarning>
-      )}
-
-      {kpis.incompleteRealCells > 0 && (
-        <DataWarning>
-          <strong>
-            {kpis.incompleteRealCells} celda{kpis.incompleteRealCells !== 1 ? 's' : ''} real{kpis.incompleteRealCells !== 1 ? 'es' : ''} con importes
-            sin tipo de cambio histórico confiable en {currency}:
-          </strong>{' '}
-          se muestran en su moneda original y no se suman. Los totales marcados con * están incompletos.
-        </DataWarning>
-      )}
-
-      {warnings.outOfTermAssets.length > 0 && (
-        <DataWarning>
-          <strong>
-            {warnings.outOfTermAssets.length} activo{warnings.outOfTermAssets.length !== 1 ? 's' : ''} con cuotas o emisiones fuera de la vigencia de la póliza:
-          </strong>{' '}
-          {nameList(warnings.outOfTermAssets)}. Cada renovación proyectada repite esas fechas tal como están cargadas
-          (el detalle de comprobantes y vencimientos está en el aviso «Fuera de vigencia» de cada fila); revisá esos comprobantes.
-        </DataWarning>
-      )}
-
-      {kpis.mixedCells > 0 && (
-        <DataWarning>
-          <strong>
-            {kpis.mixedCells} mes{kpis.mixedCells !== 1 ? 'es' : ''} con importes reales y proyectados a la vez:
-          </strong>{' '}
-          se muestran en la misma celda como dos importes separados (real arriba, proyectado abajo) y se suman por separado
-          en los totales, el KPI y el Excel.
-        </DataWarning>
-      )}
-
-      {warnings.ambiguousPeriodAssets.length > 0 && (
-        <DataWarning>
-          <strong>
-            {warnings.ambiguousPeriodAssets.length} activo{warnings.ambiguousPeriodAssets.length !== 1 ? 's' : ''} con facturas de período ambiguo:
-          </strong>{' '}
-          {nameList(warnings.ambiguousPeriodAssets)}. No se pudo determinar con certeza a qué vigencia corresponden: se tomó la
-          vigencia contractual más cercana, sin abrir una renovación nueva. Revisá las facturas indicadas en cada fila.
-        </DataWarning>
-      )}
-
-      {warnings.allocationIssueAssets.length > 0 && (
-        <DataWarning>
-          <strong>
-            {warnings.allocationIssueAssets.length} activo{warnings.allocationIssueAssets.length !== 1 ? 's' : ''} con asignaciones incoherentes:
-          </strong>{' '}
-          {nameList(warnings.allocationIssueAssets)}. El % asignado no corresponde al importe asignado; Financiero usa el % y
-          Económico el importe, así que sus bases difieren. No se corrige automáticamente: revisá la distribución de esos comprobantes.
-        </DataWarning>
-      )}
-
-      {warnings.concurrentExcludedAssets.length > 0 && (
-        <DataWarning>
-          <strong>
-            {warnings.concurrentExcludedAssets.length} activo{warnings.concurrentExcludedAssets.length !== 1 ? 's' : ''} con pólizas paralelas de distinto plazo:
-          </strong>{' '}
-          {nameList(warnings.concurrentExcludedAssets)}. La póliza paralela no se suma a la base proyectada; ajustala a mano si corresponde.
-        </DataWarning>
-      )}
-
-      {warnings.legacyPendingAssets.length > 0 && (
-        <DataWarning>
-          <strong>
-            {warnings.legacyPendingAssets.length} activo{warnings.legacyPendingAssets.length !== 1 ? 's' : ''} con valores anteriores en ARS:
-          </strong>{' '}
-          {nameList(warnings.legacyPendingAssets)}. Se conservan sin cambios pero no se aplican a la proyección en USD —
-          revisalos con «ARS anterior · revisar».
-        </DataWarning>
-      )}
+      {/* Observaciones compactas (cerradas por defecto) — el banner de truncamiento queda aparte, arriba. */}
+      <RenewalObservationsPanel observations={observations} />
 
       <MetricGrid cols={3} className="mb-6">
         <KpiCard
@@ -196,7 +88,7 @@ export function RenewalProjectionLayout({
           value={projectedValue}
           description={projectedDescription}
           icon={TrendingUp}
-          variant={!kpis.projectedAvailable || projectedIncomplete ? 'warning' : 'info'}
+          variant={projectedIncomplete ? 'warning' : 'info'}
         />
         <KpiCard
           label="Activos con historial real"
@@ -216,50 +108,6 @@ export function RenewalProjectionLayout({
 
       {/* Controles — separados del header de la tarjeta para que el título nunca se aplaste */}
       <div className="flex flex-wrap items-center gap-4 mb-6">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-500">Moneda</span>
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-            {(['ARS', 'USD'] as Currency[]).map((c) => (
-              <button
-                key={c}
-                onClick={() => setCurrency(c)}
-                className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  currency === c ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {currency === 'ARS' && (
-          <>
-            <div className="w-px h-5 bg-slate-200 hidden sm:block" />
-            <label className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-500 whitespace-nowrap">TC proyección</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step="any"
-                value={manualRateInput}
-                onChange={(e) => setManualRateInput(e.target.value)}
-                placeholder="ARS por USD"
-                aria-invalid={manualRateInput.trim() !== '' && projectionRate === null}
-                title="Solo convierte a ARS los importes futuros (proyectados). No se guarda y no cambia el tipo de cambio del sistema. Los importes reales usan su valor histórico registrado."
-                className={`w-32 text-right text-xs border rounded-lg px-2 py-1.5 tabular-nums focus:outline-none focus:ring-1 ${
-                  manualRateInput.trim() !== '' && projectionRate === null
-                    ? 'border-red-300 bg-red-50/50 focus:ring-red-400 focus:border-red-400'
-                    : 'border-slate-200 focus:ring-brand-400 focus:border-brand-400'
-                }`}
-              />
-            </label>
-          </>
-        )}
-
-        <div className="w-px h-5 bg-slate-200 hidden sm:block" />
-
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-slate-500">Proyectar</span>
           <RenewalHorizonPicker
@@ -322,10 +170,10 @@ export function RenewalProjectionLayout({
           ))}
           <span className="flex items-center gap-1.5 text-xs text-slate-500">
             <span className="w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-300" />
-            Sin TC confiable (moneda original, no se suma)
+            Sin cierre USD confiable (moneda original, no se suma)
           </span>
           <span className="text-xs text-slate-400">
-            Real: TC histórico de cada documento · Proyectado: base USD{currency === 'ARS' ? ' × TC ingresado' : ''} · * = total incompleto
+            Importes en USD · Real: cierre USD histórico de cada documento · Proyectado: base USD · * = total incompleto
           </span>
         </div>
 
@@ -340,8 +188,6 @@ export function RenewalProjectionLayout({
             rowTotals={rowTotals}
             axis={axis}
             projectionFromMonthKey={currentMonthKey}
-            currency={currency}
-            projectionRate={projectionRate}
             breakdownFields={breakdownFields}
             hideAssetPanel={hideAssetPanel}
             showInstallmentsColumn={showInstallmentsColumn}

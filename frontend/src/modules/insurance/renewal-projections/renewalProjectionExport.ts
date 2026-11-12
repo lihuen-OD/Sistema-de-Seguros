@@ -1,10 +1,9 @@
 import type { ExportCell, XLSXExportOptions } from '../../../shared/utils/export'
-import { formatCurrencyFull } from '../../../shared/utils/format'
-import { baseTotalUsd, hasExcludedNative, usdIn, type DisplayCell, type DisplayCellPart, type DisplayPartKind, type RowTotals } from '../../../shared/utils/renewalProjectionCalc'
-import type { Currency } from '../../../shared/types'
+import { baseTotalUsd, hasExcludedNative, type DisplayCell, type DisplayCellPart, type DisplayPartKind, type RowTotals } from '../../../shared/utils/renewalProjectionCalc'
 import type { AssetRowData } from './RenewalProjectionTable'
 import { BREAKDOWN_FIELD_DEFS, type BreakdownFieldKey } from './RenewalFieldSelectorPopover'
-import { formatAllocationIssues, formatNativeAmounts, formatTraceItems, monthLabel } from './renewalProjectionFormat'
+import { formatAllocationIssues, formatExcludedAdjustments, formatNativeAmounts, formatTraceItems, monthLabel, PROJECTION_CURRENCY } from './renewalProjectionFormat'
+import { formatLegacyPending } from './renewalObservations'
 
 export interface RenewalProjectionExportInput {
   rows: AssetRowData[]
@@ -12,9 +11,6 @@ export interface RenewalProjectionExportInput {
   matrix: (DisplayCell | null)[][]
   rowTotals: RowTotals[]
   axis: string[]
-  currency: Currency
-  /** TC manual de la pantalla (ARS por USD) — solo convierte lo proyectado y la base USD. */
-  projectionRate: number | null
   breakdownFields: BreakdownFieldKey[]
   hideAssetPanel: boolean
   horizonEndMonthKey: string
@@ -27,27 +23,26 @@ export interface RenewalProjectionExport {
   options: XLSXExportOptions
 }
 
-const LEGACY_LABELS = { net: 'Neto', vat: 'IVA', other: 'Otros' } as const
-
 const KIND_LABELS: Record<DisplayPartKind, string> = { real: 'Real', projected: 'Proyectado' }
 const KINDS: DisplayPartKind[] = ['real', 'projected']
 
-// Arma el Excel en la moneda elegida, con el mismo criterio que la pantalla:
+// Arma el Excel SOLO en USD, con el mismo criterio que la pantalla:
 // - Dos filas por activo — «Real» y «Proyectado» (columna Tipo, filtrable):
 //   un mes con importes reales y proyectados a la vez aporta cada parte a su
 //   fila, así ningún número del Excel mezcla lo real con lo proyectado.
-// - Importes en la moneda de vista: lo real con su cierre histórico; la base
-//   y lo proyectado en USD, o en ARS × el TC manual ingresado en la pantalla.
-// - Una celda que no se puede expresar en esa moneda va como TEXTO con su
-//   importe nativo ("… (sin TC)") o "Sin TC" — nunca como un número convertido.
+// - Importes en USD: lo real con su cierre USD histórico; la base y lo
+//   proyectado en USD. Nunca se convierte nada con un TC actual o manual.
+// - Una celda real sin cierre USD confiable va como TEXTO con su importe
+//   nativo ("… (sin TC)") — nunca como un número convertido — y no se suma.
 // - Un total que excluye algo se marca "TOTAL INCOMPLETO" en Observaciones.
 // - Si el panel del activo está oculto (o el "Detalle por mes" no tiene nada
 //   tildado), el export tampoco los incluye — mismo orden que la tabla.
 export function buildRenewalProjectionExport(input: RenewalProjectionExportInput): RenewalProjectionExport {
-  const { rows, matrix, rowTotals, axis, currency: cur, projectionRate, breakdownFields, hideAssetPanel, horizonEndMonthKey, filenamePrefix } = input
+  const { rows, matrix, rowTotals, axis, breakdownFields, hideAssetPanel, horizonEndMonthKey, filenamePrefix } = input
+  const cur = PROJECTION_CURRENCY
   const fields = BREAKDOWN_FIELD_DEFS.filter((f) => breakdownFields.includes(f.key))
   const showBreakdown = fields.length > 0
-  const inView = (usd: number | null): ExportCell => usdIn(usd, cur, projectionRate)
+  const inView = (usd: number | null): ExportCell => usd
 
   // "Inicio" es 'YYYY-MM' — no numérico.
   const ASSET_DATA_COLUMNS: { label: string; numeric: boolean; value: (row: AssetRowData) => ExportCell }[] = [
@@ -63,7 +58,7 @@ export function buildRenewalProjectionExport(input: RenewalProjectionExportInput
   ]
   const assetDataCols = hideAssetPanel ? [] : ASSET_DATA_COLUMNS
   const leadingLabels = ['Activo', 'Tipo', ...assetDataCols.map((c) => c.label)]
-  const totalLabel = cur === 'ARS' && projectionRate !== null ? `Total (ARS · proy. TC manual ${formatCurrencyFull(projectionRate, 'ARS')})` : `Total (${cur})`
+  const totalLabel = `Total (${cur})`
 
   // Sin "Detalle por mes": una columna "Total" plana por mes, como siempre.
   // Con "Detalle por mes": cada mes ocupa un bloque de columnas (una por
@@ -88,7 +83,7 @@ export function buildRenewalProjectionExport(input: RenewalProjectionExportInput
 
   function cellValue(part: DisplayCellPart | null, key: BreakdownFieldKey): ExportCell {
     if (!part) return 0
-    if (!part.amounts) return part.isReal ? `${formatNativeAmounts(part.excludedNative)} (sin TC)` : 'Sin TC'
+    if (!part.amounts) return part.isReal ? `${formatNativeAmounts(part.excludedNative)} (sin TC)` : 'Sin importe USD'
     return key === 'net' ? part.amounts.net : key === 'vat' ? part.amounts.vat : key === 'other' ? part.amounts.other : part.amounts.total
   }
 
@@ -97,8 +92,7 @@ export function buildRenewalProjectionExport(input: RenewalProjectionExportInput
     const kindTotals = totals[kind]
     if (kindTotals.incomplete) {
       const excluded = hasExcludedNative(kindTotals.excludedNative) ? ` — excluye ${formatNativeAmounts(kindTotals.excludedNative)} sin TC confiable` : ''
-      const noRate = kind === 'projected' && cells.some((c) => c?.projected && !c.projected.amounts) ? ' — proyectado en ARS sin TC' : ''
-      notes.push(`TOTAL INCOMPLETO${excluded}${noRate}`)
+      notes.push(`TOTAL INCOMPLETO${excluded}`)
       const months = kind === 'real' ? axis.filter((_, i) => cells[i]?.real?.incomplete).map(monthLabel) : []
       if (months.length > 0) notes.push(`Meses con importes sin TC confiable: ${months.join(', ')}`)
     }
@@ -111,17 +105,12 @@ export function buildRenewalProjectionExport(input: RenewalProjectionExportInput
       notes.push(`Período ambiguo (se tomó la vigencia contractual más cercana): ${formatTraceItems(row.ambiguousPeriodItems)}`)
     }
     if (row.allocationIssues.length > 0) notes.push(`Asignación incoherente (% vs importe): ${formatAllocationIssues(row.allocationIssues)}`)
+    if (row.excludedAdjustments.length > 0) {
+      notes.push(`Cuotas de ajustes ya aplicados en su factura, no sumadas para no duplicarlas (informativo): ${formatExcludedAdjustments(row.excludedAdjustments)}`)
+    }
     if (row.concurrentPeriodsExcluded > 0) notes.push('Póliza paralela de distinto plazo no sumada a la base')
     if (row.projectionBlocked) notes.push('Sin proyección: la última renovación no tiene TC histórico confiable (cargar Neto en USD)')
-    if (row.legacyPendingFields.length > 0) {
-      const legacy = row.legacyPendingFields
-        .map((f) => {
-          const value = f === 'net' ? row.override?.netOverride : f === 'vat' ? row.override?.vatOverride : row.override?.otherOverride
-          return `${LEGACY_LABELS[f]} ${formatCurrencyFull(value ?? 0, 'ARS')}`
-        })
-        .join(', ')
-      notes.push(`Valores anteriores en ARS sin convertir (no aplicados): ${legacy}`)
-    }
+    if (row.legacyPendingFields.length > 0) notes.push(`Valores anteriores en ARS sin convertir (no aplicados): ${formatLegacyPending(row)}`)
     return notes.join(' | ')
   }
 
